@@ -258,8 +258,14 @@ function convertField(selector: string, input: unknown, taskNotes: boolean): Fie
     else if (field.type === "list") schema.maxItems = field.max;
     else schema.maximum = field.max;
   }
-  if (typeof field.min_length === "number") schema.minLength = field.min_length;
-  if (typeof field.max_length === "number") schema.maxLength = field.max_length;
+  if (typeof field.min_length === "number") {
+    if (field.type === "list") schema.minItems = field.min_length;
+    else schema.minLength = field.min_length;
+  }
+  if (typeof field.max_length === "number") {
+    if (field.type === "list") schema.maxItems = field.max_length;
+    else schema.maxLength = field.max_length;
+  }
   if (typeof field.pattern === "string") schema.pattern = field.pattern;
   if (field.deprecated === true) schema.deprecated = true;
   if (field.default !== undefined) schema.default = clone(field.default);
@@ -349,8 +355,13 @@ function migrateType(path: string, sourceVersion: string, frontmatter: Dict): {
     if (field.required === true) required.push(fieldName);
     if (field.default !== undefined) readDefaults[fieldName] = clone(field.default);
     if (field.unique === true) uniqueFields.push({ field: fieldName, scope: "collection" });
-    if (field.generated !== undefined && addGenerated(lifecycle, fieldName, field.generated)) {
-      generatedFields.push(fieldName);
+    if (field.generated !== undefined) {
+      if (addGenerated(lifecycle, fieldName, field.generated)) {
+        generatedFields.push(fieldName);
+      } else {
+        legacyFields[`${fieldName}.generated`] = clone(field.generated);
+        unsupported.push(`${fieldName}.generated`);
+      }
     }
     if (typeof field.tn_role === "string") fieldRoles[field.tn_role] = fieldName;
     if (Array.isArray(field.tn_completed_values)) taskNotesStatus.completed_values = clone(field.tn_completed_values);

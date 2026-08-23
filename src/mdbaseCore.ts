@@ -1,4 +1,4 @@
-import { normalizePath, parseYaml, stringifyYaml, TFile, Vault } from "obsidian";
+import { getFrontMatterInfo, normalizePath, parseYaml, stringifyYaml, TFile, Vault } from "obsidian";
 import type { CollectionContractDescriptor } from "@mdbase-dev/connect-protocol";
 import type { ErrorObject } from "ajv";
 import { Ajv2020 } from "ajv/dist/2020";
@@ -49,6 +49,7 @@ export interface MdbaseFieldDef {
   items?: MdbaseFieldDef;
   fields?: Record<string, MdbaseFieldDef>;
   unique?: boolean;
+  unique_scope?: string;
   deprecated?: boolean;
   target?: string;
   validate_exists?: boolean;
@@ -279,8 +280,8 @@ function linkExistsInVault(vault: Vault, filePath: string, rawReference: string)
 }
 
 export function parseFrontmatter(content: string): FrontmatterParse {
-  const frontmatterMatch = content.match(/^---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m);
-  if (!frontmatterMatch) {
+  const info = getFrontMatterInfo(content);
+  if (!info.exists) {
     return {
       hasFrontmatter: false,
       frontmatter: {},
@@ -289,13 +290,13 @@ export function parseFrontmatter(content: string): FrontmatterParse {
   }
 
   try {
-    const yamlSource = frontmatterMatch[1];
+    const yamlSource = info.frontmatter;
     const parsed = parseYaml(yamlSource);
     if (parsed == null && yamlSource.trim() !== "") {
       return {
         hasFrontmatter: true,
         frontmatter: {},
-        body: content.slice(frontmatterMatch[0].length),
+        body: content.slice(info.contentStart),
         error: "Frontmatter must be a YAML object",
       };
     }
@@ -303,7 +304,7 @@ export function parseFrontmatter(content: string): FrontmatterParse {
       return {
         hasFrontmatter: true,
         frontmatter: {},
-        body: content.slice(frontmatterMatch[0].length),
+        body: content.slice(info.contentStart),
         error: "Frontmatter must be a YAML object",
       };
     }
@@ -311,13 +312,13 @@ export function parseFrontmatter(content: string): FrontmatterParse {
     return {
       hasFrontmatter: true,
       frontmatter: (parsed as Record<string, unknown>) ?? {},
-      body: content.slice(frontmatterMatch[0].length),
+      body: content.slice(info.contentStart),
     };
   } catch (error) {
     return {
       hasFrontmatter: true,
       frontmatter: {},
-      body: content.slice(frontmatterMatch[0].length),
+      body: content.slice(info.contentStart),
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -360,6 +361,10 @@ export async function loadMdbaseConfig(vault: Vault): Promise<MdbaseConfig | nul
           typeof settings.types_folder === "string"
             ? settings.types_folder
             : DEFAULT_CONFIG.settings.types_folder,
+        contracts_folder:
+          typeof settings.contracts_folder === "string"
+            ? settings.contracts_folder
+            : DEFAULT_CONFIG.settings.contracts_folder,
         explicit_type_keys: Array.isArray(settings.explicit_type_keys)
           ? settings.explicit_type_keys.filter((value): value is string => typeof value === "string")
           : [...DEFAULT_CONFIG.settings.explicit_type_keys],
@@ -655,7 +660,10 @@ export async function loadTypeDefinitions(vault: Vault, config: MdbaseConfig): P
         : undefined;
       const fields = fieldsFromV03Schema(schema);
       for (const rule of collection?.unique ?? []) {
-        if (typeof rule.field === "string" && fields[rule.field]) fields[rule.field].unique = true;
+        if (typeof rule.field === "string" && fields[rule.field]) {
+          fields[rule.field].unique = true;
+          fields[rule.field].unique_scope = rule.scope;
+        }
       }
       for (const [fieldName, rule] of Object.entries(collection?.links ?? {})) {
         if (!fields[fieldName]) continue;
@@ -1557,15 +1565,18 @@ export async function validateFile(
   const typeDefs = typeNames
     .map((typeName) => typeMap.get(typeName))
     .filter((typeDef): typeDef is MdbaseTypeDef => !!typeDef);
+  const unknownTypeNames = typeNames.filter((typeName) => !typeMap.has(typeName));
 
-  if (typeDefs.length === 0) {
+  if (unknownTypeNames.length > 0) {
     pushIssue(
       issues,
       file.path,
       "error",
       "unknown_type",
-      `Resolved types are not defined: ${typeNames.join(", ")}`,
+      `Resolved types are not defined: ${unknownTypeNames.join(", ")}`,
     );
+  }
+  if (typeDefs.length === 0) {
     return issues;
   }
 
@@ -1607,6 +1618,8 @@ async function collectUniqueFieldIssues(
     path: string;
     typeName: string;
     fieldName: string;
+    scope: "type" | "collection";
+    specProfile?: "v0.2" | "v0.3";
     value: unknown;
     fingerprint: string;
   }
@@ -1635,12 +1648,16 @@ async function collectUniqueFieldIssues(
         if (value === undefined || value === null) continue;
 
         const fingerprint = stableStringify(value);
-        const dedupeKey = `${typeDef.name}::${fieldName}::${fingerprint}`;
+        const scope = fieldDef.unique_scope === "collection" ? "collection" : "type";
+        const dedupeKey = `${scope === "collection" ? "*" : typeDef.name}::${fieldName}::${fingerprint}`;
         const list = byKey.get(dedupeKey) ?? [];
+        if (list.some((entry) => entry.path === file.path)) continue;
         list.push({
           path: file.path,
           typeName: typeDef.name,
           fieldName,
+          scope,
+          specProfile: typeDef.specProfile,
           value,
           fingerprint,
         });
@@ -1663,8 +1680,10 @@ async function collectUniqueFieldIssues(
         issues,
         entry.path,
         "error",
-        typeMap.get(entry.typeName)?.specProfile === "v0.3" ? "duplicate_value" : "duplicate_unique",
-        `Field '${entry.fieldName}' must be unique for type '${entry.typeName}'. Duplicate found in: ${otherPaths}`,
+        entry.specProfile === "v0.3" ? "duplicate_value" : "duplicate_unique",
+        entry.scope === "collection"
+          ? `Field '${entry.fieldName}' must be unique across the collection. Duplicate found in: ${otherPaths}`
+          : `Field '${entry.fieldName}' must be unique for type '${entry.typeName}'. Duplicate found in: ${otherPaths}`,
         entry.fieldName,
       );
     }

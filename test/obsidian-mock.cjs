@@ -17,6 +17,23 @@ function stringifyYaml(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function getFrontMatterInfo(content) {
+  const source = String(content);
+  const match = source.match(/^---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m);
+  if (!match || match.index !== 0) {
+    return { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 };
+  }
+  const openingLength = match[0].indexOf("\n") + 1;
+  const closingOffset = match[0].lastIndexOf("\n---") + 1;
+  return {
+    exists: true,
+    frontmatter: match[1],
+    from: openingLength,
+    to: closingOffset,
+    contentStart: match[0].length,
+  };
+}
+
 class TFile {
   constructor(path) {
     this.path = normalizePath(path);
@@ -44,6 +61,7 @@ async function requestUrl() {
 
 module.exports = {
   normalizePath,
+  getFrontMatterInfo,
   parseYaml,
   stringifyYaml,
   TFile,

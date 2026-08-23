@@ -414,6 +414,29 @@ test("lossy v0.2 migrations require explicit reviewed consent", async () => {
   assert.equal(applied.applied, true);
 });
 
+test("migration preserves list bounds and unsupported generated strategies", async () => {
+  const generated = { strategy: "custom-sequence", prefix: "T-" };
+  const vault = await collectionVault(taskType({
+    fields: {
+      tags: { type: "list", items: { type: "string" }, min_length: 1, max_length: 3 },
+      token: { type: "string", generated },
+    },
+  }));
+  const plan = await analyzeV02Migration(vault as never);
+  const migrated = parseFrontmatter(plan.operations[1].target).frontmatter;
+  const schema = (migrated.schema as { value: Record<string, unknown> }).value;
+  const properties = schema.properties as Record<string, Record<string, unknown>>;
+  const legacy = migrated["x-legacy-v0.2"] as { fields: Record<string, unknown> };
+
+  assert.equal(properties.tags.minItems, 1);
+  assert.equal(properties.tags.maxItems, 3);
+  assert.equal(properties.tags.minLength, undefined);
+  assert.equal(properties.tags.maxLength, undefined);
+  assert.deepEqual(legacy.fields["token.generated"], generated);
+  assert.ok(plan.diagnostics.some((entry) => entry.severity === "lossy" && entry.message.includes("token.generated")));
+  assert.equal(plan.applicable, false);
+});
+
 test("type model preserves unknown v0.3 extensions and blocks v0.2 writes", () => {
   const frontmatter = {
     kind: "mdbase.type",

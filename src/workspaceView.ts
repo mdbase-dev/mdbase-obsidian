@@ -346,6 +346,7 @@ export class MdbaseWorkspaceView extends ItemView {
   private readonly fieldIds = new WeakMap<Record<string, unknown>, string>();
   private nextFieldId = 1;
   private refreshVersion = 0;
+  private typeSelectionVersion = 0;
 
   constructor(leaf: WorkspaceLeaf, private readonly host: MdbaseWorkspaceHost) {
     super(leaf);
@@ -1946,8 +1947,14 @@ export class MdbaseWorkspaceView extends ItemView {
       };
       choice.createSpan({ text: label });
     }
+    let apply: HTMLButtonElement | null = null;
     inputRow(section, "Excluded folders", policy.excluded_folders.join(", "), (value) => {
       policy.excluded_folders = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+      if (apply) {
+        const changed = JSON.stringify(this.host.connectSync.getSelectiveSync()) !== JSON.stringify(policy);
+        apply.textContent = changed ? "Apply file policy" : "File policy applied";
+        apply.disabled = !changed || this.busy;
+      }
     }, {
       description: "Comma-separated collection-relative folders. Exclusions apply to Markdown and binary files on this device.",
       placeholder: "Archive, Private exports",
@@ -1964,7 +1971,7 @@ export class MdbaseWorkspaceView extends ItemView {
     const current = this.host.connectSync.getSelectiveSync();
     const changed = JSON.stringify(current) !== JSON.stringify(policy);
     const actions = section.createDiv({ cls: "mdbase-actions" });
-    const apply = actions.createEl("button", { text: changed ? "Apply file policy" : "File policy applied" });
+    apply = actions.createEl("button", { text: changed ? "Apply file policy" : "File policy applied" });
     apply.disabled = !changed || this.busy;
     apply.onclick = () => void this.perform(async () => {
       await this.host.connectSync.configureSelectiveSync(policy);
@@ -2583,7 +2590,9 @@ export class MdbaseWorkspaceView extends ItemView {
       new Notice("Save or discard the current type changes before switching.");
       return;
     }
+    const version = ++this.typeSelectionVersion;
     const sourceModel = await this.host.loadTypeModel(path);
+    if (version !== this.typeSelectionVersion) return;
     const draft = this.host.loadTypeDraft(path);
     const canRestore = draft?.version === 1 && draft.sourceRevision === (sourceModel.sourceRevision ?? null);
     const model = canRestore ? clone(draft.model) : sourceModel;
@@ -2609,6 +2618,7 @@ export class MdbaseWorkspaceView extends ItemView {
       new Notice("Save or discard the current type changes before creating another type.");
       return;
     }
+    this.typeSelectionVersion += 1;
     const draft = this.host.loadTypeDraft(null);
     const model = draft?.version === 1 ? clone(draft.model) : createDefaultTypeModel();
     this.selectedPath = null;

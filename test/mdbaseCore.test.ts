@@ -222,6 +222,22 @@ test("validateFile enforces strict mode severity semantics", async () => {
   assert.equal(defaultWarnIssues.find((issue) => issue.code === "unknown_field")?.severity, "warn");
 });
 
+test("validateFile reports unknown explicit types without skipping known type validation", async () => {
+  const vault = new MockVault();
+  const file = await vault.writeNote("task.md", { types: ["task", "missing"] });
+  const types = new Map<string, MdbaseTypeDef>([
+    ["task", {
+      name: "task",
+      fields: { title: { type: "string", required: true } },
+      filePath: "_types/task.md",
+    }],
+  ]);
+
+  const issues = await validateFile(vault as unknown as any, file, createConfig(), types);
+  assert.ok(issues.some((issue) => issue.code === "unknown_type" && issue.message.includes("missing")));
+  assert.ok(issues.some((issue) => issue.code === "missing_required" && issue.field === "title"));
+});
+
 test("validateFile enforces field constraints including nested required and link existence", async () => {
   const vault = new MockVault();
   await vault.writeNote("targets/existing.md", { type: "note", title: "Existing" });
@@ -348,6 +364,7 @@ test("loads v0.3 type wrappers and projects collection metadata for the Vault ad
   assert.equal(task.fields.title.required, true);
   assert.equal(task.fields.due.type, "date");
   assert.equal(task.fields.id.unique, true);
+  assert.equal(task.fields.id.unique_scope, "type");
   assert.equal(task.fields.parent.validate_exists, true);
 
   assert.deepEqual(applyReadDefaults({ type: "task", id: "a", title: "A" }, [task]), {
@@ -400,7 +417,23 @@ test("v0.3 validation uses canonical JSON Schema diagnostics on raw frontmatter"
     parseFrontmatter("---\nnull\n---\nNot an object\n").error,
     "Frontmatter must be a YAML object",
   );
+  assert.deepEqual(parseFrontmatter("Introduction\n---\n{\"type\":\"task\"}\n---\n"), {
+    hasFrontmatter: false,
+    frontmatter: {},
+    body: "Introduction\n---\n{\"type\":\"task\"}\n---\n",
+  });
   assert.equal(formatMarkdown({}, "# Body-only task\n"), "# Body-only task\n");
+});
+
+test("loads custom contract folders from mdbase configuration", async () => {
+  const vault = new MockVault();
+  await vault.create("mdbase.yaml", JSON.stringify({
+    spec_version: "0.3.0",
+    settings: { contracts_folder: "schemas/contracts" },
+  }));
+
+  const config = await loadMdbaseConfig(vault as unknown as any);
+  assert.equal(config?.settings.contracts_folder, "schemas/contracts");
 });
 
 test("v0.3 view query scope stays nested and the view validates as an ordinary record", async () => {
@@ -463,6 +496,31 @@ test("v0.3 collection validation enforces links and unique rules", async () => {
   assert.ok(fileIssues.some((issue) => issue.code === "link_not_found" && issue.field === "parent"));
   const collectionIssues = await validateCollection(vault as unknown as any, config, types);
   assert.equal(collectionIssues.filter((issue) => issue.code === "duplicate_value").length, 2);
+});
+
+test("v0.3 collection-scoped uniqueness compares values across declaring types", async () => {
+  const vault = new MockVault();
+  await vault.writeNote("a.md", { type: "alpha", id: "shared" });
+  await vault.writeNote("b.md", { type: "beta", id: "shared" });
+  const uniqueField = { type: "string", unique: true, unique_scope: "collection" };
+  const types = new Map<string, MdbaseTypeDef>([
+    ["alpha", {
+      name: "alpha",
+      fields: { id: { ...uniqueField } },
+      filePath: "_types/alpha.md",
+      specProfile: "v0.3",
+    }],
+    ["beta", {
+      name: "beta",
+      fields: { id: { ...uniqueField } },
+      filePath: "_types/beta.md",
+      specProfile: "v0.3",
+    }],
+  ]);
+
+  const issues = await validateCollection(vault as unknown as any, createV03Config(), types);
+  assert.equal(issues.filter((issue) => issue.code === "duplicate_value").length, 2);
+  assert.ok(issues.every((issue) => issue.message.includes("across the collection")));
 });
 
 test("initializes new collections and their default type as v0.3", async () => {
