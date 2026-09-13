@@ -120,6 +120,39 @@ test("plan conflicts and blocking issues are shown as attention without inventin
   assert.deepEqual(preview.collisions, ["notes/collision.md"]);
 });
 
+test("preview retains malformed-frontmatter and file-read local issues", () => {
+  const preview = previewFromPlan(plan({
+    issues: [
+      {
+        code: "invalid_frontmatter",
+        message: "Frontmatter is invalid YAML.",
+        path: "notes/malformed.md",
+        blocking: true,
+      },
+      {
+        code: "file_read_failed",
+        message: "Could not read notes/unreadable.md.",
+        path: "notes/unreadable.md",
+        blocking: true,
+      },
+    ],
+    summary: { uploads: 0, downloads: 0, conflicts: 0, blocking_issues: 2 },
+  }));
+
+  assert.deepEqual(preview.local_issues, [
+    {
+      code: "invalid_frontmatter",
+      message: "Frontmatter is invalid YAML.",
+      path: "notes/malformed.md",
+    },
+    {
+      code: "file_read_failed",
+      message: "Could not read notes/unreadable.md.",
+      path: "notes/unreadable.md",
+    },
+  ]);
+});
+
 test("resolved conflict cleanup is projected without inventing a transfer", () => {
   const exact = {
     state: "exact" as const,

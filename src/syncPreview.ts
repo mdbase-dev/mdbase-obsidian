@@ -1,5 +1,6 @@
 import type {
   MirrorInitializationPreview,
+  MirrorLocalIssue,
   MirrorPlanAction,
   MirrorSyncPlan,
 } from "@mdbase-dev/connect-sync/mirror";
@@ -64,10 +65,11 @@ export function previewFromPlan(plan: MirrorSyncPlan): MdbaseSyncPreview {
         issue.blocking && issue.code === "local_collision" && issue.path !== undefined)
       .map((issue) => issue.path),
     local_issues: plan.issues
-      .filter((issue): issue is typeof issue & { path: string } =>
-        issue.code === "invalid_frontmatter" && issue.path !== undefined)
+      .filter((issue): issue is typeof issue & { path: string; code: MirrorLocalIssue["code"] } =>
+        ["invalid_frontmatter", "file_read_failed"].includes(issue.code)
+        && issue.path !== undefined)
       .map((issue) => ({
-        code: "invalid_frontmatter" as const,
+        code: issue.code,
         message: issue.message,
         path: issue.path,
       })),

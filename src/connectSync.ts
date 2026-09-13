@@ -58,6 +58,7 @@ import {
   type MirrorLease,
   type MirrorProgress,
   type MirrorState,
+  type MirrorTextReadResult,
   type MirrorStateStore,
   type MirrorStatus,
   WritableDirectoryMirror,
@@ -871,13 +872,38 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   }
 
   async read(input: string): Promise<string | null> {
+    const result = await this.readText(input);
+    if (result === null || typeof result === "string") return result;
+    throw new SyncError(result.code, result.reason);
+  }
+
+  async readText(input: string): Promise<MirrorTextReadResult> {
     const path = safeMirrorPath(this.vault, input);
     const file = this.vault.getAbstractFileByPath(path);
-    if (file == null) return null;
-    if (!(file instanceof TFile)) {
+    if (file instanceof TFolder) {
       throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
     }
-    return this.vault.cachedRead(file);
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await this.vault.adapter.readBinary(path);
+    } catch {
+      try {
+        if (!await this.vault.adapter.exists(path)) return null;
+      } catch {
+        // Report the original read failure when existence cannot be established.
+      }
+      throw new SyncError("file_read_failed", `Could not read ${path}.`);
+    }
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch {
+      return {
+        kind: "invalid",
+        code: "invalid_utf8",
+        reason: "File is not valid UTF-8.",
+        revision: (await binaryInfo(bytes)).content_digest,
+      };
+    }
   }
 
   async write(input: string, value: string): Promise<void> {
