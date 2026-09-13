@@ -1,4 +1,4 @@
-import { applyFieldQuickFix, quickFixLabel } from "./src/quickFix";
+import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
   App,
   addIcon,
@@ -825,10 +825,9 @@ export default class MdbasePlugin extends Plugin {
     let changed = false;
     await this.app.vault.process(file, (raw) => {
       this.connectSync.assertLocalAuthorityWritable();
-      const parsed = parseFrontmatter(raw);
-      if (parsed.error) throw new Error(`Invalid frontmatter: ${parsed.error}`);
-      changed = applyFieldQuickFix(parsed.frontmatter, issue);
-      return changed ? `${formatMarkdown(parsed.frontmatter, parsed.hasFrontmatter ? parsed.body : raw)}\n` : raw;
+      const result = applyQuickFixToDocument(raw, issue);
+      changed = result.changed;
+      return result.content;
     });
     new Notice(changed ? `Updated '${issue.field ?? "field"}' in ${file.basename}` : "The field changed or no safe quick fix is available. Revalidate the note.");
     await this.validateFileAndStore(file, "manual");

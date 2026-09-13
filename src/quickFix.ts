@@ -1,4 +1,15 @@
-import type { MdbaseIssue } from "./mdbaseCore";
+import { stringifyYaml } from "obsidian";
+import { parseFrontmatter, type MdbaseIssue } from "./mdbaseCore";
+
+export function applyQuickFixToDocument(raw: string, issue: MdbaseIssue): { content: string; changed: boolean } {
+  const parsed = parseFrontmatter(raw);
+  if (parsed.error) throw new Error(`Invalid frontmatter: ${parsed.error}`);
+  if (!applyFieldQuickFix(parsed.frontmatter, issue)) return { content: raw, changed: false };
+  // Generic Markdown formatting normalizes body whitespace. Quick fixes must
+  // replace only frontmatter and preserve every byte following its delimiter.
+  const yaml = stringifyYaml(parsed.frontmatter).trimEnd();
+  return { content: `---\n${yaml}\n---\n${parsed.body}`, changed: true };
+}
 
 function target(issue: MdbaseIssue): string[] | null {
   if (!issue.field) return null;
