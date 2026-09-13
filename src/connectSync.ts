@@ -161,6 +161,14 @@ const BLOB_DATABASE = "mdbase-obsidian-connect-blobs";
 const BLOB_MANIFEST_STORE = "manifests";
 const BLOB_CHUNK_STORE = "chunks";
 const BLOB_CHUNK_BYTES = 1024 * 1024;
+// Vault APIs materialize whole files. Bound peak allocations on mobile as well as desktop.
+export const MAX_BINARY_FILE_BYTES = 32 * 1024 * 1024;
+
+function assertBinarySize(size: number): void {
+  if (!Number.isSafeInteger(size) || size < 0 || size > MAX_BINARY_FILE_BYTES) {
+    throw new SyncError("file_too_large", "Binary sync supports files up to 32 MiB on this device. Exclude this file's folder to continue.");
+  }
+}
 const ACCESS_SECRET_PREFIX = "mdbase-connect-access-";
 const REFRESH_SECRET_PREFIX = "mdbase-connect-refresh-";
 const ADOPTION_SECRET_PREFIX = "mdbase-connect-adoption-";
@@ -256,7 +264,7 @@ async function collectBinary(source: AsyncIterable<Uint8Array>): Promise<ArrayBu
     if (!(chunk instanceof Uint8Array)) throw new SyncError("file_integrity_failed", "A binary stream returned an invalid chunk.");
     if (!chunk.byteLength) continue;
     size += chunk.byteLength;
-    if (!Number.isSafeInteger(size)) throw new SyncError("file_too_large", "The binary file is too large for this device.");
+    assertBinarySize(size);
     chunks.push(Uint8Array.from(chunk));
   }
   const output = new Uint8Array(size);
@@ -491,6 +499,7 @@ implements SyncTransport<Frontmatter> {
   }
 
   async *downloadFile(file: CollectionFileDescriptor): AsyncGenerator<Uint8Array> {
+    assertBinarySize(file.size);
     const transferId = crypto.randomUUID();
     try {
       let transferredBytes = 0;
@@ -542,6 +551,7 @@ implements SyncTransport<Frontmatter> {
     request: OpenFileUploadRequest,
     source: AsyncIterable<Uint8Array>,
   ): Promise<CommitFileUploadReceipt> {
+    assertBinarySize(request.size);
     const session = await this.fileRequest<FileTransferSession>("POST", "uploads", request);
     if (
       session.protocol_version !== 1
@@ -864,6 +874,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     private readonly vault: Vault,
     // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file -- Tests and standalone adapters lack an App; production injects FileManager.trashFile below.
     private readonly trashFile: (file: TFile) => Promise<void> = (file) => vault.delete(file, true),
+    private readonly assertActive: () => void = () => undefined,
   ) {}
 
   async exists(input: string): Promise<boolean> {
@@ -914,6 +925,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     if (existing instanceof TFolder) {
       throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     }
+    this.assertActive();
     if (existing instanceof TFile) {
       await this.vault.modify(existing, value);
     } else {
@@ -933,6 +945,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     }
     const slash = target.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, target.slice(0, slash));
+    this.assertActive();
     await this.vault.rename(file, target);
   }
 
@@ -943,6 +956,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     if (!(existing instanceof TFile)) {
       throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
     }
+    this.assertActive();
     await this.trashFile(existing);
   }
 
@@ -961,7 +975,10 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const file = this.vault.getAbstractFileByPath(path);
     if (file == null) return null;
     if (!(file instanceof TFile)) throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
-    return binaryInfo(await this.vault.readBinary(file));
+    assertBinarySize(file.stat.size);
+    const bytes = await this.vault.readBinary(file);
+    assertBinarySize(bytes.byteLength);
+    return binaryInfo(bytes);
   }
 
   async writeBinary(input: string, source: AsyncIterable<Uint8Array>): Promise<void> {
@@ -971,6 +988,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing instanceof TFolder) throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
+    this.assertActive();
     if (existing instanceof TFile) await this.vault.modifyBinary(existing, bytes);
     else await this.vault.createBinary(path, bytes);
   }
@@ -995,7 +1013,9 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const file = this.vault.getAbstractFileByPath(path);
     if (file == null) return null;
     if (!(file instanceof TFile)) throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
+    assertBinarySize(file.stat.size);
     const bytes = new Uint8Array(await this.vault.readBinary(file));
+    assertBinarySize(bytes.byteLength);
     return (async function* (): AsyncGenerator<Uint8Array> {
       for (let offset = 0; offset < bytes.byteLength; offset += BLOB_CHUNK_BYTES) {
         yield bytes.subarray(offset, Math.min(bytes.byteLength, offset + BLOB_CHUNK_BYTES));
@@ -1049,10 +1069,14 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
         }
       }
       await this.put(BLOB_MANIFEST_STORE, this.manifestKey(contentDigest), { stage, chunks, size } satisfies BlobManifest);
-      if (previous && previous.stage !== stage) await this.removeStage(previous.stage, previous.chunks);
     } catch (error) {
       await this.removeStage(stage, chunks).catch(() => undefined);
       throw error;
+    }
+    // Once published, the new stage is authoritative. Cleanup failure must not
+    // delete it and leave the durable manifest pointing at missing chunks.
+    if (previous && previous.stage !== stage) {
+      await this.removeStage(previous.stage, previous.chunks).catch(() => undefined);
     }
   }
 
@@ -1153,6 +1177,11 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
     });
   }
 
+  close(): void {
+    void this.database?.then((database) => database.close(), () => undefined);
+    this.database = null;
+  }
+
   private open(): Promise<IDBDatabase> {
     if (typeof indexedDB === "undefined") throw new SyncError("storage_unavailable", "IndexedDB is required for binary file sync.");
     this.database ??= new Promise((resolve, reject) => {
@@ -1202,6 +1231,11 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
       transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror state clear"));
       transaction.onabort = () => reject(indexedDbError(transaction.error, "mirror state clear"));
     });
+  }
+
+  close(): void {
+    void this.database?.then((database) => database.close(), () => undefined);
+    this.database = null;
   }
 
   private open(): Promise<IDBDatabase> {
@@ -1255,6 +1289,40 @@ export interface ConnectSyncControllerOptions {
 }
 
 export class ConnectSyncController {
+  private disposed = false;
+  private readonly lifetime = new AbortController();
+  private readonly stateStores = new Map<string, IndexedDbMirrorStateStore>();
+  private readonly blobStores = new Map<string, IndexedDbMirrorBlobStore>();
+
+  dispose(): void {
+    this.disposed = true;
+    this.lifetime.abort();
+    this.cancelSync();
+    for (const store of this.stateStores.values()) store.close();
+    for (const store of this.blobStores.values()) store.close();
+    this.stateStores.clear();
+    this.blobStores.clear();
+  }
+
+  private async withLifetime<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    this.assertActive();
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    this.lifetime.signal.addEventListener("abort", abort, { once: true });
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) controller.abort();
+    try {
+      abortIfNeeded(controller.signal);
+      return await operation(controller.signal);
+    } finally {
+      this.lifetime.signal.removeEventListener("abort", abort);
+      signal?.removeEventListener("abort", abort);
+    }
+  }
+
+  private assertActive(): void {
+    if (this.disposed) throw new DOMException("Plugin unloaded.", "AbortError");
+  }
   private progress: MirrorProgress | null = null;
   private fileProgress: FileTransferProgress | null = null;
   private syncAbort: AbortController | null = null;
@@ -1273,6 +1341,7 @@ export class ConnectSyncController {
     this.fileSystem = options.fileSystem ?? new ObsidianMirrorFileSystem(
       app.vault,
       (file) => app.fileManager.trashFile(file),
+      () => this.assertActive(),
     );
     this.enrollmentClient = options.enrollmentClient ?? new MirrorEnrollmentClient({
       request: createObsidianEnrollmentRequester(),
@@ -1284,7 +1353,14 @@ export class ConnectSyncController {
 
   async initialize(): Promise<void> {
     this.adoptionMarker = await this.readAdoptionMarker();
-    if (this.adoptionMarker && this.settingsHost.getMirrorProfile()) {
+    const profile = this.settingsHost.getMirrorProfile();
+    if (this.adoptionMarker && profile) {
+      if (this.adoptionMarker.phase === "adopted"
+        && this.adoptionMarker.session.requested.collectionId === profile.collectionId) {
+        await this.assertMirror(profile.collectionId);
+        await this.clearAdoptionCheckpoint(this.adoptionMarker.session.adoptionId);
+        return;
+      }
       throw new SyncError(
         "authority_adoption_state_conflict",
         "This vault contains both an authority-adoption checkpoint and a mirror profile.",
@@ -1316,6 +1392,7 @@ export class ConnectSyncController {
   }
 
   assertLocalAuthorityWritable(): void {
+    this.assertActive();
     if (this.adoptionMarker && ["fenced", "activating", "adopted"].includes(this.adoptionMarker.phase)) {
       throw new SyncError(
         "local_authority_fenced",
@@ -1326,7 +1403,11 @@ export class ConnectSyncController {
     }
   }
 
-  async adoptLocalCollection(
+  async adoptLocalCollection(input: AdoptLocalCollectionInput, callbacks: AdoptLocalCollectionCallbacks): Promise<MirrorProfile> {
+    return this.withLifetime(callbacks.signal, (signal) => this.adoptLocalCollectionActive(input, { ...callbacks, signal }));
+  }
+
+  private async adoptLocalCollectionActive(
     input: AdoptLocalCollectionInput,
     callbacks: AdoptLocalCollectionCallbacks,
   ): Promise<MirrorProfile> {
@@ -1378,13 +1459,18 @@ export class ConnectSyncController {
     if (marker.phase === "waiting_for_approval") {
       await callbacks.onVerification?.(publicAdoptionSession(session));
     }
-    return this.runAdoptionWithRecovery(session, {
+    return this.withLifetime(callbacks.signal, (signal) => this.runAdoptionWithRecovery(session, {
       ...callbacks,
+      signal,
       onVerification: (verification) => callbacks.onVerification?.(verification),
-    });
+    }));
   }
 
   async cancelAdoption(signal?: AbortSignal): Promise<void> {
+    return this.withLifetime(signal, (activeSignal) => this.cancelAdoptionActive(activeSignal));
+  }
+
+  private async cancelAdoptionActive(signal: AbortSignal): Promise<void> {
     const marker = this.adoptionMarker ?? await this.readAdoptionMarker();
     if (!marker) return;
     if (["activating", "adopted"].includes(marker.phase)) {
@@ -1404,7 +1490,11 @@ export class ConnectSyncController {
     await this.clearAdoptionCheckpoint(marker.session.adoptionId);
   }
 
-  async enroll(
+  async enroll(input: EnrollMirrorInput, callbacks: EnrollMirrorCallbacks): Promise<MirrorProfile> {
+    return this.withLifetime(callbacks.signal, (signal) => this.enrollActive(input, { ...callbacks, signal }));
+  }
+
+  private async enrollActive(
     input: EnrollMirrorInput,
     callbacks: EnrollMirrorCallbacks,
   ): Promise<MirrorProfile> {
@@ -1489,6 +1579,10 @@ export class ConnectSyncController {
   }
 
   async reauthorize(callbacks: EnrollMirrorCallbacks): Promise<MirrorStatus> {
+    return this.withLifetime(callbacks.signal, (signal) => this.reauthorizeActive({ ...callbacks, signal }));
+  }
+
+  private async reauthorizeActive(callbacks: EnrollMirrorCallbacks): Promise<MirrorStatus> {
     const profile = this.requireProfile();
     const oldStore = this.stateStoreFor(profile);
     const oldState = await oldStore.read();
@@ -1709,6 +1803,7 @@ export class ConnectSyncController {
     this.mirrorOperationTail = new Promise<void>((resolve) => { release = resolve; });
     await predecessor;
     try {
+      this.assertActive();
       return await operation();
     } finally {
       release();
@@ -1955,7 +2050,7 @@ export class ConnectSyncController {
 
   private adoptionBlobStore(collectionId: string): MirrorBlobStore {
     return this.options.adoptionBlobStoreFactory?.(collectionId)
-      ?? new IndexedDbMirrorBlobStore(`adoption:${collectionId}`);
+      ?? this.cachedBlobStore(`adoption:${collectionId}`);
   }
 
   private adoptionUploadOptions(
@@ -2001,6 +2096,7 @@ export class ConnectSyncController {
         ? parsed["x-mdbase-connect"]
         : {};
       parsed["x-mdbase-connect"] = { ...extension, collection_id: collectionId };
+      this.assertActive();
       await this.app.vault.adapter.write("mdbase.yaml", stringifyYaml(parsed));
     } else if (typeof existing === "string" && UUID_PATTERN.test(existing)) {
       collectionId = existing;
@@ -2017,13 +2113,30 @@ export class ConnectSyncController {
   }
 
   private stateStoreFor(profile: MirrorProfile): MirrorStateStore {
-    return this.options.stateStoreFactory?.(profile)
-      ?? new IndexedDbMirrorStateStore(`${profile.collectionId}:${profile.replicaId}`);
+    this.assertActive();
+    if (this.options.stateStoreFactory) return this.options.stateStoreFactory(profile);
+    const key = `${profile.collectionId}:${profile.replicaId}`;
+    let store = this.stateStores.get(key);
+    if (!store) {
+      store = new IndexedDbMirrorStateStore(key);
+      this.stateStores.set(key, store);
+    }
+    return store;
+  }
+
+  private cachedBlobStore(key: string): IndexedDbMirrorBlobStore {
+    this.assertActive();
+    let store = this.blobStores.get(key);
+    if (!store) {
+      store = new IndexedDbMirrorBlobStore(key);
+      this.blobStores.set(key, store);
+    }
+    return store;
   }
 
   private blobStoreFor(profile: MirrorProfile): MirrorBlobStore {
     return this.options.blobStoreFactory?.(profile)
-      ?? new IndexedDbMirrorBlobStore(`${profile.collectionId}:${profile.replicaId}`);
+      ?? this.cachedBlobStore(`${profile.collectionId}:${profile.replicaId}`);
   }
 
   private async transportFor(
@@ -2031,7 +2144,9 @@ export class ConnectSyncController {
     signal?: AbortSignal,
     onFileProgress?: (progress: FileTransferProgress) => void,
   ): Promise<SyncTransport<JsonObject>> {
+    this.assertActive();
     const accessToken = await this.freshAccessToken(profile);
+    this.assertActive();
     const transport = this.options.transportFactory?.(profile, accessToken)
       ?? new ObsidianSyncTransport(profile.syncUrl, accessToken, resilientRequestUrl, onFileProgress);
     return abortableSyncTransport(transport, signal);
@@ -2060,6 +2175,7 @@ export class ConnectSyncController {
   }
 
   private requireProfile(): MirrorProfile {
+    this.assertActive();
     const profile = this.settingsHost.getMirrorProfile();
     if (!profile) throw new SyncError("mirror_not_configured", "This vault is not connected to a collection authority.");
     return profile;
@@ -2082,6 +2198,7 @@ export class ConnectSyncController {
   }
 
   private async persistEnrollment(enrollment: MirrorEnrollment, selectiveSync?: SelectiveSyncPolicy): Promise<void> {
+    this.assertActive();
     this.app.secretStorage.setSecret(this.accessSecretId(enrollment.collectionId), enrollment.accessToken);
     this.app.secretStorage.setSecret(this.refreshSecretId(enrollment.collectionId), enrollment.refreshCredential);
     await this.settingsHost.saveMirrorProfile(profileFromEnrollment(
@@ -2235,6 +2352,7 @@ export class ConnectSyncController {
   }
 
   private async markMirror(collectionId: string): Promise<boolean> {
+    this.assertActive();
     const marker = await this.readMarker();
     if (marker) {
       if (marker.collection_id !== collectionId) {
@@ -2243,6 +2361,7 @@ export class ConnectSyncController {
       return false;
     }
     await ensureFolder(this.app.vault, ".mdbase");
+    this.assertActive();
     await this.app.vault.adapter.write(ROLE_MARKER_PATH, `${JSON.stringify({
       version: 1,
       role: "mirror",
@@ -2311,6 +2430,7 @@ export class ConnectSyncController {
 
   private async writeAdoptionMarker(marker: AdoptionMarker): Promise<void> {
     await ensureFolder(this.app.vault, ".mdbase");
+    this.assertActive();
     await this.app.vault.adapter.write(
       ADOPTION_MARKER_PATH,
       `${JSON.stringify(marker, null, 2)}\n`,
@@ -2339,7 +2459,9 @@ export class ConnectSyncController {
   }
 
   private async writeAdoptionSnapshot(snapshot: AuthorityImportSnapshot): Promise<void> {
+    this.assertActive();
     await ensureFolder(this.app.vault, ".mdbase");
+    this.assertActive();
     await this.app.vault.adapter.write(
       ADOPTION_SNAPSHOT_PATH,
       JSON.stringify(snapshot),
@@ -2378,11 +2500,13 @@ export class ConnectSyncController {
 
   private async clearAdoptionCheckpoint(adoptionId: string): Promise<void> {
     const collectionId = this.adoptionMarker?.session.requested.collectionId;
-    if (await this.app.vault.adapter.exists(ADOPTION_MARKER_PATH)) {
-      await this.app.vault.adapter.remove(ADOPTION_MARKER_PATH);
-    }
+    // Keep the recovery marker until ancillary cleanup succeeds, so a restart
+    // can retry cleanup instead of silently forgetting the interrupted transition.
     if (await this.app.vault.adapter.exists(ADOPTION_SNAPSHOT_PATH)) {
       await this.app.vault.adapter.remove(ADOPTION_SNAPSHOT_PATH);
+    }
+    if (await this.app.vault.adapter.exists(ADOPTION_MARKER_PATH)) {
+      await this.app.vault.adapter.remove(ADOPTION_MARKER_PATH);
     }
     // Obsidian currently has no SecretStorage delete API. Emptying the value
     // makes the one-time adoption credential unusable without writing it to disk.

@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
@@ -16,6 +17,7 @@ import {
 import {
   ConnectSyncController,
   DeviceMirrorLease,
+  IndexedDbMirrorStateStore,
   ObsidianMirrorFileSystem,
 } from "../src/connectSync";
 import { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
@@ -1401,7 +1403,7 @@ test("writable mirror uploads local edits and collision preflight makes no write
   assert.equal(await collisionState.read(), null);
 });
 
-test("interrupted mirror write does not advance the checkpoint and a retry converges", async () => {
+test("interrupted mirror write resumes its IndexedDB checkpoint after adapter recreation", async () => {
   const hosted = new MemoryAuthority({ snapshotPageSize: 1 });
   hosted.seed([
     {
@@ -1422,7 +1424,7 @@ test("interrupted mirror write does not advance the checkpoint and a retry conve
   const replica = hosted.registerReplica({ name: "Fault injection", mode: "read_only" });
   const vault = new MemoryVault();
   vault.failCreatePath = "notes/two.md";
-  const state = new MemoryMirrorStateStore();
+  const state = new IndexedDbMirrorStateStore(replica);
   const mirror = new DirectoryMirror(replica, hosted.transport(replica), {
     fileSystem: new ObsidianMirrorFileSystem(vault as never),
     stateStore: state,
@@ -1435,9 +1437,14 @@ test("interrupted mirror write does not advance the checkpoint and a retry conve
   assert.equal(recovery?.batch?.phase, "blocked");
   assert.equal(recovery?.batch?.next_action, 1);
   vault.failCreatePath = null;
-  const applied = await mirror.sync();
+  state.close();
+  const restarted = new DirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new ObsidianMirrorFileSystem(vault as never),
+    stateStore: new IndexedDbMirrorStateStore(replica),
+  });
+  const applied = await restarted.sync();
   assert.equal(applied.status, "applied", JSON.stringify(applied));
-  assert.equal((await mirror.status()).state, "up_to_date");
+  assert.equal((await restarted.status()).state, "up_to_date");
   assert.equal(vault.getMarkdownFiles().length, 2);
 });
 

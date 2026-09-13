@@ -357,6 +357,50 @@ async function fixture(options: FakeAdoptionOptions = {}) {
   return { app, vault, settings, adoption, controller, collectionId };
 }
 
+test("restart completes cleanup after enrollment is saved but adoption marker removal fails", async () => {
+  const { app, vault, settings, controller } = await fixture();
+  const remove = vault.adapter.remove;
+  vault.adapter.remove = async (path) => {
+    if (path === ".mdbase/authority-adoption.json") throw new Error("injected cleanup failure");
+    await remove(path);
+  };
+  await assert.rejects(controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian" }, callbacks), /cleanup failure/);
+  assert.ok(settings.profile);
+  assert.equal(await vault.adapter.exists(".mdbase/authority-adoption.json"), true);
+  vault.adapter.remove = remove;
+  const restarted = new ConnectSyncController(app as never, settings, { adoptionBlobStoreFactory: () => new MemoryMirrorBlobStore() });
+  await restarted.initialize();
+  assert.equal(restarted.getAdoptionMarker(), null);
+  assert.equal(await vault.adapter.exists(".mdbase/authority-adoption.json"), false);
+  restarted.assertLocalAuthorityWritable();
+});
+
+test("adoption restart does not erase a checkpoint belonging to another collection", async () => {
+  const { app, vault, settings, controller } = await fixture();
+  const remove = vault.adapter.remove;
+  vault.adapter.remove = async (path) => {
+    if (path === ".mdbase/authority-adoption.json") throw new Error("injected cleanup failure");
+    await remove(path);
+  };
+  await assert.rejects(controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian" }, callbacks));
+  assert.ok(settings.profile);
+  settings.profile = { ...settings.profile, collectionId: randomUUID() };
+  vault.adapter.remove = remove;
+  const restarted = new ConnectSyncController(app as never, settings);
+  await assert.rejects(restarted.initialize(), /both an authority-adoption checkpoint and a mirror profile/);
+  assert.equal(await vault.adapter.exists(".mdbase/authority-adoption.json"), true);
+});
+
+test("disposing during approval cancels adoption and prevents later activation", async () => {
+  const { controller, settings } = await fixture();
+  await assert.rejects(controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian" }, {
+    onVerification: () => controller.dispose(),
+  }));
+  assert.equal(settings.profile, null);
+  assert.throws(() => controller.assertLocalAuthorityWritable(), /unloaded/);
+  await assert.rejects(controller.preview(), /unloaded/);
+});
+
 const callbacks = {
   onVerification: () => undefined,
   onStatus: () => undefined,
