@@ -37,6 +37,7 @@ function getFrontMatterInfo(content) {
 class TFile {
   constructor(path) {
     this.path = normalizePath(path);
+    this.stat = { size: 0, mtime: 0, ctime: 0 };
     const segments = this.path.split("/");
     const filename = segments[segments.length - 1] || "";
     const dotIndex = filename.lastIndexOf(".");

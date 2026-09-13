@@ -40,6 +40,7 @@
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-obsidianmd": "^0.3.0",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^15.15.0",
     "obsidian": "latest",
     "postcss-selector-parser": "^7.1.5",
@@ -50,8 +51,8 @@
   },
   "dependencies": {
     "@callumalpass/mdbase-interop": "0.1.0-rc.2",
-    "@mdbase-dev/connect-protocol": "0.1.0-beta.69",
-    "@mdbase-dev/connect-sync": "0.1.0-beta.69",
+    "@mdbase-dev/connect-protocol": "0.1.0-beta.91",
+    "@mdbase-dev/connect-sync": "0.1.0-beta.91",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "picomatch": "^4.0.5"

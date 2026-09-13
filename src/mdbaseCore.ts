@@ -1365,6 +1365,7 @@ function ajvErrorToIssue(error: ErrorObject, filePath: string, typeName: string)
     details: {
       instance_path: error.instancePath,
       schema_path: error.schemaPath,
+      ...(child === undefined ? {} : { property: child }),
     },
   };
 }

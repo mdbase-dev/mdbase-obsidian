@@ -1,9 +1,10 @@
+import "fake-indexeddb/auto";
 import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { test } from "node:test";
 import { normalizePath, TFile, TFolder } from "obsidian";
-import { MemoryAuthority } from "@mdbase-dev/connect-sync";
+import { MemoryAuthority, SyncError } from "@mdbase-dev/connect-sync";
 import type { SyncTransport } from "@mdbase-dev/connect-sync";
 import type { CollectionFileDescriptor } from "@mdbase-dev/connect-protocol";
 import {
@@ -16,6 +17,7 @@ import {
 import {
   ConnectSyncController,
   DeviceMirrorLease,
+  IndexedDbMirrorStateStore,
   ObsidianMirrorFileSystem,
 } from "../src/connectSync";
 import { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
@@ -84,6 +86,7 @@ class MemoryVault {
   readonly folders = new Map<string, TFolder>();
   failTargetPath: string | null = null;
   failCreatePath: string | null = null;
+  failReadPath: string | null = null;
   corruptTargetPath: string | null = null;
   targetWrites = 0;
 
@@ -96,6 +99,15 @@ class MemoryVault {
       const entry = this.files.get(normalizePath(path));
       if (!entry) throw new Error(`missing ${path}`);
       return entry.content;
+    },
+    readBinary: async (path: string): Promise<ArrayBuffer> => {
+      const normalized = normalizePath(path);
+      if (normalized === this.failReadPath) throw new Error(`unreadable ${path}`);
+      const text = this.files.get(normalized);
+      if (text) return new TextEncoder().encode(text.content).buffer;
+      const binary = this.binaryFiles.get(normalized);
+      if (binary) return binary.content.slice(0);
+      throw new Error(`missing ${path}`);
     },
     write: async (path: string, content: string): Promise<void> => {
       const normalized = normalizePath(path);
@@ -132,7 +144,10 @@ class MemoryVault {
   }
 
   getMarkdownFiles(): TFile[] {
-    return [...this.files.values()].map((entry) => entry.file).filter((file) => file.extension === "md");
+    return [
+      ...[...this.files.values()].map((entry) => entry.file),
+      ...[...this.binaryFiles.values()].map((entry) => entry.file),
+    ].filter((file) => file.extension === "md");
   }
 
   getFiles(): TFile[] {
@@ -642,6 +657,33 @@ test("Obsidian mirror adapter rejects traversal and reserved paths", async () =>
   assert.equal(await fs.read("notes/ok.md"), null);
 });
 
+test("Obsidian mirror adapter classifies text bytes, missing files, and read failures", async () => {
+  const vault = new MemoryVault();
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  await vault.create("notes/valid.md", "---\ntitle: Café\n---\n");
+  assert.equal(await fs.readText("notes/valid.md"), "---\ntitle: Café\n---\n");
+  assert.equal(await fs.readText("notes/missing.md"), null);
+
+  const invalidBytes = Uint8Array.of(0x66, 0x80, 0x6f);
+  await vault.createBinary("notes/invalid.md", invalidBytes.buffer);
+  assert.deepEqual(await fs.readText("notes/invalid.md"), {
+    kind: "invalid",
+    code: "invalid_utf8",
+    reason: "File is not valid UTF-8.",
+    revision: `sha256:${createHash("sha256").update(invalidBytes).digest("hex")}`,
+  });
+  await assert.rejects(
+    fs.read("notes/invalid.md"),
+    (error: unknown) => error instanceof SyncError && error.code === "invalid_utf8",
+  );
+
+  vault.failReadPath = "notes/valid.md";
+  await assert.rejects(
+    fs.readText("notes/valid.md"),
+    (error: unknown) => error instanceof SyncError && error.code === "file_read_failed",
+  );
+});
+
 test("Connect enrollment keeps credentials out of plugin data and refuses local-authority vaults", async () => {
   const pairingId = "11111111-1111-4111-8111-111111111111";
   const collectionId = "22222222-2222-4222-8222-222222222222";
@@ -874,6 +916,77 @@ test("device lease rejects concurrent mirror ownership and releases after failur
     /operation failed/,
   );
   await lease.runExclusive(async () => undefined);
+});
+
+test("beta.91 fences invalid or unreadable local Markdown and every valid sibling until repair", async () => {
+  const invalidCases: Array<[string, string | Uint8Array]> = [
+    ["broken.md", "---\nbroken: [\n---\nBody"],
+    ["duplicate.md", "---\na: 1\na: 2\n---\nBody"],
+    ["scalar.md", "---\nhello\n---\nBody"],
+    ["null.md", "---\nnull\n---\nBody"],
+    ["list.md", "---\n- one\n- two\n---\nBody"],
+    ["bytes.md", Uint8Array.of(0x62, 0x61, 0x64, 0xff)],
+  ];
+  for (const [path, invalid] of invalidCases) {
+    const hosted = new MemoryAuthority();
+    const replica = hosted.registerReplica({ name: "Obsidian writer", mode: "read_write" });
+    const vault = new MemoryVault();
+    if (typeof invalid === "string") await vault.create(path, invalid);
+    else await vault.createBinary(path, Uint8Array.from(invalid).buffer);
+    await vault.create("valid.md", "# Valid sibling");
+    const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+      fileSystem: new ObsidianMirrorFileSystem(vault as never),
+      stateStore: new MemoryMirrorStateStore(),
+    });
+
+    const blocked = await mirror.inspect();
+    assert.deepEqual(blocked.actions, []);
+    assert.ok(blocked.issues.some((issue) =>
+      issue.code === "invalid_frontmatter" && issue.path === path && issue.blocking));
+    assert.deepEqual((await mirror.status()).local_issues.map((issue) => [issue.code, issue.path]), [
+      ["invalid_frontmatter", path],
+    ]);
+    let snapshot = await hosted.transport(replica).snapshot((await hosted.transport(replica).openSession()).snapshot_id);
+    assert.deepEqual(snapshot.records, []);
+
+    const invalidFile = vault.getAbstractFileByPath(path);
+    assert.ok(invalidFile instanceof TFile);
+    if (typeof invalid === "string") await vault.modify(invalidFile, "# Fixed local note");
+    else {
+      await vault.delete(invalidFile);
+      await vault.create(path, "# Fixed local note");
+    }
+    await mirror.sync();
+    snapshot = await hosted.transport(replica).snapshot((await hosted.transport(replica).openSession()).snapshot_id);
+    assert.deepEqual(snapshot.records.map((record) => record.path).sort(), [path, "valid.md"].sort());
+    await mirror.sync();
+    assert.deepEqual((await mirror.status()).local_issues, []);
+  }
+
+  const hosted = new MemoryAuthority();
+  const replica = hosted.registerReplica({ name: "Unreadable Obsidian writer", mode: "read_write" });
+  const vault = new MemoryVault();
+  await vault.create("unreadable.md", "# Cannot read this now");
+  await vault.create("valid.md", "# Also fenced");
+  vault.failReadPath = "unreadable.md";
+  const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new ObsidianMirrorFileSystem(vault as never),
+    stateStore: new MemoryMirrorStateStore(),
+  });
+  const blocked = await mirror.inspect();
+  assert.deepEqual(blocked.actions, []);
+  assert.ok(blocked.issues.some((issue) =>
+    issue.code === "file_read_failed" && issue.path === "unreadable.md" && issue.blocking));
+  assert.deepEqual((await mirror.status()).local_issues.map((issue) => [issue.code, issue.path]), [
+    ["file_read_failed", "unreadable.md"],
+  ]);
+
+  vault.failReadPath = null;
+  await mirror.sync();
+  const snapshot = await hosted.transport(replica).snapshot((await hosted.transport(replica).openSession()).snapshot_id);
+  assert.deepEqual(snapshot.records.map((record) => record.path).sort(), ["unreadable.md", "valid.md"]);
+  await mirror.sync();
+  assert.deepEqual((await mirror.status()).local_issues, []);
 });
 
 test("portable mirror materializes resources and records through Obsidian Vault APIs", async () => {
@@ -1290,7 +1403,7 @@ test("writable mirror uploads local edits and collision preflight makes no write
   assert.equal(await collisionState.read(), null);
 });
 
-test("interrupted mirror write does not advance the checkpoint and a retry converges", async () => {
+test("interrupted mirror write resumes its IndexedDB checkpoint after adapter recreation", async () => {
   const hosted = new MemoryAuthority({ snapshotPageSize: 1 });
   hosted.seed([
     {
@@ -1311,7 +1424,7 @@ test("interrupted mirror write does not advance the checkpoint and a retry conve
   const replica = hosted.registerReplica({ name: "Fault injection", mode: "read_only" });
   const vault = new MemoryVault();
   vault.failCreatePath = "notes/two.md";
-  const state = new MemoryMirrorStateStore();
+  const state = new IndexedDbMirrorStateStore(replica);
   const mirror = new DirectoryMirror(replica, hosted.transport(replica), {
     fileSystem: new ObsidianMirrorFileSystem(vault as never),
     stateStore: state,
@@ -1324,9 +1437,14 @@ test("interrupted mirror write does not advance the checkpoint and a retry conve
   assert.equal(recovery?.batch?.phase, "blocked");
   assert.equal(recovery?.batch?.next_action, 1);
   vault.failCreatePath = null;
-  const applied = await mirror.sync();
+  state.close();
+  const restarted = new DirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new ObsidianMirrorFileSystem(vault as never),
+    stateStore: new IndexedDbMirrorStateStore(replica),
+  });
+  const applied = await restarted.sync();
   assert.equal(applied.status, "applied", JSON.stringify(applied));
-  assert.equal((await mirror.status()).state, "up_to_date");
+  assert.equal((await restarted.status()).state, "up_to_date");
   assert.equal(vault.getMarkdownFiles().length, 2);
 });
 

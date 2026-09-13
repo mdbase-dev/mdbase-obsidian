@@ -1,4 +1,4 @@
-import type { MirrorProgress, MirrorStatus } from "@mdbase-dev/connect-sync/mirror";
+import type { MirrorProgress, MirrorStatus, MirrorSyncPlan } from "@mdbase-dev/connect-sync/mirror";
 
 export interface FileTransferProgress {
   direction: "upload" | "download";
@@ -35,6 +35,46 @@ export interface SyncIndicator {
 }
 
 const MAX_ACTIVITY = 30;
+
+export interface SyncReviewPresentation {
+  actionLabel: string;
+  actionDisabled: boolean;
+  message: string;
+}
+
+export function syncReviewPresentation(
+  plan: MirrorSyncPlan | null,
+  entryCount: number,
+  busy = false,
+): SyncReviewPresentation {
+  if (!plan) {
+    return {
+      actionLabel: "Review before syncing",
+      actionDisabled: true,
+      message: "Review local and hosted changes before syncing.",
+    };
+  }
+  if (plan.summary.blocking_issues > 0) {
+    return {
+      actionLabel: "Fix local files before syncing",
+      actionDisabled: true,
+      message: "Synchronization is paused. Fix every listed local file, then refresh the review.",
+    };
+  }
+  const outcomes = plan.actions.filter((action) => action.command !== "advance_checkpoint").length;
+  const hasCheckpoint = plan.actions.some((action) => action.command === "advance_checkpoint");
+  return {
+    actionLabel: outcomes
+      ? `Sync ${outcomes} ${outcomes === 1 ? "outcome" : "outcomes"}`
+      : hasCheckpoint
+        ? "Confirm sync checkpoint"
+        : "Already up to date",
+    actionDisabled: busy || plan.actions.length === 0,
+    message: entryCount
+      ? "Review each transfer below, then sync when ready."
+      : "This vault and the hosted collection are already aligned.",
+  };
+}
 
 export function formatBytes(value: number): string {
   if (value < 1024) return `${value} B`;

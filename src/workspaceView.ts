@@ -36,6 +36,7 @@ import { boundedLineDiff } from "./conflictPresentation";
 import {
   formatBytes,
   syncProblem,
+  syncReviewPresentation,
   type FileTransferProgress,
   type SyncActivityEntry,
   type SyncProblem,
@@ -1660,23 +1661,14 @@ export class MdbaseWorkspaceView extends ItemView {
     const preview = actions.createEl("button", { text: this.mirrorPreview ? "Refresh review" : "Review changes" });
     preview.disabled = this.busy;
     preview.onclick = () => void this.reviewSyncChanges();
-    const plannedOutcomeCount = this.mirrorPreview?.plan.actions
-      .filter((action) => action.command !== "advance_checkpoint").length ?? 0;
-    const hasCheckpointAction = this.mirrorPreview?.plan.actions
-      .some((action) => action.command === "advance_checkpoint") ?? false;
-    const hasBlockingIssue = (this.mirrorPreview?.plan.summary.blocking_issues ?? 0) > 0;
-    const sync = actions.createEl("button", {
-      text: this.mirrorPreview
-        ? plannedOutcomeCount
-          ? `Sync ${plannedOutcomeCount} ${plannedOutcomeCount === 1 ? "outcome" : "outcomes"}`
-          : hasCheckpointAction
-            ? "Confirm sync checkpoint"
-            : "Already up to date"
-        : "Review before syncing",
-    });
+    const syncPresentation = syncReviewPresentation(
+      this.mirrorPreview?.plan ?? null,
+      this.mirrorPreview?.entries.length ?? 0,
+      this.busy,
+    );
+    const sync = actions.createEl("button", { text: syncPresentation.actionLabel });
     sync.addClass("mod-cta");
-    sync.disabled = this.busy || !this.mirrorPreview || hasBlockingIssue
-      || this.mirrorPreview.plan.actions.length === 0;
+    sync.disabled = syncPresentation.actionDisabled;
     sync.onclick = () => void this.perform(() => this.applyReviewedSync());
 
     this.renderFilePolicyControls(document, { connected: true });
@@ -1696,9 +1688,10 @@ export class MdbaseWorkspaceView extends ItemView {
     this.mirrorStatus = await this.host.connectSync.status();
     this.syncProblem = null;
     this.host.setSyncStatus(this.mirrorStatus);
-    this.transientMessage = this.mirrorPreview.entries.length
-      ? "Review each transfer below, then sync when ready."
-      : "This vault and the hosted collection are already aligned.";
+    this.transientMessage = syncReviewPresentation(
+      this.mirrorPreview.plan,
+      this.mirrorPreview.entries.length,
+    ).message;
   }
 
   private async applyReviewedSync(): Promise<void> {
@@ -2286,7 +2279,7 @@ export class MdbaseWorkspaceView extends ItemView {
     } else if (preview.local_issues.length) {
       section.createDiv({
         cls: "mdbase-inline-message",
-        text: "Invalid local files stay untouched and unsynced; valid changes can continue.",
+        text: "Synchronization is paused until every invalid or unreadable local file listed here is fixed.",
       });
     }
   }
@@ -2460,7 +2453,7 @@ export class MdbaseWorkspaceView extends ItemView {
     const section = container.createEl("section", { cls: "mdbase-editor-section" });
     section.createEl("h3", { text: "Local files needing attention" });
     section.createEl("p", {
-      text: "These files remain untouched and unsynced. Other valid Markdown continues to synchronize.",
+      text: "Synchronization is paused to keep the mirror checkpoint exact. Fix every malformed or unreadable file below, then preview again.",
     });
     for (const issue of status.local_issues) {
       const row = section.createDiv({ cls: "mdbase-conflict-row" });

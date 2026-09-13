@@ -1,3 +1,4 @@
+import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
   App,
   addIcon,
@@ -601,6 +602,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   onunload(): void {
+    this.connectSync.dispose();
     void this.interopBridge.dispose().catch((error: unknown) => {
       console.error("mdbase: failed to dispose the interoperability bridge", error);
     });
@@ -808,9 +810,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   getQuickFixLabel(issue: MdbaseIssue): string | null {
-    if (["unknown_field", "schema_additional_properties"].includes(issue.code) && issue.field) return "Remove field";
-    if (["missing_required", "schema_required"].includes(issue.code) && issue.field) return "Add placeholder";
-    return null;
+    return quickFixLabel(issue);
   }
 
   async applyQuickFix(issue: MdbaseIssue): Promise<void> {
@@ -821,42 +821,16 @@ export default class MdbasePlugin extends Plugin {
       return;
     }
 
-    const raw = await this.app.vault.cachedRead(file);
-    const parsed = parseFrontmatter(raw);
-
-    if (parsed.error) {
-      new Notice(`Cannot apply quick fix: invalid frontmatter (${parsed.error})`);
-      return;
-    }
-
-    if (["unknown_field", "schema_additional_properties"].includes(issue.code) && issue.field) {
-      const key = getTopLevelFieldFromIssuePath(issue.field);
-      if (!(key in parsed.frontmatter)) {
-        new Notice(`Field '${key}' not found in frontmatter.`);
-        return;
-      }
-
-      delete parsed.frontmatter[key];
-      await this.app.vault.modify(file, `${formatMarkdown(parsed.frontmatter, parsed.body)}\n`);
-      new Notice(`Removed '${key}' from ${file.basename}`);
-      await this.validateFileAndStore(file, "manual");
-      return;
-    }
-
-    if (["missing_required", "schema_required"].includes(issue.code) && issue.field) {
-      const key = getTopLevelFieldFromIssuePath(issue.field);
-      if (parsed.frontmatter[key] === undefined) {
-        parsed.frontmatter[key] = "TODO";
-      }
-
-      const body = parsed.hasFrontmatter ? parsed.body : raw;
-      await this.app.vault.modify(file, `${formatMarkdown(parsed.frontmatter, body)}\n`);
-      new Notice(`Added placeholder '${key}' to ${file.basename}`);
-      await this.validateFileAndStore(file, "manual");
-      return;
-    }
-
-    new Notice("No quick fix available for this issue.");
+    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
+    let changed = false;
+    await this.app.vault.process(file, (raw) => {
+      this.connectSync.assertLocalAuthorityWritable();
+      const result = applyQuickFixToDocument(raw, issue);
+      changed = result.changed;
+      return result.content;
+    });
+    new Notice(changed ? `Updated '${issue.field ?? "field"}' in ${file.basename}` : "The field changed or no safe quick fix is available. Revalidate the note.");
+    await this.validateFileAndStore(file, "manual");
   }
 
   async openFileByPath(path: string, field?: string): Promise<void> {

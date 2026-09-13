@@ -44,14 +44,20 @@ Before every sync, the workspace presents an exact transfer ledger grouped by
 downloads, uploads, and items needing attention. If the hosted head or local
 changes move after review, the plugin stops and asks for a fresh review. Sync
 can be stopped safely after the current request without losing its durable
-checkpoint, and path collisions never overwrite local files silently.
+checkpoint, and path collisions never overwrite local files silently. Disabling
+the plugin cancels sync/enrollment/adoption and fences subsequent mirror content
+writes; an already-issued Vault write or HTTP request may still finish.
 
 Markdown always syncs. Binary files are an explicit per-device choice, grouped
 as images, audio, video, PDFs, and other files, with collection-relative folder
 exclusions. Hidden, reserved, Markdown, and non-portable file paths are never
 materialized. Downloads and uploads are digest-verified; writable uploads are
 staged in a chunked, content-addressed IndexedDB cache so an interrupted sync
-can resume safely. Binary creates, updates, moves, deletes, and conflicts appear
+can resume safely. Binary sync and adoption currently enforce a **32 MiB per-file
+limit** on desktop and mobile: Obsidian's Vault APIs require whole-file buffers,
+so chunked network transfer does not imply bounded-memory streaming. Oversized
+files fail explicitly; exclude their folder from file sync before retrying.
+Binary creates, updates, moves, deletes, and conflicts appear
 as files—not Markdown—in the preflight ledger. Local collection adoption uses
 the same policy and stages exact bytes for both warm and fenced snapshots.
 
@@ -87,6 +93,9 @@ Open **mdbase: Open workspace** and choose **Types**.
 - Drafts survive plugin reloads and Obsidian restarts; stale source revisions
   are blocked, and high-impact schema changes require an explicit review.
 - Dirty changes and validation failures are shown before save.
+- Validation quick fixes target exact nested properties, preserve sibling data,
+  and use Obsidian's atomic file processing API. Ambiguous legacy nested paths
+  are not offered automatic fixes.
 - v0.2 definitions are browsable but read-only until migration.
 
 On mobile, the type list and editor use separate navigation states with
@@ -143,6 +152,12 @@ npm test
 npm run build
 ```
 
+Stability regression tests cover interrupted adoption cleanup, unload during
+binary materialization, nested quick fixes, binary size limits, and production
+IndexedDB adapters using `fake-indexeddb` (including aborted transactions and
+mirror restart recovery). These are not a substitute for real Obsidian/mobile
+suspension, quota, and restart acceptance testing.
+
 Additional gates:
 
 ```bash
@@ -160,7 +175,7 @@ writing it and enforces checked-in schema, migration-analysis, validation, and
 issue-render budgets. Set `OBSIDIAN_TEST_VAULT` to profile another registered
 disposable vault with the exact installed bundle.
 
-The Connect protocol and sync SDKs are pinned to `0.1.0-beta.69`, and mdbase
+The Connect protocol and sync SDKs are pinned to `0.1.0-beta.91`, and mdbase
 interop is pinned to `0.1.0-rc.2`. Update `package.json`, regenerate
 `package-lock.json`, and rerun the binary round-trip and mobile gates when
 advancing them.
