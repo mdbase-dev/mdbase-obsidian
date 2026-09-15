@@ -1,4 +1,5 @@
 import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
+import { SyncError } from "@mdbase-dev/connect-sync";
 import {
   App,
   addIcon,
@@ -291,6 +292,15 @@ class MdbaseSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    if (this.plugin.connectSync.getRecoveryStatus()) {
+      new Setting(containerEl)
+        .setName("Collection recovery required")
+        .setDesc("Settings changes are blocked until collection authority has been verified.")
+        .addButton((button) => button.setButtonText("Open recovery").onClick(() => {
+          void this.plugin.openWorkspace("sync");
+        }));
+      return;
+    }
 
     new Setting(containerEl)
       .setName("Validate on save")
@@ -355,7 +365,7 @@ export interface MdbaseObsidianApiV1 {
 export default class MdbasePlugin extends Plugin {
   readonly api: MdbaseObsidianApiV1;
   readonly connectSync: ConnectSyncController;
-  settings: MdbasePluginSettings;
+  settings: MdbasePluginSettings = { ...DEFAULT_SETTINGS, typeDrafts: {}, syncActivity: [] };
   private issueMap = new Map<string, MdbaseIssue[]>();
   private sortedIssuesCache: MdbaseIssue[] | null = null;
   private statusBarEl: HTMLElement;
@@ -407,20 +417,20 @@ export default class MdbasePlugin extends Plugin {
         }
       },
     });
-    this.interopBridge = new ObsidianInteropBridge(app, () => this.settings?.interopEnabled === true);
+    this.interopBridge = new ObsidianInteropBridge(app, () => this.settings.interopEnabled === true
+      && this.connectSync.getRecoveryStatus() === null);
     this.api = {
       apiVersion: 1,
       interop: this.interopBridge,
       getInteropStatus: () => ({
-        enabled: this.settings?.interopEnabled === true,
+        enabled: this.settings.interopEnabled === true && this.connectSync.getRecoveryStatus() === null,
         profileVersion: "0.1",
       }),
     };
   }
 
   async onload(): Promise<void> {
-    await this.loadSettings();
-    await this.connectSync.initialize();
+    await this.retryInitialization();
     addIcon(MDBASE_ICON_ID, MDBASE_ICON_SVG);
 
     this.statusBarEl = this.addStatusBarItem();
@@ -595,7 +605,9 @@ export default class MdbasePlugin extends Plugin {
     if (active && this.settings.validateOnOpen) {
       void this.validateFileAndStore(active, "open");
     }
-    if (this.getMirrorProfile()) void this.refreshSyncStatus();
+    if (this.connectSync.getRecoveryStatus()) {
+      new Notice("mdbase needs recovery. Open the mdbase workspace to review the next steps.");
+    } else if (this.getMirrorProfile()) void this.refreshSyncStatus();
     this.registerInterval(window.setInterval(() => {
       if (this.getMirrorProfile() && !this.connectSync.isSyncing()) void this.refreshSyncStatus();
     }, 60_000));
@@ -611,16 +623,45 @@ export default class MdbasePlugin extends Plugin {
     this.schemaRefreshes.clear();
   }
 
+  async retryInitialization(): Promise<void> {
+    try {
+      await this.connectSync.initialize(() => this.loadSettings());
+    } catch {
+      // The controller keeps a fail-closed, redacted recovery status. Register
+      // the workspace even on failure; do not log potentially private payloads.
+    }
+    this.invalidateSchemaCache();
+    if (this.statusBarEl) this.updateStatusBar();
+    this.refreshWorkspaceViews(true);
+  }
+
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    if (!isMirrorProfile(this.settings.mirrorProfile)) {
+    let stored: unknown = {};
+    const settingsPath = normalizePath(`${this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`}/data.json`);
+    try {
+      // Obsidian loadData() can log and swallow non-ENOENT read/parse errors,
+      // returning undefined. Authority settings must distinguish loss from absence.
+      if (await this.app.vault.adapter.exists(settingsPath)) {
+        stored = JSON.parse(await this.app.vault.adapter.read(settingsPath));
+      }
+    } catch {
+      throw new SyncError("invalid_plugin_settings", "Plugin settings could not be read.");
+    }
+    if (stored === null || typeof stored !== "object" || Array.isArray(stored)) {
+      throw new SyncError("invalid_plugin_settings", "Plugin settings must be an object.");
+    }
+    const settings = Object.assign({}, DEFAULT_SETTINGS, stored);
+    if (settings.mirrorProfile != null && !isMirrorProfile(settings.mirrorProfile)) {
+      throw new SyncError("invalid_plugin_settings", "Mirror settings are invalid.");
+    }
+    this.settings = settings;
+    if (this.settings.mirrorProfile == null) {
       this.settings.mirrorProfile = null;
     } else {
       try {
         this.settings.mirrorProfile.selectiveSync = normalizeSelectiveSync(this.settings.mirrorProfile.selectiveSync);
       } catch {
-        // Fail closed for corrupted legacy data without discarding enrollment.
-        this.settings.mirrorProfile.selectiveSync = normalizeSelectiveSync();
+        throw new SyncError("invalid_plugin_settings", "File sync settings are invalid.");
       }
     }
     if (!this.settings.typeDrafts || typeof this.settings.typeDrafts !== "object" || Array.isArray(this.settings.typeDrafts)) {
@@ -630,6 +671,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
+    this.connectSync.assertReady();
     await this.saveData(this.settings);
   }
 
@@ -691,6 +733,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async refreshSyncStatus(): Promise<MirrorStatus | null> {
+    if (this.connectSync.getRecoveryStatus()) return null;
     if (!this.getMirrorProfile()) {
       this.setSyncStatus(null);
       return null;
@@ -875,6 +918,14 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private updateStatusBar(): void {
+    const recovery = this.connectSync.getRecoveryStatus();
+    if (recovery) {
+      this.statusBarEl.setText("mdbase: recovery required");
+      this.statusBarEl.setAttr("aria-label", "Plugin writes are blocked. Open mdbase recovery.");
+      this.statusBarEl.setAttr("title", recovery.summary);
+      this.statusBarEl.setAttr("data-state", "attention");
+      return;
+    }
     const issues = this.getIssues();
     const indicator = syncIndicator({
       connected: this.getMirrorProfile() !== null,
@@ -892,6 +943,10 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private async openStatusDestination(): Promise<void> {
+    if (this.connectSync.getRecoveryStatus()) {
+      await this.openWorkspace("sync");
+      return;
+    }
     const indicator = syncIndicator({
       connected: this.getMirrorProfile() !== null,
       status: this.mirrorStatus,
@@ -1136,6 +1191,10 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private async initializeCollectionCommand(): Promise<void> {
+    if (this.connectSync.getRecoveryStatus()) {
+      await this.openWorkspace("sync");
+      return;
+    }
     this.connectSync.assertLocalAuthorityWritable();
     if (this.getMirrorProfile()) {
       new Notice("This vault is configured as a mirror. Sync it instead of initializing a local collection.");
@@ -1225,6 +1284,10 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private async createNoteFromTypeCommand(): Promise<void> {
+    if (this.connectSync.getRecoveryStatus()) {
+      await this.openWorkspace("sync");
+      return;
+    }
     this.connectSync.assertLocalAuthorityWritable();
     const loaded = await this.requireConfigAndTypes();
     if (!loaded) return;

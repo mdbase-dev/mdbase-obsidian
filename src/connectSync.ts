@@ -11,6 +11,7 @@ import {
   Vault,
 } from "obsidian";
 import picomatch from "picomatch";
+import { checkingRecovery, initializationProblem, type RecoveryStatus } from "./recovery";
 import type {
   AuthorityImportSnapshot,
   CollectionFileDescriptor,
@@ -1289,7 +1290,20 @@ export interface ConnectSyncControllerOptions {
 }
 
 export class ConnectSyncController {
+  private recovery: RecoveryStatus | null = checkingRecovery();
+  private initializationRequest: Promise<void> | null = null;
   private disposed = false;
+
+  getRecoveryStatus(): RecoveryStatus | null {
+    return this.recovery ? { ...this.recovery } : null;
+  }
+
+  assertReady(): void {
+    this.assertActive();
+    if (this.recovery) {
+      throw new SyncError("initialization_required", "Open the mdbase recovery workspace before making changes or synchronizing.");
+    }
+  }
   private readonly lifetime = new AbortController();
   private readonly stateStores = new Map<string, IndexedDbMirrorStateStore>();
   private readonly blobStores = new Map<string, IndexedDbMirrorBlobStore>();
@@ -1305,7 +1319,7 @@ export class ConnectSyncController {
   }
 
   private async withLifetime<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    this.assertActive();
+    this.assertReady();
     const controller = new AbortController();
     const abort = () => controller.abort();
     this.lifetime.signal.addEventListener("abort", abort, { once: true });
@@ -1341,7 +1355,7 @@ export class ConnectSyncController {
     this.fileSystem = options.fileSystem ?? new ObsidianMirrorFileSystem(
       app.vault,
       (file) => app.fileManager.trashFile(file),
-      () => this.assertActive(),
+      () => this.assertReady(),
     );
     this.enrollmentClient = options.enrollmentClient ?? new MirrorEnrollmentClient({
       request: createObsidianEnrollmentRequester(),
@@ -1351,7 +1365,30 @@ export class ConnectSyncController {
     });
   }
 
-  async initialize(): Promise<void> {
+  initialize(prepare?: () => Promise<void>): Promise<void> {
+    if (this.initializationRequest) return this.initializationRequest;
+    if (!this.recovery) return Promise.resolve();
+    this.recovery = checkingRecovery();
+    this.initializationRequest = Promise.resolve().then(async () => {
+      try {
+        this.assertActive();
+        await prepare?.();
+        this.assertActive();
+        await this.initializeCollectionState();
+        this.assertActive();
+        this.recovery = null;
+      } catch (error) {
+        this.recovery = initializationProblem(error);
+        throw error;
+      } finally {
+        this.initializationRequest = null;
+      }
+    });
+    return this.initializationRequest;
+  }
+
+  private async initializeCollectionState(): Promise<void> {
+    this.adoptionMarker = null;
     this.adoptionMarker = await this.readAdoptionMarker();
     const profile = this.settingsHost.getMirrorProfile();
     if (this.adoptionMarker && profile) {
@@ -1366,6 +1403,7 @@ export class ConnectSyncController {
         "This vault contains both an authority-adoption checkpoint and a mirror profile.",
       );
     }
+    if (profile) await this.assertMirror(profile.collectionId);
   }
 
   getProgress(): MirrorProgress | null {
@@ -1392,7 +1430,7 @@ export class ConnectSyncController {
   }
 
   assertLocalAuthorityWritable(): void {
-    this.assertActive();
+    this.assertReady();
     if (this.adoptionMarker && ["fenced", "activating", "adopted"].includes(this.adoptionMarker.phase)) {
       throw new SyncError(
         "local_authority_fenced",
@@ -1443,6 +1481,7 @@ export class ConnectSyncController {
       verification: AuthorityAdoptionVerification | MirrorEnrollmentVerification,
     ): void | Promise<void>;
   } = {}): Promise<MirrorProfile> {
+    this.assertReady();
     const marker = this.adoptionMarker ?? await this.readAdoptionMarker();
     if (!marker) {
       throw new SyncError("authority_adoption_not_found", "This vault has no collection-adoption checkpoint.");
@@ -1702,6 +1741,7 @@ export class ConnectSyncController {
   }
 
   async preserveConflictCopy(pathInput: string): Promise<string> {
+    this.assertReady();
     const path = safeMirrorPath(this.app.vault, pathInput);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (!(existing instanceof TFile)) throw new SyncError("mirror_conflict_copy_missing", `No local file exists at ${path}.`);
@@ -1798,12 +1838,13 @@ export class ConnectSyncController {
   }
 
   private async withMirrorOperation<T>(operation: () => Promise<T>): Promise<T> {
+    this.assertReady();
     const predecessor = this.mirrorOperationTail;
     let release!: () => void;
     this.mirrorOperationTail = new Promise<void>((resolve) => { release = resolve; });
     await predecessor;
     try {
-      this.assertActive();
+      this.assertReady();
       return await operation();
     } finally {
       release();
@@ -2175,7 +2216,7 @@ export class ConnectSyncController {
   }
 
   private requireProfile(): MirrorProfile {
-    this.assertActive();
+    this.assertReady();
     const profile = this.settingsHost.getMirrorProfile();
     if (!profile) throw new SyncError("mirror_not_configured", "This vault is not connected to a collection authority.");
     return profile;
@@ -2198,7 +2239,7 @@ export class ConnectSyncController {
   }
 
   private async persistEnrollment(enrollment: MirrorEnrollment, selectiveSync?: SelectiveSyncPolicy): Promise<void> {
-    this.assertActive();
+    this.assertReady();
     this.app.secretStorage.setSecret(this.accessSecretId(enrollment.collectionId), enrollment.accessToken);
     this.app.secretStorage.setSecret(this.refreshSecretId(enrollment.collectionId), enrollment.refreshCredential);
     await this.settingsHost.saveMirrorProfile(profileFromEnrollment(

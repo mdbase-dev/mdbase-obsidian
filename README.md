@@ -79,6 +79,18 @@ Useful Obsidian commands include **mdbase: Review sync changes**, **mdbase: Sync
 now**, **mdbase: Cancel current sync**, **mdbase: Open sync activity**,
 **mdbase: Resolve sync conflicts**, and **mdbase: Reconnect collection**.
 
+## Initialization recovery
+
+Unreadable settings or invalid authority checkpoints no longer prevent the plugin
+workspace from loading. A **Collection recovery** screen explains what failed,
+keeps plugin writes/settings/sync blocked, offers a redacted diagnostic summary,
+and lets you retry after repairing the underlying state. It never offers a
+shortcut that deletes authority checkpoints or overwrites settings with defaults.
+Other plugins and normal Obsidian editing are not locked.
+
+See [recovery and acceptance gates](docs/recovery-and-lab-acceptance.md) for the
+implemented boundaries, opt-in live CLI test, and remaining hosted LAB scenarios.
+
 ## Type workbench
 
 Open **mdbase: Open workspace** and choose **Types**.

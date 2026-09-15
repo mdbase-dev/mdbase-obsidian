@@ -72,6 +72,8 @@ import {
   validateTypeDraft,
 } from "./typeDraft";
 
+import { recoveryDiagnostic, type RecoveryStatus } from "./recovery";
+
 export const MDBASE_WORKSPACE_VIEW = "mdbase-workspace-view";
 
 export interface MdbaseWorkspaceSchema {
@@ -82,6 +84,7 @@ export interface MdbaseWorkspaceSchema {
 
 export interface MdbaseWorkspaceHost {
   readonly connectSync: ConnectSyncController;
+  retryInitialization(): Promise<void>;
   getMirrorProfile(): MirrorProfile | null;
   loadWorkspaceSchema(forceReload?: boolean): Promise<MdbaseWorkspaceSchema | null>;
   loadTypeModel(path: string): Promise<TypeEditorModel>;
@@ -385,6 +388,10 @@ export class MdbaseWorkspaceView extends ItemView {
   async refresh(forceReload = false): Promise<void> {
     const version = ++this.refreshVersion;
     try {
+      if (this.host.connectSync.getRecoveryStatus()) {
+        this.render();
+        return;
+      }
       const schema = await this.host.loadWorkspaceSchema(forceReload);
       if (version !== this.refreshVersion) return;
       this.schema = schema;
@@ -417,11 +424,19 @@ export class MdbaseWorkspaceView extends ItemView {
   }
 
   createNewType(): void {
+    if (this.host.connectSync.getRecoveryStatus()) {
+      this.render();
+      return;
+    }
     this.destination = "types";
     this.createType();
   }
 
   async editType(path: string): Promise<void> {
+    if (this.host.connectSync.getRecoveryStatus()) {
+      this.render();
+      return;
+    }
     this.destination = "types";
     await this.selectType(path);
   }
@@ -485,6 +500,13 @@ export class MdbaseWorkspaceView extends ItemView {
     root.addClass("mdbase-workspace");
     const shell = root.createDiv({ cls: "mdbase-shell" });
     this.renderTopbar(shell);
+    const recovery = this.host.connectSync.getRecoveryStatus();
+    if (recovery) {
+      const content = shell.createDiv({ cls: "mdbase-workspace-content" });
+      this.renderRecovery(content, recovery);
+      this.restoreRenderSnapshot(root, snapshot);
+      return;
+    }
     if (this.transientMessage) {
       const message = shell.createDiv({ cls: "mdbase-inline-message", text: this.transientMessage });
       message.setAttr("role", "status");
@@ -495,6 +517,34 @@ export class MdbaseWorkspaceView extends ItemView {
     else if (this.destination === "sync") this.renderSync(content);
     else this.renderIssues(content);
     this.restoreRenderSnapshot(root, snapshot);
+  }
+
+  private renderRecovery(container: HTMLElement, recovery: RecoveryStatus): void {
+    const section = container.createEl("section", { cls: "mdbase-sync-document mdbase-recovery" });
+    section.setAttr("aria-label", "Collection recovery");
+    section.createEl("h2", { text: "Collection recovery" });
+    section.createEl("p", { text: recovery.summary }).setAttr("role", "status");
+    section.createEl("h3", { text: "What is safe right now?" });
+    section.createEl("p", {
+      text: "Collection authority could not be verified. mdbase plugin writes, settings changes, and synchronization are blocked. Back up the vault before repairing metadata. Other Obsidian plugins and ordinary editing are not locked; avoid editing collection metadata until recovery is complete.",
+    });
+    section.createEl("h3", { text: "Next step" });
+    section.createEl("p", { text: recovery.nextAction });
+    const retry = section.createEl("button", { text: "Retry initialization", cls: "mod-cta" });
+    retry.disabled = this.busy || recovery.state === "checking";
+    retry.onclick = () => void this.perform(async () => {
+      await this.host.retryInitialization();
+      if (!this.host.connectSync.getRecoveryStatus()) await this.refresh(true);
+    });
+    section.createEl("h3", { text: "Safe diagnostic summary" });
+    section.createEl("p", { text: "Contains only recovery status and a known error code. No credentials, collection identifiers, file contents, or raw errors are included." });
+    const diagnostic = recoveryDiagnostic(recovery);
+    section.createEl("pre", { text: diagnostic });
+    const copy = section.createEl("button", { text: "Copy diagnostic summary" });
+    copy.onclick = () => void this.perform(async () => {
+      await navigator.clipboard.writeText(diagnostic);
+      new Notice("Recovery diagnostic summary copied.");
+    });
   }
 
   private captureRenderSnapshot(root: HTMLElement): RenderSnapshot {
@@ -2769,7 +2819,7 @@ export class MdbaseWorkspaceView extends ItemView {
   }
 
   private async refreshMirrorStatus(): Promise<void> {
-    if (this.host.connectSync.isSyncing()) return;
+    if (this.host.connectSync.getRecoveryStatus() || this.host.connectSync.isSyncing()) return;
     try {
       this.mirrorStatus = await this.host.connectSync.status();
       this.syncProblem = null;
