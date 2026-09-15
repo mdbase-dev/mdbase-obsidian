@@ -55,6 +55,21 @@ class TFolder {
 }
 
 class Vault {}
+class Plugin {
+  constructor(app, manifest) { this.app = app; this.manifest = manifest; }
+}
+class PluginSettingTab {
+  constructor(app, plugin) { this.app = app; this.plugin = plugin; }
+}
+class Modal {}
+class SuggestModal extends Modal {}
+class ItemView {}
+class MarkdownView {}
+class Notice {}
+class Setting {}
+const Platform = { isMobile: false };
+function addIcon() {}
+function setIcon() {}
 
 async function requestUrl() {
   throw new Error("requestUrl is not configured in this unit test.");
@@ -68,5 +83,16 @@ module.exports = {
   TFile,
   TFolder,
   Vault,
+  Plugin,
+  PluginSettingTab,
+  Modal,
+  SuggestModal,
+  ItemView,
+  MarkdownView,
+  Notice,
+  Setting,
+  Platform,
+  addIcon,
+  setIcon,
   requestUrl,
 };

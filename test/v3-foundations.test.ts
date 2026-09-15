@@ -738,6 +738,7 @@ test("Connect enrollment keeps credentials out of plugin data and refuses local-
       storedProfile = profile;
     },
   }, { enrollmentClient: client });
+  await controller.initialize();
   let verification = "";
   const profile = await controller.enroll({
     controlUrl: "https://connect.example",
@@ -779,6 +780,7 @@ test("Connect enrollment keeps credentials out of plugin data and refuses local-
     getMirrorProfile: () => null,
     saveMirrorProfile: async () => undefined,
   }, { enrollmentClient: client });
+  await localController.initialize();
   const beforeRefusal = requests;
   await assert.rejects(
     localController.enroll({
@@ -818,6 +820,7 @@ test("Connect enrollment keeps credentials out of plugin data and refuses local-
       transferredProfile = profile;
     },
   }, { enrollmentClient: client });
+  await transferredController.initialize();
   const transferred = await transferredController.enroll({
     controlUrl: "https://connect.example",
     mirrorName: "Obsidian mobile",
@@ -840,6 +843,7 @@ test("Connect enrollment keeps credentials out of plugin data and refuses local-
     getMirrorProfile: () => null,
     saveMirrorProfile: async () => undefined,
   }, { enrollmentClient: client });
+  await existingController.initialize();
   const beforeExistingRefusal = requests;
   await assert.rejects(
     existingController.enroll({
@@ -885,6 +889,7 @@ test("failed enrollment persistence removes its temporary mirror-role marker", a
       throw new Error("injected settings failure");
     },
   }, { enrollmentClient: enrollmentClient as never });
+  await controller.initialize();
   await assert.rejects(
     controller.enroll({
       controlUrl: "https://connect.example",
@@ -1226,6 +1231,7 @@ test("Connect controller previews the exact first transfer and later local edits
     transportFactory: () => hosted.transport(replicaId),
   });
 
+  await controller.initialize();
   const [concurrentStatus, duplicateStatus, concurrentPreview] = await Promise.all([
     controller.status(),
     controller.status(),
@@ -1298,6 +1304,7 @@ test("disconnect removes only checkpoint-exact files and preserves local changes
     fileSystem: new ObsidianMirrorFileSystem(vault as never),
     transportFactory: () => hosted.transport(replicaId),
   });
+  await controller.initialize();
   const initial = await controller.preview();
   await controller.sync(initial);
   failProfileSave = true;
@@ -1345,6 +1352,11 @@ test("conflict copy uses a collision-safe sibling without changing the original"
     saveMirrorProfile: async () => undefined,
   }, { fileSystem: new ObsidianMirrorFileSystem(vault as never) });
 
+  // Copying is local, but controller initialization still verifies mirror authority.
+  await vault.createFolder(".mdbase");
+  profile.collectionId = "22222222-2222-4222-8222-222222222222";
+  await vault.create(".mdbase/connect-role.json", JSON.stringify({ version: 1, role: "mirror", collection_id: profile.collectionId }));
+  await controller.initialize();
   const copied = await controller.preserveConflictCopy("notes/conflict.md");
 
   assert.equal(copied, "notes/conflict (local conflict copy 2).md");

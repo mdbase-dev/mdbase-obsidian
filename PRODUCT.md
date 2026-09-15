@@ -42,6 +42,8 @@ The local vault remains useful while offline. Synchronization is explicit, obser
 - Preview and run mirror synchronization.
 - Show progress, last successful checkpoint, failures, and conflicts in plain language.
 - Refuse unsafe role changes or resource overwrites.
+- Keep the workspace available when initialization fails, with plugin writes
+  blocked, bounded diagnostics, and an explicit retry after verified repair.
 
 ## Product principles
 

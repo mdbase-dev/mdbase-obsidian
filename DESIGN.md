@@ -63,6 +63,18 @@ Progress is expressed with concise text and a standard progress indicator. Confl
 
 Enrollment is an inline setup flow in the Sync destination. Enrollment codes and credentials are treated as secrets and disappear from the surface after use.
 
+## Initialization recovery
+
+A failed startup replaces the normal workspace content with a flat recovery
+document. Explain the failure, state that authority is unverified and plugin
+writes are blocked, and give the next safe action. Keep the status bar and open
+workspace command usable; do not make users open developer tools to discover why
+the plugin failed.
+
+Offer **Retry initialization** and a copyable redacted diagnostic summary. Do not
+show raw settings, credentials, collection identities, or checkpoint contents.
+Do not offer a destructive reset as a way to bypass unknown authority state.
+
 ## Migration
 
 For v0.2 collections, Types remains browsable but editing controls are disabled with a clear explanation. A migration review shows:

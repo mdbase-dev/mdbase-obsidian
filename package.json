@@ -18,8 +18,9 @@
     "build:test": "npm run build && node copy-files.mjs",
     "build:test:staging": "npm run build:staging && node copy-files.mjs",
     "profile:testvault": "node scripts/profile-testvault.mjs",
+    "test:obsidian-recovery": "npm run build && node scripts/test-obsidian-recovery.mjs",
     "test": "npm run test:unit",
-    "test:unit": "tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test .test-dist/test/**/*.test.js",
+    "test:unit": "tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test --test-concurrency=1 .test-dist/test/**/*.test.js",
     "copy-files": "node copy-files.mjs",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
