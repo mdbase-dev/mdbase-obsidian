@@ -46,6 +46,8 @@ const documents = [
   "---\n- one\n- two\n---\nBody",
   "\uFEFF---\r\nbroken: [\r\n---\r\nExact — bytes\r\n",
   "---\nbroken: [\n---",
+  "\uFEFF---\r\ntitle: Present\r\n---\r\nExact structured bytes",
+  "\uFEFF# Body-only bytes\r\n",
   "# Valid sibling\n",
 ];
 const hosted = new MemoryAuthority();

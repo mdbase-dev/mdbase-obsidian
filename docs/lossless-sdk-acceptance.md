@@ -7,7 +7,7 @@ The tracked dependency pins remain `connect-sync` / `connect-protocol`
 This branch prepares consumer messaging and fixes BOM preservation; it does not
 pretend that an unpublished SDK fix is already shipped in the plugin.
 
-Connect commit `478353d28bb0` makes readable malformed YAML a nonblocking
+Connect commit `87e28391233c` makes readable malformed YAML a nonblocking
 structural diagnostic by default. No option, protocol change, or public
 TypeScript shape change is required. Its immutable candidate artifacts were
 produced with Connect's guarded `package:consumer` script, not published to npm.
@@ -35,16 +35,16 @@ Node 24.19.0:
 | Installed SDK | Unit tests | Build / mobile |
 | --- | --- | --- |
 | Released beta.91 | 96 passed | 687,949 raw / 195,842 gzip bytes |
-| Candidate from `478353d28bb0` | 96 passed | 689,210 raw / 196,238 gzip bytes |
+| Candidate from `87e28391233c` | 96 passed | 689,242 raw / 196,214 gzip bytes |
 
 Both build sizes satisfy the unchanged mobile budgets. Lint passes with the
 released dependencies. No consumer TypeScript adjustment was needed for the
 candidate. Both package manifests and the lockfile keep their released pins.
 
-`npm run test:sdk-candidate` additionally passes eight exact round trips through
+`npm run test:sdk-candidate` additionally passes ten exact round trips through
 the real `ObsidianMirrorFileSystem` and portable sync engine, including malformed
 YAML, duplicate keys, scalar/null/list frontmatter, BOM/CRLF, missing final
-newline, and a valid sibling. It checks that the preview enables the transfers
+newline, BOM-prefixed valid mappings and body-only notes, and a valid sibling. It checks that the preview enables the transfers
 and the receive-only mirror settles without attempting repeated repairs.
 
 The released beta.91 control run fails this stricter command at the expected
