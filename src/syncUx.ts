@@ -58,11 +58,12 @@ export function syncReviewPresentation(
     return {
       actionLabel: "Fix local files before syncing",
       actionDisabled: true,
-      message: "Synchronization is paused. Fix every listed local file, then refresh the review.",
+      message: "Synchronization is paused. Resolve the blocking issues, then refresh the review.",
     };
   }
   const outcomes = plan.actions.filter((action) => action.command !== "advance_checkpoint").length;
   const hasCheckpoint = plan.actions.some((action) => action.command === "advance_checkpoint");
+  const frontmatterWarning = plan.issues.some((issue) => issue.code === "invalid_frontmatter" && !issue.blocking);
   return {
     actionLabel: outcomes
       ? `Sync ${outcomes} ${outcomes === 1 ? "outcome" : "outcomes"}`
@@ -70,9 +71,11 @@ export function syncReviewPresentation(
         ? "Confirm sync checkpoint"
         : "Already up to date",
     actionDisabled: busy || plan.actions.length === 0,
-    message: entryCount
-      ? "Review each transfer below, then sync when ready."
-      : "This vault and the hosted collection are already aligned.",
+    message: frontmatterWarning
+      ? "Frontmatter warnings do not block this sync. Document bytes are preserved; synchronization does not repair YAML."
+      : entryCount
+        ? "Review each transfer below, then sync when ready."
+        : "This vault and the hosted collection are already aligned.",
   };
 }
 

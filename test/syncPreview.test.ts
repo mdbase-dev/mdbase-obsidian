@@ -76,6 +76,16 @@ test("sync preview is a direct projection of the engine-owned plan", () => {
   assert.equal(preview.upload_files, 1);
 });
 
+test("nonblocking diagnostics are optional review, not mandatory repair", () => {
+  const preview = previewFromPlan(plan({
+    issues: [{ code: "invalid_frontmatter", path: "opaque.md", message: "Invalid YAML", blocking: false }],
+  }));
+  assert.equal(preview.entries[0]?.action, "review");
+  assert.equal(preview.local_issues[0]?.path, "opaque.md");
+  assert.equal(preview.plan.summary.blocking_issues, 0);
+  assert.deepEqual(preview.plan.actions, []);
+});
+
 test("an exact idle plan remains an explicit zero-action preview", () => {
   const preview = previewFromPlan(plan({
     base_cursor: 6,

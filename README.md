@@ -178,7 +178,9 @@ disposable vault with the exact installed bundle.
 The Connect protocol and sync SDKs are pinned to `0.1.0-beta.91`, and mdbase
 interop is pinned to `0.1.0-rc.2`. Update `package.json`, regenerate
 `package-lock.json`, and rerun the binary round-trip and mobile gates when
-advancing them.
+advancing them. The pending lossless malformed-frontmatter upgrade is documented
+in [SDK consumer qualification](docs/lossless-sdk-acceptance.md); its strict
+candidate check is separate from the released beta.91 test suite.
 
 ## Compatibility
 

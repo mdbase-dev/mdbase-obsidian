@@ -2279,7 +2279,9 @@ export class MdbaseWorkspaceView extends ItemView {
     } else if (preview.local_issues.length) {
       section.createDiv({
         cls: "mdbase-inline-message",
-        text: "Synchronization is paused until every invalid or unreadable local file listed here is fixed.",
+        text: preview.plan.summary.blocking_issues > 0
+          ? "Synchronization is paused. Resolve the blocking issues, then refresh the review."
+          : "These diagnostics do not block synchronization. Document bytes are preserved unchanged.",
       });
     }
   }
@@ -2453,7 +2455,7 @@ export class MdbaseWorkspaceView extends ItemView {
     const section = container.createEl("section", { cls: "mdbase-editor-section" });
     section.createEl("h3", { text: "Local files needing attention" });
     section.createEl("p", {
-      text: "Synchronization is paused to keep the mirror checkpoint exact. Fix every malformed or unreadable file below, then preview again.",
+      text: "Review these file diagnostics. The sync preview identifies which issues block synchronization; a diagnostic alone does not mean syncing is paused.",
     });
     for (const issue of status.local_issues) {
       const row = section.createDiv({ cls: "mdbase-conflict-row" });
