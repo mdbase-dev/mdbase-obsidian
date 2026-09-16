@@ -40,6 +40,7 @@ The local vault remains useful while offline. Synchronization is explicit, obser
 - Enroll using a Connect enrollment code.
 - Store credentials in Obsidian SecretStorage, not plugin data or collection files.
 - Preview and run mirror synchronization.
+- Keep record validation separate from exact-document replication; never silently repair records during sync.
 - Show progress, last successful checkpoint, failures, and conflicts in plain language.
 - Refuse unsafe role changes or resource overwrites.
 

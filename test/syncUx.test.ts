@@ -60,8 +60,33 @@ test("blocking sync reviews use fix-first wording and disable apply", () => {
 
   assert.equal(presentation.actionLabel, "Fix local files before syncing");
   assert.equal(presentation.actionDisabled, true);
-  assert.match(presentation.message, /paused.*fix every listed local file/i);
+  assert.match(presentation.message, /paused.*resolve the blocking issues/i);
   assert.doesNotMatch(`${presentation.actionLabel} ${presentation.message}`, /up to date|sync when ready/i);
+});
+
+test("nonblocking frontmatter diagnostics leave exact transfers enabled", () => {
+  const reviewed = plan({
+    actions: [{
+      command: "put_remote", action_id: "upload", depends_on: [],
+      target: { entity: "record", identity: "r", path: "opaque.md", revision: "r1", payload_revision: "r1" },
+      payload_revision: "r1", expected_remote: { state: "absent" }, expected_local: { state: "absent" },
+      idempotency_key: "upload", reason: "local_change",
+    }],
+    issues: [{ code: "invalid_frontmatter", path: "opaque.md", message: "Invalid YAML", blocking: false }],
+    summary: { uploads: 1, downloads: 0, conflicts: 0, blocking_issues: 0 },
+  });
+  const presentation = syncReviewPresentation(reviewed, 2);
+  assert.equal(presentation.actionDisabled, false);
+  assert.equal(presentation.actionLabel, "Sync 1 outcome");
+  assert.match(presentation.message, /warnings do not block.*bytes are preserved/i);
+  assert.equal(syncReviewPresentation(reviewed, 2, true).actionDisabled, true);
+  const blocked = syncReviewPresentation({ ...reviewed, actions: [], issues: [
+    ...reviewed.issues,
+    { code: "file_read_failed", path: "unreadable.md", message: "Unreadable", blocking: true },
+  ], summary: { uploads: 0, downloads: 0, conflicts: 0, blocking_issues: 1 } }, 2);
+  assert.equal(blocked.actionDisabled, true);
+  assert.match(blocked.message, /blocking issues/);
+  assert.doesNotMatch(blocked.message, /fix every|do not block/i);
 });
 
 test("sync indicator gives transfer, attention, waiting, and synced states stable priority", () => {

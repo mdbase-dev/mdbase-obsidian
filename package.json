@@ -19,6 +19,7 @@
     "build:test:staging": "npm run build:staging && node copy-files.mjs",
     "profile:testvault": "node scripts/profile-testvault.mjs",
     "test": "npm run test:unit",
+    "test:sdk-candidate": "tsc -p tsconfig.test.json && node --loader ./test/obsidian-loader.mjs scripts/test-lossless-sync.mjs",
     "test:unit": "tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test .test-dist/test/**/*.test.js",
     "copy-files": "node copy-files.mjs",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
