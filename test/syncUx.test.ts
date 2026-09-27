@@ -58,9 +58,9 @@ test("blocking sync reviews use fix-first wording and disable apply", () => {
     summary: { uploads: 0, downloads: 0, conflicts: 0, blocking_issues: 1 },
   }), 1);
 
-  assert.equal(presentation.actionLabel, "Fix local files before syncing");
+  assert.equal(presentation.actionLabel, "Resolve issues");
   assert.equal(presentation.actionDisabled, true);
-  assert.match(presentation.message, /paused.*fix every listed local file/i);
+  assert.match(presentation.message, /resolve the listed issues.*refresh/i);
   assert.doesNotMatch(`${presentation.actionLabel} ${presentation.message}`, /up to date|sync when ready/i);
 });
 

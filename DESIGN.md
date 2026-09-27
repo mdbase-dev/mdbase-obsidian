@@ -2,7 +2,7 @@
 
 ## Character
 
-The plugin should feel like a careful standards notebook inside Obsidian: calm, direct, and dependable. It borrows mdbase's paper-and-blue-black identity where that reinforces meaning, while allowing the active Obsidian theme to determine typography, density, light/dark mode, and most colors.
+The plugin should feel like an Obsidian core plugin: quiet lists, compact controls, native typography, and the user's theme. Do not add an application-style brand header, dashboard, diagram, or onboarding stepper inside the workspace tab.
 
 ## Surface model
 
@@ -20,6 +20,16 @@ On wide screens, Types uses a list-and-document split:
 - A flexible editor document with a restrained header, Design/YAML switch, and review/save actions.
 
 On mobile, the list and editor become separate navigation states. Controls remain at least 44px high where practical, and primary actions stay reachable without horizontal scrolling.
+
+## Information and copy
+
+- Types opens with name, description, and fields. Matching, options, application contracts, and detailed change review expand in place.
+- Sync opens with connection status and one primary action. Settings and history are secondary disclosures. Keep transfer paths, directions, destructive actions, conflicts, and blocking errors visible when relevant.
+- Issues has one count and one validation action. Do not show empty filters, repeated summaries, or a second empty-state panel.
+- Prefer labels to explanations. Remove sentences that merely describe the adjacent control or promise implementation details such as checkpoint precision.
+- Keep concise, explicit warnings at upload, authority-transfer, schema-change, and deletion boundaries. Fewer words must not mean less informed consent.
+- Use one Save/Discard location. Avoid duplicate actions, status badges, and explanatory banners. Notices are dismissible.
+- Preserve disclosure state and keyboard focus across renders. Icon actions need accessible names and tooltips; nothing essential is hover-only.
 
 ## Visual language
 

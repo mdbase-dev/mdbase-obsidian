@@ -1,0 +1,163 @@
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
+index a9018ff..ead29e5 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
++++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
+@@ -126,6 +126,9 @@ export class DirectoryMirror {
+             })
+         }).execute(state, signal);
+         if (result.status !== "effects_complete") {
++            // The rejected action made no effect; earlier effects have receipts.
++            // Allow the next explicit review to observe the competing edit.
++            if (result.status === "stale") await abandonStaleBatch(state, this.journalStore());
+             const checkpoint = checkpointMirrorStatus(state, this.mode);
+             return mirrorApplyResult(result.status === "blocked" ? "failed" : result.status, batch.plan, checkpoint, result.completed, result.failure);
+         }
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
+index ee463f1..0efcc89 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
++++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
+@@ -28,12 +28,10 @@ export class MirrorMaterializer {
+             assertRecordPhysicalPathAvailable(record.path, record.record_id, Object.keys(state.resources ?? {}), Object.entries(state.records), Object.entries(state.files ?? {}));
+         }
+         const document = materialized?.document ?? recordMarkdownDocument(record);
+-        const existing = inspectionPreflighted === 1
+-            ? null
+-            : await this.fileSystem.read(record.path);
++        const existing = await this.fileSystem.read(record.path);
+         const prior = managedState?.records[record.record_id];
+         const existingHash = existing === null ? null : this.runtime.digest(existing);
+-        if (existingHash !== null && existing !== document) {
++        if (inspectionPreflighted !== 1 && existingHash !== null && existing !== document) {
+             const destinationBelongsToRecord = prior !== undefined
+                 && prior.path === record.path
+                 && existingHash === prior.hash;
+@@ -49,7 +47,7 @@ export class MirrorMaterializer {
+         const acceptedLocalHash = acceptedHash === authoritativeHash
+             && existingHash === authoritativeHash;
+         if (!acceptedLocalHash) {
+-            await this.fileSystem.write(record.path, document);
++            await this.fileSystem.write(record.path, document, existing);
+         }
+         state.records[record.record_id] = {
+             path: record.path,
+@@ -143,7 +141,7 @@ export class MirrorMaterializer {
+             && (!prior || this.runtime.digest(existing) !== prior.hash)) {
+             throw new MirrorDivergenceError(`resource:${resource.path}`, resource.path);
+         }
+-        await this.fileSystem.write(resource.path, resource.document);
++        await this.fileSystem.write(resource.path, resource.document, existing);
+         state.resources ??= {};
+         state.resources[resource.path] = {
+             path: resource.path,
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
+index 80375d5..87f9e58 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
++++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
+@@ -131,7 +131,10 @@ export interface MirrorFileSystem {
+     read(path: string): Promise<string | null>;
+     /** Classified byte-aware read; expected I/O failures reject as `SyncError("file_read_failed")`. */
+     readText(path: string): Promise<MirrorTextReadResult>;
+-    write(path: string, value: string): Promise<void>;
++    /** If provided, reject changed contents at the atomic write boundary. Null means absent. */
++    write(path: string, value: string, expected?: string | null): Promise<void>;
++    /** Physical entry kind, including directories not returned by file enumeration. */
++    pathKind?(path: string): Promise<"file" | "folder" | null>;
+     /** Atomically rename one managed path without changing its bytes. */
+     move(source: string, target: string): Promise<void>;
+     remove(path: string): Promise<void>;
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
+index 599bcb8..8e01d10 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
++++ b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
+@@ -1,7 +1,7 @@
+ import { asError, errorCode, invalidMirrorState, SyncError } from "./sync-error.js";
+ import { MirrorMaterializer } from "./mirror-materializer.js";
+ import { recordMarkdownDocument, runtimeDocumentRevision } from "./mirror-format.js";
+-import { validateCollectionFileDescriptor } from "./mirror-files.js";
++import { ensureFileBlob, validateCollectionFileDescriptor } from "./mirror-files.js";
+ import { matchesLocalRef, stale } from "./sync-revalidator.js";
+ import { beginApplying, markBatchInterrupted, markEffectsComplete, recordActionReceipt, requireBatch } from "./sync-journal.js";
+ import { syncFingerprint } from "./sync-plan-codec.js";
+@@ -51,10 +51,13 @@ export class PlanOnlySyncExecutor {
+                 this.ports.onProgress?.(batch.next_action, batch.plan.actions.length - 1);
+             }
+             catch (error) {
+-                const failure = failureFrom(error, action.action_id);
+-                await markBatchInterrupted(state, "blocked", failure, this.ports.store);
++                const cancelled = signal?.aborted === true;
++                const failure = cancelled
++                    ? { code: "sync_cancelled", message: "Sync paused during transfer.", action_id: action.action_id }
++                    : failureFrom(error, action.action_id);
++                await markBatchInterrupted(state, cancelled ? "cancelled" : "blocked", failure, this.ports.store);
+                 return {
+-                    status: failure.code === "sync_plan_stale" ? "stale" : "blocked",
++                    status: cancelled ? "cancelled" : failure.code === "sync_plan_stale" ? "stale" : "blocked",
+                     completed: batch.next_action,
+                     failure
+                 };
+@@ -170,6 +173,10 @@ export class PlanOnlySyncExecutor {
+         const file = payloads.files[action.action_id];
+         if (!file || file.content_digest !== action.payload_revision)
+             throw missingPayload(action);
++        // Fetch only while executing the journaled action, with the caller's
++        // cancellable/progress-reporting transport. Inspection needs metadata only.
++        if (!this.ports.blobStore) throw missingPayload(action);
++        await ensureFileBlob(this.ports.transport, this.ports.blobStore, file);
+         await this.materializer.putFile(state, file, state);
+         this.installPathOwner(action.target);
+         return { action_id: action.action_id, status: "completed" };
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
+index 925a593..8f7e87a 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
++++ b/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
+@@ -1,6 +1,6 @@
+ import { asError, errorCode, SyncError } from "./sync-error.js";
+ import { classifyLocalRecord, runtimeDocumentRevision } from "./mirror-format.js";
+-import { ensureFileBlob, fileSelected, normalizeSelectiveSyncPolicy, pathFileSelected, pathSelected, validateCollectionFileDescriptor, verifiedBinaryBytes } from "./mirror-files.js";
++import { fileSelected, normalizeSelectiveSyncPolicy, pathFileSelected, pathSelected, validateCollectionFileDescriptor, verifiedBinaryBytes } from "./mirror-files.js";
+ import { filterRecordPaths, validateSnapshotResources } from "./mirror-path-policy.js";
+ import { assertNoPhysicalPathAliases } from "./mirror-physical-path.js";
+ import { loadMirrorSnapshot } from "./sync-snapshot-loader.js";
+@@ -415,7 +415,33 @@ export class PlanOnlyMirrorInspector {
+             objects,
+             issues: deduplicateIssues(issues)
+         };
+-        const plan = planReconciliation(summary, this.runtime.digest);
++        let plan = planReconciliation(summary, this.runtime.digest);
++        if (this.fileSystem.pathKind) {
++            const kinds = new Map();
++            const kindAt = (path) => {
++                if (!kinds.has(path)) kinds.set(path, this.fileSystem.pathKind(path));
++                return kinds.get(path);
++            };
++            for (const action of plan.actions) {
++                const path = action.command === "write_local" ? action.target.path
++                    : action.command === "move_local" ? action.target_path : null;
++                if (path === null) continue;
++                let obstruction = await kindAt(path) === "folder" ? path : null;
++                const components = path.split("/");
++                for (let end = 1; obstruction === null && end < components.length; end++) {
++                    const parent = components.slice(0, end).join("/");
++                    if (await kindAt(parent) === "file") obstruction = parent;
++                }
++                if (obstruction !== null) summary.issues.push({
++                    code: "local_collision",
++                    path,
++                    message: `${obstruction} blocks the hosted file ${path}. Move or rename the blocking file or folder, then review again.`,
++                    blocking: true
++                });
++            }
++            summary.issues = deduplicateIssues(summary.issues);
++            plan = planReconciliation(summary, this.runtime.digest);
++        }
+         const durable = await this.bindPayloads(plan, local, options.remoteRecords, options.remoteResources, options.remoteFiles);
+         return {
+             summary,
+@@ -491,7 +517,6 @@ export class PlanOnlyMirrorInspector {
+                     if (!file || file.revision !== action.target.revision || !this.blobStore) {
+                         throw missingPayload(action.action_id);
+                     }
+-                    await ensureFileBlob(this.transport, this.blobStore, file);
+                     payloads.files[action.action_id] = file;
+                 }
+             }

@@ -49,30 +49,30 @@ export function syncReviewPresentation(
 ): SyncReviewPresentation {
   if (!plan) {
     return {
-      actionLabel: "Review before syncing",
+      actionLabel: "Review changes",
       actionDisabled: true,
       message: "Review local and hosted changes before syncing.",
     };
   }
   if (plan.summary.blocking_issues > 0) {
     return {
-      actionLabel: "Fix local files before syncing",
+      actionLabel: "Resolve issues",
       actionDisabled: true,
-      message: "Synchronization is paused. Fix every listed local file, then refresh the review.",
+      message: "Resolve the listed issues, then refresh the review.",
     };
   }
   const outcomes = plan.actions.filter((action) => action.command !== "advance_checkpoint").length;
   const hasCheckpoint = plan.actions.some((action) => action.command === "advance_checkpoint");
   return {
     actionLabel: outcomes
-      ? `Sync ${outcomes} ${outcomes === 1 ? "outcome" : "outcomes"}`
+      ? `Sync ${outcomes} ${outcomes === 1 ? "change" : "changes"}`
       : hasCheckpoint
-        ? "Confirm sync checkpoint"
-        : "Already up to date",
+        ? "Confirm sync"
+        : "Up to date",
     actionDisabled: busy || plan.actions.length === 0,
     message: entryCount
-      ? "Review each transfer below, then sync when ready."
-      : "This vault and the hosted collection are already aligned.",
+      ? "Review changes before syncing."
+      : "No changes.",
   };
 }
 
