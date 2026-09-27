@@ -448,8 +448,8 @@ test("the type list shows note and issue counts, and field rows show their const
   await f.view.selectType("_types/task.md");
   const rows = Array.from(f.root.querySelectorAll(".mdbase-type-row")).map((row) => visibleText(row));
   assert.deepEqual(rows, ["note 1 note", "task 2 notes 1 issue"]);
-  assert.match(visibleText(fieldNode(f.root, "priority").querySelector("summary")!), /priority integer ≤ 3/);
-  assert.match(visibleText(fieldNode(f.root, "status").querySelector("summary")!), /status enum 1, 2, done, later/);
+  assert.match(visibleText(fieldNode(f.root, "priority").querySelector("summary")!), /priority Integer ≤ 3/);
+  assert.match(visibleText(fieldNode(f.root, "status").querySelector("summary")!), /status Enum 1, 2, done, later/);
   f.dom.window.close();
 });
 
@@ -598,5 +598,32 @@ test("sync history lists runs, expands to their files and filters by path", () =
   search.value = "missing";
   search.dispatchEvent(new f.dom.window.Event("input"));
   assert.match(f.text(), /No synced files match/);
+  f.dom.window.close();
+});
+
+test("expanding a field adds a collapse action without inserting a filter above the list", async () => {
+  const f = typesFixture();
+  await f.view.selectType("_types/task.md");
+  assert.equal(f.root.querySelector("[data-focus-key='field-search']"), null);
+  fieldNode(f.root, "title").open = true;
+  fieldNode(f.root, "title").dispatchEvent(new f.dom.window.Event("toggle"));
+  f.state.render();
+  assert.equal(f.root.querySelector("[data-focus-key='field-search']"), null, "short lists never show a filter");
+  button(f.root, "Collapse all fields").click();
+  assert.equal(fieldNode(f.root, "title").open, false);
+  // A keyboard-activated menu (click detail 0) opens beside its button.
+  fieldNode(f.root, "title").open = true;
+  f.state.render();
+  button(f.root, "title actions").click();
+  assert.ok((Menu as unknown as { last: { position?: unknown } }).last.position);
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
+test("enrollment names the device after the vault so Connect can tell devices apart", () => {
+  const f = fixture();
+  f.state.render();
+  const device = Array.from(f.root.querySelectorAll<HTMLInputElement>("input")).find((input) => input.value.startsWith("Notes"));
+  assert.equal(device?.value, "Notes · Obsidian");
   f.dom.window.close();
 });

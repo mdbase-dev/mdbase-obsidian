@@ -118,18 +118,22 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+interface TextPromptOptions {
+  title: string;
+  label: string;
+  description?: string;
+  placeholder?: string;
+  value?: string;
+  submitLabel: string;
+  required?: boolean;
+}
+
 class TextPromptModal extends Modal {
   private resolvePromise: ((value: string | null) => void) | null = null;
   private settled = false;
-  private readonly title: string;
-  private readonly placeholder: string;
-  private readonly defaultValue: string;
 
-  constructor(app: App, title: string, placeholder = "", defaultValue = "") {
+  constructor(app: App, private readonly options: TextPromptOptions) {
     super(app);
-    this.title = title;
-    this.placeholder = placeholder;
-    this.defaultValue = defaultValue;
   }
 
   openAndGetValue(): Promise<string | null> {
@@ -141,45 +145,47 @@ class TextPromptModal extends Modal {
   }
 
   onOpen(): void {
-    const { contentEl } = this;
+    const { contentEl, options } = this;
     contentEl.empty();
-    contentEl.createEl("h3", { text: this.title });
-
-    const input = contentEl.createEl("input", { type: "text" });
-    input.placeholder = this.placeholder;
-    input.value = this.defaultValue;
+    this.titleEl.setText(options.title);
+    const field = contentEl.createDiv({ cls: "mdbase-prompt-field" });
+    const label = field.createEl("label", { text: options.label });
+    const input = field.createEl("input", { type: "text" });
+    label.htmlFor = input.id = "mdbase-prompt-input";
+    input.placeholder = options.placeholder ?? "";
+    input.value = options.value ?? "";
     input.addClass("prompt-input");
+    if (options.description) field.createDiv({ cls: "setting-item-description", text: options.description });
 
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
     const cancelButton = actions.createEl("button", { text: "Cancel" });
-    const submitButton = actions.createEl("button", { text: "OK" });
-    submitButton.addClass("mod-cta");
+    const submitButton = actions.createEl("button", { text: options.submitLabel, cls: "mod-cta" });
+    // A required value keeps the prompt open instead of failing after it closes.
+    const sync = () => { submitButton.disabled = options.required === true && !input.value.trim(); };
+    sync();
+    input.addEventListener("input", sync);
+    const submit = () => {
+      if (submitButton.disabled) return;
+      this.finish(input.value.trim());
+      this.close();
+    };
 
     cancelButton.onclick = () => {
       this.finish(null);
       this.close();
     };
-
-    submitButton.onclick = () => {
-      this.finish(input.value.trim());
-      this.close();
-    };
-
+    submitButton.onclick = submit;
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        this.finish(input.value.trim());
-        this.close();
-      }
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        this.finish(null);
-        this.close();
+        submit();
       }
     });
 
-    window.setTimeout(() => input.focus(), 0);
+    window.setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
   }
 
   onClose(): void {
@@ -1448,14 +1454,17 @@ export default class MdbasePlugin extends Plugin {
     const frontmatter = buildInitialFrontmatter(chosenType, loaded.config);
     const promptFields = getPromptFields(chosenType, frontmatter);
 
+    const title = `New ${chosenType.name}`;
     for (const [fieldName, fieldDef] of promptFields) {
-      const prompt = `Required field: ${fieldName}`;
-      const value = await new TextPromptModal(this.app, prompt, fieldDef.type ?? "string").openAndGetValue();
+      const value = await new TextPromptModal(this.app, {
+        title,
+        label: fieldName,
+        description: fieldDef.description ?? `Required · ${fieldDef.type ?? "string"}`,
+        placeholder: fieldDef.type === "date" ? "YYYY-MM-DD" : undefined,
+        submitLabel: "Next",
+        required: true,
+      }).openAndGetValue();
       if (value == null) return;
-      if (value.trim().length === 0) {
-        new Notice(`Field '${fieldName}' is required.`);
-        return;
-      }
 
       try {
         frontmatter[fieldName] = coerceFieldInput(value, fieldDef);
@@ -1467,23 +1476,26 @@ export default class MdbasePlugin extends Plugin {
 
     const displayKey = chosenType.display_name_key ?? "title";
     if (frontmatter[displayKey] == null) {
-      const displayValue = await new TextPromptModal(
-        this.app,
-        `Optional ${displayKey} (used for filename)`,
-        "",
-      ).openAndGetValue();
+      const displayValue = await new TextPromptModal(this.app, {
+        title,
+        label: displayKey,
+        description: "Optional. Used for the file name.",
+        submitLabel: "Next",
+      }).openAndGetValue();
+      if (displayValue == null) return;
       if (displayValue && displayValue.trim().length > 0) {
         frontmatter[displayKey] = displayValue.trim();
       }
     }
 
     const suggestedPath = await buildUniqueNotePath(this.app.vault, chosenType, frontmatter);
-    const chosenPathInput = await new TextPromptModal(
-      this.app,
-      "Note path",
-      "Relative path in vault",
-      suggestedPath,
-    ).openAndGetValue();
+    const chosenPathInput = await new TextPromptModal(this.app, {
+      title,
+      label: "Location",
+      description: "Path in this vault.",
+      value: suggestedPath,
+      submitLabel: "Create note",
+    }).openAndGetValue();
 
     if (chosenPathInput == null) return;
 

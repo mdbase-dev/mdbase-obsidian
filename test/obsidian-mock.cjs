@@ -83,6 +83,7 @@ class Menu {
   }
   addSeparator() { return this; }
   showAtMouseEvent() { Menu.last = this; }
+  showAtPosition(position) { Menu.last = this; this.position = position; }
 }
 Menu.last = null;
 const Platform = { isMobile: false };

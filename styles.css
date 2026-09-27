@@ -34,6 +34,14 @@
 
 /* v0.3 workspace */
 
+/* Custom buttons drop Obsidian's box shadow, which also carries its focus ring; restore one. */
+.mdbase-workspace :is(button, summary, select, a):focus-visible,
+.mdbase-note-history :is(button, a):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
 .mdbase-status-bar {
   cursor: pointer;
 }
@@ -598,9 +606,7 @@ details.mdbase-field-node {
 
 .mdbase-field-summary-type {
   color: var(--text-muted);
-  font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
-  text-transform: lowercase;
 }
 
 .mdbase-field-summary-rule {
@@ -701,16 +707,8 @@ details.mdbase-field-node {
   border-left: 1px solid var(--background-modifier-border);
 }
 
-.mdbase-field-children-header {
-  display: flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.mdbase-field-children-header button {
-  min-height: 32px;
+.mdbase-field-children > .mdbase-link-button {
+  margin: 6px 0 4px;
 }
 
 .mdbase-field-children-label {
@@ -2234,7 +2232,8 @@ button.mdbase-transfer-open:hover code {
     padding-left: 10px;
   }
 
-  .mdbase-field-children-header button {
+  .mdbase-field-children > .mdbase-link-button,
+  .mdbase-enum-values > .mdbase-link-button {
     min-height: 44px;
   }
 
@@ -2478,7 +2477,8 @@ button.mdbase-transfer-open:hover code {
   padding-left: 10px;
 }
 
-.is-mobile .mdbase-field-children-header button {
+.is-mobile .mdbase-field-children > .mdbase-link-button,
+.is-mobile .mdbase-enum-values > .mdbase-link-button {
   min-height: 44px;
 }
 
@@ -2499,4 +2499,20 @@ button.mdbase-transfer-open:hover code {
 .is-mobile .mdbase-enum-row .mdbase-icon-button,
 .is-mobile button.mdbase-match-row {
   min-height: 44px;
+}
+
+.mdbase-prompt-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.mdbase-prompt-field label {
+  font-weight: var(--font-medium);
+}
+
+.mdbase-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }

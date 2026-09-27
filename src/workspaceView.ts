@@ -169,6 +169,22 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function defaultDeviceName(vaultName: string): string {
+  const platform = Platform.isIosApp ? "iOS"
+    : Platform.isAndroidApp ? "Android"
+      : Platform.isMacOS ? "Mac"
+        : Platform.isWin ? "Windows"
+          : Platform.isLinux ? "Linux"
+            : "Obsidian";
+  return `${vaultName} · ${platform}`;
+}
+
+function fieldTypeLabel(type: string): string {
+  if (type === "any") return "Any value";
+  if (type === "datetime") return "Date and time";
+  return type ? type[0].toUpperCase() + type.slice(1) : type;
+}
+
 function definitionType(definition: Record<string, unknown>): string {
   return typeof definition.type === "string" ? definition.type : "any";
 }
@@ -324,7 +340,8 @@ class BulkFixConfirmationModal extends Modal {
     return new Promise((resolve) => {
       this.resolve = resolve;
       const paths = [...new Set(issues.map((issue) => issue.path))];
-      this.titleEl.setText(`${label} in ${paths.length} notes?`);
+      const notes = `${paths.length} ${paths.length === 1 ? "note" : "notes"}`;
+      this.titleEl.setText(`${label} in ${notes}?`);
       this.contentEl.createEl("p", {
         text: `Only the '${issues[0]?.field ?? "affected"}' frontmatter field changes in each note. Notes that changed since validation are skipped.`,
       });
@@ -334,7 +351,7 @@ class BulkFixConfirmationModal extends Modal {
       const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
       const cancel = actions.createEl("button", { text: "Cancel" });
       cancel.onclick = () => this.finish(false);
-      const apply = actions.createEl("button", { text: `Update ${paths.length} notes` });
+      const apply = actions.createEl("button", { text: `Update ${notes}` });
       apply.addClass("mod-cta");
       apply.onclick = () => this.finish(true);
       this.open();
@@ -372,7 +389,7 @@ class DisconnectMirrorModal extends Modal {
       const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
       const cancel = actions.createEl("button", { text: "Cancel" });
       cancel.onclick = () => this.finish(null);
-      const keep = actions.createEl("button", { text: "Keep files" });
+      const keep = actions.createEl("button", { text: "Keep files", cls: "mod-cta" });
       keep.onclick = () => this.finish("keep");
       const remove = actions.createEl("button", { text: "Remove unchanged files" });
       remove.addClass("mod-warning");
@@ -446,7 +463,8 @@ export class MdbaseWorkspaceView extends ItemView {
   private enrollmentVerification = "";
   private enrollmentAbort: AbortController | null = null;
   private enrollmentControlUrl = DEFAULT_CONNECT_CONTROL_URL;
-  private enrollmentMirrorName = "Obsidian";
+  // Connect lists devices by this name; the vault and platform tell them apart.
+  private enrollmentMirrorName = defaultDeviceName(this.app.vault.getName());
   private enrollmentCollectionId = "";
   private enrollmentMode: "read_only" | "read_write" = "read_write";
   private filePolicyDraft: SelectiveSyncPolicy | null = null;
@@ -852,12 +870,14 @@ export class MdbaseWorkspaceView extends ItemView {
     const text = banner.createDiv();
     text.createEl("strong", { text: "Read-only · v0.2 collection" });
     text.createEl("p", { text: "Migrate to edit types." });
-    const button = banner.createEl("button", { text: this.migrationPlan ? "Review migration" : "Analyze migration" });
-    button.disabled = this.busy || this.host.getMirrorProfile() !== null;
-    button.onclick = () => void this.perform(async () => {
-      this.migrationPlan = await this.host.analyzeMigration();
-      this.render();
-    });
+    if (!this.migrationPlan) {
+      const button = banner.createEl("button", { text: "Review migration" });
+      button.disabled = this.busy || this.host.getMirrorProfile() !== null;
+      button.onclick = () => void this.perform(async () => {
+        this.migrationPlan = await this.host.analyzeMigration();
+        this.render();
+      });
+    }
     if (this.host.getMirrorProfile()) {
       banner.createDiv({
         cls: "mdbase-form-description",
@@ -928,9 +948,11 @@ export class MdbaseWorkspaceView extends ItemView {
     const pane = container.createDiv({ cls: "mdbase-type-list-pane" });
     const header = pane.createDiv({ cls: "mdbase-pane-header" });
     header.createEl("h2", { text: "Types" });
-    const add = this.iconButton(header, "plus", "Create type");
-    add.disabled = (this.schema?.config.spec_version.startsWith("0.2.") ?? true)
-      || this.host.getMirrorProfile()?.mode === "read_only";
+    const createBlocked = (this.schema?.config.spec_version.startsWith("0.2.") ?? true)
+      ? "Migrate to v0.3 to create types"
+      : this.host.getMirrorProfile()?.mode === "read_only" ? "Read-only mirror" : "";
+    const add = this.iconButton(header, "plus", createBlocked ? `Create type · ${createBlocked}` : "Create type");
+    add.disabled = Boolean(createBlocked);
     add.onclick = () => void this.createType();
 
     const search = pane.createEl("input", { type: "search" });
@@ -1155,7 +1177,9 @@ export class MdbaseWorkspaceView extends ItemView {
         cls: "mdbase-link-button",
         text: this.showAllMatches
           ? "Show fewer"
-          : `Show ${Math.min(ordered.length, 200).toLocaleString()}${ordered.length > 200 ? ` of ${ordered.length.toLocaleString()}` : ""}`,
+          : ordered.length > 200
+            ? `Show 200 of ${ordered.length.toLocaleString()}`
+            : `Show all ${ordered.length.toLocaleString()}`,
       });
       more.onclick = () => {
         this.showAllMatches = !this.showAllMatches;
@@ -1278,7 +1302,15 @@ export class MdbaseWorkspaceView extends ItemView {
     fields.id = "mdbase-section-fields";
     const fieldsHeader = fields.createDiv({ cls: "mdbase-section-header" });
     fieldsHeader.createEl("h3", { text: "Fields" });
-    const addField = this.iconButton(fieldsHeader, "plus", "Add field");
+    const headerActions = fieldsHeader.createDiv({ cls: "mdbase-section-actions" });
+    if (this.expandedFields.size) {
+      const collapse = this.iconButton(headerActions, "fold-vertical", "Collapse all fields");
+      collapse.onclick = () => {
+        this.expandedFields.clear();
+        this.render();
+      };
+    }
+    const addField = this.iconButton(headerActions, "plus", "Add field");
     addField.disabled = readOnly;
     addField.onclick = () => {
       const definition: Record<string, unknown> = { type: "string" };
@@ -1286,7 +1318,7 @@ export class MdbaseWorkspaceView extends ItemView {
       this.expandedFields.add(this.fieldId(definition));
       this.markDirty(true);
     };
-    if (model.fields.length > 6 || this.fieldQuery || this.expandedFields.size) {
+    if (model.fields.length > 6 || this.fieldQuery) {
       const fieldToolbar = fields.createDiv({ cls: "mdbase-field-toolbar" });
       const fieldActions = fieldToolbar.createDiv({ cls: "mdbase-field-toolbar-actions" });
       const fieldSearch = fieldActions.createEl("input", { type: "search" });
@@ -1296,12 +1328,6 @@ export class MdbaseWorkspaceView extends ItemView {
       fieldSearch.value = this.fieldQuery;
       fieldSearch.oninput = () => {
         this.fieldQuery = fieldSearch.value;
-        this.render();
-      };
-      const collapse = this.iconButton(fieldActions, "fold-vertical", "Collapse all");
-      collapse.disabled = this.expandedFields.size === 0;
-      collapse.onclick = () => {
-        this.expandedFields.clear();
         this.render();
       };
     }
@@ -1699,7 +1725,7 @@ export class MdbaseWorkspaceView extends ItemView {
     chevron.setAttr("aria-hidden", "true");
     setIcon(chevron, "chevron-right");
     summary.createSpan({ cls: "mdbase-field-summary-name", text: label });
-    summary.createSpan({ cls: "mdbase-field-summary-type", text: definitionType(definition) });
+    summary.createSpan({ cls: "mdbase-field-summary-type", text: fieldTypeLabel(definitionType(definition)) });
     const rules = summary.createSpan({ cls: "mdbase-field-summary-rules" });
     const refreshSummary = () => {
       rules.textContent = fieldConstraintSummary(definition).join(" · ");
@@ -1722,7 +1748,7 @@ export class MdbaseWorkspaceView extends ItemView {
       const name = row.createEl("input", { type: "text", cls: "mdbase-field-name-control" });
       name.setAttr("data-focus-key", `field-${fieldId}-name`);
       name.setAttr("aria-label", options.nameLabel);
-      name.placeholder = "fieldName";
+      name.placeholder = "Field name";
       name.value = options.name ?? "";
       name.disabled = options.readOnly;
       if (options.onNameInput) name.oninput = () => options.onNameInput?.(name.value);
@@ -1732,10 +1758,7 @@ export class MdbaseWorkspaceView extends ItemView {
     const type = row.createEl("select", { cls: "mdbase-field-type-control" });
     type.setAttr("data-focus-key", `field-${fieldId}-type`);
     type.setAttr("aria-label", `${options.name || options.staticLabel || "Field"} type`);
-    for (const value of FIELD_TYPES) {
-      const label = value === "any" ? "Any value" : value[0].toUpperCase() + value.slice(1);
-      type.createEl("option", { value, text: label });
-    }
+    for (const value of FIELD_TYPES) type.createEl("option", { value, text: fieldTypeLabel(value) });
     type.value = definitionType(definition);
     type.disabled = options.readOnly;
     type.onchange = () => {
@@ -1805,7 +1828,10 @@ export class MdbaseWorkspaceView extends ItemView {
             item.setWarning(true);
           });
         }
-        menu.showAtMouseEvent(event);
+        if (event.detail === 0) {
+          const rect = more.getBoundingClientRect();
+          menu.showAtPosition({ x: rect.left, y: rect.bottom });
+        } else menu.showAtMouseEvent(event);
       };
     }
 
@@ -2012,8 +2038,10 @@ export class MdbaseWorkspaceView extends ItemView {
     options: { name?: string; staticLabel?: string; readOnly: boolean },
   ): void {
     const details = node.createDiv({ cls: "mdbase-field-details mdbase-field-options" });
+    const fieldId = this.fieldId(definition);
     const targetLabel = details.createEl("label", { text: "Target type" });
     const target = details.createEl("select");
+    target.setAttr("data-focus-key", `field-${fieldId}-target`);
     target.setAttr("aria-label", `${options.name || options.staticLabel || "Link"} target type`);
     target.createEl("option", { value: "", text: "Any type" });
     const currentTarget = typeof definition.target === "string" ? definition.target : "";
@@ -2028,9 +2056,10 @@ export class MdbaseWorkspaceView extends ItemView {
       else delete definition.target;
       this.markDirty();
     };
-    targetLabel.htmlFor = target.id = `mdbase-${Math.random().toString(36).slice(2)}`;
+    targetLabel.htmlFor = target.id = `mdbase-${fieldId}-target`;
     const existsLabel = details.createEl("label", { cls: "mdbase-field-required" });
     const exists = existsLabel.createEl("input", { type: "checkbox" });
+    exists.setAttr("data-focus-key", `field-${fieldId}-exists`);
     exists.checked = definition.validate_exists === true;
     exists.disabled = options.readOnly;
     exists.onchange = () => {
@@ -2063,18 +2092,18 @@ export class MdbaseWorkspaceView extends ItemView {
     options: { readOnly: boolean; depth: number },
   ): void {
     const children = node.createDiv({ cls: "mdbase-field-children" });
-    const header = children.createDiv({ cls: "mdbase-field-children-header" });
-    header.createDiv({ cls: "mdbase-field-children-label", text: "Object fields" });
-    const add = header.createEl("button", { text: "Add nested field" });
-    add.disabled = options.readOnly;
+    children.createDiv({ cls: "mdbase-field-children-label", text: "Object fields" });
     const fields = isRecord(definition.fields) ? definition.fields : {};
     if (!isRecord(definition.fields) && !options.readOnly) definition.fields = fields;
+    const list = children.createDiv({ cls: "mdbase-nested-fields" });
+    const add = children.createEl("button", { cls: "mdbase-link-button", text: "Add nested field" });
+    add.disabled = options.readOnly;
     add.onclick = () => {
       const name = nextNestedFieldName(fields);
       setOwnField(fields, name, { type: "string" });
+      this.expandedFields.add(this.fieldId(fields[name] as Record<string, unknown>));
       this.markDirty(true);
     };
-    const list = children.createDiv({ cls: "mdbase-nested-fields" });
     const entries = Object.entries(fields).filter((entry): entry is [string, Record<string, unknown>] => isRecord(entry[1]));
     if (!entries.length) {
       list.createDiv({ cls: "mdbase-empty-list", text: "No nested fields." });
@@ -2264,9 +2293,13 @@ export class MdbaseWorkspaceView extends ItemView {
 
     const actions = status.createDiv({ cls: "mdbase-sync-actions" });
     const upToDate = this.mirrorStatus?.state === "up_to_date" && !this.mirrorStatus.pending;
+    const hasProblem = Boolean(this.syncProblem || this.mirrorStatus?.recovery_required);
     const preview = this.mirrorPreview
       ? this.iconButton(actions, "refresh-cw", "Refresh review")
-      : actions.createEl("button", { text: upToDate ? "Check for changes" : "Review changes", cls: upToDate ? "" : "mod-cta" });
+      : actions.createEl("button", {
+        text: upToDate ? "Check for changes" : "Review changes",
+        cls: upToDate || hasProblem ? "" : "mod-cta",
+      });
     preview.disabled = this.busy;
     preview.onclick = () => void this.reviewSyncChanges();
     const syncPresentation = syncReviewPresentation(
@@ -2407,7 +2440,7 @@ export class MdbaseWorkspaceView extends ItemView {
     const text = card.createDiv();
     text.createEl("strong", { text: problem.title });
     text.createDiv({ text: problem.message });
-    const action = card.createEl("button", { text: problem.actionLabel });
+    const action = card.createEl("button", { text: problem.actionLabel, cls: "mod-cta" });
     action.disabled = this.busy;
     action.onclick = () => {
       if (problem.action === "retry") void this.reconnectCollection();
@@ -2672,7 +2705,6 @@ export class MdbaseWorkspaceView extends ItemView {
       policy.excluded_folders = value.split(",").map((entry) => entry.trim()).filter(Boolean);
       if (apply) {
         const changed = JSON.stringify(this.host.connectSync.getSelectiveSync()) !== JSON.stringify(policy);
-        apply.textContent = "Apply";
         apply.disabled = !changed || this.busy;
       }
     }, {
@@ -2882,7 +2914,11 @@ export class MdbaseWorkspaceView extends ItemView {
         section.createEl("h4", { text: `${conflicts.length} filename conflicts` });
         this.renderAdoptionRenameReview(section, conflicts);
       }
-      const check = section.createEl("button", { text: "Check files" });
+    }
+    if (!recovery) section.createEl("p", { cls: "mdbase-form-description", text: "Sync starts only after this move completes." });
+    const actions = section.createDiv({ cls: "mdbase-actions mdbase-enrollment-actions" });
+    if (!recovery && usesLiveFiles) {
+      const check = actions.createEl("button", { text: "Check files" });
       check.disabled = this.busy;
       check.onclick = () => void this.perform(async () => {
         this.adoptionRenamePlan = null;
@@ -2892,7 +2928,7 @@ export class MdbaseWorkspaceView extends ItemView {
     }
     if (recovery && !recovery.canReconnect) {
       if (recovery.canReset) {
-        const reset = section.createEl("button", { text: "Reset setup", cls: "mod-cta" });
+        const reset = actions.createEl("button", { text: "Reset setup", cls: "mod-cta" });
         reset.disabled = this.busy;
         reset.onclick = () => void this.perform(async () => {
           this.filePolicyDraft = this.host.connectSync.getSelectiveSync();
@@ -2902,14 +2938,31 @@ export class MdbaseWorkspaceView extends ItemView {
           await this.refresh(true);
         });
       } else {
-        const check = section.createEl("button", { text: "Check again" });
+        const check = actions.createEl("button", { text: "Check again" });
         check.disabled = this.busy;
         check.onclick = () => this.render();
       }
       return;
     }
-    if (!recovery) section.createEl("p", { cls: "mdbase-form-description", text: "Sync starts only after this move completes." });
-    const button = section.createEl("button", {
+    if (checkpoint && !recovery && !["activating", "adopted"].includes(checkpoint.phase)) {
+      const cancel = actions.createEl("button", { text: "Cancel move" });
+      cancel.disabled = this.busy;
+      cancel.onclick = () => void this.perform(async () => {
+        await this.host.connectSync.cancelAdoption();
+        this.enrollmentVerification = "";
+        this.transientMessage = "Move cancelled. The collection is still local.";
+        await this.refresh(true);
+      });
+    }
+    if (this.enrollmentAbort) {
+      const stop = actions.createEl("button", { text: checkpoint?.phase === "waiting_for_approval" ? "Stop waiting" : "Pause move" });
+      stop.onclick = () => {
+        this.enrollmentAbort?.abort();
+        this.transientMessage = "Move paused. Resume when ready.";
+        this.render();
+      };
+    }
+    const button = actions.createEl("button", {
       text: recovery ? "Reconnect collection" : checkpoint ? "Resume move" : "Host collection",
     });
     button.addClass("mod-cta");
@@ -2975,24 +3028,6 @@ export class MdbaseWorkspaceView extends ItemView {
         if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
       }
     });
-    if (this.enrollmentAbort) {
-      const stop = section.createEl("button", { text: checkpoint?.phase === "waiting_for_approval" ? "Stop waiting" : "Pause move" });
-      stop.onclick = () => {
-        this.enrollmentAbort?.abort();
-        this.transientMessage = "Move paused. Resume when ready.";
-        this.render();
-      };
-    }
-    if (checkpoint && !recovery && !["activating", "adopted"].includes(checkpoint.phase)) {
-      const cancel = section.createEl("button", { text: "Cancel move" });
-      cancel.disabled = this.busy;
-      cancel.onclick = () => void this.perform(async () => {
-        await this.host.connectSync.cancelAdoption();
-        this.enrollmentVerification = "";
-        this.transientMessage = "Move cancelled. The collection is still local.";
-        await this.refresh(true);
-      });
-    }
   }
 
   private renderAdoptionRenameReview(container: HTMLElement, conflicts: string[][]): void {
@@ -3363,7 +3398,7 @@ export class MdbaseWorkspaceView extends ItemView {
       });
     }
     if (!filtered.length) {
-      document.createDiv({ cls: "mdbase-empty-state", text: "No matches" });
+      document.createDiv({ cls: "mdbase-empty-state", text: "No issues match these filters." });
       return;
     }
     const issues = filtered.slice(0, this.issueLimit);
@@ -3421,8 +3456,9 @@ export class MdbaseWorkspaceView extends ItemView {
       this.renderEditRuleButton(actions, first);
       const fixLabel = this.host.getQuickFixLabel(first);
       const fixable = fixLabel ? rule.issues.filter((issue) => this.host.getQuickFixLabel(issue) === fixLabel) : [];
-      if (fixLabel && fixable.length > 1) {
-        const bulk = actions.createEl("button", { text: `${fixLabel} · ${fixable.length} notes` });
+      const fixableNotes = new Set(fixable.map((issue) => issue.path)).size;
+      if (fixLabel && fixableNotes > 1) {
+        const bulk = actions.createEl("button", { text: `${fixLabel} · ${fixableNotes} notes` });
         bulk.disabled = this.busy;
         bulk.onclick = () => void this.applyBulkQuickFix(fixLabel, fixable);
       }
