@@ -81,6 +81,49 @@ function validateDefinition(
       message: "Add at least one allowed value, or use String for an unrestricted value.",
     });
   }
+  if (type === "enum" && Array.isArray(definition.values)) {
+    const keys = definition.values.map((value) => JSON.stringify(value));
+    if (new Set(keys).size !== keys.length) {
+      diagnostics.push({
+        code: "enum_duplicate_values",
+        severity: "error",
+        path,
+        message: "Allowed values must be unique.",
+      });
+    }
+    if (definition.default !== undefined && !keys.includes(JSON.stringify(definition.default))) {
+      diagnostics.push({
+        code: "default_not_allowed",
+        severity: "error",
+        path,
+        message: "The default is not one of the allowed values.",
+      });
+    }
+  }
+  for (const [lower, upper, label] of [["min", "max", "Minimum"], ["min_length", "max_length", "Minimum length"]] as const) {
+    const low = definition[lower];
+    const high = definition[upper];
+    if (typeof low === "number" && typeof high === "number" && low > high) {
+      diagnostics.push({
+        code: "constraint_range_inverted",
+        severity: "error",
+        path,
+        message: `${label} is greater than the maximum.`,
+      });
+    }
+  }
+  if (typeof definition.pattern === "string") {
+    try {
+      new RegExp(definition.pattern);
+    } catch (error) {
+      diagnostics.push({
+        code: "invalid_pattern",
+        severity: "error",
+        path,
+        message: `The pattern is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
   if (type === "link") {
     const target = typeof definition.target === "string" ? definition.target.trim() : "";
     if (target && target !== "any" && knownTypes.size && !knownTypes.has(target)) {
@@ -315,6 +358,11 @@ export function describeTypeChanges(
         summary: `Update validation or documentation for '${name}'.`,
       });
     }
+  }
+  const keptBefore = [...before.keys()].filter((name) => after.has(name));
+  const keptAfter = [...after.keys()].filter((name) => before.has(name));
+  if (keptBefore.join("\u0000") !== keptAfter.join("\u0000")) {
+    changes.push({ code: "reorder_fields", risk: "safe", summary: "Reorder fields." });
   }
   if (JSON.stringify(original.implementations) !== JSON.stringify(current.implementations)) {
     changes.push({

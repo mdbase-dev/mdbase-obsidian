@@ -20,6 +20,7 @@ import {
   MdbaseConfig,
   MdbaseIssue,
   MdbaseTypeDef,
+  type CollectionRecord,
   buildInitialFrontmatter,
   buildUniqueNotePath,
   coerceFieldInput,
@@ -29,10 +30,12 @@ import {
   getPromptFields,
   getTopLevelFieldFromIssuePath,
   getTypesForFile,
+  isExcluded,
   loadMdbaseConfig,
   loadContractDefinitions,
   loadTypeDefinitions,
   parseFrontmatter,
+  readCollectionRecords,
   validateCollection,
   validateFile,
 } from "./src/mdbaseCore";
@@ -60,6 +63,8 @@ import {
 } from "./src/workspaceView";
 import { MDBASE_ICON_ID, MDBASE_ICON_SVG } from "./src/mdbaseIcon";
 import { KeyedTrailingDebouncer } from "./src/trailingDebouncer";
+import { SyncHistoryStore, type SyncHistoryRun } from "./src/syncHistory";
+import { NoteSyncHistoryModal } from "./src/syncHistoryModal";
 import {
   activityEntry,
   appendActivity,
@@ -113,18 +118,22 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+interface TextPromptOptions {
+  title: string;
+  label: string;
+  description?: string;
+  placeholder?: string;
+  value?: string;
+  submitLabel: string;
+  required?: boolean;
+}
+
 class TextPromptModal extends Modal {
   private resolvePromise: ((value: string | null) => void) | null = null;
   private settled = false;
-  private readonly title: string;
-  private readonly placeholder: string;
-  private readonly defaultValue: string;
 
-  constructor(app: App, title: string, placeholder = "", defaultValue = "") {
+  constructor(app: App, private readonly options: TextPromptOptions) {
     super(app);
-    this.title = title;
-    this.placeholder = placeholder;
-    this.defaultValue = defaultValue;
   }
 
   openAndGetValue(): Promise<string | null> {
@@ -136,45 +145,47 @@ class TextPromptModal extends Modal {
   }
 
   onOpen(): void {
-    const { contentEl } = this;
+    const { contentEl, options } = this;
     contentEl.empty();
-    contentEl.createEl("h3", { text: this.title });
-
-    const input = contentEl.createEl("input", { type: "text" });
-    input.placeholder = this.placeholder;
-    input.value = this.defaultValue;
+    this.titleEl.setText(options.title);
+    const field = contentEl.createDiv({ cls: "mdbase-prompt-field" });
+    const label = field.createEl("label", { text: options.label });
+    const input = field.createEl("input", { type: "text" });
+    label.htmlFor = input.id = "mdbase-prompt-input";
+    input.placeholder = options.placeholder ?? "";
+    input.value = options.value ?? "";
     input.addClass("prompt-input");
+    if (options.description) field.createDiv({ cls: "setting-item-description", text: options.description });
 
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
     const cancelButton = actions.createEl("button", { text: "Cancel" });
-    const submitButton = actions.createEl("button", { text: "OK" });
-    submitButton.addClass("mod-cta");
+    const submitButton = actions.createEl("button", { text: options.submitLabel, cls: "mod-cta" });
+    // A required value keeps the prompt open instead of failing after it closes.
+    const sync = () => { submitButton.disabled = options.required === true && !input.value.trim(); };
+    sync();
+    input.addEventListener("input", sync);
+    const submit = () => {
+      if (submitButton.disabled) return;
+      this.finish(input.value.trim());
+      this.close();
+    };
 
     cancelButton.onclick = () => {
       this.finish(null);
       this.close();
     };
-
-    submitButton.onclick = () => {
-      this.finish(input.value.trim());
-      this.close();
-    };
-
+    submitButton.onclick = submit;
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        this.finish(input.value.trim());
-        this.close();
-      }
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        this.finish(null);
-        this.close();
+        submit();
       }
     });
 
-    window.setTimeout(() => input.focus(), 0);
+    window.setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
   }
 
   onClose(): void {
@@ -294,7 +305,6 @@ class MdbaseSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Validate on save")
-      .setDesc("Run mdbase validation when a Markdown file is modified.")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.validateOnSave).onChange(async (value) => {
           this.plugin.settings.validateOnSave = value;
@@ -303,8 +313,7 @@ class MdbaseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Validate on file open")
-      .setDesc("Validate the active note when opened.")
+      .setName("Validate on open")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.validateOnOpen).onChange(async (value) => {
           this.plugin.settings.validateOnOpen = value;
@@ -313,8 +322,8 @@ class MdbaseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Show notices on save")
-      .setDesc("Display a notice when save-time validation finds issues.")
+      .setName("Show validation notices")
+      .setDesc("Notify when saving a note with issues.")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.showNoticeOnSave).onChange(async (value) => {
           this.plugin.settings.showNoticeOnSave = value;
@@ -323,11 +332,8 @@ class MdbaseSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Allow local application interoperability")
-      .setDesc(
-        "Allow installed Obsidian plugins to exchange validated mdbase events and actions in this vault. "
-        + "Contracts establish compatibility; this switch is the separate user grant.",
-      )
+      .setName("Allow plugin integrations")
+      .setDesc("Let other installed plugins exchange mdbase events and actions in this vault.")
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.interopEnabled).onChange(async (value) => {
           this.plugin.settings.interopEnabled = value;
@@ -359,6 +365,14 @@ export default class MdbasePlugin extends Plugin {
   private issueMap = new Map<string, MdbaseIssue[]>();
   private sortedIssuesCache: MdbaseIssue[] | null = null;
   private statusBarEl: HTMLElement;
+  private noteStatusEl: HTMLElement;
+  private noteStatusVersion = 0;
+  private syncHistory: SyncHistoryStore | null = null;
+  private recordCache: Map<string, CollectionRecord> | null = null;
+  private recordCacheSettings = "";
+  private recordList: CollectionRecord[] | null = null;
+  private recordLoadPromise: Promise<CollectionRecord[]> | null = null;
+  private readonly dirtyRecordPaths = new Set<string>();
   private mirrorStatus: MirrorStatus | null = null;
   private mirrorProgress: MirrorProgress | null = null;
   private fileProgress: FileTransferProgress | null = null;
@@ -421,6 +435,7 @@ export default class MdbasePlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
     await this.connectSync.initialize();
+    await this.loadSyncHistory();
     addIcon(MDBASE_ICON_ID, MDBASE_ICON_SVG);
 
     this.statusBarEl = this.addStatusBarItem();
@@ -432,6 +447,17 @@ export default class MdbasePlugin extends Plugin {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
       void this.openStatusDestination();
+    });
+    this.noteStatusEl = this.addStatusBarItem();
+    this.noteStatusEl.addClass("mdbase-note-status");
+    this.noteStatusEl.setAttr("role", "button");
+    this.noteStatusEl.setAttr("tabindex", "0");
+    this.noteStatusEl.hide();
+    this.registerDomEvent(this.noteStatusEl, "click", () => void this.openNoteStatusDestination());
+    this.registerDomEvent(this.noteStatusEl, "keydown", (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      void this.openNoteStatusDestination();
     });
     this.updateStatusBar();
 
@@ -526,9 +552,30 @@ export default class MdbasePlugin extends Plugin {
 
     this.addCommand({
       id: "mdbase-open-activity",
-      name: "Open sync activity",
+      name: "Open sync history",
       callback: () => void this.openSyncSection("activity"),
     });
+
+    this.addCommand({
+      id: "mdbase-note-sync-history",
+      name: "Show sync history for current note",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.getMirrorProfile()) return false;
+        if (!checking) this.openNoteSyncHistory(file.path);
+        return true;
+      },
+    });
+
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile) || !this.getMirrorProfile()) return;
+        menu.addItem((item) => item
+          .setTitle("Sync history")
+          .setIcon("history")
+          .onClick(() => this.openNoteSyncHistory(file.path)));
+      }),
+    );
 
     this.addCommand({
       id: "mdbase-resolve-conflicts",
@@ -577,6 +624,11 @@ export default class MdbasePlugin extends Plugin {
         void this.validateFileAndStore(file, "open");
       }),
     );
+
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => void this.updateNoteStatus()));
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      if (file.path === this.app.workspace.getActiveFile()?.path) void this.updateNoteStatus();
+    }));
 
     this.registerEvent(
       this.app.workspace.on("editor-change", (_editor, info) => {
@@ -678,6 +730,42 @@ export default class MdbasePlugin extends Plugin {
     this.refreshWorkspaceViews();
   }
 
+  getSyncHistory(): SyncHistoryRun[] {
+    const collectionId = this.settings.mirrorProfile?.collectionId;
+    return collectionId ? this.syncHistory?.list(collectionId) ?? [] : [];
+  }
+
+  async recordSyncHistory(run: SyncHistoryRun): Promise<void> {
+    if (!this.syncHistory) return;
+    try {
+      await this.syncHistory.append(run);
+    } catch (error) {
+      console.error("mdbase: could not save sync history", error);
+    }
+    this.refreshWorkspaceViews();
+  }
+
+  async clearSyncHistory(): Promise<void> {
+    await this.syncHistory?.clear();
+    this.refreshWorkspaceViews();
+  }
+
+  private openNoteSyncHistory(path: string): void {
+    new NoteSyncHistoryModal(this.app, path, this.getSyncHistory(), this.getSyncActivity()).open();
+  }
+
+  private async loadSyncHistory(): Promise<void> {
+    const folder = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    const store = new SyncHistoryStore(this.app.vault.adapter, normalizePath(`${folder}/sync-history.jsonl`));
+    try {
+      await store.load();
+    } catch (error) {
+      // History is a convenience; an unreadable log must not block sync.
+      console.error("mdbase: could not load sync history", error);
+    }
+    this.syncHistory = store;
+  }
+
   async dismissSyncActivity(id: string): Promise<void> {
     this.settings.syncActivity = this.settings.syncActivity.filter((entry) => entry.id !== id);
     await this.saveSettings();
@@ -691,16 +779,19 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async refreshSyncStatus(): Promise<MirrorStatus | null> {
-    if (!this.getMirrorProfile()) {
+    const profile = this.getMirrorProfile();
+    if (!profile) {
       this.setSyncStatus(null);
       return null;
     }
     if (this.connectSync.isSyncing()) return this.mirrorStatus;
     try {
       const status = await this.connectSync.status();
+      if (profile !== this.getMirrorProfile()) return null;
       this.setSyncStatus(status);
       return status;
     } catch (error) {
+      if (profile !== this.getMirrorProfile()) return null;
       this.setSyncProblem(syncProblem(error));
       return null;
     }
@@ -833,6 +924,34 @@ export default class MdbasePlugin extends Plugin {
     await this.validateFileAndStore(file, "manual");
   }
 
+  async applyQuickFixes(issues: MdbaseIssue[]): Promise<{ changed: number; skipped: number }> {
+    this.connectSync.assertLocalAuthorityWritable();
+    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
+    let changed = 0;
+    let skipped = 0;
+    const touched = new Map<string, TFile>();
+    for (const issue of issues) {
+      const file = this.app.vault.getAbstractFileByPath(issue.path);
+      if (!(file instanceof TFile)) {
+        skipped += 1;
+        continue;
+      }
+      let applied = false;
+      await this.app.vault.process(file, (raw) => {
+        this.connectSync.assertLocalAuthorityWritable();
+        const result = applyQuickFixToDocument(raw, issue);
+        applied = result.changed;
+        return result.content;
+      });
+      if (applied) {
+        changed += 1;
+        touched.set(file.path, file);
+      } else skipped += 1;
+    }
+    for (const file of touched.values()) await this.validateFileAndStore(file, "manual");
+    return { changed, skipped };
+  }
+
   async openFileByPath(path: string, field?: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
@@ -889,6 +1008,96 @@ export default class MdbasePlugin extends Plugin {
     this.statusBarEl.setAttr("aria-label", `${indicator.detail}. Open mdbase ${indicator.destination}.`);
     this.statusBarEl.setAttr("title", indicator.detail);
     this.statusBarEl.setAttr("data-state", indicator.state);
+    void this.updateNoteStatus();
+  }
+
+  /** Type and issue count for the active note, beside the collection status. */
+  private async updateNoteStatus(): Promise<void> {
+    const version = ++this.noteStatusVersion;
+    const file = this.app.workspace.getActiveFile();
+    const loaded = file?.extension === "md" ? this.schemaCache ?? await this.getConfigAndTypes() : null;
+    if (version !== this.noteStatusVersion) return;
+    const types = file && loaded && !isExcluded(file.path, loaded.config)
+      ? getTypesForFile(file.path, this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}, loaded.config, loaded.types)
+      : [];
+    if (!file || !types.length) {
+      this.noteStatusEl.hide();
+      this.noteStatusEl.removeAttribute("data-path");
+      return;
+    }
+    const issues = this.issueMap.get(file.path) ?? [];
+    const errors = issues.filter((issue) => issue.severity === "error").length;
+    const issueText = issues.length ? ` · ${issues.length} ${issues.length === 1 ? "issue" : "issues"}` : "";
+    this.noteStatusEl.setText(`${types.join(", ")}${issueText}`);
+    this.noteStatusEl.setAttr("data-state", errors ? "error" : issues.length ? "warning" : "valid");
+    this.noteStatusEl.setAttr("data-path", file.path);
+    const detail = issues.length
+      ? `${file.basename}: ${issues.length} ${issues.length === 1 ? "issue" : "issues"}. Open issues for this note.`
+      : `${file.basename} is a ${types.join(", ")} note. Edit the type.`;
+    this.noteStatusEl.setAttr("aria-label", detail);
+    this.noteStatusEl.setAttr("title", detail);
+    this.noteStatusEl.show();
+  }
+
+  private async openNoteStatusDestination(): Promise<void> {
+    const path = this.noteStatusEl.getAttr("data-path");
+    if (!path) return;
+    if (this.issueMap.get(path)?.length) {
+      const view = await this.openWorkspace("issues");
+      view.showIssuesForPath(path);
+      return;
+    }
+    const file = this.app.vault.getAbstractFileByPath(path);
+    const loaded = await this.getConfigAndTypes();
+    if (!(file instanceof TFile) || !loaded) return;
+    const [typeName] = getTypesForFile(path, this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}, loaded.config, loaded.types);
+    const typeDef = typeName ? loaded.types.get(typeName) : undefined;
+    if (!typeDef) return;
+    const view = await this.openWorkspace("types");
+    await view.editType(typeDef.filePath);
+  }
+
+  private markRecordChanged(path: string): void {
+    if (!this.recordCache) return;
+    this.dirtyRecordPaths.add(normalizePath(path));
+    this.recordList = null;
+  }
+
+  /**
+   * Parsed frontmatter for every collection record. Built once, then refreshed
+   * incrementally for files the vault reports as changed.
+   */
+  loadCollectionRecords(): Promise<CollectionRecord[]> {
+    this.recordLoadPromise ??= this.readRecords().finally(() => {
+      this.recordLoadPromise = null;
+    });
+    return this.recordLoadPromise;
+  }
+
+  private async readRecords(): Promise<CollectionRecord[]> {
+    const loaded = await this.getConfigAndTypes();
+    if (!loaded) return [];
+    const settingsKey = JSON.stringify(loaded.config.settings);
+    if (!this.recordCache || settingsKey !== this.recordCacheSettings) {
+      this.dirtyRecordPaths.clear();
+      const records = await readCollectionRecords(this.app.vault, loaded.config);
+      this.recordCache = new Map(records.map((record) => [record.path, record]));
+      this.recordCacheSettings = settingsKey;
+      this.recordList = null;
+    } else if (this.dirtyRecordPaths.size) {
+      const paths = [...this.dirtyRecordPaths];
+      this.dirtyRecordPaths.clear();
+      for (const path of paths) {
+        this.recordCache.delete(path);
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile) || file.extension !== "md" || isExcluded(path, loaded.config)) continue;
+        const parsed = parseFrontmatter(await this.app.vault.cachedRead(file));
+        if (!parsed.error) this.recordCache.set(path, { path, frontmatter: parsed.frontmatter });
+      }
+      this.recordList = null;
+    }
+    this.recordList ??= [...this.recordCache.values()].sort((a, b) => a.path.localeCompare(b.path));
+    return this.recordList;
   }
 
   private async openStatusDestination(): Promise<void> {
@@ -1057,6 +1266,7 @@ export default class MdbasePlugin extends Plugin {
 
   private onVaultModify(file: TFile): void {
     this.observeLocalMirrorChange(file.path);
+    this.markRecordChanged(file.path);
     if (this.isSchemaRelevantPath(file.path)) {
       this.scheduleSchemaRefresh();
     }
@@ -1068,6 +1278,8 @@ export default class MdbasePlugin extends Plugin {
 
   private onVaultRename(file: TFile, oldPath: string): void {
     this.observeLocalMirrorChange(oldPath);
+    this.markRecordChanged(oldPath);
+    this.markRecordChanged(file.path);
     this.observeLocalMirrorChange(file.path);
     if (this.isSchemaRelevantPath(oldPath) || this.isSchemaRelevantPath(file.path)) {
       this.refreshSchemaNow();
@@ -1085,6 +1297,7 @@ export default class MdbasePlugin extends Plugin {
 
   private onVaultDelete(file: TFile): void {
     this.observeLocalMirrorChange(file.path);
+    this.markRecordChanged(file.path);
     if (this.isSchemaRelevantPath(file.path)) {
       this.refreshSchemaNow();
     }
@@ -1096,6 +1309,7 @@ export default class MdbasePlugin extends Plugin {
 
   private onVaultCreate(file: TFile): void {
     this.observeLocalMirrorChange(file.path);
+    this.markRecordChanged(file.path);
     if (this.isSchemaRelevantPath(file.path)) {
       this.refreshSchemaNow();
     }
@@ -1240,14 +1454,17 @@ export default class MdbasePlugin extends Plugin {
     const frontmatter = buildInitialFrontmatter(chosenType, loaded.config);
     const promptFields = getPromptFields(chosenType, frontmatter);
 
+    const title = `New ${chosenType.name}`;
     for (const [fieldName, fieldDef] of promptFields) {
-      const prompt = `Required field: ${fieldName}`;
-      const value = await new TextPromptModal(this.app, prompt, fieldDef.type ?? "string").openAndGetValue();
+      const value = await new TextPromptModal(this.app, {
+        title,
+        label: fieldName,
+        description: fieldDef.description ?? `Required · ${fieldDef.type ?? "string"}`,
+        placeholder: fieldDef.type === "date" ? "YYYY-MM-DD" : undefined,
+        submitLabel: "Next",
+        required: true,
+      }).openAndGetValue();
       if (value == null) return;
-      if (value.trim().length === 0) {
-        new Notice(`Field '${fieldName}' is required.`);
-        return;
-      }
 
       try {
         frontmatter[fieldName] = coerceFieldInput(value, fieldDef);
@@ -1259,23 +1476,26 @@ export default class MdbasePlugin extends Plugin {
 
     const displayKey = chosenType.display_name_key ?? "title";
     if (frontmatter[displayKey] == null) {
-      const displayValue = await new TextPromptModal(
-        this.app,
-        `Optional ${displayKey} (used for filename)`,
-        "",
-      ).openAndGetValue();
+      const displayValue = await new TextPromptModal(this.app, {
+        title,
+        label: displayKey,
+        description: "Optional. Used for the file name.",
+        submitLabel: "Next",
+      }).openAndGetValue();
+      if (displayValue == null) return;
       if (displayValue && displayValue.trim().length > 0) {
         frontmatter[displayKey] = displayValue.trim();
       }
     }
 
     const suggestedPath = await buildUniqueNotePath(this.app.vault, chosenType, frontmatter);
-    const chosenPathInput = await new TextPromptModal(
-      this.app,
-      "Note path",
-      "Relative path in vault",
-      suggestedPath,
-    ).openAndGetValue();
+    const chosenPathInput = await new TextPromptModal(this.app, {
+      title,
+      label: "Location",
+      description: "Path in this vault.",
+      value: suggestedPath,
+      submitLabel: "Create note",
+    }).openAndGetValue();
 
     if (chosenPathInput == null) return;
 

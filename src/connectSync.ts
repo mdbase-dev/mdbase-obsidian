@@ -56,6 +56,7 @@ import {
   type MirrorBlobStore,
   type MirrorFileSystem,
   type MirrorLease,
+  type MirrorPlanAction,
   type MirrorProgress,
   type MirrorState,
   type MirrorTextReadResult,
@@ -81,6 +82,9 @@ import {
   previewFromPlan,
 } from "./syncPreview";
 import type { FileTransferProgress } from "./syncUx";
+import { ReceiptObservingStateStore, type SyncActionReceipt } from "./syncHistory";
+import { findAdoptionPathConflicts, portablePathKey, proposeAdoptionRenames, type AdoptionRenamePlan } from "./adoptionPaths";
+export { findAdoptionPathConflicts } from "./adoptionPaths";
 
 export interface MirrorProfile {
   version: 1;
@@ -138,11 +142,19 @@ export interface AdoptLocalCollectionInput {
   selectiveSync?: SelectiveSyncPolicy;
 }
 
+export interface AdoptionPreview {
+  records: number;
+  resources: number;
+  files: number;
+  conflicts: string[][];
+}
+
 export interface AdoptLocalCollectionCallbacks {
   onVerification(
     verification: AuthorityAdoptionVerification | MirrorEnrollmentVerification,
   ): void | Promise<void>;
   onStatus?(status: AuthorityAdoptionStatus): void;
+  onProgress?(progress: { stage: "checking" | "uploading" | "activating" | "connecting"; records?: number }): void;
   onFileProgress?(path: string, transferredBytes: number, totalBytes: number): void;
   signal?: AbortSignal;
 }
@@ -225,6 +237,11 @@ function classifyBinaryPath(path: string): FileMediaClass {
   if (["flac", "m4a", "mp3", "oga", "ogg", "opus", "wav"].includes(extension)) return "audio";
   if (["3gp", "mkv", "mov", "mp4", "webm"].includes(extension)) return "video";
   return extension === "pdf" ? "pdf" : "other";
+}
+
+function assertAdoptionPaths(preview: AdoptionPreview): void {
+  if (preview.conflicts.length) throw new SyncError("authority_import_path_conflict",
+    `${preview.conflicts.length} filename conflicts prevent uploading. Review the paths in Sync and rename the conflicting files before retrying. Nothing was renamed or excluded.`);
 }
 
 function binaryPathSelected(policy: SelectiveSyncPolicy, path: string, mediaClass = classifyBinaryPath(path)): boolean {
@@ -831,9 +848,12 @@ function abortableSyncTransport(
     return value;
   };
   const stream = async function* (source: AsyncIterable<Uint8Array>): AsyncGenerator<Uint8Array> {
+    abortIfNeeded(signal);
     for await (const chunk of source) {
       abortIfNeeded(signal);
       yield chunk;
+      // Check before requesting the next part, not only after it arrives.
+      abortIfNeeded(signal);
     }
     abortIfNeeded(signal);
   };
@@ -918,8 +938,17 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     }
   }
 
-  async write(input: string, value: string): Promise<void> {
+  async pathKind(input: string): Promise<"file" | "folder" | null> {
     const path = safeMirrorPath(this.vault, input);
+    return (await this.vault.adapter.stat(path))?.type ?? null;
+  }
+
+  async write(input: string, value: string, expected?: string | null): Promise<void> {
+    const path = safeMirrorPath(this.vault, input);
+    // The SDK supplies its inspected bytes. Standalone callers still get a
+    // conditional write rather than a read/modify race inside this adapter.
+    const before = expected === undefined ? await this.read(path) : expected;
+    const stale = () => new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
     const existing = this.vault.getAbstractFileByPath(path);
@@ -928,8 +957,15 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     }
     this.assertActive();
     if (existing instanceof TFile) {
-      await this.vault.modify(existing, value);
+      await this.vault.process(existing, (current) => {
+        this.assertActive();
+        if (current !== before && current !== value) throw stale();
+        return value;
+      });
     } else {
+      if (before !== null) throw stale();
+      // Vault.create refuses an occupied destination, including one created
+      // after the existence check. Never fall back to overwriting it.
       await this.vault.create(path, value);
     }
   }
@@ -1333,6 +1369,17 @@ export class ConnectSyncController {
   private readonly enrollmentClient: MirrorEnrollmentClient;
   private readonly adoptionClient: AuthorityAdoptionClient;
   private adoptionMarker: AdoptionMarker | null = null;
+  private adoptionBusy = false;
+
+  private async withAdoptionOperation<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (this.adoptionBusy) throw new SyncError("authority_adoption_busy", "Stop the current move before changing its setup.");
+    this.adoptionBusy = true;
+    try {
+      return await this.withLifetime(signal, operation);
+    } finally {
+      this.adoptionBusy = false;
+    }
+  }
 
   constructor(
     private readonly app: App,
@@ -1381,6 +1428,62 @@ export class ConnectSyncController {
     return this.adoptionMarker ? JSON.parse(JSON.stringify(this.adoptionMarker)) as AdoptionMarker : null;
   }
 
+  getAdoptionRecovery(): { canReset: boolean; canReconnect: boolean } | null {
+    const marker = this.adoptionMarker;
+    if (!marker) return null;
+    try {
+      if (this.app.secretStorage.getSecret(this.adoptionSecretId(marker.session.adoptionId))) return null;
+    } catch {
+      // A locked/unavailable secret store is not a usable device credential.
+    }
+    const early = ["waiting_for_approval", "uploading"].includes(marker.phase);
+    return {
+      canReset: early && Date.parse(marker.session.expiresAt) <= Date.now(),
+      canReconnect: !early,
+    };
+  }
+
+  async resetExpiredAdoption(): Promise<void> {
+    return this.withAdoptionOperation(undefined, async () => {
+      const marker = await this.readAdoptionMarker();
+      if (marker?.session.adoptionId !== this.adoptionMarker?.session.adoptionId) {
+        throw new SyncError("authority_adoption_state_conflict", "Move setup changed. Reopen Sync before recovering it.");
+      }
+      this.adoptionMarker = marker;
+      if (!marker || this.settingsHost.getMirrorProfile() || await this.app.vault.adapter.exists(ROLE_MARKER_PATH) || !this.getAdoptionRecovery()?.canReset) {
+        throw new SyncError("authority_adoption_reset_unsafe", "Only an expired move that never froze this vault can be reset locally.");
+      }
+      // These phases never send activation, and do not fence local writes.
+      // Leave all collection files/identity intact; expired server imports are
+      // reclaimed by Connect. Never use this path for an uncertain activation.
+      await this.clearAdoptionCheckpoint(marker.session.adoptionId);
+    });
+  }
+
+  async reconnectAdoption(callbacks: AdoptLocalCollectionCallbacks): Promise<MirrorProfile> {
+    return this.withAdoptionOperation(callbacks.signal, async (signal) => {
+      const marker = this.adoptionMarker;
+      if (!marker || !this.getAdoptionRecovery()?.canReconnect || this.settingsHost.getMirrorProfile()) {
+        throw new SyncError("authority_adoption_reconnect_unsafe", "This move does not require hosted recovery.");
+      }
+      // Fresh browser approval, not a local reset. Connect grants this mirror
+      // only for an accessible, active hosted authority. Keep the fence and
+      // snapshot until that proof is obtained and credentials are saved.
+      const enrollment = await this.enrollmentClient.enroll({
+        controlUrl: marker.session.controlUrl,
+        collectionId: marker.session.requested.collectionId,
+        mirrorName: marker.session.requested.mirrorName ?? marker.session.requested.sourceName,
+        mode: "read_write",
+      }, { ...callbacks, signal });
+      if (enrollment.collectionId !== marker.session.requested.collectionId || enrollment.mode !== "read_write") {
+        throw new SyncError("authority_adoption_state_conflict", "Connect approved a different collection or access mode; this vault remains protected.");
+      }
+      abortIfNeeded(signal);
+      await this.updateAdoptionPhase("adopted");
+      return this.persistAdoptedMirror(marker.session, enrollment);
+    });
+  }
+
   getSelectiveSync(): SelectiveSyncPolicy {
     return normalizeSelectiveSync(
       this.settingsHost.getMirrorProfile()?.selectiveSync ?? this.adoptionMarker?.selective_sync,
@@ -1405,7 +1508,7 @@ export class ConnectSyncController {
   }
 
   async adoptLocalCollection(input: AdoptLocalCollectionInput, callbacks: AdoptLocalCollectionCallbacks): Promise<MirrorProfile> {
-    return this.withLifetime(callbacks.signal, (signal) => this.adoptLocalCollectionActive(input, { ...callbacks, signal }));
+    return this.withAdoptionOperation(callbacks.signal, (signal) => this.adoptLocalCollectionActive(input, { ...callbacks, signal }));
   }
 
   private async adoptLocalCollectionActive(
@@ -1415,7 +1518,9 @@ export class ConnectSyncController {
     if (this.settingsHost.getMirrorProfile()) {
       throw new SyncError("mirror_already_configured", "This vault already mirrors a collection authority.");
     }
-    if (this.adoptionMarker) return this.resumeAdoption(callbacks);
+    if (this.adoptionMarker) return this.resumeAdoptionActive(callbacks);
+    callbacks.onProgress?.({ stage: "checking" });
+    assertAdoptionPaths(await this.previewAdoption(input.selectiveSync, callbacks.signal));
     const collection = await this.ensurePortableCollectionIdentity();
     const session = await this.adoptionClient.begin({
       controlUrl: input.controlUrl,
@@ -1425,7 +1530,14 @@ export class ConnectSyncController {
       retainMirror: true,
       mirrorName: input.mirrorName,
     }, callbacks);
-    await this.storeAdoptionSecret(session);
+    try {
+      await this.storeAdoptionSecret(session);
+    } catch (error) {
+      // No durable checkpoint or approval link exists yet. Best-effort retire
+      // the unapproved request using the still-in-memory credential.
+      await this.adoptionClient.cancel(session, callbacks).catch(() => undefined);
+      throw error;
+    }
     await this.writeAdoptionMarker({
       version: 1,
       phase: "waiting_for_approval",
@@ -1444,6 +1556,12 @@ export class ConnectSyncController {
       verification: AuthorityAdoptionVerification | MirrorEnrollmentVerification,
     ): void | Promise<void>;
   } = {}): Promise<MirrorProfile> {
+    return this.withAdoptionOperation(callbacks.signal, (signal) => this.resumeAdoptionActive({ ...callbacks, signal }));
+  }
+
+  private async resumeAdoptionActive(callbacks: Omit<AdoptLocalCollectionCallbacks, "onVerification"> & {
+    onVerification?: AdoptLocalCollectionCallbacks["onVerification"];
+  }): Promise<MirrorProfile> {
     const marker = this.adoptionMarker ?? await this.readAdoptionMarker();
     if (!marker) {
       throw new SyncError("authority_adoption_not_found", "This vault has no collection-adoption checkpoint.");
@@ -1460,15 +1578,14 @@ export class ConnectSyncController {
     if (marker.phase === "waiting_for_approval") {
       await callbacks.onVerification?.(publicAdoptionSession(session));
     }
-    return this.withLifetime(callbacks.signal, (signal) => this.runAdoptionWithRecovery(session, {
+    return this.runAdoptionWithRecovery(session, {
       ...callbacks,
-      signal,
       onVerification: (verification) => callbacks.onVerification?.(verification),
-    }));
+    });
   }
 
   async cancelAdoption(signal?: AbortSignal): Promise<void> {
-    return this.withLifetime(signal, (activeSignal) => this.cancelAdoptionActive(activeSignal));
+    return this.withAdoptionOperation(signal, (activeSignal) => this.cancelAdoptionActive(activeSignal));
   }
 
   private async cancelAdoptionActive(signal: AbortSignal): Promise<void> {
@@ -1702,6 +1819,45 @@ export class ConnectSyncController {
     };
   }
 
+  /**
+   * Local and hosted text of a record with a pending transfer, for review only.
+   * The hosted side is the collection's current snapshot; nothing is written.
+   */
+  async recordComparison(recordId: string, localPath: string): Promise<MirrorConflictComparison> {
+    const profile = this.requireProfile();
+    const transport = await this.transportFor(profile);
+    const session = await transport.openSession();
+    let remote: MirrorConflictSide = { state: "absent" };
+    let page: string | undefined;
+    do {
+      const snapshot = await transport.snapshot(session.snapshot_id, page);
+      const record = snapshot.records.find((candidate) => candidate.record_id === recordId);
+      if (record) {
+        remote = {
+          state: "exact",
+          path: record.path,
+          revision: record.revision,
+          size: new TextEncoder().encode(record.document).byteLength,
+          document: record.document,
+        };
+        break;
+      }
+      page = snapshot.next_page;
+    } while (page);
+    let local: MirrorConflictSide = { state: "absent" };
+    const file = this.app.vault.getAbstractFileByPath(safeMirrorPath(this.app.vault, localPath));
+    if (file instanceof TFile) {
+      const document = await this.app.vault.cachedRead(file);
+      local = {
+        state: "exact",
+        path: file.path,
+        size: new TextEncoder().encode(document).byteLength,
+        document,
+      };
+    }
+    return { entity: "record", objectId: recordId, decisionId: "", local, remote };
+  }
+
   async preserveConflictCopy(pathInput: string): Promise<string> {
     const path = safeMirrorPath(this.app.vault, pathInput);
     const existing = this.app.vault.getAbstractFileByPath(path);
@@ -1719,6 +1875,11 @@ export class ConnectSyncController {
   }
 
   async disconnect(removeSyncedFiles: boolean): Promise<DisconnectMirrorResult> {
+    if (this.isSyncing()) throw new SyncError("mirror_busy", "Stop the current synchronization before disconnecting.");
+    return this.withMirrorOperation(() => this.disconnectActive(removeSyncedFiles));
+  }
+
+  private async disconnectActive(removeSyncedFiles: boolean): Promise<DisconnectMirrorResult> {
     if (this.isSyncing()) throw new SyncError("mirror_busy", "Stop the current synchronization before disconnecting.");
     const profile = this.requireProfile();
     const stateStore = this.stateStoreFor(profile);
@@ -1750,6 +1911,7 @@ export class ConnectSyncController {
     reviewed: MdbaseSyncPreview,
     onProgress?: (progress: MirrorProgress) => void,
     onFileProgress?: (progress: FileTransferProgress) => void,
+    onReceipt?: (action: MirrorPlanAction, receipt: SyncActionReceipt) => void,
   ): Promise<MirrorApplyResult> {
     if (this.syncAbort) {
       throw new SyncError("mirror_busy", "Synchronization is already running for this vault.");
@@ -1766,7 +1928,7 @@ export class ConnectSyncController {
           abortIfNeeded(abort.signal);
           this.fileProgress = next;
           onFileProgress?.({ ...next });
-        });
+        }, onReceipt);
         const outcome = await mirror.apply(reviewed.plan, { signal: abort.signal });
         abortIfNeeded(abort.signal);
         return outcome;
@@ -1828,6 +1990,7 @@ export class ConnectSyncController {
       }
       completed = exchanged;
     } else if (marker.phase === "activating") {
+      callbacks.onProgress?.({ stage: "activating" });
       const snapshot = await this.readAdoptionSnapshot(marker);
       const exchanged = await this.adoptionClient.exchange(session, callbacks);
       completed = exchanged.status === "completed"
@@ -1840,31 +2003,39 @@ export class ConnectSyncController {
         completed = exchanged;
       } else {
         if (exchanged.status === "ready") {
+          callbacks.onProgress?.({ stage: "uploading", records: snapshot.records.length });
           await this.adoptionClient.uploadSnapshot(session, exchanged, snapshot, this.adoptionUploadOptions(session, callbacks));
         }
         await this.updateAdoptionPhase("activating", snapshot);
+        callbacks.onProgress?.({ stage: "activating" });
         completed = await this.adoptionClient.complete(session, snapshot, callbacks);
       }
     } else {
       const prepared = marker.phase === "waiting_for_approval"
         ? await this.adoptionClient.waitForApproval(session, callbacks)
         : await this.requirePreparedAdoption(session, callbacks);
+      await this.updateAdoptionPhase("uploading", undefined, prepared.adoption.expires_at);
+      callbacks.onProgress?.({ stage: "checking" });
       const warmSnapshot = await this.captureAuthoritySnapshot(session.requested.collectionId, callbacks.signal);
-      await this.updateAdoptionPhase("uploading");
+      callbacks.onProgress?.({ stage: "uploading", records: warmSnapshot.records.length });
       await this.adoptionClient.uploadSnapshot(session, prepared, warmSnapshot, this.adoptionUploadOptions(session, callbacks));
 
       // From this point local plugin writes are stopped. Any external file edit is
       // a pending mirror write, not part of the authority snapshot being activated.
+      callbacks.onProgress?.({ stage: "checking" });
       const finalSnapshot = await this.captureAuthoritySnapshot(session.requested.collectionId, callbacks.signal);
       await this.writeAdoptionSnapshot(finalSnapshot);
       await this.updateAdoptionPhase("fenced", finalSnapshot);
       const finalPrepared = await this.requirePreparedAdoption(session, callbacks);
+      callbacks.onProgress?.({ stage: "uploading", records: finalSnapshot.records.length });
       await this.adoptionClient.uploadSnapshot(session, finalPrepared, finalSnapshot, this.adoptionUploadOptions(session, callbacks));
       await this.updateAdoptionPhase("activating", finalSnapshot);
+      callbacks.onProgress?.({ stage: "activating" });
       completed = await this.adoptionClient.complete(session, finalSnapshot, callbacks);
     }
 
     await this.updateAdoptionPhase("adopted");
+    callbacks.onProgress?.({ stage: "connecting" });
     return this.finishRetainedMirror(session, completed, callbacks);
   }
 
@@ -1875,6 +2046,10 @@ export class ConnectSyncController {
     try {
       return await this.runAdoption(session, callbacks);
     } catch (error) {
+      // The SDK uses authority_adoption_cancelled for both a stopped poll and
+      // a terminal server cancellation. A locally aborted wait is only a pause:
+      // retain the credential, marker and any fenced snapshot for Resume.
+      if (callbacks.signal?.aborted) throw new DOMException("Adoption paused.", "AbortError");
       if (!isSafelyInactiveAdoption(error)) throw error;
       await this.adoptionClient.cancel(session, {
         signal: callbacks.signal,
@@ -1937,6 +2112,13 @@ export class ConnectSyncController {
         onVerification: (verification) => callbacks.onVerification(verification),
       });
     }
+    return this.persistAdoptedMirror(session, enrollment);
+  }
+
+  private async persistAdoptedMirror(
+    session: AuthorityAdoptionVerification,
+    enrollment: MirrorEnrollment,
+  ): Promise<MirrorProfile> {
     const markerCreated = await this.markMirror(enrollment.collectionId);
     try {
       await this.persistEnrollment(enrollment, this.adoptionMarker?.selective_sync);
@@ -1948,10 +2130,7 @@ export class ConnectSyncController {
     return this.requireProfile();
   }
 
-  private async captureAuthoritySnapshot(
-    collectionId: string,
-    signal?: AbortSignal,
-  ): Promise<AuthorityImportSnapshot> {
+  private async adoptionSources(policy: SelectiveSyncPolicy, signal?: AbortSignal) {
     abortIfNeeded(signal);
     const config = await loadMdbaseConfig(this.app.vault);
     abortIfNeeded(signal);
@@ -1961,46 +2140,117 @@ export class ConnectSyncController {
     const configuration = await this.app.vault.adapter.read("mdbase.yaml");
     abortIfNeeded(signal);
     const rawConfiguration = parseYaml(configuration);
-    const resources: Array<{ path: string; kind: "configuration" | "type" | "view"; document: string }> = [{
-      path: "mdbase.yaml",
-      kind: "configuration",
-      document: configuration,
-    }];
     const typesPrefix = `${normalizePath(config.settings.types_folder)}/`;
     const typeFiles = this.app.vault.getMarkdownFiles()
       .filter((file) => normalizePath(file.path).startsWith(typesPrefix))
       .sort((left, right) => left.path.localeCompare(right.path));
-    for (const typeFile of typeFiles) {
-      abortIfNeeded(signal);
-      resources.push({
-        path: normalizePath(typeFile.path),
-        kind: "type",
-        document: await this.app.vault.cachedRead(typeFile),
-      });
-      abortIfNeeded(signal);
-    }
-    const viewPatterns = configuredBasePatterns(rawConfiguration);
-    if (viewPatterns.length) {
-      const matches = viewPatterns.map((pattern) => picomatch(pattern, { dot: true }));
-      const baseFiles = listFiles(this.app.vault)
-        .filter((file) => file.extension === "base")
-        .filter((file) => matches.some((match) => match(normalizePath(file.path))))
-        .sort((left, right) => left.path.localeCompare(right.path));
-      for (const file of baseFiles) {
+    const matches = configuredBasePatterns(rawConfiguration).map(pattern => picomatch(pattern, { dot: true }));
+    const baseFiles = listFiles(this.app.vault)
+      .filter(file => file.extension === "base" && matches.some(match => match(normalizePath(file.path))))
+      .sort((left, right) => left.path.localeCompare(right.path));
+    const recordFiles = this.app.vault.getMarkdownFiles()
+      .filter(file => !isExcluded(normalizePath(file.path), config))
+      .sort((left, right) => left.path.localeCompare(right.path));
+    const resourcePaths = ["mdbase.yaml", ...typeFiles.map(file => file.path), ...baseFiles.map(file => file.path)];
+    const binaryPaths = policy.file_classes.length
+      ? (await this.fileSystem.listBinary?.(new Set(resourcePaths)) ?? [])
+        .filter(path => binaryPathSelected(policy, path) && !isExcluded(path, config))
+      : [];
+    abortIfNeeded(signal);
+    const preview: AdoptionPreview = {
+      records: recordFiles.length, resources: resourcePaths.length, files: binaryPaths.length,
+      conflicts: findAdoptionPathConflicts([...resourcePaths, ...recordFiles.map(file => file.path), ...binaryPaths]),
+    };
+    return { config, configuration, typeFiles, baseFiles, recordFiles, binaryPaths, resourcePaths, preview };
+  }
+
+  private renameNamespace() {
+    return this.app.vault.getAllLoadedFiles?.() ?? listFiles(this.app.vault);
+  }
+
+  async planAdoptionRenames(policy = this.getSelectiveSync()): Promise<AdoptionRenamePlan> {
+    this.assertActive();
+    const { preview, resourcePaths } = await this.adoptionSources(normalizeSelectiveSync(policy));
+    const paths = this.renameNamespace().map(file => file.path).sort();
+    const proposed = proposeAdoptionRenames(preview.conflicts, paths, new Set(resourcePaths));
+    const sources = proposed.renames.map(({ from }) => {
+      const file = this.app.vault.getAbstractFileByPath(from);
+      return [from, file instanceof TFile ? file.stat : null];
+    });
+    const revision = (await binaryInfo(new TextEncoder().encode(JSON.stringify({ paths, sources, proposed, policy })).buffer)).content_digest;
+    return { ...proposed, revision };
+  }
+
+  async applyAdoptionRenames(
+    plan: AdoptionRenamePlan,
+    policy = this.getSelectiveSync(),
+    onProgress?: (completed: number, total: number) => void,
+  ): Promise<number> {
+    return this.withAdoptionOperation(undefined, async (signal) => {
+      this.assertLocalAuthorityWritable();
+      if (this.settingsHost.getMirrorProfile() || await this.app.vault.adapter.exists(ROLE_MARKER_PATH)) {
+        throw new SyncError("adoption_rename_unsafe", "Automatic rename review is only available before this vault becomes a mirror.");
+      }
+      const current = await this.planAdoptionRenames(policy);
+      if (JSON.stringify(current) !== JSON.stringify(plan)) {
+        throw new SyncError("adoption_rename_stale", "Files changed since the rename review. Review the new suggestions before renaming.");
+      }
+      // Capture object identities once; never rename a replacement file that
+      // happens to appear at a reviewed source path during this batch.
+      const sources = plan.renames.map(change => this.app.vault.getAbstractFileByPath(change.from));
+      let completed = 0;
+      onProgress?.(0, plan.renames.length);
+      for (const [index, change] of plan.renames.entries()) {
+        const file = sources[index];
+        try {
+          abortIfNeeded(signal);
+          this.assertLocalAuthorityWritable();
+          if (!(file instanceof TFile) || file.path !== change.from
+            || this.app.vault.getAbstractFileByPath(change.from) !== file) {
+            throw new Error("The source file changed. Review again.");
+          }
+          if (this.renameNamespace().some(entry => portablePathKey(entry.path) === portablePathKey(change.to))
+            || await this.app.vault.adapter.exists(change.to)) {
+            throw new Error("The destination is now occupied. Review again.");
+          }
+          abortIfNeeded(signal);
+          await this.app.fileManager.renameFile(file, change.to);
+          completed++;
+        } catch (error) {
+          // FileManager may move the file and then fail while updating links.
+          if (file?.path === change.to) completed++;
+          throw new SyncError("adoption_rename_failed", `Rename stopped after ${completed} of ${plan.renames.length} files. Check filenames and links before retrying. ${error instanceof Error ? error.message : String(error)}`);
+        }
+        onProgress?.(completed, plan.renames.length);
+      }
+      return completed;
+    });
+  }
+
+  async previewAdoption(policy = this.getSelectiveSync(), signal?: AbortSignal): Promise<AdoptionPreview> {
+    this.assertActive();
+    return (await this.adoptionSources(normalizeSelectiveSync(policy), signal)).preview;
+  }
+
+  private async captureAuthoritySnapshot(
+    collectionId: string,
+    signal?: AbortSignal,
+  ): Promise<AuthorityImportSnapshot> {
+    const { config, configuration, typeFiles, baseFiles, recordFiles, binaryPaths, preview } = await this.adoptionSources(this.getSelectiveSync(), signal);
+    assertAdoptionPaths(preview);
+    const resources: Array<{ path: string; kind: "configuration" | "type" | "view"; document: string }> = [
+      { path: "mdbase.yaml", kind: "configuration", document: configuration },
+    ];
+    for (const [kind, entries] of [["type", typeFiles], ["view", baseFiles]] as const) {
+      for (const file of entries) {
         abortIfNeeded(signal);
-        resources.push({
-          path: normalizePath(file.path),
-          kind: "view",
-          document: await this.app.vault.cachedRead(file),
-        });
-        abortIfNeeded(signal);
+        resources.push({ path: normalizePath(file.path), kind, document: await this.app.vault.cachedRead(file) });
       }
     }
     const records = [];
-    for (const file of this.app.vault.getMarkdownFiles().sort((left, right) => left.path.localeCompare(right.path))) {
+    for (const file of recordFiles) {
       abortIfNeeded(signal);
       const path = normalizePath(file.path);
-      if (isExcluded(path, config)) continue;
       const document = await this.app.vault.cachedRead(file);
       abortIfNeeded(signal);
       records.push({
@@ -2009,12 +2259,8 @@ export class ConnectSyncController {
       });
     }
     const files: CollectionFileDescriptor[] = [];
-    const policy = normalizeSelectiveSync(this.adoptionMarker?.selective_sync);
-    if (policy.file_classes.length) {
+    if (binaryPaths.length) {
       const blobStore = this.adoptionBlobStore(collectionId);
-      const binaryPaths = (await this.fileSystem.listBinary?.(new Set(resources.map((resource) => resource.path))) ?? [])
-        .filter((path) => binaryPathSelected(policy, path))
-        .filter((path) => !isExcluded(path, config));
       for (const path of binaryPaths) {
         abortIfNeeded(signal);
         const source = await this.fileSystem.readBinary?.(path);
@@ -2157,12 +2403,14 @@ export class ConnectSyncController {
     onProgress?: (progress: MirrorProgress) => void,
     signal?: AbortSignal,
     onFileProgress?: (progress: FileTransferProgress) => void,
+    onReceipt?: (action: MirrorPlanAction, receipt: SyncActionReceipt) => void,
   ): Promise<DirectoryMirror<JsonObject>> {
     const profile = this.requireProfile();
     await this.assertMirror(profile.collectionId);
     const transport = await this.transportFor(profile, signal, onFileProgress);
+    const stateStore = this.stateStoreFor(profile);
     const mirrorOptions: DirectoryMirrorOptions = {
-      stateStore: this.stateStoreFor(profile),
+      stateStore: onReceipt ? new ReceiptObservingStateStore(stateStore, onReceipt) : stateStore,
       fileSystem: this.fileSystem,
       blobStore: this.blobStoreFor(profile),
       selectiveSync: normalizeSelectiveSync(profile.selectiveSync),
@@ -2195,13 +2443,27 @@ export class ConnectSyncController {
   }
 
   private async storeAdoptionSecret(session: AuthorityAdoptionSession): Promise<void> {
-    this.app.secretStorage.setSecret(this.adoptionSecretId(session.adoptionId), session.credential);
+    try {
+      const id = this.adoptionSecretId(session.adoptionId);
+      this.app.secretStorage.setSecret(id, session.credential);
+      if (this.app.secretStorage.getSecret(id) !== session.credential) throw new Error("Secret was not retained");
+    } catch {
+      throw new SyncError("authority_adoption_credentials_unavailable", "Obsidian could not save this device's authorization. Unlock or repair Obsidian's secret storage before starting the move. Nothing was uploaded.");
+    }
   }
 
   private async persistEnrollment(enrollment: MirrorEnrollment, selectiveSync?: SelectiveSyncPolicy): Promise<void> {
     this.assertActive();
-    this.app.secretStorage.setSecret(this.accessSecretId(enrollment.collectionId), enrollment.accessToken);
-    this.app.secretStorage.setSecret(this.refreshSecretId(enrollment.collectionId), enrollment.refreshCredential);
+    try {
+      const accessId = this.accessSecretId(enrollment.collectionId);
+      const refreshId = this.refreshSecretId(enrollment.collectionId);
+      this.app.secretStorage.setSecret(accessId, enrollment.accessToken);
+      this.app.secretStorage.setSecret(refreshId, enrollment.refreshCredential);
+      if (this.app.secretStorage.getSecret(accessId) !== enrollment.accessToken
+        || this.app.secretStorage.getSecret(refreshId) !== enrollment.refreshCredential) throw new Error("Secret was not retained");
+    } catch {
+      throw new SyncError("mirror_credentials_unavailable", "Obsidian could not save this device's authorization. Unlock or repair Obsidian's secret storage, then reconnect. Your files were not changed.");
+    }
     await this.settingsHost.saveMirrorProfile(profileFromEnrollment(
       enrollment,
       selectiveSync ?? this.settingsHost.getMirrorProfile()?.selectiveSync,
@@ -2414,6 +2676,7 @@ export class ConnectSyncController {
   private async updateAdoptionPhase(
     phase: AdoptionMarker["phase"],
     snapshot?: AuthorityImportSnapshot,
+    expiresAt?: string,
   ): Promise<void> {
     if (!this.adoptionMarker) {
       throw new SyncError("authority_adoption_not_found", "Collection-adoption checkpoint is missing.");
@@ -2421,6 +2684,7 @@ export class ConnectSyncController {
     await this.writeAdoptionMarker({
       ...this.adoptionMarker,
       phase,
+      ...(expiresAt ? { session: { ...this.adoptionMarker.session, expiresAt } } : {}),
       ...(snapshot ? {
         manifest_digest: snapshot.manifest_digest,
         source_revision: snapshot.source_revision,
@@ -2509,10 +2773,14 @@ export class ConnectSyncController {
     if (await this.app.vault.adapter.exists(ADOPTION_MARKER_PATH)) {
       await this.app.vault.adapter.remove(ADOPTION_MARKER_PATH);
     }
-    // Obsidian currently has no SecretStorage delete API. Emptying the value
-    // makes the one-time adoption credential unusable without writing it to disk.
-    this.app.secretStorage.setSecret(this.adoptionSecretId(adoptionId), "");
     this.adoptionMarker = null;
+    // Cleanup of a retired credential must not strand a completed/reset move
+    // when the secret store itself is unavailable. No secrets go into vault files.
+    try {
+      this.app.secretStorage.setSecret(this.adoptionSecretId(adoptionId), "");
+    } catch {
+      // The terminal/expired request cannot be restarted with this credential.
+    }
     if (collectionId) {
       await this.adoptionBlobStore(collectionId).prune(new Set()).catch(() => undefined);
     }

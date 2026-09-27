@@ -636,6 +636,75 @@ async function resolveV03SchemaRef(
   }
 }
 
+/** Build a v0.3 type definition from canonical type frontmatter and its resolved schema. */
+export function v03TypeDefFromFrontmatter(
+  fm: Record<string, unknown>,
+  filePath: string,
+  schema: Record<string, unknown>,
+): MdbaseTypeDef {
+  const collection = isRecord(fm.collection)
+    ? (deepClone(fm.collection) as V03CollectionSemantics)
+    : undefined;
+  const fields = fieldsFromV03Schema(schema);
+  for (const rule of collection?.unique ?? []) {
+    if (typeof rule.field === "string" && fields[rule.field]) {
+      fields[rule.field].unique = true;
+      fields[rule.field].unique_scope = rule.scope;
+    }
+  }
+  for (const [fieldName, rule] of Object.entries(collection?.links ?? {})) {
+    if (!fields[fieldName]) continue;
+    fields[fieldName].target = rule.target_type;
+    fields[fieldName].validate_exists = rule.validate_exists;
+  }
+  return {
+    name: String(fm.name),
+    version: typeof fm.version === "number" ? fm.version : undefined,
+    description: typeof fm.description === "string" ? fm.description : undefined,
+    display_name_key: collection?.display?.name_field,
+    path_pattern: collection?.path?.pattern,
+    strict: schema.additionalProperties === false,
+    match: isRecord(fm.match) ? (fm.match) : undefined,
+    fields,
+    filePath,
+    specProfile: "v0.3",
+    schema: deepClone(schema),
+    collection,
+    originalFrontmatter: deepClone(fm),
+  };
+}
+
+export interface CollectionRecord {
+  path: string;
+  frontmatter: Record<string, unknown>;
+}
+
+/** Parsed frontmatter for every record the collection validates. Unparseable notes are skipped. */
+export async function readCollectionRecords(vault: Vault, config: MdbaseConfig): Promise<CollectionRecord[]> {
+  const records: CollectionRecord[] = [];
+  for (const file of vault.getMarkdownFiles()) {
+    if (isExcluded(file.path, config)) continue;
+    const parsed = parseFrontmatter(await vault.cachedRead(file));
+    if (parsed.error) continue;
+    records.push({ path: file.path, frontmatter: parsed.frontmatter });
+  }
+  return records;
+}
+
+/**
+ * Validate one record's frontmatter against a single type's own rules. Link
+ * existence and cross-record uniqueness need the vault and are not included.
+ */
+export function validateRecordAgainstType(
+  path: string,
+  frontmatter: Record<string, unknown>,
+  typeDef: MdbaseTypeDef,
+): MdbaseIssue[] {
+  const issues: MdbaseIssue[] = [];
+  validateAgainstType(path, frontmatter, typeDef, issues);
+  return issues;
+}
+
 export async function loadTypeDefinitions(vault: Vault, config: MdbaseConfig): Promise<Map<string, MdbaseTypeDef>> {
   const rawTypeMap = new Map<string, MdbaseTypeDef>();
   const typesFolderPrefix = `${normalizePath(config.settings.types_folder)}/`;
@@ -656,37 +725,7 @@ export async function loadTypeDefinitions(vault: Vault, config: MdbaseConfig): P
         schema = await resolveV03SchemaRef(vault, file.path, schemaWrapper.ref);
       }
       if (!schema) continue;
-
-      const collection = isRecord(fm.collection)
-        ? (deepClone(fm.collection) as V03CollectionSemantics)
-        : undefined;
-      const fields = fieldsFromV03Schema(schema);
-      for (const rule of collection?.unique ?? []) {
-        if (typeof rule.field === "string" && fields[rule.field]) {
-          fields[rule.field].unique = true;
-          fields[rule.field].unique_scope = rule.scope;
-        }
-      }
-      for (const [fieldName, rule] of Object.entries(collection?.links ?? {})) {
-        if (!fields[fieldName]) continue;
-        fields[fieldName].target = rule.target_type;
-        fields[fieldName].validate_exists = rule.validate_exists;
-      }
-      rawTypeMap.set(fm.name, {
-        name: fm.name,
-        version: typeof fm.version === "number" ? fm.version : undefined,
-        description: typeof fm.description === "string" ? fm.description : undefined,
-        display_name_key: collection?.display?.name_field,
-        path_pattern: collection?.path?.pattern,
-        strict: schema.additionalProperties === false,
-        match: isRecord(fm.match) ? (fm.match) : undefined,
-        fields,
-        filePath: file.path,
-        specProfile: "v0.3",
-        schema: deepClone(schema),
-        collection,
-        originalFrontmatter: deepClone(fm),
-      });
+      rawTypeMap.set(fm.name, v03TypeDefFromFrontmatter(fm, file.path, schema));
       continue;
     }
     if (!isRecord(fm.fields)) continue;
@@ -1078,7 +1117,7 @@ function validateConstraintBounds(
         filePath,
         "error",
         "below_min",
-        `Field '${fieldPath}' must be >= ${fieldDef.min}`,
+        `'${fieldPath}' is ${value}; must be at least ${fieldDef.min}`,
         fieldPath,
       );
     }
@@ -1089,7 +1128,7 @@ function validateConstraintBounds(
         filePath,
         "error",
         "above_max",
-        `Field '${fieldPath}' must be <= ${fieldDef.max}`,
+        `'${fieldPath}' is ${value}; must be at most ${fieldDef.max}`,
         fieldPath,
       );
     }
@@ -1103,7 +1142,7 @@ function validateConstraintBounds(
         filePath,
         "error",
         "below_min_length",
-        `Field '${fieldPath}' length must be >= ${fieldDef.min_length}`,
+        `'${fieldPath}' has length ${length}; needs at least ${fieldDef.min_length}`,
         fieldPath,
       );
     }
@@ -1114,7 +1153,7 @@ function validateConstraintBounds(
         filePath,
         "error",
         "above_max_length",
-        `Field '${fieldPath}' length must be <= ${fieldDef.max_length}`,
+        `'${fieldPath}' has length ${length}; limit is ${fieldDef.max_length}`,
         fieldPath,
       );
     }
@@ -1129,7 +1168,7 @@ function validateConstraintBounds(
           filePath,
           "error",
           "pattern_mismatch",
-          `Field '${fieldPath}' must match pattern /${fieldDef.pattern}/`,
+          `'${fieldPath}' is ${describeValue(value)}; does not match /${fieldDef.pattern}/`,
           fieldPath,
         );
       }
@@ -1345,7 +1384,95 @@ function snakeCaseKeyword(keyword: string): string {
   return keyword.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
-function ajvErrorToIssue(error: ErrorObject, filePath: string, typeName: string): MdbaseIssue {
+function describeValue(value: unknown): string {
+  if (value === null) return "empty";
+  if (typeof value === "string") {
+    if (!value.trim()) return "empty";
+    return `'${value.length > 40 ? `${value.slice(0, 39)}…` : value}'`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `a list of ${value.length}`;
+  if (isRecord(value)) return "an object";
+  return value === undefined ? "missing" : JSON.stringify(value) ?? "unknown";
+}
+
+const SCHEMA_TYPE_NAMES: Record<string, string> = {
+  string: "text",
+  integer: "a whole number",
+  number: "a number",
+  boolean: "true or false",
+  array: "a list",
+  object: "an object",
+  null: "empty",
+};
+
+const FORMAT_NAMES: Record<string, string> = {
+  date: "a date (YYYY-MM-DD)",
+  "date-time": "a date and time",
+  time: "a time (HH:MM)",
+  email: "an email address",
+  uri: "a URI",
+};
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** Plain-language issue text that names the field and, where useful, the actual value. */
+function humanSchemaMessage(error: ErrorObject, field: string | undefined, value: unknown, typeName: string): string {
+  const params = error.params as Record<string, unknown>;
+  const subject = field ? `'${field}'` : "This note";
+  const actual = describeValue(value);
+  switch (error.keyword) {
+    case "required":
+      return `Missing required field '${field ?? String(params.missingProperty)}'`;
+    case "additionalProperties":
+      return `Field '${field ?? String(params.additionalProperty)}' is not declared by type '${typeName}'`;
+    case "type": {
+      const typeParam = Array.isArray(params.type) ? params.type.join(",") : typeof params.type === "string" ? params.type : "";
+      const expected = typeParam.split(",").map((name) => SCHEMA_TYPE_NAMES[name] ?? name).join(" or ");
+      return `${subject} is ${actual}; expected ${expected}`;
+    }
+    case "enum": {
+      const allowed = Array.isArray(params.allowedValues) ? params.allowedValues.map((entry) => String(entry)) : [];
+      const listed = allowed.length > 6 ? `${allowed.slice(0, 6).join(", ")}, …` : allowed.join(", ");
+      return `${subject} is ${actual}; expected one of ${listed}`;
+    }
+    case "const":
+      return `${subject} is ${actual}; expected ${describeValue(params.allowedValue)}`;
+    case "maximum":
+      return `${subject} is ${actual}; must be at most ${String(params.limit)}`;
+    case "minimum":
+      return `${subject} is ${actual}; must be at least ${String(params.limit)}`;
+    case "exclusiveMaximum":
+      return `${subject} is ${actual}; must be less than ${String(params.limit)}`;
+    case "exclusiveMinimum":
+      return `${subject} is ${actual}; must be more than ${String(params.limit)}`;
+    case "maxLength":
+      return `${subject} is ${plural(typeof value === "string" ? value.length : 0, "character")}; limit is ${String(params.limit)}`;
+    case "minLength":
+      return `${subject} is ${plural(typeof value === "string" ? value.length : 0, "character")}; needs at least ${String(params.limit)}`;
+    case "maxItems":
+      return `${subject} has ${plural(Array.isArray(value) ? value.length : 0, "item")}; limit is ${String(params.limit)}`;
+    case "minItems":
+      return `${subject} has ${plural(Array.isArray(value) ? value.length : 0, "item")}; needs at least ${String(params.limit)}`;
+    case "uniqueItems":
+      return `${subject} contains duplicate items`;
+    case "pattern":
+      return `${subject} is ${actual}; does not match ${String(params.pattern)}`;
+    case "format":
+      return `${subject} is ${actual}; expected ${FORMAT_NAMES[String(params.format)] ?? String(params.format)}`;
+    default:
+      return `${subject}: ${error.message ?? "invalid value"}`;
+  }
+}
+
+function ajvErrorToIssue(
+  error: ErrorObject,
+  filePath: string,
+  typeName: string,
+  frontmatter: Record<string, unknown> = {},
+): MdbaseIssue {
   const params = error.params as Record<string, unknown>;
   const parent = jsonPointerToFieldPath(error.instancePath);
   const child = typeof params.missingProperty === "string"
@@ -1355,10 +1482,11 @@ function ajvErrorToIssue(error: ErrorObject, filePath: string, typeName: string)
       : undefined;
   const field = parent && child ? `${parent}.${child}` : child ?? parent;
   const code = error.keyword === "format" ? "format_invalid" : `schema_${snakeCaseKeyword(error.keyword)}`;
+  const value = resolveJsonPointer(frontmatter, error.instancePath);
   return {
     path: filePath,
     code,
-    message: `JSON Schema ${error.keyword} failed for type '${typeName}': ${error.message ?? "invalid value"}`,
+    message: humanSchemaMessage(error, field, value, typeName),
     severity: "error",
     field,
     type: typeName,
@@ -1366,6 +1494,7 @@ function ajvErrorToIssue(error: ErrorObject, filePath: string, typeName: string)
     details: {
       instance_path: error.instancePath,
       schema_path: error.schemaPath,
+      technical_message: `JSON Schema ${error.keyword} failed for type '${typeName}': ${error.message ?? "invalid value"}`,
       ...(child === undefined ? {} : { property: child }),
     },
   };
@@ -1410,7 +1539,7 @@ function validateV03Schema(
     const validate = getAjv().compile(typeDef.schema);
     if (validate(frontmatter)) return;
     for (const error of validate.errors ?? []) {
-      issues.push(ajvErrorToIssue(error, filePath, typeDef.name));
+      issues.push(ajvErrorToIssue(error, filePath, typeDef.name, frontmatter));
     }
   } catch (error) {
     issues.push({

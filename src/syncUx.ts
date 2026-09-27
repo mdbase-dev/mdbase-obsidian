@@ -49,14 +49,14 @@ export function syncReviewPresentation(
 ): SyncReviewPresentation {
   if (!plan) {
     return {
-      actionLabel: "Review before syncing",
+      actionLabel: "Review changes",
       actionDisabled: true,
       message: "Review local and hosted changes before syncing.",
     };
   }
   if (plan.summary.blocking_issues > 0) {
     return {
-      actionLabel: "Fix local files before syncing",
+      actionLabel: "Resolve issues",
       actionDisabled: true,
       message: "Synchronization is paused. Resolve the blocking issues, then refresh the review.",
     };
@@ -66,10 +66,10 @@ export function syncReviewPresentation(
   const frontmatterWarning = plan.issues.some((issue) => issue.code === "invalid_frontmatter" && !issue.blocking);
   return {
     actionLabel: outcomes
-      ? `Sync ${outcomes} ${outcomes === 1 ? "outcome" : "outcomes"}`
+      ? `Sync ${outcomes} ${outcomes === 1 ? "change" : "changes"}`
       : hasCheckpoint
-        ? "Confirm sync checkpoint"
-        : "Already up to date",
+        ? "Confirm sync"
+        : "Up to date",
     actionDisabled: busy || plan.actions.length === 0,
     message: frontmatterWarning
       ? "Frontmatter warnings do not block this sync. Document bytes are preserved; synchronization does not repair YAML."

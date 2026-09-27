@@ -18,6 +18,7 @@ import type {
 } from "@mdbase-dev/connect-sync/enrollment";
 import {
   ConnectSyncController,
+  findAdoptionPathConflicts,
   type ConnectSyncSettingsHost,
   type MirrorProfile,
 } from "../src/connectSync";
@@ -66,6 +67,19 @@ class TestVault {
       ...[...this.files.values()].map(({ file }) => file),
       ...[...this.binaryFiles.values()].map(({ file }) => file),
     ];
+  }
+
+  getAllLoadedFiles(): Array<TFile | TFolder> {
+    return [...this.getFiles(), ...[...this.folders].map(path => new TestFolder(path))];
+  }
+
+  async rename(file: TFile, to: string): Promise<void> {
+    assert.equal(await this.adapter.exists(to), false);
+    const entry = this.files.get(file.path);
+    assert.equal(entry?.file, file);
+    this.files.delete(file.path);
+    file.path = to;
+    this.files.set(to, entry!);
   }
 
   async cachedRead(file: TFile): Promise<string> {
@@ -123,6 +137,7 @@ class FakeAdoption {
   uploads: AuthorityImportSnapshot[] = [];
   uploadedFileBytes: Uint8Array[][] = [];
   completionCalls = 0;
+  cancelCalls = 0;
   state: "ready" | "activating" | "completed" = "ready";
   exchangeError: Error | null = null;
   private failedFinalUpload = false;
@@ -223,6 +238,7 @@ class FakeAdoption {
   }
 
   async cancel(): Promise<void> {
+    this.cancelCalls++;
     this.state = "ready";
   }
 
@@ -334,8 +350,13 @@ async function fixture(options: FakeAdoptionOptions = {}) {
   await vault.put("tasks/one.md", `---\n${JSON.stringify({ title: "One" })}\n---\n\nBody`);
   await vault.put("views/tasks.base", "views: []\n");
   const secrets = new Map<string, string>();
+  const renameCalls: Array<{ from: string; to: string }> = [];
   const app = {
     vault,
+    fileManager: { renameFile: async (file: TFile, to: string) => {
+      renameCalls.push({ from: file.path, to });
+      await vault.rename(file, to);
+    } },
     secretStorage: {
       setSecret: (id: string, value: string) => secrets.set(id, value),
       getSecret: (id: string) => secrets.get(id) || null,
@@ -344,18 +365,301 @@ async function fixture(options: FakeAdoptionOptions = {}) {
   const settings = new TestSettings();
   const adoption = new FakeAdoption(collectionId, options);
   const adoptionBlobs = new MemoryMirrorBlobStore();
+  const enrollment = new FakeEnrollment(collectionId);
   const controller = new ConnectSyncController(
     app as never,
     settings,
     {
       adoptionClient: adoption as unknown as AuthorityAdoptionClient,
-      enrollmentClient: new FakeEnrollment(collectionId) as unknown as MirrorEnrollmentClient,
+      enrollmentClient: enrollment as unknown as MirrorEnrollmentClient,
       adoptionBlobStoreFactory: () => adoptionBlobs,
     },
   );
   await controller.initialize();
-  return { app, vault, settings, adoption, controller, collectionId };
+  return { app, vault, settings, adoption, enrollment, controller, collectionId, renameCalls };
 }
+
+async function lostCredential(phase: "waiting_for_approval" | "uploading" | "fenced" | "activating" | "adopted", expired = true) {
+  const state = await fixture();
+  const { credential: _credential, ...session } = state.adoption.session;
+  session.expiresAt = new Date(Date.now() + (expired ? -60_000 : 60_000)).toISOString();
+  await state.vault.put(".mdbase/authority-adoption.json", JSON.stringify({
+    version: 1, phase, session, manifest_digest: null, source_revision: null, source_head: null,
+    selective_sync: { file_classes: ["image"], excluded_folders: ["Private"] },
+  }));
+  await state.controller.initialize();
+  return state;
+}
+
+test("expired pre-activation setup can be reset without a credential or changing collection bytes", async () => {
+  for (const phase of ["waiting_for_approval", "uploading"] as const) {
+    const s = await lostCredential(phase);
+    const before = await Promise.all(s.vault.getMarkdownFiles().map(file => s.vault.cachedRead(file)));
+    const config = await s.vault.adapter.read("mdbase.yaml");
+    assert.deepEqual(s.controller.getAdoptionRecovery(), { canReset: true, canReconnect: false });
+    s.app.secretStorage.setSecret = () => { throw new Error("keyring locked"); };
+    await s.controller.resetExpiredAdoption();
+    assert.equal(s.controller.getAdoptionMarker(), null);
+    assert.equal(await s.vault.adapter.exists(".mdbase/authority-adoption.json"), false);
+    assert.equal(s.adoption.cancelCalls, 0, "do not claim remote cancellation without authorization");
+    assert.equal(s.settings.profile, null);
+    assert.deepEqual(await Promise.all(s.vault.getMarkdownFiles().map(file => s.vault.cachedRead(file))), before);
+    assert.equal(await s.vault.adapter.read("mdbase.yaml"), config);
+    await s.controller.initialize();
+    assert.equal(s.controller.getAdoptionMarker(), null, "reset survives restart");
+  }
+});
+
+test("recovery never resets a live request, a usable credential, or a fenced/unknown activation", async () => {
+  for (const phase of ["waiting_for_approval", "uploading", "fenced", "activating", "adopted"] as const) {
+    const s = await lostCredential(phase, false);
+    await assert.rejects(s.controller.resetExpiredAdoption(), /never froze/);
+    assert.equal(s.controller.getAdoptionMarker()?.phase, phase);
+    if (["fenced", "activating", "adopted"].includes(phase)) assert.throws(() => s.controller.assertLocalAuthorityWritable());
+  }
+  const s = await lostCredential("uploading");
+  s.app.secretStorage.setSecret(`mdbase-connect-adoption-${s.adoption.adoptionId}`, "available");
+  assert.equal(s.controller.getAdoptionRecovery(), null);
+  await assert.rejects(s.controller.resetExpiredAdoption(), /never froze/);
+});
+
+test("reset rechecks the durable phase instead of trusting stale in-memory state", async () => {
+  const s = await lostCredential("uploading");
+  const marker = JSON.parse(await s.vault.adapter.read(".mdbase/authority-adoption.json"));
+  marker.phase = "activating";
+  await s.vault.put(".mdbase/authority-adoption.json", JSON.stringify(marker));
+  await assert.rejects(s.controller.resetExpiredAdoption(), /never froze/);
+  assert.throws(() => s.controller.assertLocalAuthorityWritable());
+});
+
+test("late credential loss recovers only through fresh approval of the same hosted collection", async () => {
+  for (const phase of ["fenced", "activating", "adopted"] as const) {
+    const s = await lostCredential(phase);
+    const record = await s.vault.adapter.read("tasks/one.md");
+    assert.deepEqual(s.controller.getAdoptionRecovery(), { canReset: false, canReconnect: true });
+    const profile = await s.controller.reconnectAdoption({ onVerification: () => undefined });
+    assert.equal(profile.collectionId, s.collectionId);
+    assert.deepEqual(profile.selectiveSync, { file_classes: ["image"], excluded_folders: ["Private"] });
+    assert.equal(s.controller.getAdoptionMarker(), null);
+    assert.equal(await s.vault.adapter.read("tasks/one.md"), record);
+    assert.equal(s.adoption.completionCalls, 0, "recovery must not start another activation");
+  }
+});
+
+test("failed or wrong-collection approval preserves the checkpoint and local write fence", async () => {
+  const s = await lostCredential("activating");
+  const path = ".mdbase/authority-adoption.json";
+  const before = await s.vault.adapter.read(path);
+  const enrolled = await s.enrollment.enroll();
+  s.enrollment.enroll = async () => { throw new Error("hosted authority is not active"); };
+  await assert.rejects(s.controller.reconnectAdoption({ onVerification: () => undefined }), /not active/);
+  s.enrollment.enroll = async () => ({ ...enrolled, collectionId: randomUUID() });
+  await assert.rejects(s.controller.reconnectAdoption({ onVerification: () => undefined }), /different collection/);
+  assert.equal(await s.vault.adapter.read(path), before);
+  assert.equal(s.settings.profile, null);
+  assert.throws(() => s.controller.assertLocalAuthorityWritable());
+});
+
+test("recovery cannot race another move operation", async () => {
+  const s = await lostCredential("activating");
+  const enrollment = await s.enrollment.enroll();
+  let release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  s.enrollment.enroll = async () => { await waiting; return enrollment; };
+  const pending = s.controller.reconnectAdoption({ onVerification: () => undefined });
+  await assert.rejects(s.controller.resetExpiredAdoption(), /Stop the current move/);
+  await assert.rejects(s.controller.cancelAdoption(), /Stop the current move/);
+  await assert.rejects(s.controller.resumeAdoption(), /Stop the current move/);
+  release();
+  await pending;
+});
+
+test("aborted hosted recovery preserves the original checkpoint even if enrollment resolves", async () => {
+  const s = await lostCredential("activating");
+  const before = await s.vault.adapter.read(".mdbase/authority-adoption.json");
+  const abort = new AbortController();
+  const enrollment = await s.enrollment.enroll();
+  s.enrollment.enroll = async () => { abort.abort(); return enrollment; };
+  await assert.rejects(s.controller.reconnectAdoption({ signal: abort.signal, onVerification: () => undefined }), { name: "AbortError" });
+  assert.equal(await s.vault.adapter.read(".mdbase/authority-adoption.json"), before);
+  assert.equal(s.settings.profile, null);
+});
+
+test("reset remains retryable if checkpoint removal fails", async () => {
+  const s = await lostCredential("uploading");
+  const remove = s.vault.adapter.remove;
+  s.vault.adapter.remove = async () => { throw new Error("disk failure"); };
+  await assert.rejects(s.controller.resetExpiredAdoption(), /disk failure/);
+  assert.equal(s.controller.getAdoptionMarker()?.phase, "uploading");
+  s.vault.adapter.remove = remove;
+  await s.controller.resetExpiredAdoption();
+  assert.equal(s.controller.getAdoptionMarker(), null);
+});
+
+test("unavailable secret storage does not block safe expired-setup cleanup", async () => {
+  const s = await lostCredential("uploading");
+  s.app.secretStorage.getSecret = () => { throw new Error("keyring locked"); };
+  s.app.secretStorage.setSecret = () => { throw new Error("keyring locked"); };
+  assert.deepEqual(s.controller.getAdoptionRecovery(), { canReset: true, canReconnect: false });
+  await s.controller.resetExpiredAdoption();
+  assert.equal(s.controller.getAdoptionMarker(), null);
+});
+
+test("silent secret-store failure is detected before publishing an adoption checkpoint", async () => {
+  const s = await fixture();
+  s.app.secretStorage.getSecret = () => null;
+  let approvalShown = false;
+  await assert.rejects(s.controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian" }, {
+    onVerification: () => { approvalShown = true; },
+  }), /could not save this device/);
+  assert.equal(approvalShown, false);
+  assert.equal(s.adoption.uploads.length, 0);
+  assert.equal(s.adoption.cancelCalls, 1);
+  assert.equal(await s.vault.adapter.exists(".mdbase/authority-adoption.json"), false);
+});
+
+test("reconnect does not discard recovery state when fresh secrets cannot be saved", async () => {
+  const s = await lostCredential("activating");
+  s.app.secretStorage.getSecret = () => null;
+  await assert.rejects(s.controller.reconnectAdoption({ onVerification: () => undefined }), /could not save this device/);
+  assert.equal(s.controller.getAdoptionMarker()?.phase, "adopted");
+  assert.equal(s.settings.profile, null);
+  assert.throws(() => s.controller.assertLocalAuthorityWritable());
+});
+
+test("portable path preflight matches case and Unicode aliases without folding distinct Greek characters", () => {
+  assert.deepEqual(findAdoptionPathConflicts([
+    "Tasks/A.md", "tasks/a.md", "CAFÉ.md", "cafe\u0301.md", "ΟΣ.md", "οσ.md", "ος.md", "same.md", "same.md",
+  ]), [["Tasks/A.md", "tasks/a.md"], ["CAFÉ.md", "cafe\u0301.md"], ["ΟΣ.md", "οσ.md"], ["same.md", "same.md"]]);
+});
+
+test("filename conflicts stop before approval or upload and preflight does not read record bodies", async () => {
+  const s = await fixture();
+  await s.vault.put("tasks/ONE.md", "Other content");
+  let begun = false;
+  s.adoption.begin = async () => { begun = true; return s.adoption.session; };
+  const read = s.vault.cachedRead.bind(s.vault);
+  let bodies = 0;
+  s.vault.cachedRead = async file => { if (file.path.startsWith("tasks/")) bodies++; return read(file); };
+  const preview = await s.controller.previewAdoption();
+  assert.equal(preview.conflicts.length, 1);
+  assert.deepEqual(new Set(preview.conflicts[0]), new Set(["tasks/one.md", "tasks/ONE.md"]));
+  assert.equal(bodies, 0);
+  await assert.rejects(s.controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian" }, {
+    onVerification: () => assert.fail("must not ask for approval"),
+  }), /filename conflicts/);
+  assert.equal(begun, false);
+  assert.equal(s.adoption.uploads.length, 0);
+  assert.equal(s.controller.getAdoptionMarker(), null);
+  assert.equal(await s.vault.adapter.read("tasks/ONE.md"), "Other content");
+});
+
+test("conflicts introduced while approving are checked again before upload and can be resumed after correction", async () => {
+  const s = await fixture();
+  await assert.rejects(s.controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian" }, {
+    onVerification: async () => { await s.vault.put("tasks/ONE.md", "Other content"); },
+  }), /filename conflicts/);
+  assert.equal(s.adoption.uploads.length, 0);
+  assert.equal(s.controller.getAdoptionMarker()?.phase, "uploading", "approval was received even though preflight stopped the upload");
+  await s.vault.put("tasks/other.md", await s.vault.adapter.read("tasks/ONE.md"));
+  await s.vault.adapter.remove("tasks/ONE.md");
+  const stages: string[] = [];
+  await s.controller.resumeAdoption({ onProgress: progress => stages.push(progress.stage) });
+  assert.deepEqual(stages, ["checking", "uploading", "checking", "uploading", "activating", "connecting"]);
+  assert.equal(s.settings.profile?.collectionId, s.collectionId);
+});
+
+test("preflight includes resource-record overlaps and selected attachment paths", async () => {
+  const s = await fixture();
+  await s.vault.put("_TYPES/task.md", "Resource alias");
+  await s.vault.putBinary("assets/A.png", Uint8Array.of(1));
+  await s.vault.putBinary("assets/a.png", Uint8Array.of(2));
+  assert.equal((await s.controller.previewAdoption()).conflicts.length, 1);
+  assert.equal((await s.controller.previewAdoption({ file_classes: ["image"], excluded_folders: [] })).conflicts.length, 2);
+  assert.equal((await s.controller.previewAdoption({ file_classes: ["image"], excluded_folders: ["assets"] })).conflicts.length, 1);
+});
+
+test("approved moves retain the server import deadline rather than the shorter approval deadline", async () => {
+  const s = await fixture();
+  const prepared = await s.adoption.waitForApproval();
+  const expires = new Date(Date.now() + 60 * 60_000).toISOString();
+  s.adoption.waitForApproval = async () => ({ ...prepared, adoption: { ...prepared.adoption, expires_at: expires } });
+  s.adoption.uploadSnapshot = async () => { throw new Error("upload interrupted"); };
+  await assert.rejects(s.controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian" }, { onVerification: () => undefined }), /upload interrupted/);
+  assert.equal(s.controller.getAdoptionMarker()?.session.expiresAt, expires);
+});
+
+test("reviewed adoption renames use FileManager and preserve both note bodies", async () => {
+  const s = await fixture();
+  await s.vault.put("tasks/ONE.md", "Other content");
+  const original = await s.vault.adapter.read("tasks/one.md");
+  const plan = await s.controller.planAdoptionRenames();
+  assert.deepEqual(plan.renames, [{ from: "tasks/one.md", to: "tasks/one (2).md" }]);
+  assert.equal(s.renameCalls.length, 0, "review must not mutate files");
+  assert.equal(await s.controller.applyAdoptionRenames(plan), 1);
+  assert.deepEqual(s.renameCalls, plan.renames);
+  assert.equal(await s.vault.adapter.read("tasks/one (2).md"), original);
+  assert.equal(await s.vault.adapter.read("tasks/ONE.md"), "Other content");
+  assert.equal((await s.controller.previewAdoption()).conflicts.length, 0);
+  await assert.rejects(s.controller.applyAdoptionRenames(plan), /Files changed/);
+});
+
+test("rename review includes empty folders in the occupied portable namespace", async () => {
+  const s = await fixture();
+  await s.vault.put("tasks/ONE.md", "Other content");
+  await s.vault.createFolder("tasks/ONE (2).MD");
+  assert.equal((await s.controller.planAdoptionRenames()).renames[0].to, "tasks/one (3).md");
+});
+
+test("stale or edited rename proposals cannot move files", async () => {
+  const s = await fixture();
+  await s.vault.put("tasks/ONE.md", "Other content");
+  const plan = await s.controller.planAdoptionRenames();
+  const forged = structuredClone(plan);
+  forged.renames[0].to = "different.md";
+  await assert.rejects(s.controller.applyAdoptionRenames(forged), /Files changed/);
+  await s.vault.put("tasks/ONE (2).md", "Arrived after review");
+  await assert.rejects(s.controller.applyAdoptionRenames(plan), /Files changed/);
+  assert.equal(s.renameCalls.length, 0);
+  assert.equal(await s.vault.adapter.read("tasks/ONE (2).md"), "Arrived after review");
+});
+
+test("rename batch stops rather than overwriting a destination created midway", async () => {
+  const s = await fixture();
+  await s.vault.put("tasks/ONE.md", "Other content");
+  await s.vault.put("tasks/two.md", "Two");
+  await s.vault.put("tasks/TWO.md", "Other two");
+  const plan = await s.controller.planAdoptionRenames();
+  const rename = s.app.fileManager.renameFile;
+  s.app.fileManager.renameFile = async (file, to) => {
+    await rename(file, to);
+    await s.vault.put(plan.renames[1].to.toUpperCase(), "Concurrent arrival");
+  };
+  await assert.rejects(s.controller.applyAdoptionRenames(plan), /after 1 of 2/);
+  assert.equal(s.renameCalls.length, 1);
+  assert.equal(await s.vault.adapter.read(plan.renames[1].to.toUpperCase()), "Concurrent arrival");
+  assert.equal(await s.vault.adapter.exists(plan.renames[1].from), true);
+  assert.equal((await s.controller.planAdoptionRenames()).renames.length, 1, "retry reviews only remaining collisions");
+});
+
+test("post-rename link failure reports partial completion without trying to undo it", async () => {
+  const s = await fixture();
+  await s.vault.put("tasks/ONE.md", "Other content");
+  const plan = await s.controller.planAdoptionRenames();
+  const rename = s.app.fileManager.renameFile;
+  s.app.fileManager.renameFile = async (file, to) => { await rename(file, to); throw new Error("link update failed"); };
+  await assert.rejects(s.controller.applyAdoptionRenames(plan), /after 1 of 1.*Check filenames and links.*link update failed/);
+  assert.equal(s.renameCalls.length, 1);
+  assert.equal(await s.vault.adapter.exists(plan.renames[0].to), true);
+});
+
+test("frozen collections refuse automatic renames", async () => {
+  const s = await lostCredential("activating");
+  await s.vault.put("tasks/ONE.md", "Other content");
+  const plan = await s.controller.planAdoptionRenames();
+  await assert.rejects(s.controller.applyAdoptionRenames(plan), /frozen/);
+  assert.equal(s.renameCalls.length, 0);
+});
 
 test("restart completes cleanup after enrollment is saved but adoption marker removal fails", async () => {
   const { app, vault, settings, controller } = await fixture();
@@ -477,7 +781,7 @@ test("adoption snapshot cancellation stops before hashing the next heavy file", 
   );
   assert.equal(binaryReads, 1);
   assert.equal(adoption.uploads.length, 0);
-  assert.equal(controller.getAdoptionMarker()?.phase, "waiting_for_approval");
+  assert.equal(controller.getAdoptionMarker()?.phase, "uploading");
 
   vault.onReadBinary = null;
   await controller.cancelAdoption();
@@ -561,6 +865,47 @@ test("a pre-activation checkpoint can be cancelled without leaving the vault fen
   await state.controller.cancelAdoption();
   assert.equal(state.controller.getAdoptionMarker(), null);
   assert.doesNotThrow(() => state.controller.assertLocalAuthorityWritable());
+});
+
+test("Stop waiting preserves the adoption checkpoint and secret across restart for Resume", async () => {
+  const state = await fixture();
+  const abort = new AbortController();
+  const wait = state.adoption.waitForApproval.bind(state.adoption);
+  state.adoption.waitForApproval = async () => {
+    abort.abort();
+    // This is the real SDK's polling-abort error, not a DOM AbortError.
+    throw new AuthorityAdoptionError("authority_adoption_cancelled", "Collection adoption was cancelled.");
+  };
+  await assert.rejects(state.controller.adoptLocalCollection({
+    controlUrl: "https://connect.example", mirrorName: "Obsidian",
+  }, { ...callbacks, signal: abort.signal }), (error: unknown) => error instanceof Error && error.name === "AbortError");
+  assert.equal(state.adoption.cancelCalls, 0);
+  assert.equal(state.controller.getAdoptionMarker()?.phase, "waiting_for_approval");
+  assert.ok(await state.vault.adapter.exists(".mdbase/authority-adoption.json"));
+  assert.ok(state.app.secretStorage.getSecret(`mdbase-connect-adoption-${state.adoption.adoptionId}`));
+  state.controller.dispose();
+  state.adoption.waitForApproval = wait;
+  const restarted = new ConnectSyncController(state.app as never, state.settings, {
+    adoptionClient: state.adoption as unknown as AuthorityAdoptionClient,
+    enrollmentClient: new FakeEnrollment(state.collectionId) as unknown as MirrorEnrollmentClient,
+    adoptionBlobStoreFactory: () => new MemoryMirrorBlobStore(),
+  });
+  await restarted.initialize();
+  await restarted.resumeAdoption(callbacks);
+  assert.equal(restarted.getAdoptionMarker(), null);
+  assert.equal(state.settings.profile?.collectionId, state.collectionId);
+});
+
+test("server-side cancellation without a local abort still retires the checkpoint", async () => {
+  const state = await fixture();
+  state.adoption.waitForApproval = async () => {
+    throw new AuthorityAdoptionError("authority_adoption_cancelled", "Cancelled in Connect", 409);
+  };
+  await assert.rejects(state.controller.adoptLocalCollection({
+    controlUrl: "https://connect.example", mirrorName: "Obsidian",
+  }, callbacks), /start a new adoption/);
+  assert.equal(state.controller.getAdoptionMarker(), null);
+  assert.equal(state.adoption.cancelCalls, 1);
 });
 
 test("an expired server checkpoint safely unfreezes the local authority", async () => {

@@ -4,11 +4,13 @@ import { readFile } from "node:fs/promises";
 const bundle = await readFile(new URL("../main.js", import.meta.url));
 const source = bundle.toString("utf8");
 const gzipBytes = gzipSync(bundle).byteLength;
-// The sync-polish baseline includes conflict inspection, transfer telemetry,
-// recovery actions, and a bounded activity ledger. Keep a narrow margin over
-// that reviewed production bundle so unintentional dependency growth is visible.
-const rawBudget = 680 * 1024;
-const gzipBudget = 195 * 1024;
+// The type-workbench baseline adds record impact previews, constraint editing,
+// the YAML source editor (CodeMirror itself is supplied by Obsidian, not bundled),
+// rule-grouped issues, and adoption recovery on top of the sync-polish work.
+// Keep a narrow margin over that reviewed production bundle so unintentional
+// dependency growth is visible.
+const rawBudget = 730 * 1024;
+const gzipBudget = 209 * 1024;
 const forbidden = [
   /require\((["'])node:(?:fs|path|crypto|os|worker_threads|child_process)\1\)/,
   /require\((["'])(?:fs|path|crypto|os|worker_threads|child_process)\1\)/,

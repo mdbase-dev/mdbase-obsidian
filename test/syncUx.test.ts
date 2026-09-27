@@ -58,7 +58,7 @@ test("blocking sync reviews use fix-first wording and disable apply", () => {
     summary: { uploads: 0, downloads: 0, conflicts: 0, blocking_issues: 1 },
   }), 1);
 
-  assert.equal(presentation.actionLabel, "Fix local files before syncing");
+  assert.equal(presentation.actionLabel, "Resolve issues");
   assert.equal(presentation.actionDisabled, true);
   assert.match(presentation.message, /paused.*resolve the blocking issues/i);
   assert.doesNotMatch(`${presentation.actionLabel} ${presentation.message}`, /up to date|sync when ready/i);
@@ -77,7 +77,7 @@ test("nonblocking frontmatter diagnostics leave exact transfers enabled", () => 
   });
   const presentation = syncReviewPresentation(reviewed, 2);
   assert.equal(presentation.actionDisabled, false);
-  assert.equal(presentation.actionLabel, "Sync 1 outcome");
+  assert.equal(presentation.actionLabel, "Sync 1 change");
   assert.match(presentation.message, /warnings do not block.*bytes are preserved/i);
   assert.equal(syncReviewPresentation(reviewed, 2, true).actionDisabled, true);
   const blocked = syncReviewPresentation({ ...reviewed, actions: [], issues: [

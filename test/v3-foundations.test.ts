@@ -21,6 +21,7 @@ import {
   ObsidianMirrorFileSystem,
 } from "../src/connectSync";
 import { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
+import { historyFileFromReceipt } from "../src/syncHistory";
 import {
   analyzeV02Migration,
   applyV02Migration,
@@ -92,6 +93,10 @@ class MemoryVault {
   targetWrites = 0;
 
   adapter = {
+    stat: async (path: string) => {
+      const entry = this.getAbstractFileByPath(path);
+      return entry ? { type: entry instanceof TFolder ? "folder" as const : "file" as const } : null;
+    },
     exists: async (path: string): Promise<boolean> => {
       const normalized = normalizePath(path);
       return this.files.has(normalized) || this.binaryFiles.has(normalized) || this.folders.has(normalized);
@@ -189,6 +194,14 @@ class MemoryVault {
       return;
     }
     this.files.set(file.path, { file, content });
+  }
+
+  async process(file: TFile, transform: (current: string) => string): Promise<string> {
+    const current = this.read(file.path);
+    if (current === null) throw new Error(`missing ${file.path}`);
+    const next = transform(current);
+    this.files.set(file.path, { file, content: next });
+    return next;
   }
 
   async readBinary(file: TFile): Promise<ArrayBuffer> {
@@ -830,12 +843,13 @@ test("Connect enrollment keeps credentials out of plugin data and refuses local-
     collection_id: collectionId,
   })}\n`);
   let transferredProfile: import("../src/connectSync").MirrorProfile | null = null;
+  const transferredSecrets = new Map<string, string>();
   const transferredController = new ConnectSyncController({
     vault: transferredVault,
     secretStorage: {
-      setSecret: () => undefined,
-      getSecret: () => null,
-      listSecrets: () => [],
+      setSecret: (id: string, value: string) => void transferredSecrets.set(id, value),
+      getSecret: (id: string) => transferredSecrets.get(id) ?? null,
+      listSecrets: () => [...transferredSecrets.keys()],
     },
   } as never, {
     getMirrorProfile: () => transferredProfile,
@@ -897,12 +911,13 @@ test("failed enrollment persistence removes its temporary mirror-role marker", a
     },
   };
   const vault = new MemoryVault();
+  const secrets = new Map<string, string>();
   const controller = new ConnectSyncController({
     vault,
     secretStorage: {
-      setSecret: () => undefined,
-      getSecret: () => null,
-      listSecrets: () => [],
+      setSecret: (id: string, value: string) => void secrets.set(id, value),
+      getSecret: (id: string) => secrets.get(id) ?? null,
+      listSecrets: () => [...secrets.keys()],
     },
   } as never, {
     getMirrorProfile: () => null,
@@ -1111,6 +1126,92 @@ test("portable mirror materializes resources and records through Obsidian Vault 
   assert.equal((await mirror.status()).state, "up_to_date");
 });
 
+test("conditional text writes reject changes at Vault.process, including configuration files", async () => {
+  for (const path of ["race.md", "mdbase.yaml"]) {
+    const vault = new MemoryVault();
+    const file = await vault.create(path, "reviewed bytes\r\n");
+    const adapter = new ObsidianMirrorFileSystem(vault as never);
+    const process = vault.process.bind(vault);
+    vault.process = async (target, transform) => {
+      await vault.modify(target, "competing local bytes");
+      return process(target, transform);
+    };
+    await assert.rejects(adapter.write(path, "hosted bytes", "reviewed bytes\r\n"), /changed before/);
+    assert.equal(vault.read(path), "competing local bytes");
+    vault.process = process;
+    await adapter.write(path, "hosted bytes", "competing local bytes");
+    assert.equal(vault.read(path), "hosted bytes");
+    await assert.rejects(adapter.write(path, "new remote", null), /changed before/);
+    await vault.delete(file);
+    await assert.rejects(adapter.write(path, "remote", "deleted local"), /changed before/);
+    assert.equal(vault.read(path), null);
+  }
+});
+
+test("a competing local write survives actual engine apply and the next review becomes a conflict", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "race", path: "race.md", frontmatter: {}, body: "baseline", types: [] }]);
+  const makeMirror = () => {
+    const replica = hosted.registerReplica({ name: "Race test", mode: "read_write" });
+    const vault = new MemoryVault();
+    const state = new MemoryMirrorStateStore();
+    const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+      fileSystem: new ObsidianMirrorFileSystem(vault as never), stateStore: state,
+    });
+    return { vault, state, mirror };
+  };
+  const a = makeMirror();
+  const b = makeMirror();
+  await a.mirror.sync();
+  await b.mirror.sync();
+  await b.vault.modify(b.vault.getAbstractFileByPath("race.md") as TFile, "remote version");
+  await b.mirror.sync();
+  const reviewed = await a.mirror.inspect();
+  const process = a.vault.process.bind(a.vault);
+  a.vault.process = async (file, transform) => {
+    a.vault.process = process;
+    await a.vault.modify(file, "CONCURRENT LOCAL WRITER — KEEP ME");
+    return process(file, transform);
+  };
+  const outcome = await a.mirror.apply(reviewed);
+  assert.equal(outcome.status, "stale");
+  assert.equal(a.vault.read("race.md"), "CONCURRENT LOCAL WRITER — KEEP ME");
+  assert.equal((await a.state.read())?.batch, undefined, "a rejected conditional write must not trap recovery on its old plan");
+  const next = await a.mirror.inspect();
+  assert.ok(next.actions.some((action) => action.command === "record_conflict"));
+  assert.equal((await a.mirror.apply(next)).status, "attention");
+  assert.equal(a.vault.read("race.md"), "CONCURRENT LOCAL WRITER — KEEP ME");
+  assert.equal(b.vault.read("race.md"), "remote version");
+});
+
+test("review exposes physical folder and ancestor-file collisions and recovers after removal", async () => {
+  for (const [target, obstruction, folder] of [
+    ["folder-block.md", "folder-block.md", true],
+    ["blocked/note.md", "blocked", false],
+  ] as const) {
+    const hosted = new MemoryAuthority();
+    hosted.seed([{ record_id: "blocked", path: target, frontmatter: {}, body: "hosted bytes", types: [] }]);
+    const replica = hosted.registerReplica({ name: "Collision", mode: "read_write" });
+    const vault = new MemoryVault();
+    if (folder) await vault.createFolder(obstruction);
+    else await vault.create(obstruction, "unrelated local bytes");
+    const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+      fileSystem: new ObsidianMirrorFileSystem(vault as never), stateStore: new MemoryMirrorStateStore(),
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const review = await mirror.inspect();
+      assert.deepEqual(review.actions, []);
+      assert.ok(review.issues.some((issue) => issue.path === target && issue.blocking && /Move or rename/.test(issue.message)));
+      assert.equal((await mirror.apply(review)).status, "attention");
+      assert.ok(vault.getAbstractFileByPath(obstruction));
+    }
+    if (folder) vault.folders.delete(obstruction);
+    else await vault.delete(vault.getAbstractFileByPath(obstruction) as TFile);
+    assert.equal((await mirror.apply(await mirror.inspect())).status, "applied");
+    assert.match(vault.read(target) ?? "", /hosted bytes/);
+  }
+});
+
 test("Obsidian binary adapter preserves exact bytes and excludes unsafe collection paths", async () => {
   const vault = new MemoryVault();
   const adapter = new ObsidianMirrorFileSystem(vault as never);
@@ -1148,6 +1249,7 @@ test("portable mirror downloads digest-verified binary files into the vault", as
   const base = hosted.transport(replica);
   const bytes = Uint8Array.from([0, 255, 17, 42, 0, 128]);
   const file = fileDescriptor("Attachments/pixel.png", bytes);
+  let downloads = 0;
   const transport: SyncTransport = {
     ...base,
     fileSnapshot: async (snapshotId, page) => ({
@@ -1155,6 +1257,7 @@ test("portable mirror downloads digest-verified binary files into the vault", as
       files: [file],
     }),
     downloadFile: async function* () {
+      downloads++;
       yield bytes.subarray(0, 2);
       yield bytes.subarray(2);
     },
@@ -1169,25 +1272,31 @@ test("portable mirror downloads digest-verified binary files into the vault", as
   });
   const preview = await mirror.previewInitialization();
   assert.equal(preview.download_files, 1);
-  await mirror.sync();
+  await mirror.status();
+  await mirror.inspect();
+  assert.equal(downloads, 0, "review and status must not fetch attachment bodies");
+  assert.equal(vault.readBytes(file.path), null);
+  await mirror.apply(await mirror.inspect());
+  assert.equal(downloads, 1);
   assert.deepEqual(vault.readBytes(file.path), bytes);
   assert.equal((await mirror.status()).state, "up_to_date");
   assert.equal((await state.read())?.files?.[file.file_id]?.file.content_digest, file.content_digest);
 });
 
-test("binary integrity failure leaves both the vault and mirror checkpoint untouched", async () => {
+test("binary integrity failure preserves vault bytes and leaves a recoverable unadvanced checkpoint", async () => {
   const hosted = new MemoryAuthority();
   const replica = hosted.registerReplica({ name: "Corrupt binary", mode: "read_only" });
   const base = hosted.transport(replica);
   const expected = Uint8Array.of(1, 2, 3, 4);
   const file = fileDescriptor("Media/corrupt.png", expected);
+  let corrupt = true;
   const transport: SyncTransport = {
     ...base,
     fileSnapshot: async (snapshotId, page) => ({
       ...await base.fileSnapshot(snapshotId, page),
       files: [file],
     }),
-    downloadFile: async function* () { yield Uint8Array.of(1, 2, 3, 5); },
+    downloadFile: async function* () { yield corrupt ? Uint8Array.of(1, 2, 3, 5) : expected; },
   };
   const vault = new MemoryVault();
   const state = new MemoryMirrorStateStore();
@@ -1197,9 +1306,17 @@ test("binary integrity failure leaves both the vault and mirror checkpoint untou
     blobStore: new MemoryMirrorBlobStore(),
     selectiveSync: { file_classes: ["image"], excluded_folders: [] },
   });
-  await assert.rejects(mirror.sync(), /integrity|digest|verification/i);
+  const plan = await mirror.inspect();
+  const failed = await mirror.apply(plan);
+  assert.equal(failed.status, "failed");
+  assert.match(failed.failure?.message ?? "", /integrity|digest|verification/i);
   assert.equal(vault.readBytes(file.path), null);
-  assert.equal(await state.read(), null);
+  assert.equal((await state.read())?.generation, 0);
+  assert.ok((await state.read())?.batch);
+  corrupt = false;
+  assert.equal((await mirror.apply(plan)).status, "applied");
+  assert.deepEqual(vault.readBytes(file.path), expected);
+  assert.equal((await state.read())?.batch, undefined);
 });
 
 test("portable mirror uploads new local binary files with exact bytes", async () => {
@@ -1312,7 +1429,13 @@ test("Connect controller previews the exact first transfer and later local edits
   assert.deepEqual(first.entries.map((entry) => [entry.direction, entry.action, entry.path]), [
     ["download", "create", "notes/one.md"],
   ]);
-  await controller.sync(first);
+  const received: string[] = [];
+  await controller.sync(first, undefined, undefined, (action, receipt) => {
+    received.push(`${action.command}:${receipt.status}`);
+    const file = historyFileFromReceipt(action, receipt, "2026-09-24T00:00:00.000Z");
+    if (file) received.push(`${file.direction}:${file.action}:${file.path}`);
+  });
+  assert.deepEqual(received, ["write_local:completed", "download:create:notes/one.md"]);
   const local = vault.getAbstractFileByPath("notes/one.md") as TFile;
   await vault.modify(local, (vault.read(local.path) ?? "").replace("First", "Edited locally"));
   const incremental = await controller.preview();
@@ -1320,6 +1443,69 @@ test("Connect controller previews the exact first transfer and later local edits
   assert.deepEqual(incremental.entries.map((entry) => [entry.direction, entry.action, entry.path]), [
     ["upload", "update", "notes/one.md"],
   ]);
+  received.length = 0;
+  await controller.sync(incremental, undefined, undefined, (action, receipt) => {
+    const file = historyFileFromReceipt(action, receipt, "2026-09-24T00:00:00.000Z");
+    if (file) received.push(`${file.direction}:${file.action}:${file.path}:${file.status}`);
+  });
+  assert.deepEqual(received, ["upload:update:notes/one.md:completed"]);
+});
+
+test("controller cancellation stops attachment transfer and a new controller resumes the durable action", async () => {
+  const hosted = new MemoryAuthority();
+  const replicaId = hosted.registerReplica({ name: "Download cancellation", mode: "read_write" });
+  const base = hosted.transport(replicaId);
+  const session = await base.openSession();
+  const vault = new MemoryVault();
+  await vault.create(".mdbase/connect-role.json", JSON.stringify({ version: 1, role: "mirror", collection_id: session.collection_id }));
+  const bytes = Uint8Array.of(1, 2, 3, 4);
+  const file = fileDescriptor("Media/cancel.png", bytes);
+  const state = new MemoryMirrorStateStore();
+  const blobs = new MemoryMirrorBlobStore();
+  let cancel = true;
+  let starts = 0;
+  let tails = 0;
+  let controller: ConnectSyncController;
+  const profile = {
+    version: 1 as const, collectionId: session.collection_id, replicaId, mode: "read_write" as const,
+    syncUrl: "https://sync.example", controlUrl: "https://connect.example", name: "Cancellation",
+    enrollmentId: "test", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+    selectiveSync: { file_classes: ["image" as const], excluded_folders: [] },
+  };
+  const transport: SyncTransport = {
+    ...base,
+    fileSnapshot: async (id, page) => ({ ...await base.fileSnapshot(id, page), files: [file] }),
+    downloadFile: async function* () {
+      starts++;
+      assert.equal(controller.isSyncing(), true);
+      if (cancel) controller.cancelSync();
+      yield bytes.subarray(0, 2);
+      tails++;
+      yield bytes.subarray(2);
+    },
+  };
+  const makeController = () => new ConnectSyncController({
+    vault, secretStorage: { getSecret: () => "test-token", setSecret: () => undefined },
+  } as never, { getMirrorProfile: () => profile, saveMirrorProfile: async () => undefined }, {
+    fileSystem: new ObsidianMirrorFileSystem(vault as never), transportFactory: () => transport,
+    stateStoreFactory: () => state, blobStoreFactory: () => blobs,
+  });
+  controller = makeController();
+  await controller.status();
+  const review = await controller.preview();
+  assert.equal(starts, 0);
+  await assert.rejects(controller.sync(review), (error: unknown) => error instanceof Error && error.name === "AbortError");
+  assert.equal(starts, 1);
+  assert.equal(tails, 0);
+  assert.equal(vault.readBytes(file.path), null);
+  assert.equal(await blobs.has(file.content_digest), false);
+  assert.equal((await state.read())?.batch?.phase, "cancelled");
+  controller.dispose();
+  controller = makeController();
+  cancel = false;
+  assert.equal((await controller.sync(await controller.preview())).status, "applied");
+  assert.deepEqual(vault.readBytes(file.path), bytes);
+  assert.equal((await state.read())?.batch, undefined);
 });
 
 test("disconnect removes only checkpoint-exact files and preserves local changes", async () => {
@@ -1382,7 +1568,28 @@ test("disconnect removes only checkpoint-exact files and preserves local changes
   const changed = vault.getAbstractFileByPath("notes/changed.md") as TFile;
   await vault.modify(changed, `${vault.read(changed.path)}Local edit after checkpoint\n`);
 
-  const result = await controller.disconnect(true);
+  let started!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const readBinary = vault.adapter.readBinary;
+  vault.adapter.readBinary = async (path) => {
+    if (path === "notes/exact.md") {
+      vault.adapter.readBinary = readBinary;
+      started();
+      await gate;
+    }
+    return readBinary(path);
+  };
+  const status = controller.status();
+  await entered;
+  const removal = controller.disconnect(true);
+  await new Promise<void>((resolve) => { setImmediate(resolve); });
+  assert.ok(profile, "disconnect must wait for the status reader before removing its configuration");
+  release();
+  await status;
+  const result = await removal;
+  assert.equal(await controller.status(), null);
 
   assert.deepEqual(result.removed, ["notes/exact.md"]);
   assert.deepEqual(result.preserved, ["notes/changed.md"]);

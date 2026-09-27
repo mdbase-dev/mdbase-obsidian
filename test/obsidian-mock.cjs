@@ -56,6 +56,39 @@ class TFolder {
 
 class Vault {}
 
+class ItemView {
+  constructor(leaf) {
+    this.app = leaf.app;
+    this.containerEl = leaf.containerEl;
+  }
+  registerDomEvent(element, type, listener) { element.addEventListener(type, listener); }
+}
+class Modal {}
+class Notice {}
+// Records the most recently shown menu so tests can invoke its items.
+class Menu {
+  constructor() { this.items = []; }
+  addItem(build) {
+    const item = { title: "", disabled: false, click: null };
+    const api = {
+      setTitle(title) { item.title = title; return api; },
+      setIcon() { return api; },
+      setDisabled(disabled) { item.disabled = disabled; return api; },
+      setWarning() { return api; },
+      onClick(click) { item.click = click; return api; },
+    };
+    build(api);
+    this.items.push(item);
+    return this;
+  }
+  addSeparator() { return this; }
+  showAtMouseEvent() { Menu.last = this; }
+  showAtPosition(position) { Menu.last = this; this.position = position; }
+}
+Menu.last = null;
+const Platform = { isMobile: false };
+function setIcon(element, icon) { element.setAttribute("data-icon", icon); }
+
 async function requestUrl() {
   throw new Error("requestUrl is not configured in this unit test.");
 }
@@ -68,5 +101,11 @@ module.exports = {
   TFile,
   TFolder,
   Vault,
+  ItemView,
+  Menu,
+  Modal,
+  Notice,
+  Platform,
+  setIcon,
   requestUrl,
 };
