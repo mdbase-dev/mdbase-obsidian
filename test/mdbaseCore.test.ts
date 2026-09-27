@@ -19,6 +19,7 @@ import {
   schemaFromV03Fields,
   validateCollection,
   validateFile,
+  isExcluded,
 } from "../src/mdbaseCore";
 
 interface StoredFile {
@@ -350,6 +351,32 @@ test("validateCollection reports duplicate unique values and respects include_su
   );
   const duplicateWithoutSubfolders = withoutSubfolders.filter((issue) => issue.code === "duplicate_unique");
   assert.equal(duplicateWithoutSubfolders.length, 0);
+});
+
+test("v0.3 discovery applies built-in exclusions and portable globs", () => {
+  const config: MdbaseConfig = {
+    spec_version: "0.3.0",
+    settings: {
+      types_folder: "_types",
+      contracts_folder: "_contracts",
+      explicit_type_keys: ["type", "types"],
+      exclude: ["drafts/**", "archive/*.md"],
+    },
+  };
+  for (const excluded of [
+    ".obsidian/plugins/a.md",
+    "notes/.hidden.md",
+    "node_modules/pkg/readme.md",
+    "_types/task.md",
+    "_contracts/task.md",
+    "drafts/a.md",
+    "archive/old.md",
+  ]) {
+    assert.equal(isExcluded(excluded, config), true, excluded);
+  }
+  for (const included of ["notes/a.md", "archive/2025/older.md", "a.md"]) {
+    assert.equal(isExcluded(included, config), false, included);
+  }
 });
 
 test("loads v0.3 type wrappers and projects collection metadata for the Vault adapter", async () => {

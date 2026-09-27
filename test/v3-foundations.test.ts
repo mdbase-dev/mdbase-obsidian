@@ -3,7 +3,7 @@ import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { test } from "node:test";
-import { normalizePath, TFile, TFolder } from "obsidian";
+import { normalizePath, parseYaml, TFile, TFolder } from "obsidian";
 import { MemoryAuthority, SyncError } from "@mdbase-dev/connect-sync";
 import type { SyncTransport } from "@mdbase-dev/connect-sync";
 import type { CollectionFileDescriptor } from "@mdbase-dev/connect-protocol";
@@ -352,6 +352,30 @@ test("migration analysis converts TaskNotes semantics and never proposes record 
   assert.ok(isObject(migrated["x-tasknotes"]));
   assert.equal(vault.read("records/unchanged.md"), recordBefore);
   assert.equal(vault.read("records/body-only.md"), "# Plain Markdown\n");
+});
+
+test("migration translates v0.2 discovery and default settings into v0.3 configuration", async () => {
+  const vault = new MemoryVault();
+  await collectionVault(taskType(), vault);
+  await vault.modify(vault.getAbstractFileByPath("mdbase.yaml") as never, `${JSON.stringify({
+    spec_version: "0.2.0",
+    settings: {
+      types_folder: "_types",
+      include_subfolders: false,
+      default_strict: true,
+      exclude: [".git", "node_modules", "_types", "archive", "*.draft.md", "drafts/**", "{a,b}/x"],
+    },
+  }, null, 2)}\n`);
+
+  const plan = await analyzeV02Migration(vault as never);
+
+  const config = parseYaml(plan.operations[0].target) as Record<string, Record<string, unknown>>;
+  assert.deepEqual(config.settings.exclude, ["archive/**", "**/*.draft.md", "drafts/**", "{a,b}/x", "*/**"]);
+  assert.equal(config.settings.validation, "warn");
+  assert.equal(config.settings.id_field, "id");
+  assert.equal("include_subfolders" in config.settings, false);
+  assert.deepEqual(config["x-legacy-v0.2"], { settings: { default_strict: true } });
+  assert.ok(plan.diagnostics.some((entry) => entry.code === "non_portable_exclude"));
 });
 
 test("migration applies from verified inputs, writes recovery backups, and leaves records byte-identical", async () => {

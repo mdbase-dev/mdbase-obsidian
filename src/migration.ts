@@ -474,7 +474,20 @@ function migrateType(path: string, sourceVersion: string, frontmatter: Dict): {
   };
 }
 
-function migrateConfig(source: Dict): Dict {
+/** v0.2 settings without a v0.3 meaning; migration keeps them under x-legacy-v0.2. */
+const LEGACY_SETTINGS = [
+  "default_strict",
+  "write_nulls",
+  "write_empty_lists",
+  "write_defaults",
+  "rename_update_refs",
+  "cache_folder",
+  "migrations_folder",
+  "extensions",
+];
+
+/** Migrate mdbase.yaml as described in spec Chapter 13, "Configuration". */
+function migrateConfig(source: Dict, diagnostics: TypeMigrationDiagnostic[]): Dict {
   const target = clone(source);
   target.spec_version = TARGET_VERSION;
   const settings = isRecord(target.settings) ? target.settings : {};
@@ -486,17 +499,75 @@ function migrateConfig(source: Dict): Dict {
     settings.record_extensions = unique(["md", ...extensions]);
   }
   if (!Array.isArray(settings.explicit_type_keys)) settings.explicit_type_keys = ["type", "types"];
-  if (typeof settings.include_subfolders !== "boolean") settings.include_subfolders = true;
   if (settings.validation === undefined && typeof settings.default_validation === "string") {
     settings.validation = settings.default_validation;
   }
   if (settings.validation === undefined && typeof target.default_validation === "string") {
     settings.validation = target.default_validation;
   }
+  // v0.2 validated at warn level and resolved wikilinks by ID by default.
+  settings.validation ??= "warn";
+  if (settings.id_field === undefined) {
+    settings.id_field = typeof target.id_field === "string" ? target.id_field : "id";
+  }
+
+  const typesFolder = typeof settings.types_folder === "string" ? normalizePath(settings.types_folder) : "_types";
+  // A v0.2 collection without `exclude` used the plugin default list, which the
+  // v0.3 built-in exclusions and types folder cover.
+  const exclude = (Array.isArray(settings.exclude) ? settings.exclude : [])
+    .map(String)
+    .flatMap((pattern) => migrateExcludePattern(pattern, typesFolder) ?? []);
+  for (const pattern of exclude) {
+    if (!isPortableGlob(pattern)) {
+      diagnostics.push({
+        path: "mdbase.yaml",
+        code: "non_portable_exclude",
+        message: `Exclude pattern "${pattern}" is not a portable v0.3 glob; review it.`,
+        severity: "warning",
+      });
+    }
+  }
+  if (settings.include_subfolders === false) exclude.push("*/**");
+  if (exclude.length > 0) settings.exclude = exclude;
+  else delete settings.exclude;
+
+  const legacy: Dict = {};
+  for (const key of LEGACY_SETTINGS) {
+    if (settings[key] !== undefined) legacy[key] = settings[key];
+    delete settings[key];
+  }
+  if (Object.keys(legacy).length > 0) {
+    const existing = isRecord(target["x-legacy-v0.2"]) ? target["x-legacy-v0.2"] : {};
+    target["x-legacy-v0.2"] = { ...existing, settings: legacy };
+  }
+  delete settings.include_subfolders;
   delete settings.default_validation;
-  delete settings.extensions;
   delete target.default_validation;
+  delete target.id_field;
   return target;
+}
+
+/**
+ * The portable glob that excludes what a v0.2 exclude pattern excluded, or
+ * null when the v0.3 built-in exclusions or the types folder cover it.
+ */
+function migrateExcludePattern(pattern: string, typesFolder: string): string | null {
+  if (!/[/*?[]/.test(pattern)) {
+    // A bare name excluded that root path and everything below it.
+    if (pattern.startsWith(".") || pattern === "node_modules" || pattern === typesFolder) return null;
+    return `${pattern}/**`;
+  }
+  // A wildcard pattern without a slash matched file names at any depth.
+  if (!pattern.includes("/")) return `**/${pattern}`;
+  return pattern;
+}
+
+/** Whether a glob uses only the portable grammar of spec Chapter 02. */
+function isPortableGlob(pattern: string): boolean {
+  return pattern !== "" &&
+    !pattern.startsWith("/") &&
+    !/[{}\\]/.test(pattern) &&
+    pattern.split("/").every((component) => component === "**" || !component.includes("**"));
 }
 
 function configForMatching(raw: Dict, version: string): MdbaseConfig {
@@ -629,7 +700,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
   const operations: MigrationOperation[] = [];
   const summaries: TypeMigrationSummary[] = [];
   const diagnostics: TypeMigrationDiagnostic[] = [];
-  const migratedConfig = migrateConfig(rawConfig);
+  const migratedConfig = migrateConfig(rawConfig, diagnostics);
   const configTarget = `${stringifyYaml(migratedConfig).trimEnd()}\n`;
   operations.push({
     path: "mdbase.yaml",
