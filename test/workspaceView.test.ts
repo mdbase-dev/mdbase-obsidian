@@ -5,6 +5,7 @@ import { MdbaseWorkspaceView } from "../src/workspaceView";
 import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
 import { Menu } from "obsidian";
+import type { SyncHistoryRun } from "../src/syncHistory";
 
 // Exercise the actual renderer with Obsidian's DOM convenience methods, not
 // source-string assertions. Browser screenshots separately cover real styles.
@@ -50,6 +51,7 @@ function fixture(connected = false) {
     getIssues: () => [] as Array<{ path: string; severity: string; code: string; message: string }>,
     getCurrentSyncProblem: () => null,
     getSyncActivity: () => [],
+    getSyncHistory: () => [] as SyncHistoryRun[],
     saveTypeDraft: async () => undefined,
     loadTypeDraft: () => null,
     clearTypeDraft: async () => undefined,
@@ -564,5 +566,37 @@ test("pending record updates can be compared before syncing", async () => {
   await settle();
   assert.match(f.text(), /Local line.*Hosted line/);
   assert.ok(button(f.root, "Hide"));
+  f.dom.window.close();
+});
+
+test("sync history lists runs, expands to their files and filters by path", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.host.getSyncHistory = () => [{
+    id: "run-1", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "applied",
+    files: [
+      { path: "Tasks/Plan.md", kind: "document", direction: "download", action: "update", status: "completed", at },
+      { path: "Archive/Review.md", fromPath: "Tasks/Review.md", kind: "document", direction: "download", action: "rename", status: "completed", at },
+      { path: "Notes/Ideas.md", kind: "document", direction: "upload", action: "create", status: "completed", at },
+    ],
+  }];
+  f.state.render();
+  assert.match(f.text(), /History/);
+  assert.doesNotMatch(f.text(), /2 downloaded/, "history starts collapsed");
+  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
+  f.state.render();
+  assert.match(f.text(), /2 downloaded · 1 uploaded.*Today/);
+  assert.doesNotMatch(f.text(), /Tasks\/Plan\.md/, "runs start collapsed");
+  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-run-run-1']")!.open = true;
+  f.state.render();
+  assert.match(f.text(), /update Tasks\/Plan\.md.*rename Archive\/Review\.md From Tasks\/Review\.md.*create Notes\/Ideas\.md/);
+  const search = f.root.querySelector<HTMLInputElement>("[data-focus-key='history-search']")!;
+  search.value = "ideas";
+  search.dispatchEvent(new f.dom.window.Event("input"));
+  assert.match(f.text(), /Notes\/Ideas\.md/);
+  assert.doesNotMatch(f.text(), /Tasks\/Plan\.md/);
+  search.value = "missing";
+  search.dispatchEvent(new f.dom.window.Event("input"));
+  assert.match(f.text(), /No synced files match/);
   f.dom.window.close();
 });

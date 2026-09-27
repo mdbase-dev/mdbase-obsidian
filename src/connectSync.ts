@@ -56,6 +56,7 @@ import {
   type MirrorBlobStore,
   type MirrorFileSystem,
   type MirrorLease,
+  type MirrorPlanAction,
   type MirrorProgress,
   type MirrorState,
   type MirrorTextReadResult,
@@ -81,6 +82,7 @@ import {
   previewFromPlan,
 } from "./syncPreview";
 import type { FileTransferProgress } from "./syncUx";
+import { ReceiptObservingStateStore, type SyncActionReceipt } from "./syncHistory";
 import { findAdoptionPathConflicts, portablePathKey, proposeAdoptionRenames, type AdoptionRenamePlan } from "./adoptionPaths";
 export { findAdoptionPathConflicts } from "./adoptionPaths";
 
@@ -1908,6 +1910,7 @@ export class ConnectSyncController {
     reviewed: MdbaseSyncPreview,
     onProgress?: (progress: MirrorProgress) => void,
     onFileProgress?: (progress: FileTransferProgress) => void,
+    onReceipt?: (action: MirrorPlanAction, receipt: SyncActionReceipt) => void,
   ): Promise<MirrorApplyResult> {
     if (this.syncAbort) {
       throw new SyncError("mirror_busy", "Synchronization is already running for this vault.");
@@ -1924,7 +1927,7 @@ export class ConnectSyncController {
           abortIfNeeded(abort.signal);
           this.fileProgress = next;
           onFileProgress?.({ ...next });
-        });
+        }, onReceipt);
         const outcome = await mirror.apply(reviewed.plan, { signal: abort.signal });
         abortIfNeeded(abort.signal);
         return outcome;
@@ -2399,12 +2402,14 @@ export class ConnectSyncController {
     onProgress?: (progress: MirrorProgress) => void,
     signal?: AbortSignal,
     onFileProgress?: (progress: FileTransferProgress) => void,
+    onReceipt?: (action: MirrorPlanAction, receipt: SyncActionReceipt) => void,
   ): Promise<DirectoryMirror<JsonObject>> {
     const profile = this.requireProfile();
     await this.assertMirror(profile.collectionId);
     const transport = await this.transportFor(profile, signal, onFileProgress);
+    const stateStore = this.stateStoreFor(profile);
     const mirrorOptions: DirectoryMirrorOptions = {
-      stateStore: this.stateStoreFor(profile),
+      stateStore: onReceipt ? new ReceiptObservingStateStore(stateStore, onReceipt) : stateStore,
       fileSystem: this.fileSystem,
       blobStore: this.blobStoreFor(profile),
       selectiveSync: normalizeSelectiveSync(profile.selectiveSync),

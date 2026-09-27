@@ -76,7 +76,7 @@ export function previewFromPlan(plan: MirrorSyncPlan): MdbaseSyncPreview {
   };
 }
 
-function actionEntry(action: MirrorPlanAction): SyncPreviewEntry {
+export function actionEntry(action: MirrorPlanAction): SyncPreviewEntry {
   if (action.command === "advance_checkpoint") {
     throw new Error("Checkpoint actions are not preview entries.");
   }

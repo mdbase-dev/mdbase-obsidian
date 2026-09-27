@@ -21,6 +21,7 @@ import {
   ObsidianMirrorFileSystem,
 } from "../src/connectSync";
 import { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
+import { historyFileFromReceipt } from "../src/syncHistory";
 import {
   analyzeV02Migration,
   applyV02Migration,
@@ -1356,7 +1357,13 @@ test("Connect controller previews the exact first transfer and later local edits
   assert.deepEqual(first.entries.map((entry) => [entry.direction, entry.action, entry.path]), [
     ["download", "create", "notes/one.md"],
   ]);
-  await controller.sync(first);
+  const received: string[] = [];
+  await controller.sync(first, undefined, undefined, (action, receipt) => {
+    received.push(`${action.command}:${receipt.status}`);
+    const file = historyFileFromReceipt(action, receipt, "2026-09-24T00:00:00.000Z");
+    if (file) received.push(`${file.direction}:${file.action}:${file.path}`);
+  });
+  assert.deepEqual(received, ["write_local:completed", "download:create:notes/one.md"]);
   const local = vault.getAbstractFileByPath("notes/one.md") as TFile;
   await vault.modify(local, (vault.read(local.path) ?? "").replace("First", "Edited locally"));
   const incremental = await controller.preview();
@@ -1364,6 +1371,12 @@ test("Connect controller previews the exact first transfer and later local edits
   assert.deepEqual(incremental.entries.map((entry) => [entry.direction, entry.action, entry.path]), [
     ["upload", "update", "notes/one.md"],
   ]);
+  received.length = 0;
+  await controller.sync(incremental, undefined, undefined, (action, receipt) => {
+    const file = historyFileFromReceipt(action, receipt, "2026-09-24T00:00:00.000Z");
+    if (file) received.push(`${file.direction}:${file.action}:${file.path}:${file.status}`);
+  });
+  assert.deepEqual(received, ["upload:update:notes/one.md:completed"]);
 });
 
 test("controller cancellation stops attachment transfer and a new controller resumes the durable action", async () => {

@@ -1450,6 +1450,61 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-activity-row strong { display: block; }
 .mdbase-activity-row > div > div { margin: 2px 0; color: var(--text-muted); }
 
+/* Sync history: runs expand to the files they changed. */
+.mdbase-history-controls {
+  padding: 8px 0;
+}
+
+.mdbase-history-controls input[type="search"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mdbase-history-run > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.mdbase-history-run > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mdbase-history-run > summary > div > span {
+  display: block;
+}
+
+.mdbase-history-chevron {
+  align-self: center;
+  color: var(--text-faint);
+}
+
+.mdbase-history-run[open] .mdbase-history-chevron {
+  transform: rotate(90deg);
+}
+
+.mdbase-history-files {
+  margin: 0 0 8px 31px;
+}
+
+.mdbase-history-direction {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.mdbase-history-direction svg,
+.mdbase-history-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mdbase-note-history-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
 
 .mdbase-conflict-row {
   display: grid;
@@ -2307,6 +2362,10 @@ button.mdbase-transfer-open:hover code {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .mdbase-history-chevron {
+    transition: transform 150ms ease;
+  }
+
   .mdbase-nav-button,
   .mdbase-type-row,
   .mdbase-mode-switch button {

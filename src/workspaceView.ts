@@ -37,6 +37,14 @@ import { MDBASE_ICON_ID } from "./mdbaseIcon";
 import type { StoredTypeDraft, TypeEditorField, TypeEditorModel } from "./typeEditorTypes";
 import type { MdbaseSyncPreview, SyncPreviewDirection } from "./syncPreview";
 import { resolveConflictAndRefresh } from "./syncConflict";
+import {
+  filterRuns,
+  formatHistoryTime,
+  historyFileFromReceipt,
+  summarizeRun,
+  type SyncHistoryFile,
+  type SyncHistoryRun,
+} from "./syncHistory";
 import { boundedLineDiff } from "./conflictPresentation";
 import { fieldConstraintSummary, parseDefaultValue, parseEnumValue, scalarText } from "./fieldSummary";
 import { groupIssuesByRule, issueRuleLabel } from "./issuePresentation";
@@ -123,6 +131,9 @@ export interface MdbaseWorkspaceHost {
   recordSyncActivity(entry: Omit<SyncActivityEntry, "id" | "occurredAt">): Promise<void>;
   dismissSyncActivity(id: string): Promise<void>;
   clearCompletedSyncActivity(): Promise<void>;
+  getSyncHistory(): SyncHistoryRun[];
+  recordSyncHistory(run: SyncHistoryRun): Promise<void>;
+  clearSyncHistory(): Promise<void>;
 }
 
 interface RenderSnapshot {
@@ -215,6 +226,20 @@ function compactCount(value: number): string {
   if (value < 1_000) return String(value);
   const digits = value < 10_000 ? 1 : 0;
   return `${(value / 1_000).toFixed(digits)}k`;
+}
+
+const HISTORY_PAGE = 10;
+
+const HISTORY_OUTCOMES: Record<string, string> = {
+  cancelled: "Paused",
+  stale: "Stopped: changes detected",
+  attention: "Needs attention",
+  blocked: "Stopped",
+  failed: "Failed",
+};
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function relativeTime(value: string | null | undefined): string {
@@ -393,6 +418,8 @@ export class MdbaseWorkspaceView extends ItemView {
   private pendingSyncFocus: "activity" | "conflicts" | null = null;
   private transientMessage = "";
   private issueQuery = "";
+  private historyQuery = "";
+  private historyLimit = HISTORY_PAGE;
   private issueSeverity: "all" | "error" | "warn" = "all";
   private issueLimit = 250;
   private issueGroupBy: "file" | "rule" = "file";
@@ -2258,7 +2285,7 @@ export class MdbaseWorkspaceView extends ItemView {
     if (this.mirrorStatus?.local_issues.length && !this.mirrorPreview) {
       this.renderLocalMirrorIssues(document, this.mirrorStatus);
     }
-    this.renderActivity(document);
+    this.renderHistory(document);
     const settings = this.disclosure(document, "sync-settings", "Sync settings");
     this.renderFilePolicyControls(settings, { connected: true });
     this.renderConnectionDetails(settings, profile);
@@ -2280,6 +2307,11 @@ export class MdbaseWorkspaceView extends ItemView {
       return;
     }
     const reviewed = this.mirrorPreview;
+    const collectionId = this.host.getMirrorProfile()?.collectionId;
+    const startedAt = new Date().toISOString();
+    const files: SyncHistoryFile[] = [];
+    let runOutcome = "failed";
+    let runMessage: string | undefined;
     try {
       const outcome = await this.host.connectSync.sync(
         reviewed,
@@ -2293,7 +2325,13 @@ export class MdbaseWorkspaceView extends ItemView {
           this.host.setSyncProgress(this.mirrorProgress, progress);
           this.render();
         },
+        (action, receipt) => {
+          const file = historyFileFromReceipt(action, receipt, new Date().toISOString());
+          if (file) files.push(file);
+        },
       );
+      runOutcome = outcome.status;
+      runMessage = outcome.failure?.message;
       this.mirrorStatus = await this.host.connectSync.status();
       this.mirrorPreview = await this.host.connectSync.preview();
       this.syncProblem = outcome.status === "cancelled"
@@ -2312,7 +2350,8 @@ export class MdbaseWorkspaceView extends ItemView {
             : outcome.status === "stale"
               ? "Changes detected. Refresh the review."
               : `Sync stopped at a durable boundary: ${outcome.failure?.message ?? outcome.status}.`;
-      await this.host.recordSyncActivity({
+      // A completed run with file rows is already its own history entry.
+      if (outcome.status !== "applied" || !files.length) await this.host.recordSyncActivity({
         summary: outcome.status === "applied"
           ? `Synchronized ${outcome.applied} ${outcome.applied === 1 ? "change" : "changes"}`
           : outcome.status === "cancelled"
@@ -2324,6 +2363,8 @@ export class MdbaseWorkspaceView extends ItemView {
       });
     } catch (error) {
       const problem = syncProblem(error);
+      runOutcome = isAbortError(error) ? "cancelled" : "failed";
+      runMessage = problem.message;
       this.syncProblem = problem;
       this.host.setSyncProblem(problem);
       this.transientMessage = problem.message;
@@ -2338,6 +2379,17 @@ export class MdbaseWorkspaceView extends ItemView {
       this.mirrorProgress = null;
       this.fileProgress = null;
       this.host.setSyncProgress(null, null);
+      if (collectionId && files.length) {
+        await this.host.recordSyncHistory({
+          id: crypto.randomUUID(),
+          collectionId,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          outcome: runOutcome,
+          files,
+          ...(runMessage ? { message: runMessage } : {}),
+        });
+      }
     }
   }
 
@@ -2399,41 +2451,133 @@ export class MdbaseWorkspaceView extends ItemView {
     }
   }
 
-  private renderActivity(container: HTMLElement): void {
+  private renderHistory(container: HTMLElement): void {
     const entries = this.host.getSyncActivity();
-    if (!entries.length) return;
-    const section = this.disclosure(container, "sync-activity", "Activity", entries.some((entry) => entry.requiresAcknowledgement));
+    const runs = this.host.getSyncHistory();
+    if (!entries.length && !runs.length) return;
+    const section = this.disclosure(container, "sync-activity", "History", entries.some((entry) => entry.requiresAcknowledgement));
     section.addClass("mdbase-activity");
     section.id = "mdbase-sync-activity";
-    const header = section.createDiv({ cls: "mdbase-section-header" });
-    if (entries.some((entry) => !entry.requiresAcknowledgement)) {
-      const clear = header.createEl("button", { text: "Clear completed" });
-      clear.disabled = this.busy;
-      clear.onclick = () => void this.host.clearCompletedSyncActivity().then(() => this.render());
+    for (const entry of [...entries].reverse().filter((candidate) => candidate.requiresAcknowledgement)) {
+      this.renderActivityRow(section, entry);
     }
-    const visible = [...entries].reverse().filter((entry, index) => entry.requiresAcknowledgement || index < 8);
-    if (!visible.length && !this.fileProgress) {
-      section.createDiv({ cls: "mdbase-muted", text: "No recent synchronization activity." });
+
+    const header = section.createDiv({ cls: "mdbase-section-header mdbase-history-controls" });
+    if (runs.length) {
+      const query = header.createEl("input", { type: "search" });
+      query.setAttr("aria-label", "Filter history by path");
+      query.setAttr("data-focus-key", "history-search");
+      query.placeholder = "Filter by path";
+      query.value = this.historyQuery;
+      query.oninput = () => {
+        this.historyQuery = query.value;
+        this.historyLimit = HISTORY_PAGE;
+        this.render();
+      };
+    }
+    if (runs.length || entries.some((entry) => !entry.requiresAcknowledgement)) {
+      const clear = header.createEl("button", { text: "Clear history" });
+      clear.disabled = this.busy;
+      clear.onclick = () => void Promise.all([
+        this.host.clearSyncHistory(),
+        this.host.clearCompletedSyncActivity(),
+      ]).then(() => this.render());
+    }
+
+    const needle = this.historyQuery.trim().toLowerCase();
+    const timeline: Array<{ at: string; run?: SyncHistoryRun; entry?: SyncActivityEntry }> = [
+      ...filterRuns(runs, needle).map((run) => ({ at: run.finishedAt, run })),
+      ...entries
+        .filter((entry) => !entry.requiresAcknowledgement)
+        .filter((entry) => !needle || entry.path?.toLowerCase().includes(needle))
+        .map((entry) => ({ at: entry.occurredAt, entry })),
+    ].sort((a, b) => b.at.localeCompare(a.at));
+    if (!timeline.length) {
+      section.createDiv({ cls: "mdbase-muted", text: needle ? "No synced files match." : "No completed syncs." });
       return;
     }
-    for (const entry of visible) {
-      const row = section.createDiv({ cls: "mdbase-activity-row" });
-      row.setAttr("data-tone", entry.tone);
-      setIcon(row.createSpan(), entry.tone === "success" ? "check" : entry.tone === "info" ? "info" : "circle-alert");
-      const body = row.createDiv();
-      body.createEl("strong", { text: entry.summary });
-      if (entry.detail && entry.detail !== entry.summary) {
-        const details = body.createEl("details");
-        details.createEl("summary", { text: entry.summary });
-        details.createDiv({ text: entry.detail });
-        body.querySelector("strong")?.remove();
+    for (const item of timeline.slice(0, this.historyLimit)) {
+      if (item.run) this.renderHistoryRun(section, item.run, needle !== "");
+      else if (item.entry) this.renderActivityRow(section, item.entry);
+    }
+    if (timeline.length > this.historyLimit) {
+      const more = section.createEl("button", { cls: "mdbase-link-button", text: `Show ${Math.min(HISTORY_PAGE, timeline.length - this.historyLimit)} more` });
+      more.setAttr("data-focus-key", "history-more");
+      more.onclick = () => {
+        this.historyLimit += HISTORY_PAGE;
+        this.render();
+      };
+    }
+  }
+
+  private renderHistoryRun(container: HTMLElement, run: SyncHistoryRun, filtered: boolean): void {
+    const details = container.createEl("details", { cls: "mdbase-history-run" });
+    const key = `history-run-${run.id}`;
+    // Filtered results open without overwriting the remembered disclosure state.
+    if (filtered) details.open = true;
+    else {
+      details.dataset.disclosure = key;
+      details.open = this.disclosures.get(key) ?? false;
+    }
+    const summary = details.createEl("summary", { cls: "mdbase-activity-row" });
+    summary.setAttr("data-focus-key", `disclosure-${key}`);
+    const tone = run.outcome === "applied" ? "success" : run.outcome === "failed" ? "error" : "attention";
+    summary.setAttr("data-tone", tone);
+    setIcon(summary.createSpan(), tone === "success" ? "check" : "circle-alert");
+    const body = summary.createDiv();
+    body.createEl("strong", { text: summarizeRun(run) });
+    const outcome = HISTORY_OUTCOMES[run.outcome];
+    body.createSpan({
+      cls: "mdbase-muted",
+      text: outcome ? `${formatHistoryTime(run.finishedAt)} · ${outcome}` : formatHistoryTime(run.finishedAt),
+    });
+    if (run.message && run.outcome !== "applied") body.createDiv({ text: run.message });
+    setIcon(summary.createSpan({ cls: "mdbase-history-chevron" }), "chevron-right");
+
+    const ledger = details.createDiv({ cls: "mdbase-transfer-ledger mdbase-history-files" });
+    for (const file of run.files.slice(0, 250)) {
+      const row = ledger.createDiv({ cls: "mdbase-transfer-row" });
+      row.setAttr("title", new Date(file.at).toLocaleString());
+      const action = row.createSpan({ cls: "mdbase-transfer-action", text: file.action });
+      action.setAttr("data-action", file.status === "completed" ? file.action : "fix");
+      const direction = row.createDiv({ cls: "mdbase-transfer-body" });
+      const pathLine = direction.createDiv({ cls: "mdbase-transfer-path" });
+      const icon = pathLine.createSpan({ cls: "mdbase-history-direction" });
+      const directionLabel = file.direction === "download" ? "Downloaded" : file.direction === "upload" ? "Uploaded" : "Needs attention";
+      icon.setAttr("aria-label", directionLabel);
+      icon.setAttr("title", directionLabel);
+      setIcon(icon, file.direction === "download" ? "download" : file.direction === "upload" ? "upload" : "circle-alert");
+      if (file.action !== "delete" && this.app.vault.getAbstractFileByPath(file.path)) {
+        const open = pathLine.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open" });
+        open.createEl("code", { text: file.path });
+        open.setAttr("title", `Open ${file.path}`);
+        open.onclick = () => void this.host.openFileByPath(file.path);
+      } else pathLine.createEl("code", { text: file.path });
+      if (file.fromPath) direction.createDiv({ cls: "mdbase-muted", text: `From ${file.fromPath}` });
+      if (file.status !== "completed") {
+        direction.createDiv({ text: file.message ? `${capitalize(file.status)}: ${file.message}` : capitalize(file.status) });
       }
-      body.createSpan({ cls: "mdbase-muted", text: relativeTime(entry.occurredAt) });
-      if (entry.requiresAcknowledgement) {
-        const dismiss = row.createEl("button", { text: "Dismiss" });
-        dismiss.disabled = this.busy;
-        dismiss.onclick = () => void this.host.dismissSyncActivity(entry.id).then(() => this.render());
-      }
+    }
+    if (run.files.length > 250) {
+      ledger.createDiv({ cls: "mdbase-transfer-more", text: `${run.files.length - 250} more files are recorded in this sync.` });
+    }
+  }
+
+  private renderActivityRow(container: HTMLElement, entry: SyncActivityEntry): void {
+    const row = container.createDiv({ cls: "mdbase-activity-row" });
+    row.setAttr("data-tone", entry.tone);
+    setIcon(row.createSpan(), entry.tone === "success" ? "check" : entry.tone === "info" ? "info" : "circle-alert");
+    const body = row.createDiv();
+    if (entry.detail && entry.detail !== entry.summary) {
+      const details = body.createEl("details");
+      details.createEl("summary", { text: entry.summary });
+      details.createDiv({ text: entry.detail });
+    } else body.createEl("strong", { text: entry.summary });
+    body.createSpan({ cls: "mdbase-muted", text: formatHistoryTime(entry.occurredAt) });
+    if (entry.requiresAcknowledgement) {
+      const dismiss = row.createEl("button", { text: "Dismiss" });
+      dismiss.disabled = this.busy;
+      dismiss.onclick = () => void this.host.dismissSyncActivity(entry.id).then(() => this.render());
     }
   }
 

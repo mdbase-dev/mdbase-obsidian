@@ -63,6 +63,8 @@ import {
 } from "./src/workspaceView";
 import { MDBASE_ICON_ID, MDBASE_ICON_SVG } from "./src/mdbaseIcon";
 import { KeyedTrailingDebouncer } from "./src/trailingDebouncer";
+import { SyncHistoryStore, type SyncHistoryRun } from "./src/syncHistory";
+import { NoteSyncHistoryModal } from "./src/syncHistoryModal";
 import {
   activityEntry,
   appendActivity,
@@ -359,6 +361,7 @@ export default class MdbasePlugin extends Plugin {
   private statusBarEl: HTMLElement;
   private noteStatusEl: HTMLElement;
   private noteStatusVersion = 0;
+  private syncHistory: SyncHistoryStore | null = null;
   private recordCache: Map<string, CollectionRecord> | null = null;
   private recordCacheSettings = "";
   private recordList: CollectionRecord[] | null = null;
@@ -426,6 +429,7 @@ export default class MdbasePlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
     await this.connectSync.initialize();
+    await this.loadSyncHistory();
     addIcon(MDBASE_ICON_ID, MDBASE_ICON_SVG);
 
     this.statusBarEl = this.addStatusBarItem();
@@ -542,9 +546,30 @@ export default class MdbasePlugin extends Plugin {
 
     this.addCommand({
       id: "mdbase-open-activity",
-      name: "Open sync activity",
+      name: "Open sync history",
       callback: () => void this.openSyncSection("activity"),
     });
+
+    this.addCommand({
+      id: "mdbase-note-sync-history",
+      name: "Show sync history for current note",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.getMirrorProfile()) return false;
+        if (!checking) this.openNoteSyncHistory(file.path);
+        return true;
+      },
+    });
+
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file) => {
+        if (!(file instanceof TFile) || !this.getMirrorProfile()) return;
+        menu.addItem((item) => item
+          .setTitle("Sync history")
+          .setIcon("history")
+          .onClick(() => this.openNoteSyncHistory(file.path)));
+      }),
+    );
 
     this.addCommand({
       id: "mdbase-resolve-conflicts",
@@ -697,6 +722,42 @@ export default class MdbasePlugin extends Plugin {
     this.settings.syncActivity = appendActivity(this.settings.syncActivity, activityEntry(input));
     await this.saveSettings();
     this.refreshWorkspaceViews();
+  }
+
+  getSyncHistory(): SyncHistoryRun[] {
+    const collectionId = this.settings.mirrorProfile?.collectionId;
+    return collectionId ? this.syncHistory?.list(collectionId) ?? [] : [];
+  }
+
+  async recordSyncHistory(run: SyncHistoryRun): Promise<void> {
+    if (!this.syncHistory) return;
+    try {
+      await this.syncHistory.append(run);
+    } catch (error) {
+      console.error("mdbase: could not save sync history", error);
+    }
+    this.refreshWorkspaceViews();
+  }
+
+  async clearSyncHistory(): Promise<void> {
+    await this.syncHistory?.clear();
+    this.refreshWorkspaceViews();
+  }
+
+  private openNoteSyncHistory(path: string): void {
+    new NoteSyncHistoryModal(this.app, path, this.getSyncHistory(), this.getSyncActivity()).open();
+  }
+
+  private async loadSyncHistory(): Promise<void> {
+    const folder = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    const store = new SyncHistoryStore(this.app.vault.adapter, normalizePath(`${folder}/sync-history.jsonl`));
+    try {
+      await store.load();
+    } catch (error) {
+      // History is a convenience; an unreadable log must not block sync.
+      console.error("mdbase: could not load sync history", error);
+    }
+    this.syncHistory = store;
   }
 
   async dismissSyncActivity(id: string): Promise<void> {
