@@ -3143,6 +3143,19 @@ export class MdbaseWorkspaceView extends ItemView {
       }
     }
 
+    if (preview.collisions.length) {
+      section.createDiv({
+        cls: "mdbase-inline-error",
+        text: "Resolve path collisions before the first sync. Existing local files are never overwritten without review.",
+      });
+    } else if (preview.local_issues.length) {
+      section.createDiv({
+        cls: "mdbase-inline-message",
+        text: preview.plan.summary.blocking_issues > 0
+          ? "Synchronization is paused. Resolve the blocking issues, then refresh the review."
+          : "These diagnostics do not block synchronization. Document bytes are preserved unchanged.",
+      });
+    }
   }
 
   private renderConflicts(container: HTMLElement, status: MirrorStatus): void {
@@ -3321,7 +3334,10 @@ export class MdbaseWorkspaceView extends ItemView {
 
   private renderLocalMirrorIssues(container: HTMLElement, status: MirrorStatus): void {
     const section = container.createEl("section", { cls: "mdbase-editor-section" });
-    section.createEl("h3", { text: "Local issues" });
+    section.createEl("h3", { text: "Local files needing attention" });
+    section.createEl("p", {
+      text: "Review these file diagnostics. The sync preview identifies which issues block synchronization; a diagnostic alone does not mean syncing is paused.",
+    });
     for (const issue of status.local_issues) {
       const row = section.createDiv({ cls: "mdbase-conflict-row" });
       const text = row.createDiv();

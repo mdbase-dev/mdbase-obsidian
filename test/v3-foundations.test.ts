@@ -3,7 +3,7 @@ import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { test } from "node:test";
-import { normalizePath, TFile, TFolder } from "obsidian";
+import { normalizePath, parseYaml, TFile, TFolder } from "obsidian";
 import { MemoryAuthority, SyncError } from "@mdbase-dev/connect-sync";
 import type { SyncTransport } from "@mdbase-dev/connect-sync";
 import type { CollectionFileDescriptor } from "@mdbase-dev/connect-protocol";
@@ -37,6 +37,7 @@ import {
   type MdbaseConfig,
   type MdbaseTypeDef,
   parseFrontmatter,
+  validateFile,
 } from "../src/mdbaseCore";
 
 interface StoredFile {
@@ -364,6 +365,30 @@ test("migration analysis converts TaskNotes semantics and never proposes record 
   assert.ok(isObject(migrated["x-tasknotes"]));
   assert.equal(vault.read("records/unchanged.md"), recordBefore);
   assert.equal(vault.read("records/body-only.md"), "# Plain Markdown\n");
+});
+
+test("migration translates v0.2 discovery and default settings into v0.3 configuration", async () => {
+  const vault = new MemoryVault();
+  await collectionVault(taskType(), vault);
+  await vault.modify(vault.getAbstractFileByPath("mdbase.yaml") as never, `${JSON.stringify({
+    spec_version: "0.2.0",
+    settings: {
+      types_folder: "_types",
+      include_subfolders: false,
+      default_strict: true,
+      exclude: [".git", "node_modules", "_types", "archive", "*.draft.md", "drafts/**", "{a,b}/x"],
+    },
+  }, null, 2)}\n`);
+
+  const plan = await analyzeV02Migration(vault as never);
+
+  const config = parseYaml(plan.operations[0].target) as Record<string, Record<string, unknown>>;
+  assert.deepEqual(config.settings.exclude, ["archive/**", "**/*.draft.md", "drafts/**", "{a,b}/x", "*/**"]);
+  assert.equal(config.settings.validation, "warn");
+  assert.equal(config.settings.id_field, "id");
+  assert.equal("include_subfolders" in config.settings, false);
+  assert.deepEqual(config["x-legacy-v0.2"], { settings: { default_strict: true } });
+  assert.ok(plan.diagnostics.some((entry) => entry.code === "non_portable_exclude"));
 });
 
 test("migration applies from verified inputs, writes recovery backups, and leaves records byte-identical", async () => {
@@ -933,21 +958,16 @@ test("device lease rejects concurrent mirror ownership and releases after failur
   await lease.runExclusive(async () => undefined);
 });
 
-test("beta.91 fences invalid or unreadable local Markdown and every valid sibling until repair", async () => {
-  const invalidCases: Array<[string, string | Uint8Array]> = [
-    ["broken.md", "---\nbroken: [\n---\nBody"],
-    ["duplicate.md", "---\na: 1\na: 2\n---\nBody"],
-    ["scalar.md", "---\nhello\n---\nBody"],
-    ["null.md", "---\nnull\n---\nBody"],
-    ["list.md", "---\n- one\n- two\n---\nBody"],
+test("fences invalid UTF-8 or unreadable local Markdown and every valid sibling until repair", async () => {
+  const invalidCases: Array<[string, Uint8Array]> = [
     ["bytes.md", Uint8Array.of(0x62, 0x61, 0x64, 0xff)],
+    ["truncated.md", Uint8Array.of(0xe2, 0x82)],
   ];
   for (const [path, invalid] of invalidCases) {
     const hosted = new MemoryAuthority();
     const replica = hosted.registerReplica({ name: "Obsidian writer", mode: "read_write" });
     const vault = new MemoryVault();
-    if (typeof invalid === "string") await vault.create(path, invalid);
-    else await vault.createBinary(path, Uint8Array.from(invalid).buffer);
+    await vault.createBinary(path, Uint8Array.from(invalid).buffer);
     await vault.create("valid.md", "# Valid sibling");
     const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
       fileSystem: new ObsidianMirrorFileSystem(vault as never),
@@ -966,11 +986,8 @@ test("beta.91 fences invalid or unreadable local Markdown and every valid siblin
 
     const invalidFile = vault.getAbstractFileByPath(path);
     assert.ok(invalidFile instanceof TFile);
-    if (typeof invalid === "string") await vault.modify(invalidFile, "# Fixed local note");
-    else {
-      await vault.delete(invalidFile);
-      await vault.create(path, "# Fixed local note");
-    }
+    await vault.delete(invalidFile);
+    await vault.create(path, "# Fixed local note");
     await mirror.sync();
     snapshot = await hosted.transport(replica).snapshot((await hosted.transport(replica).openSession()).snapshot_id);
     assert.deepEqual(snapshot.records.map((record) => record.path).sort(), [path, "valid.md"].sort());
@@ -1002,6 +1019,61 @@ test("beta.91 fences invalid or unreadable local Markdown and every valid siblin
   assert.deepEqual(snapshot.records.map((record) => record.path).sort(), ["unreadable.md", "valid.md"]);
   await mirror.sync();
   assert.deepEqual((await mirror.status()).local_issues, []);
+});
+
+test("the Obsidian adapter preserves malformed frontmatter, BOMs and line endings as readable UTF-8", async () => {
+  const vault = new MemoryVault();
+  const fileSystem = new ObsidianMirrorFileSystem(vault as never);
+  for (const document of [
+    "---\nbroken: [\n---\nBody",
+    "---\na: 1\na: 2\n---\nBody",
+    "---\nhello\n---\nBody",
+    "---\nnull\n---\nBody",
+    "---\n- one\n- two\n---\nBody",
+    "\uFEFF---\r\nbroken: [\r\n---\r\nExact — bytes\r\n",
+    "\uFEFF# Body-only note without a final newline",
+  ]) {
+    await vault.adapter.write("note.md", document);
+    assert.equal(await fileSystem.readText("note.md"), document);
+  }
+});
+
+test("schema errors remain visible while Obsidian adapters round-trip exact records through the reference authority", async () => {
+  const config: MdbaseConfig = {
+    spec_version: "0.3.0",
+    settings: { types_folder: "_types", explicit_type_keys: ["type"], default_strict: false, include_subfolders: true, exclude: ["_types"] },
+  };
+  const types = new Map<string, MdbaseTypeDef>([["task", {
+    name: "task", filePath: "_types/task.md", fields: {}, specProfile: "v0.3",
+    schema: {
+      type: "object", required: ["title"],
+      properties: { title: { type: "string" }, priority: { type: "integer" }, status: { enum: ["open", "done"] } },
+    },
+  }]]);
+  const source = new MemoryVault();
+  const destination = new MemoryVault();
+  // JSON is valid YAML and is also understood by the lightweight Obsidian mock.
+  const document = '---\r\n{"type": "task", "priority": "not-a-number", "status": "impossible"}\r\n---\r\n\r\nPreserve this invalid record — exactly';
+  const file = await source.create("invalid-task.md", document);
+  const before = await validateFile(source as never, file, config, types);
+  assert.deepEqual(before.map((issue) => issue.code).sort(), ["schema_enum", "schema_required", "schema_type"]);
+  const hosted = new MemoryAuthority();
+  const writerId = hosted.registerReplica({ name: "Obsidian writer", mode: "read_write" });
+  const readerId = hosted.registerReplica({ name: "Second mirror", mode: "read_only" });
+  const writer = new WritableDirectoryMirror(writerId, hosted.transport(writerId), {
+    fileSystem: new ObsidianMirrorFileSystem(source as never), stateStore: new MemoryMirrorStateStore(),
+  });
+  const reader = new DirectoryMirror(readerId, hosted.transport(readerId), {
+    fileSystem: new ObsidianMirrorFileSystem(destination as never), stateStore: new MemoryMirrorStateStore(),
+  });
+  const plan = await writer.inspect();
+  assert.equal(plan.summary.blocking_issues, 0);
+  assert.equal(plan.summary.uploads, 1);
+  assert.equal((await writer.apply(plan)).status, "applied");
+  await reader.sync();
+  assert.equal(source.read("invalid-task.md"), document);
+  assert.equal(destination.read("invalid-task.md"), document);
+  assert.deepEqual(await validateFile(source as never, file, config, types), before);
 });
 
 test("portable mirror materializes resources and records through Obsidian Vault APIs", async () => {

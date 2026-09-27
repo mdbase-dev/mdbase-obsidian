@@ -557,7 +557,7 @@ test("pending record updates can be compared before syncing", async () => {
     local: { state: "exact", document: "Local line" }, remote: { state: "exact", document: "Hosted line" },
   }) });
   f.state.mirrorPreview = {
-    phase: "incremental", plan: { actions: [{}], summary: { blocking_issues: 0 } },
+    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
     entries: [{ kind: "document", path: "Tasks/Plan.md", direction: "download", action: "update", detail: "Hosted record will write.", recordId: "r1" }],
     collisions: [], local_issues: [],
   };

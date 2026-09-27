@@ -6,7 +6,7 @@ import type {
 } from "@mdbase-dev/connect-sync/mirror";
 
 export type SyncPreviewDirection = "download" | "upload" | "attention";
-export type SyncPreviewAction = "create" | "update" | "rename" | "delete" | "replace" | "fix";
+export type SyncPreviewAction = "create" | "update" | "rename" | "delete" | "replace" | "fix" | "review";
 
 export interface SyncPreviewEntry {
   kind: "document" | "file";
@@ -35,7 +35,7 @@ export function previewFromPlan(plan: MirrorSyncPlan): MdbaseSyncPreview {
       kind: "document",
       path: issue.path ?? "Sync engine",
       direction: "attention",
-      action: "fix",
+      action: issue.blocking ? "fix" : "review",
       detail: issue.message,
     })),
   ];

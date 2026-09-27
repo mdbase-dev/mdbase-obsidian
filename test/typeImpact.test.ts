@@ -56,7 +56,7 @@ test("draft impact reports notes gained and lost when matching rules change", as
   const saved = taskModel();
   const types = new Map([["task", typeDefFromDraft(saved, "_types/task.md")]]);
   const draft = taskModel();
-  draft.matchPathGlob = "{tasks,projects}/**";
+  draft.matchPathGlob = "[pt]*/**"; // portable v0.3 globs have classes, not braces
   draft.matchFieldsPresent = "title";
   const result = await analyzeTypeImpact({ records, config, types, draft, savedName: "task", filePath: "_types/task.md" });
   assert.ok(result && "impact" in result);

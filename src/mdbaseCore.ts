@@ -4,6 +4,7 @@ import type { ErrorObject } from "ajv";
 import { Ajv2020 } from "ajv/dist/2020";
 import addFormatsImport from "ajv-formats";
 import picomatch from "picomatch";
+import { portableGlobMatch } from "./pathGlob";
 
 export type IssueSeverity = "error" | "warn";
 export type StrictMode = boolean | "warn";
@@ -23,8 +24,10 @@ export interface MdbaseSettings {
   types_folder: string;
   contracts_folder?: string;
   explicit_type_keys: string[];
-  default_strict: boolean;
-  include_subfolders: boolean;
+  /** v0.2 only. */
+  default_strict?: boolean;
+  /** v0.2 only; v0.3 expresses a flat collection as an exclusion of every nested path. */
+  include_subfolders?: boolean;
   exclude: string[];
 }
 
@@ -119,13 +122,16 @@ const DEFAULT_CONFIG: MdbaseConfig = {
     types_folder: "_types",
     contracts_folder: "_contracts",
     explicit_type_keys: ["type", "types"],
-    default_strict: false,
-    include_subfolders: true,
-    // This is the portable collection default, not the active Obsidian config path.
-    // eslint-disable-next-line obsidianmd/hardcoded-config-path -- Keep generated mdbase.yaml compatible with existing collections.
-    exclude: ["_types", ".obsidian", ".git", "node_modules", ".trash", ".mdbase"],
+    // v0.3 excludes dot-prefixed paths such as .obsidian, node_modules, and the
+    // types and contracts folders by itself.
+    exclude: [],
   },
 };
+
+/** The v0.2 plugin default, still applied to v0.2 collections without `exclude`. */
+// This is collection configuration data, not Obsidian's runtime config path.
+// eslint-disable-next-line obsidianmd/hardcoded-config-path -- Preserve the v0.2 collection-format default.
+const V02_DEFAULT_EXCLUDE = ["_types", ".obsidian", ".git", "node_modules", ".trash", ".mdbase"];
 
 let ajv: Ajv2020 | null = null;
 
@@ -368,17 +374,13 @@ export async function loadMdbaseConfig(vault: Vault): Promise<MdbaseConfig | nul
         explicit_type_keys: Array.isArray(settings.explicit_type_keys)
           ? settings.explicit_type_keys.filter((value): value is string => typeof value === "string")
           : [...DEFAULT_CONFIG.settings.explicit_type_keys],
-        default_strict:
-          typeof settings.default_strict === "boolean"
-            ? settings.default_strict
-            : DEFAULT_CONFIG.settings.default_strict,
-        include_subfolders:
-          typeof settings.include_subfolders === "boolean"
-            ? settings.include_subfolders
-            : DEFAULT_CONFIG.settings.include_subfolders,
+        ...(typeof settings.default_strict === "boolean" ? { default_strict: settings.default_strict } : {}),
+        ...(typeof settings.include_subfolders === "boolean"
+          ? { include_subfolders: settings.include_subfolders }
+          : {}),
         exclude: Array.isArray(settings.exclude)
           ? settings.exclude.filter((value): value is string => typeof value === "string")
-          : [...DEFAULT_CONFIG.settings.exclude],
+          : isV03Version(parsed.spec_version) ? [] : [...V02_DEFAULT_EXCLUDE],
       },
     };
   } catch {
@@ -1038,9 +1040,8 @@ export function getTypesForFile(
 
     let isMatch = true;
 
-    if (typeof match.path_glob === "string") {
-      const matcher = picomatch(match.path_glob, { dot: true });
-      if (!matcher(relativePath)) isMatch = false;
+    if (typeof match.path_glob === "string" && !globMatches(match.path_glob, relativePath, config)) {
+      isMatch = false;
     }
 
     if (isMatch && Array.isArray(match.fields_present)) {
@@ -1651,7 +1652,16 @@ export function isExcluded(path: string, config: MdbaseConfig): boolean {
   const typesFolder = normalizePath(config.settings.types_folder);
   if (normalizedPath.startsWith(`${typesFolder}/`) || normalizedPath === typesFolder) return true;
 
-  if (!config.settings.include_subfolders && normalizedPath.includes("/")) {
+  if (isV03Version(config.spec_version)) {
+    // Spec Chapter 02: the contracts folder, built-in exclusions, and
+    // portable `settings.exclude` globs.
+    const contractsFolder = normalizePath(config.settings.contracts_folder ?? "_contracts");
+    if (normalizedPath === contractsFolder || normalizedPath.startsWith(`${contractsFolder}/`)) return true;
+    if (normalizedPath.split("/").some((name) => name.startsWith(".") || name === "node_modules")) return true;
+    return config.settings.exclude.some((pattern) => portableGlobMatch(pattern, normalizedPath));
+  }
+
+  if (config.settings.include_subfolders === false && normalizedPath.includes("/")) {
     return true;
   }
 
@@ -1665,6 +1675,17 @@ export function isExcluded(path: string, config: MdbaseConfig): boolean {
   }
 
   return false;
+}
+
+function isV03Version(specVersion: unknown): boolean {
+  return typeof specVersion === "string" && specVersion.startsWith("0.3.");
+}
+
+/** Match a collection path glob; v0.3 uses the portable grammar of Chapter 02. */
+function globMatches(pattern: string, relativePath: string, config: MdbaseConfig): boolean {
+  return isV03Version(config.spec_version)
+    ? portableGlobMatch(pattern, relativePath)
+    : picomatch(pattern, { dot: true })(relativePath);
 }
 
 export async function validateFile(

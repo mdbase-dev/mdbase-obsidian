@@ -231,6 +231,7 @@ const PAST_TENSE: Record<SyncPreviewAction, string> = {
   delete: "deleted",
   replace: "replaced",
   fix: "conflict",
+  review: "needs review",
 };
 
 /** "Download · updated", "Upload · renamed", "Conflict recorded". */
