@@ -25,7 +25,7 @@ fs.mkdirSync(shots, {recursive:true});
    app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();
    window.open=()=>null;
  });
- const states=['healthy','scope','local-issue','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-busy','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload','away-offline','away-auth','away-copied','away-paused','away-internal'];
+ const states=['healthy','scope','local-issue','offline','auth','copied','paused','paused-offline','internal','progress','first-sync','deletions','rebuild','conflict','conflict-busy','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload','away-offline','away-auth','away-copied','away-paused','away-paused-offline','away-internal'];
  const results=[];
  for(const state of states) {
   await page.evaluate(state=>{
@@ -39,7 +39,7 @@ fs.mkdirSync(shots, {recursive:true});
    view.sync.transferQuery='';view.sync.transferFilter='all';view.disclosures.clear();window.fixtureRuns=[];
    p.sync.update({status:{state:'up_to_date',last_synced_at:new Date().toISOString(),conflicts:[],local_issues:[],pending:0}});
    const problems={
-    offline:{kind:'offline',title:"Can't reach mdbase Connect",message:'Your changes are saved on this device and sync automatically when the connection returns.',action:'retry',actionLabel:'Retry now'},
+    offline:{kind:'offline',title:"Can't reach mdbase Connect",message:'Your changes are saved on this device. Sync can continue when the connection returns.',action:'retry',actionLabel:'Retry now'},
     auth:{kind:'auth',title:'Connect approval is required again',message:'Your local files and mirror checkpoint are safe. Approve this vault again to restore access.',action:'reauthorize',actionLabel:'Sign in again'},
     copied:{kind:'device',title:'Set up sync on this device',message:"This vault's sync settings came from another device or another copy of the vault. Approve this copy to give it its own connection. Your files stay as they are.",action:'reauthorize',actionLabel:'Set up this device'},
     internal:{kind:'internal',title:'Sync stopped unexpectedly',message:'An unexpected error stopped synchronization. Your files are safe. Copy diagnostics if it happens again.',action:'retry',actionLabel:'Try again'}
@@ -48,6 +48,7 @@ fs.mkdirSync(shots, {recursive:true});
    if(state==='local-issue')p.sync.update({status:{state:'attention',conflicts:[],local_issues:[{code:'file_read_failed',path:longPath,message:'Could not read this file. Open it to inspect the problem.'}]}});
    if(problems[state])p.sync.update({problem:{code:'fixture',...problems[state]},retryAt:state==='offline'?Date.now()+40000:null});
    if(state==='paused')p.sync.update({paused:true});
+   if(state==='paused-offline')p.sync.update({paused:true,problem:{code:'fixture',...problems.offline},retryAt:Date.now()+40000});
    if(state==='progress')p.sync.update({fileProgress:{direction:'upload',path:longPath,transferredBytes:32768,totalBytes:8388608}});
    if(['first-sync','deletions','rebuild'].includes(state)) {
     const count=state==='deletions'?25:1;
@@ -83,7 +84,7 @@ fs.mkdirSync(shots, {recursive:true});
     const buttons=[...el.querySelectorAll('.mod-cta, .mod-warning, .mdbase-conflict-row button, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
     const choices=[...el.querySelectorAll('button[data-focus-key^="resolve-"]')].map(b=>({text:b.textContent,disabled:b.disabled}));
     const topbar=el.closest('.mdbase-workspace').querySelector('.mdbase-topbar');
-    return {topbarOverflow:topbar.scrollWidth>topbar.clientWidth+1,tabStatus:topbar.querySelector('.mdbase-nav-status')?.textContent,paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons,choices};
+    return {recoveryAction:el.querySelector('.mdbase-recovery-actions .mod-cta')?.textContent,topbarOverflow:topbar.scrollWidth>topbar.clientWidth+1,tabStatus:topbar.querySelector('.mdbase-nav-status')?.textContent,paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons,choices};
    });
    const box=await page.locator('.mdbase-workspace').boundingBox();
    const cdp=await page.context().newCDPSession(page);
@@ -93,6 +94,8 @@ fs.mkdirSync(shots, {recursive:true});
    if(checks.overflow)failures.push('Horizontal overflow');
    if(checks.topbarOverflow)failures.push('Destination bar overflow');
    if(state.startsWith('away-')&&!checks.tabStatus)failures.push('Problem hidden outside Sync');
+   if(state==='paused-offline'&&checks.recoveryAction!=='Resume sync')failures.push('Paused sync still offers an offline retry');
+   if(state==='away-paused-offline'&&checks.tabStatus!=='Paused')failures.push('Deliberate pause hidden by an old failure');
    if(state==='conflict-busy'&&(checks.choices.length!==3||checks.choices.some(b=>!b.disabled)))failures.push('Conflict decisions enabled during sync');
    if(width===390&&checks.headingWidth!=null&&checks.headingWidth<checks.paneWidth-30)failures.push('Narrow heading squeezed by the action');
    if(width===390&&checks.buttons.some(b=>b.height<43.5))failures.push('Primary/dismiss target below 44px');
