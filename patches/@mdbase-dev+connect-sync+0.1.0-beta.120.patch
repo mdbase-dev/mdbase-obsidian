@@ -351,6 +351,24 @@ index 5a3bad2..c4207b7 100644
          if (conflict.local.state === "exact")
              validatePortableMirrorPath(conflict.local.object.path);
          if (conflict.remote.state === "exact")
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/mirror.d.ts
+index 3bfeaf3..eb8a817 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/mirror.d.ts
++++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror.d.ts
+@@ -5,3 +5,4 @@ export { MemoryMirrorBlobStore, MemoryMirrorLease, portableMirrorRuntime, type A
+ export { MemoryMirrorStateStore } from "./memory-mirror-state.js";
+ export { WritableDirectoryMirror } from "./writable-directory-mirror.js";
+ export { type MirrorApplyResult, type MirrorPlanAction, type MirrorPlanIssue, type MirrorSyncPlan } from "./mirror-plan.js";
++export { applySyncJournalEvent, type SyncJournalEvent } from "./sync-journal.js";
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror.js
+index 986302c..2d4f27d 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/mirror.js
++++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror.js
+@@ -4,3 +4,4 @@ export { authorityFileHash, authorityManifestDigest, projectionMarkdownDocument,
+ export { MemoryMirrorBlobStore, MemoryMirrorLease, portableMirrorRuntime } from "./mirror-state.js";
+ export { MemoryMirrorStateStore } from "./memory-mirror-state.js";
+ export { WritableDirectoryMirror } from "./writable-directory-mirror.js";
++export { applySyncJournalEvent } from "./sync-journal.js";
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 index 599bcb8..22e1bf6 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js

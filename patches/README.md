@@ -103,6 +103,11 @@ addition is the optional `ancestor_document` below):
   decision). The plugin uses it for its three-way merge; without it, a merge
   would have to treat the hosted version as the ancestor and drop hosted edits.
 
+- `mirror.js` / `.d.ts`: export `applySyncJournalEvent` and `SyncJournalEvent` from the
+  public `mirror` entry, so a host state store can implement `appendJournal` and
+  replay its own journal (the plugin's IndexedDB store does; without it every
+  receipt rewrote the whole prepared batch). Proposed upstream alongside.
+
 Regression coverage is in `test/v3-foundations.test.ts` and `test/syncReliability.test.ts`: the real SDK planner,
 executor, journal, and Obsidian adapter run against MemoryAuthority, with controlled
 interleavings. Tests cover competing writes, conflict recovery, path obstructions,
