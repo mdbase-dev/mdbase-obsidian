@@ -129,6 +129,7 @@ export default class MdbasePlugin extends Plugin {
   private syncScheduler: SyncScheduler | null = null;
   private recordCache: Map<string, CollectionRecord> | null = null;
   private recordCacheSettings = "";
+  private recordCacheEpoch = 0;
   private recordList: CollectionRecord[] | null = null;
   private recordLoadPromise: Promise<CollectionRecord[]> | null = null;
   private readonly dirtyRecordPaths = new Set<string>();
@@ -789,29 +790,33 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private async readRecords(): Promise<CollectionRecord[]> {
+    const epoch = this.recordCacheEpoch;
     const loaded = await this.getConfigAndTypes();
     if (!loaded) return [];
     const settingsKey = JSON.stringify(loaded.config.settings);
     if (!this.recordCache || settingsKey !== this.recordCacheSettings) {
       this.dirtyRecordPaths.clear();
       const records = await readCollectionRecords(this.app.vault, loaded.config);
+      if (epoch !== this.recordCacheEpoch) return this.readRecords();
       this.recordCache = new Map(records.map((record) => [record.path, record]));
       this.recordCacheSettings = settingsKey;
       this.recordList = null;
     }
+    const cache = this.recordCache;
     if (this.dirtyRecordPaths.size) {
       const paths = [...this.dirtyRecordPaths];
       this.dirtyRecordPaths.clear();
       for (const path of paths) {
-        this.recordCache.delete(path);
+        cache.delete(path);
         const file = this.app.vault.getAbstractFileByPath(path);
         if (!(file instanceof TFile) || file.extension !== "md" || isExcluded(path, loaded.config)) continue;
         const parsed = parseFrontmatter(await this.app.vault.cachedRead(file));
-        if (!parsed.error) this.recordCache.set(path, { path, frontmatter: parsed.frontmatter });
+        if (!parsed.error) cache.set(path, { path, frontmatter: parsed.frontmatter });
       }
       this.recordList = null;
     }
-    this.recordList ??= [...this.recordCache.values()].sort((a, b) => a.path.localeCompare(b.path));
+    if (epoch !== this.recordCacheEpoch) return this.readRecords();
+    this.recordList ??= [...cache.values()].sort((a, b) => a.path.localeCompare(b.path));
     return this.recordList;
   }
 
@@ -1005,6 +1010,8 @@ export default class MdbasePlugin extends Plugin {
     for (const path of paths) this.observeLocalMirrorChange(path);
     // A folder event need not be accompanied by child-file events. The old
     // descendant paths are no longer a valid incremental record/schema cache.
+    // An older in-flight read must not reinstall those invalidated paths.
+    this.recordCacheEpoch++;
     this.recordCache = null;
     this.recordList = null;
     this.dirtyRecordPaths.clear();

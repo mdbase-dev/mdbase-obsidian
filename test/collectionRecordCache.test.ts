@@ -14,9 +14,14 @@ function fixture(vault: MemoryVault) {
   const cache = plugin as unknown as {
     getConfigAndTypes(): Promise<unknown>;
     markRecordChanged(path: string): void;
+    onVaultFolderChange(...paths: string[]): void;
+    observeLocalMirrorChange(path: string): void;
+    refreshSchemaNow(): void;
     loadCollectionRecords(): Promise<CollectionRecord[]>;
   };
   cache.getConfigAndTypes = async () => ({ config, types: new Map(), contracts: new Map() });
+  cache.observeLocalMirrorChange = () => undefined;
+  cache.refreshSchemaNow = () => undefined;
   return cache;
 }
 
@@ -49,4 +54,47 @@ test("initial record-cache loading reconciles edits and creations that arrive wh
     ["a.md", "new"], ["new.md", "added"], ["renamed.md", "moved"], ["z.md", "unchanged"],
   ]);
   assert.deepEqual(await cache.loadCollectionRecords(), records, "cached lists must remain reconciled");
+});
+
+test("a folder-only invalidation cannot be undone by an in-flight initial record scan", async () => {
+  const vault = new MemoryVault();
+  await vault.create("Old/a.md", "---\ntype: moved\n---\n");
+  await vault.create("z.md", "---\ntype: unchanged\n---\n");
+  const cache = fixture(vault);
+  const read = vault.cachedRead.bind(vault);
+  let moved = false;
+  vault.cachedRead = async (file) => {
+    if (file.path === "z.md" && !moved) {
+      moved = true;
+      await vault.rename(vault.getAbstractFileByPath("Old/a.md") as never, "New/a.md");
+      cache.onVaultFolderChange("Old", "New");
+    }
+    return read(file);
+  };
+  const records = await cache.loadCollectionRecords();
+  assert.deepEqual(records.map(({ path }) => path), ["New/a.md", "z.md"]);
+  assert.deepEqual(await cache.loadCollectionRecords(), records);
+});
+
+test("a folder-only invalidation during incremental reads does not crash or restore stale paths", async () => {
+  const vault = new MemoryVault();
+  await vault.create("Old/a.md", "---\ntype: moved\n---\n");
+  await vault.create("b.md", "---\ntype: unchanged\n---\n");
+  const cache = fixture(vault);
+  await cache.loadCollectionRecords();
+  cache.markRecordChanged("Old/a.md");
+  cache.markRecordChanged("b.md");
+  const read = vault.cachedRead.bind(vault);
+  let moved = false;
+  vault.cachedRead = async (file) => {
+    const document = await read(file);
+    if (file.path === "Old/a.md" && !moved) {
+      moved = true;
+      await vault.rename(file, "New/a.md");
+      cache.onVaultFolderChange("Old", "New");
+    }
+    return document;
+  };
+  const records = await cache.loadCollectionRecords();
+  assert.deepEqual(records.map(({ path }) => path), ["b.md", "New/a.md"]);
 });
