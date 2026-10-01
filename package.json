@@ -1,6 +1,6 @@
 {
   "name": "mdbase-obsidian",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "The Obsidian gateway to mdbase types and mdbase Connect",
   "main": "main.js",
   "type": "module",
