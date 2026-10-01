@@ -40,7 +40,7 @@ export function mergeDocuments(
   if (frontmatter === null) return { clean: false, reason: "Both versions changed the same field." };
   const body = mergeLines(b.body, l.body, r.body);
   if (body === null) return { clean: false, reason: "Both versions changed the same lines." };
-  if (frontmatter.length && !validFrontmatter(frontmatter.join("\n"))) {
+  if (frontmatter.length && !validFrontmatter(frontmatter.join("\n") + "\n")) {
     return { clean: false, reason: "The combined frontmatter would not be valid YAML." };
   }
   return { clean: true, text: [l.open, ...frontmatter, close].join("\n") + body };

@@ -109,6 +109,13 @@ test("changes to a closing fence's line ending are not silently discarded", () =
   });
 });
 
+test("CRLF flow values at the end of frontmatter validate without a bare CR", () => {
+  const base = doc("status: open\ntags: [a]", "Body\n").split("\n").join("\r\n");
+  const local = base.replace("status: open", "status: done");
+  const remote = base.replace("[a]", "[a, b]");
+  assert.deepEqual(merge(base, local, remote), { clean: true, text: local.replace("[a]", "[a, b]") });
+});
+
 test("trivial cases need no merge at all", () => {
   assert.deepEqual(merge("a", "a", "b"), { clean: true, text: "b" });
   assert.deepEqual(merge("a", "b", "a"), { clean: true, text: "b" });
