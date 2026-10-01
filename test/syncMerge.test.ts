@@ -81,6 +81,34 @@ test("byte order marks and Windows line endings survive a merge", () => {
   assert.deepEqual(merge(base, local, remote), { clean: true, text: "﻿---\r\nstatus: done\r\ntitle: B\r\n---\r\nBody\r\n" });
 });
 
+test("blank lines in empty frontmatter survive an independent body edit", () => {
+  const base = doc("", "Body\n");
+  const local = doc("\nstatus: done", "Body\n");
+  const remote = doc("", "Changed body\n");
+  assert.deepEqual(merge(base, local, remote), {
+    clean: true,
+    text: doc("\nstatus: done", "Changed body\n"),
+  });
+});
+
+test("a hosted field reorder is never silently discarded", () => {
+  const base = doc("title: Plan\nstatus: open\npriority: low", "Body\n");
+  const local = doc("title: Plan\nstatus: done\npriority: low", "Body\n");
+  const remote = doc("priority: low\ntitle: Plan\nstatus: open", "Body\n");
+  const result = merge(base, local, remote);
+  if (result.clean) assert.equal(result.text, doc("priority: low\ntitle: Plan\nstatus: done", "Body\n"));
+});
+
+test("changes to a closing fence's line ending are not silently discarded", () => {
+  const base = doc("status: open", "Body\n");
+  const local = doc("status: done", "Body\n");
+  const remote = base.replace("\n---\n", "\n---\r\n");
+  assert.deepEqual(merge(base, local, remote), {
+    clean: true,
+    text: local.replace("\n---\n", "\n---\r\n"),
+  });
+});
+
 test("trivial cases need no merge at all", () => {
   assert.deepEqual(merge("a", "a", "b"), { clean: true, text: "b" });
   assert.deepEqual(merge("a", "b", "a"), { clean: true, text: "b" });
