@@ -272,13 +272,13 @@ export class DisconnectMirrorModal extends Modal {
       this.contentEl.createEl("p", {
         text: `This stops synchronization with ${collectionName}. It does not delete the hosted collection.`,
       });
-      this.contentEl.createEl("p", { text: "Keep all local files, or remove unchanged synced files. Local edits are kept either way." });
+      this.contentEl.createEl("p", { text: "Keep all local files, or move unchanged synced files to trash. Local edits are kept either way." });
       const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
       const cancel = actions.createEl("button", { text: "Cancel" });
       cancel.onclick = () => this.finish(null);
       const keep = actions.createEl("button", { text: "Keep files", cls: "mod-cta" });
       keep.onclick = () => this.finish("keep");
-      const remove = actions.createEl("button", { text: "Remove unchanged files" });
+      const remove = actions.createEl("button", { text: "Trash unchanged files" });
       remove.addClass("mod-warning");
       remove.onclick = () => this.finish("remove");
       this.open();

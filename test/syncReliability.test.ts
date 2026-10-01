@@ -93,6 +93,33 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
   return { vault, controller, state, states, secrets, replicaId, profile: () => profile, syncOnce };
 }
 
+/** An independently loaded controller for the same physical vault (another window). */
+function sameVaultController(hosted: MemoryAuthority, here: Awaited<ReturnType<typeof device>>, options: {
+  profile?: MirrorProfile;
+  enrollmentClient?: Partial<MirrorEnrollmentClient>;
+} = {}) {
+  let profile: MirrorProfile | null = structuredClone(options.profile ?? here.profile());
+  assert.ok(profile);
+  here.secrets.setSecret(`mdbase-connect-access-${profile.replicaId}`, "access");
+  here.secrets.setSecret(`mdbase-connect-refresh-${profile.replicaId}`, "refresh");
+  const controller = new ConnectSyncController({ vault: here.vault, secretStorage: here.secrets } as never, {
+    getMirrorProfile: () => profile && structuredClone(profile),
+    saveMirrorProfile: async (next) => { profile = next; },
+    deviceId: () => "this-device",
+  }, {
+    stateStoreFactory: (current) => {
+      let state = here.states.get(current.replicaId);
+      if (!state) { state = new MemoryMirrorStateStore(); here.states.set(current.replicaId, state); }
+      return state;
+    },
+    blobStoreFactory: () => new MemoryMirrorBlobStore(),
+    fileSystem: new ObsidianMirrorFileSystem(here.vault as never),
+    transportFactory: (current) => hosted.transport(current.replicaId),
+    ...(options.enrollmentClient ? { enrollmentClient: options.enrollmentClient as MirrorEnrollmentClient } : {}),
+  });
+  return { controller, profile: () => profile };
+}
+
 test("the remote change probe uses the state store's lean checkpoint port", async () => {
   class ProbeState extends MemoryMirrorStateStore {
     reads = 0;
@@ -121,7 +148,6 @@ test("the remote change probe uses the state store's lean checkpoint port", asyn
   assert.equal(changes, 1);
   here.controller.dispose();
 });
-
 /** A second device that edits through the bare SDK engine. */
 function otherDevice(hosted: MemoryAuthority) {
   const replica = hosted.registerReplica({ name: "Other", mode: "read_write" });
@@ -229,13 +255,13 @@ test("the same line edited on two devices keeps both versions and loses nothing"
 
   const [resolution] = await here.controller.autoResolveConflicts();
   assert.equal(resolution?.outcome, "kept_both");
-  assert.equal(resolution?.copyPath, "plan (local conflict copy).md");
+  assert.match(resolution!.copyPath!, /^plan \(local conflict copy [a-zA-Z0-9%_-]+\)\.md$/);
   assert.equal(here.vault.read("plan.md"), "remote line\n");
-  assert.equal(here.vault.read("plan (local conflict copy).md"), "local line\n");
+  assert.equal(here.vault.read(resolution!.copyPath!), "local line\n");
 
   await here.syncOnce();
   await there.mirror.sync();
-  assert.equal(there.vault.read("plan (local conflict copy).md"), "local line\n", "the kept copy reaches every device");
+  assert.equal(there.vault.read(resolution!.copyPath!), "local line\n", "the kept copy reaches every device");
 });
 
 test("an edit beats a deletion in either direction", async () => {
@@ -315,6 +341,43 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   await edit(vault, "notes/a.md", "typed immediately after the download\n");
   assert.equal(controller.consumeEngineWrite("notes/a.md"), false, "the next edit event is not another echo just because it arrived within two seconds");
   assert.equal(controller.consumeEngineWrite("notes/other.md"), false);
+});
+
+test("bulk mirror echo tracking expires ordered entries without scanning every live path", () => {
+  const controller = new ConnectSyncController({ vault: new MemoryVault() } as never, {
+    getMirrorProfile: () => null, saveMirrorProfile: async () => undefined,
+  });
+  const tracker = controller as unknown as {
+    engineWrites: Map<string, number>; noteEngineWrite(path: string): void;
+  };
+  let clock = 10_000;
+  const now = performance.now;
+  const wallNow = Date.now;
+  performance.now = () => clock;
+  Date.now = () => clock;
+  let visited = 0;
+  const iterator = tracker.engineWrites[Symbol.iterator].bind(tracker.engineWrites);
+  tracker.engineWrites[Symbol.iterator] = function* () {
+    for (const entry of iterator()) { visited++; yield entry; }
+  };
+  try {
+    for (let index = 0; index < 10_000; index++) tracker.noteEngineWrite(`${index}.md`);
+    assert.ok(visited <= 20_000, `Bulk writes visited ${visited} live echo entries`);
+    clock += 1_000;
+    tracker.noteEngineWrite("0.md"); // Refreshing an old key must move it to the tail.
+    clock += 1_001;
+    tracker.noteEngineWrite("new.md");
+    assert.equal(tracker.engineWrites.size, 2, "expired entries behind a refreshed key must be removed");
+    Date.now = () => 9e12;
+    assert.equal(controller.consumeEngineWrite("0.md"), true, "wall-clock jumps do not change the echo's age");
+    assert.equal(controller.consumeEngineWrite("0.md"), false, "one echo only; the next edit is real");
+    clock += 2_001;
+    assert.equal(controller.consumeEngineWrite("new.md"), false, "expired writes cannot hide an edit");
+  } finally {
+    performance.now = now;
+    Date.now = wallNow;
+    controller.dispose();
+  }
 });
 
 test("text downloads cannot follow a TFile renamed while Vault.process is queued", async () => {
@@ -573,6 +636,125 @@ test("disconnect cannot retire a mirror while another controller holds its SDK l
   assert.equal(otherProfile, null);
   here.controller.dispose();
   other.dispose();
+});
+
+test("another replica enrollment on the same vault still shares the directory lease", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const gate = deferred();
+  const here = await device(hosted, id, {
+    wrapTransport: (transport) => ({ ...transport, openSession: async () => {
+      entered.release(); await gate.promise; return transport.openSession();
+    } }),
+  });
+  const running = here.controller.inspect();
+  await entered.promise;
+  const replica = hosted.registerReplica({ name: "New approval", mode: "read_write" });
+  const other = sameVaultController(hosted, here, { profile: { ...here.profile()!, replicaId: replica } });
+  try {
+    await assert.rejects(other.controller.inspect(), (error: unknown) => (error as { code?: string }).code === "mirror_busy");
+  } finally { gate.release(); await running; }
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("reauthorization cannot migrate credentials and checkpoint during another window's SDK operation", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const gate = deferred();
+  const here = await device(hosted, id, {
+    wrapTransport: (transport) => ({ ...transport, openSession: async () => {
+      entered.release(); await gate.promise; return transport.openSession();
+    } }),
+  });
+  const running = here.controller.inspect();
+  await entered.promise;
+  const replica = hosted.registerReplica({ name: "New approval", mode: "read_write" });
+  const other = sameVaultController(hosted, here, { enrollmentClient: { enroll: async () => ({
+    ...here.profile()!, replicaId: replica, accessToken: "new-access", refreshCredential: "new-refresh",
+  }) } });
+  try {
+    await assert.rejects(other.controller.reauthorize({ onVerification: () => undefined }), (error: unknown) =>
+      (error as { code?: string }).code === "mirror_busy");
+    assert.equal(other.profile()?.replicaId, here.replicaId);
+    assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "access");
+  } finally { gate.release(); await running; }
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("a renewal in another window cannot restore credentials after the vault disconnected", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const here = await device(hosted, id);
+  const entered = deferred();
+  const gate = deferred();
+  const other = sameVaultController(hosted, here, { enrollmentClient: { renew: async (enrollment) => {
+    entered.release(); await gate.promise;
+    return { ...enrollment, accessToken: "late-token" };
+  } } });
+  const renewing = other.controller.reconnect();
+  const completed = Promise.allSettled([renewing]);
+  await entered.promise;
+  await here.controller.disconnect(false);
+  gate.release();
+  const [result] = await completed;
+  assert.equal(result!.status, "rejected");
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "", "shared credentials stay retired even though the other window cached its old profile");
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("a retired replica's late renewal cannot undo another window's new approval", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const approved = hosted.registerReplica({ name: "Reapproved", mode: "read_write" });
+  const here = await device(hosted, id, { enrollmentClient: { enroll: async () => ({
+    controlUrl: "https://connect.example", syncUrl: `https://sync.example/v1/authorities/${id}/sync`,
+    collectionId: id, replicaId: approved, mode: "read_write", name: "Reapproved",
+    enrollmentId: "22222222-2222-4222-8222-222222222222", accessToken: "approved-access",
+    refreshCredential: "approved-refresh", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+  }) } });
+  const entered = deferred();
+  const gate = deferred();
+  const other = sameVaultController(hosted, here, { enrollmentClient: { renew: async (enrollment) => {
+    entered.release(); await gate.promise; return { ...enrollment, accessToken: "late-token" };
+  } } });
+  const renewing = other.controller.reconnect();
+  const completed = Promise.allSettled([renewing]);
+  await entered.promise;
+  await here.controller.reauthorize({ onVerification: () => undefined });
+  gate.release();
+  const [result] = await completed;
+  assert.equal(result!.status, "rejected");
+  assert.equal(here.profile()?.replicaId, approved);
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "");
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("token renewal inside an SDK operation can commit under the lease it already owns", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  let here!: Awaited<ReturnType<typeof device>>;
+  let renewals = 0;
+  let renewed = false;
+  here = await device(hosted, id, {
+    enrollmentClient: { renew: async (enrollment) => {
+      renewals++; return { ...enrollment, accessToken: "fresh-token" };
+    } },
+    wrapTransport: (transport) => ({ ...transport, snapshot: async (snapshotId, page) => {
+      if (!renewed) {
+        renewed = true;
+        // This is the same credentials callback used after an HTTP 401.
+        const source = (here.controller as unknown as { transportCredentials(profile: MirrorProfile): { renew(token: string): Promise<string> } }).transportCredentials(here.profile()!);
+        assert.equal(await source.renew("access"), "fresh-token");
+      }
+      return transport.snapshot(snapshotId, page);
+    } }),
+  });
+  await here.controller.inspect();
+  assert.equal(renewals, 1);
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "fresh-token");
+  here.controller.dispose();
 });
 
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
