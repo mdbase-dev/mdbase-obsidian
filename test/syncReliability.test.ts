@@ -93,6 +93,33 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
   return { vault, controller, state, states, secrets, replicaId, profile: () => profile, syncOnce };
 }
 
+/** An independently loaded controller for the same physical vault (another window). */
+function sameVaultController(hosted: MemoryAuthority, here: Awaited<ReturnType<typeof device>>, options: {
+  profile?: MirrorProfile;
+  enrollmentClient?: Partial<MirrorEnrollmentClient>;
+} = {}) {
+  let profile: MirrorProfile | null = structuredClone(options.profile ?? here.profile());
+  assert.ok(profile);
+  here.secrets.setSecret(`mdbase-connect-access-${profile.replicaId}`, "access");
+  here.secrets.setSecret(`mdbase-connect-refresh-${profile.replicaId}`, "refresh");
+  const controller = new ConnectSyncController({ vault: here.vault, secretStorage: here.secrets } as never, {
+    getMirrorProfile: () => profile && structuredClone(profile),
+    saveMirrorProfile: async (next) => { profile = next; },
+    deviceId: () => "this-device",
+  }, {
+    stateStoreFactory: (current) => {
+      let state = here.states.get(current.replicaId);
+      if (!state) { state = new MemoryMirrorStateStore(); here.states.set(current.replicaId, state); }
+      return state;
+    },
+    blobStoreFactory: () => new MemoryMirrorBlobStore(),
+    fileSystem: new ObsidianMirrorFileSystem(here.vault as never),
+    transportFactory: (current) => hosted.transport(current.replicaId),
+    ...(options.enrollmentClient ? { enrollmentClient: options.enrollmentClient as MirrorEnrollmentClient } : {}),
+  });
+  return { controller, profile: () => profile };
+}
+
 /** A second device that edits through the bare SDK engine. */
 function otherDevice(hosted: MemoryAuthority) {
   const replica = hosted.registerReplica({ name: "Other", mode: "read_write" });
@@ -544,6 +571,51 @@ test("disconnect cannot retire a mirror while another controller holds its SDK l
   assert.equal(otherProfile, null);
   here.controller.dispose();
   other.dispose();
+});
+
+test("another replica enrollment on the same vault still shares the directory lease", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const gate = deferred();
+  const here = await device(hosted, id, {
+    wrapTransport: (transport) => ({ ...transport, openSession: async () => {
+      entered.release(); await gate.promise; return transport.openSession();
+    } }),
+  });
+  const running = here.controller.inspect();
+  await entered.promise;
+  const replica = hosted.registerReplica({ name: "New approval", mode: "read_write" });
+  const other = sameVaultController(hosted, here, { profile: { ...here.profile()!, replicaId: replica } });
+  try {
+    await assert.rejects(other.controller.inspect(), (error: unknown) => (error as { code?: string }).code === "mirror_busy");
+  } finally { gate.release(); await running; }
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("reauthorization cannot migrate credentials and checkpoint during another window's SDK operation", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const gate = deferred();
+  const here = await device(hosted, id, {
+    wrapTransport: (transport) => ({ ...transport, openSession: async () => {
+      entered.release(); await gate.promise; return transport.openSession();
+    } }),
+  });
+  const running = here.controller.inspect();
+  await entered.promise;
+  const replica = hosted.registerReplica({ name: "New approval", mode: "read_write" });
+  const other = sameVaultController(hosted, here, { enrollmentClient: { enroll: async () => ({
+    ...here.profile()!, replicaId: replica, accessToken: "new-access", refreshCredential: "new-refresh",
+  }) } });
+  try {
+    await assert.rejects(other.controller.reauthorize({ onVerification: () => undefined }), (error: unknown) =>
+      (error as { code?: string }).code === "mirror_busy");
+    assert.equal(other.profile()?.replicaId, here.replicaId);
+    assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "access");
+  } finally { gate.release(); await running; }
+  here.controller.dispose(); other.controller.dispose();
 });
 
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
