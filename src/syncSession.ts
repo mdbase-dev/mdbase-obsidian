@@ -370,7 +370,7 @@ export class SyncSession {
       const message = outcome.status === "applied"
         ? "Sync complete."
         : outcome.status === "attention"
-          ? "Some items still need attention."
+          ? outcome.applied > 0 ? "Available changes synced. Remaining items need attention." : "No available changes. Resolve the listed items and review again."
           : outcome.status === "cancelled"
             ? `Sync paused safely after ${outcome.applied} actions; ${outcome.pending} remain.`
             : outcome.status === "stale"
@@ -390,7 +390,7 @@ export class SyncSession {
           ? `Synchronized ${outcome.applied} ${outcome.applied === 1 ? "change" : "changes"}`
           : outcome.status === "cancelled"
             ? "Synchronization paused safely"
-            : "Synchronization needs attention",
+            : outcome.applied > 0 ? "Synced available changes" : "Synchronization needs attention",
         message,
         tone: outcome.status === "applied" ? "success" : "attention",
         needsAcknowledgement: outcome.status !== "applied",

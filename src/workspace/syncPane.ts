@@ -1,3 +1,4 @@
+import { ATTACHMENT_SCOPE_DESCRIPTION, renderFolderExclusions } from "../folderExclusions";
 import type { SyncSession } from "../syncSession";
 import { isHistoryEvent } from "../syncHistory";
 import { setIcon } from "obsidian";
@@ -45,6 +46,9 @@ export class SyncPane {
   private readonly loadingConflictComparisons = new Set<string>();
   private pendingSyncFocus: "activity" | "conflicts" | null = null;
   private historyQuery = "";
+  private transferQuery = "";
+  private transferFilter = "all";
+  private readonly transferPages = new Map<SyncPreviewDirection, number>();
   private historyLimit = HISTORY_PAGE;
   private readonly previewComparisons = new Map<string, MirrorConflictComparison>();
   private comparedPreview: MdbaseSyncPreview | null = null;
@@ -64,6 +68,12 @@ export class SyncPane {
   private adoptionFailed = false;
 
   constructor(private readonly ctx: WorkspaceContext) {}
+
+  getState(): Record<string, unknown> { return { historyQuery: this.historyQuery }; }
+
+  setState(state: Record<string, unknown>): void {
+    if (typeof state.historyQuery === "string") this.historyQuery = state.historyQuery.slice(0, 2000);
+  }
 
   private get session(): SyncSession {
     return this.ctx.host.sync;
@@ -154,6 +164,7 @@ export class SyncPane {
     if (preview !== this.comparedPreview) {
       this.previewComparisons.clear();
       this.comparedPreview = preview;
+      this.transferPages.clear();
     }
     const safety = this.session.safety();
     const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
@@ -162,7 +173,7 @@ export class SyncPane {
       if (reviewing && preview) {
         // The plan needs consent: apply exactly what is listed below.
         const presentation = syncReviewPresentation(preview.plan, preview.entries.length, busy);
-        if (preview.plan.actions.length && !preview.plan.summary.blocking_issues) {
+        if (preview.plan.actions.length && !presentation.actionDisabled) {
           const sync = actions.createEl("button", { text: presentation.actionLabel, cls: "mod-cta" });
           sync.disabled = presentation.actionDisabled;
           sync.onclick = () => void this.session.apply();
@@ -403,12 +414,9 @@ export class SyncPane {
       };
       choice.createSpan({ text: label });
     }
-    inputRow(section, "Excluded folders", policy.excluded_folders.join(", "), (value) => {
-      policy.excluded_folders = value.split(",").map((entry) => entry.trim()).filter(Boolean);
-    }, {
-      description: "Comma-separated paths. Applies to notes and attachments.",
-      placeholder: "Archive, Private exports",
-    });
+    section.createDiv({ cls: "mdbase-form-description", text: ATTACHMENT_SCOPE_DESCRIPTION });
+    section.createEl("h4", { text: "Excluded folders" });
+    renderFolderExclusions(this.ctx.app, section, policy.excluded_folders, folders => { policy.excluded_folders = folders; });
     if (policy.file_classes.includes("other")) {
       section.createDiv({
         cls: "mdbase-inline-message",
@@ -771,13 +779,31 @@ export class SyncPane {
       text: preview.entries.length ? `${preview.entries.length} ${preview.entries.length === 1 ? "item" : "items"}${estimatedBytes ? ` · ${formatBytes(estimatedBytes)}` : ""}` : "No changes",
     });
 
+    const controls = section.createDiv({ cls: "mdbase-issue-controls" });
+    const query = controls.createEl("input", { type: "search", placeholder: "Search transfer paths" });
+    query.setAttr("aria-label", "Search transfer paths");
+    query.setAttr("data-focus-key", "transfer-search");
+    query.value = this.transferQuery;
+    query.oninput = () => { this.transferQuery = query.value; this.transferPages.clear(); this.ctx.render(); };
+    const filter = controls.createEl("select");
+    filter.setAttr("aria-label", "Filter transfers");
+    for (const [value, label] of [["all", "All changes"], ["delete", "Deletes"], ["replace", "Replacements"], ["upload", "Uploads"], ["download", "Downloads"], ["attention", "Needs attention"]]) {
+      filter.createEl("option", { value, text: label });
+    }
+    filter.value = this.transferFilter;
+    filter.onchange = () => { this.transferFilter = filter.value; this.transferPages.clear(); this.ctx.render(); };
+    const needle = this.transferQuery.trim().toLowerCase();
+    const visible = preview.entries.filter(entry => (!needle || `${entry.path} ${entry.detail}`.toLowerCase().includes(needle))
+      && (this.transferFilter === "all" || entry.action === this.transferFilter || entry.direction === this.transferFilter));
+    if (!visible.length) section.createDiv({ cls: "mdbase-muted", text: "No changes match these filters." });
+    section.createDiv({ cls: "mdbase-muted", text: `Showing ${visible.length} of ${preview.entries.length} items. Approval always applies to the entire reviewed plan, not just these filters.` });
     const groups: Array<{ direction: SyncPreviewDirection; title: string }> = [
       { direction: "download", title: "Downloads" },
       { direction: "upload", title: "Uploads" },
       { direction: "attention", title: "Needs attention" },
     ];
     for (const group of groups) {
-      const entries = preview.entries.filter((entry) => entry.direction === group.direction);
+      const entries = visible.filter((entry) => entry.direction === group.direction);
       if (!entries.length) continue;
       const block = section.createEl("section", { cls: "mdbase-transfer-group" });
       block.setAttr("data-direction", group.direction);
@@ -787,7 +813,9 @@ export class SyncPane {
       groupHeading.createEl("h4", { text: group.title });
       groupHeading.createSpan({ text: String(entries.length), cls: "mdbase-transfer-count" });
       const ledger = block.createDiv({ cls: "mdbase-transfer-ledger" });
-      for (const entry of entries.slice(0, 250)) {
+      const page = Math.min(this.transferPages.get(group.direction) ?? 0, Math.floor((entries.length - 1) / 250));
+      const start = page * 250;
+      for (const entry of entries.slice(start, start + 250)) {
         const row = ledger.createDiv({ cls: "mdbase-transfer-row" });
         const action = row.createSpan({ cls: "mdbase-transfer-action", text: entry.action });
         action.setAttr("data-action", entry.action);
@@ -825,20 +853,29 @@ export class SyncPane {
         }
       }
       if (entries.length > 250) {
-        ledger.createDiv({ cls: "mdbase-transfer-more", text: `${entries.length - 250} more items are included in this transfer.` });
+        const pages = ledger.createDiv({ cls: "mdbase-actions" });
+        pages.createSpan({ cls: "mdbase-muted", text: `Showing ${start + 1}–${Math.min(start + 250, entries.length)} of ${entries.length}` });
+        const previous = pages.createEl("button", { text: `Previous ${group.title.toLowerCase()}` });
+        previous.disabled = page === 0;
+        previous.setAttr("data-focus-key", `transfer-previous-${group.direction}`);
+        previous.onclick = () => { this.transferPages.set(group.direction, page - 1); this.ctx.render(); };
+        const next = pages.createEl("button", { text: `Next ${group.title.toLowerCase()}` });
+        next.disabled = start + 250 >= entries.length;
+        next.setAttr("data-focus-key", `transfer-next-${group.direction}`);
+        next.onclick = () => { this.transferPages.set(group.direction, page + 1); this.ctx.render(); };
       }
     }
 
     if (preview.collisions.length) {
       section.createDiv({
         cls: "mdbase-inline-error",
-        text: "Resolve path collisions before the first sync. Existing local files are never overwritten without review.",
+        text: "Colliding files and related moves are left unchanged. Independent files can still sync. Move or rename the obstruction, then review again.",
       });
     } else if (preview.local_issues.length) {
       section.createDiv({
         cls: "mdbase-inline-message",
         text: preview.plan.summary.blocking_issues > 0
-          ? "Synchronization is paused. Resolve the blocking issues, then refresh the review."
+          ? syncReviewPresentation(preview.plan, preview.entries.length).message
           : "These diagnostics do not block synchronization. Document bytes are preserved unchanged.",
       });
     }

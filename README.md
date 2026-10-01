@@ -32,7 +32,10 @@ later be uploaded to Connect from the Sync tab.
 
 **Start a collection** creates a canonical v0.3 `mdbase.yaml` and `_types/`
 directory. The vault is authoritative and remains an ordinary collection of
-files.
+files. First run offers published [mdbase-contracts](https://mdbase.dev/contracts/catalog.json)
+packs with reviewed, digest-verified installation and a portable lockfile;
+it does not invent a starter type. Local starter customizations are preserved.
+Pack upgrades and custom mappings remain in mdbase editor.
 
 ### Hosted mirror
 
@@ -117,10 +120,22 @@ Open **mdbase: Open workspace** and choose **Types**.
 - Drafts survive plugin reloads and Obsidian restarts; stale source revisions
   are blocked, and high-impact schema changes require an explicit review.
 - Dirty changes and validation failures are shown before save.
+- Stale drafts can be compared, exported or explicitly discarded without losing
+  newer edits.
+- `New note` opens one validated form with a location preview and retained input.
 - Validation quick fixes target exact nested properties, preserve sibling data,
   and use Obsidian's atomic file processing API. Ambiguous legacy nested paths
   are not offered automatic fixes.
 - v0.2 definitions are browsable but read-only until migration.
+
+Validation reports coverage and freshness, not merely an empty issue list.
+Collection scans show progress and can be stopped without claiming completion.
+Transfer review searches and paginates the full plan; filters never narrow the
+approved transfer scope. A bad file no longer pauses the entire sync: independent
+files transfer while blocked files and related moves remain untouched for retry.
+Unscoped inspection failures and competing-write protections still stop unsafe
+operations. See [UX acceptance](docs/user-experience-acceptance.md)
+for the live Obsidian harness, verification evidence and implementation limits.
 
 On mobile, the type list and editor use separate navigation states with
 touch-sized actions instead of a compressed desktop split view.

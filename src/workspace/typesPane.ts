@@ -1,6 +1,7 @@
 import { TypeChangeConfirmationModal } from "../modals";
 import {
   Menu,
+  Modal,
   Notice,
   Platform,
   setIcon,
@@ -102,7 +103,28 @@ export class TypesPane {
     this.pendingFieldReveal = null;
   }
 
+  getState(): Record<string, unknown> {
+    return { selectedPath: this.selectedPath, editorMode: this.editorMode, query: this.query, fieldQuery: this.fieldQuery };
+  }
+
+  async setState(state: Record<string, unknown>): Promise<void> {
+    for (const key of ["query", "fieldQuery"] as const) if (typeof state[key] === "string") this[key] = state[key].slice(0, 2000);
+    if (typeof state.selectedPath === "string" && state.selectedPath !== this.selectedPath) {
+      await this.leaveCurrentType();
+      this.selectedPath = state.selectedPath;
+      this.model = null;
+      this.originalModel = null;
+    }
+  }
+
+  restoreEditorMode(mode: unknown): void {
+    if (mode === "yaml" && this.editorMode !== "yaml") this.switchEditorMode("yaml");
+  }
+
   async dispose(): Promise<void> {
+    if (this.impactTimer !== null) window.clearTimeout(this.impactTimer);
+    if (this.yamlProblemTimer !== null) window.clearTimeout(this.yamlProblemTimer);
+    this.impactVersion++;
     await this.flushTypeDraft();
     this.yamlEditor?.destroy();
     this.yamlEditor = null;
@@ -301,6 +323,19 @@ export class TypesPane {
       this.renderLegacyBanner(container);
     }
 
+    if (!this.typeEntries().length && !this.model) {
+      const welcome = container.createDiv({ cls: "mdbase-empty-state" });
+      welcome.createEl("h2", { text: "Add your first type" });
+      welcome.createEl("p", { text: "Install ready-made types and application contracts from mdbase-contracts, or design your own type." });
+      const actions = welcome.createDiv({ cls: "mdbase-actions" });
+      const install = actions.createEl("button", { text: "Browse ready-made types", cls: "mod-cta" });
+      install.disabled = this.ctx.busy || this.ctx.schema.config.spec_version.startsWith("0.2.") || this.ctx.host.getMirrorProfile() !== null;
+      install.onclick = () => void this.ctx.perform(() => this.ctx.host.openContractCatalog());
+      const custom = actions.createEl("button", { text: "Design a custom type" });
+      custom.disabled = this.ctx.schema.config.spec_version.startsWith("0.2.") || this.ctx.host.getMirrorProfile()?.mode === "read_only";
+      custom.onclick = () => void this.createType();
+      return;
+    }
     const layout = container.createDiv({ cls: "mdbase-types-layout" });
     if (this.model) layout.addClass("has-selection");
     this.renderTypeList(layout);
@@ -390,6 +425,9 @@ export class TypesPane {
     const pane = container.createDiv({ cls: "mdbase-type-list-pane" });
     const header = pane.createDiv({ cls: "mdbase-pane-header" });
     header.createEl("h2", { text: "Types" });
+    const catalog = this.ctx.iconButton(header, "download", "Browse ready-made types");
+    catalog.disabled = this.ctx.busy || this.ctx.schema?.config.spec_version.startsWith("0.2.") === true || this.ctx.host.getMirrorProfile() !== null;
+    catalog.onclick = () => void this.ctx.perform(() => this.ctx.host.openContractCatalog());
     const createBlocked = (this.ctx.schema?.config.spec_version.startsWith("0.2.") ?? true)
       ? "Migrate to v0.3 to create types"
       : this.ctx.host.getMirrorProfile()?.mode === "read_only" ? "Read-only mirror" : "";
@@ -472,7 +510,7 @@ export class TypesPane {
       this.originalModel = null;
       this.ctx.render();
     });
-    const heading = header.createDiv();
+    const heading = header.createDiv({ cls: "mdbase-editor-heading" });
     const titleLine = heading.createDiv({ cls: "mdbase-editor-title-line" });
     titleLine.createEl("h2", { text: this.model.name || "Untitled type" });
     heading.createDiv({ cls: "mdbase-editor-path", text: this.selectedPath ?? "New type" });
@@ -484,6 +522,13 @@ export class TypesPane {
       source.onclick = () => void this.ctx.host.openFileByPath(selectedPath);
     }
 
+    if (this.selectedPath) {
+      const name = this.model.name;
+      const create = headerActions.createEl("button", { text: "New note" });
+      create.disabled = readOnly || this.ctx.busy;
+      create.onclick = () => void this.ctx.host.createNoteFromType(name);
+      this.renderStaleDrafts(pane);
+    }
     if (readOnly) {
       pane.createDiv({
         cls: "mdbase-readonly-note",
@@ -506,6 +551,56 @@ export class TypesPane {
     if (this.editorMode === "design") this.renderDesignEditor(editor, this.model, readOnly);
     else this.renderYamlEditor(editor, readOnly);
     if (this.dirty && !readOnly) this.renderDraftBar(pane, this.model);
+  }
+
+  private renderStaleDrafts(container: HTMLElement): void {
+    if (!this.selectedPath || !this.originalModel) return;
+    const path = this.selectedPath;
+    const active = this.ctx.host.loadTypeDraft(path);
+    const drafts = [...this.ctx.host.getArchivedTypeDrafts(path),
+      ...(active && active.sourceRevision !== (this.originalModel.sourceRevision ?? null) ? [active] : [])];
+    for (const draft of drafts) {
+      const row = container.createDiv({ cls: "mdbase-recovery-card" });
+      row.createDiv({ text: `An older draft from ${new Date(draft.updatedAt).toLocaleString()} is available. The source changed; it will not be applied automatically.` });
+      const compare = row.createEl("button", { text: "Compare draft" });
+      compare.onclick = () => {
+        const modal = new Modal(this.ctx.app);
+        modal.titleEl.setText("Current source and recovered draft");
+        let draftText = draft.yamlDraft;
+        if (draftText === undefined) {
+          try { draftText = formatMarkdown(frontmatterFromReadableModel(draft.model), draft.model.body); }
+          catch { draftText = JSON.stringify(draft.model, null, 2); }
+        }
+        modal.contentEl.createEl("h3", { text: "Current source" });
+        modal.contentEl.createEl("pre", { text: this.originalModel ? formatMarkdown(frontmatterFromReadableModel(this.originalModel), this.originalModel.body) : this.yamlDraft });
+        modal.contentEl.createEl("h3", { text: "Recovered draft (read-only)" });
+        modal.contentEl.createEl("pre", { text: draftText });
+        modal.contentEl.createEl("p", { text: "Copy the parts you want into the current definition, then review before saving." });
+        modal.open();
+      };
+      const exportDraft = row.createEl("button", { text: "Export draft" });
+      exportDraft.onclick = () => void this.ctx.perform(async () => {
+        const folder = "mdbase-draft-recovery";
+        if (!this.ctx.app.vault.getAbstractFileByPath(folder)) await this.ctx.app.vault.createFolder(folder);
+        const file = await this.ctx.app.vault.create(`${folder}/draft-${crypto.randomUUID()}.txt`, draft.yamlDraft ?? JSON.stringify(draft.model, null, 2));
+        this.ctx.message = `Exported recovery draft to ${file.path}. The original draft is still retained.`;
+      });
+      const discard = row.createEl("button", { text: "Discard old draft" });
+      discard.onclick = () => {
+        const modal = new Modal(this.ctx.app);
+        modal.titleEl.setText("Discard this recovered draft?");
+        modal.contentEl.createEl("p", { text: "This removes the saved recovery copy, not the current source or your current edits. Export it first if you might need it." });
+        modal.contentEl.createEl("button", { text: "Cancel" }).onclick = () => modal.close();
+        modal.contentEl.createEl("button", { text: "Discard old draft", cls: "mod-warning" }).onclick = () => {
+          modal.close();
+          void this.ctx.perform(async () => {
+            if (draft === active) await this.ctx.host.clearTypeDraft(path);
+            else await this.ctx.host.discardArchivedTypeDraft(draft);
+          });
+        };
+        modal.open();
+      };
+    }
   }
 
   private renderDraftBar(container: HTMLElement, model: TypeEditorModel): void {
@@ -1835,6 +1930,7 @@ export class TypesPane {
       if (!confirmed) return;
     }
     const model = this.model;
+    await this.flushTypeDraft();
     await this.ctx.perform(async () => {
       const previousPath = this.selectedPath;
       const file = await this.ctx.host.saveTypeModel(model, previousPath, this.originalModel?.sourceRevision);
@@ -1886,7 +1982,8 @@ export class TypesPane {
     }
     if (!this.model) return;
     if (!this.dirty) {
-      if (this.ctx.host.loadTypeDraft(this.selectedPath)) await this.ctx.host.clearTypeDraft(this.selectedPath);
+      const draft = this.ctx.host.loadTypeDraft(this.selectedPath);
+      if (draft && draft.sourceRevision === (this.originalModel?.sourceRevision ?? null)) await this.ctx.host.clearTypeDraft(this.selectedPath);
       return;
     }
     this.sessionDrafts.add(this.selectedPath ?? "__new__");
@@ -1904,7 +2001,8 @@ export class TypesPane {
 
   private async discardCurrentType(): Promise<void> {
     const path = this.selectedPath;
-    await this.ctx.host.clearTypeDraft(path);
+    const draft = this.ctx.host.loadTypeDraft(path);
+    if (!draft || draft.sourceRevision === (this.originalModel?.sourceRevision ?? null)) await this.ctx.host.clearTypeDraft(path);
     if (path) {
       const model = await this.ctx.host.loadTypeModel(path);
       this.model = model;

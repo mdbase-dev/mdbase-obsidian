@@ -160,7 +160,7 @@ export function syncPlanSafety(preview: MdbaseSyncPreview, limits = AUTO_APPLY_L
   const { plan } = preview;
   const reasons: string[] = [];
   if (plan.kind !== "incremental") reasons.push(plan.kind === "initial" ? "First sync" : "Mirror rebuild");
-  if (plan.summary.blocking_issues > 0) reasons.push("Blocking issues");
+  if (plan.summary.blocking_issues > 0 && !plan.actions.some(action => action.command !== "advance_checkpoint")) reasons.push("Blocking issues");
   const actions = plan.actions.filter((action) => action.command !== "advance_checkpoint");
   if (actions.some((action) => action.command === "record_conflict")) reasons.push("Conflicts");
   if (actions.some((action) => action.command === "delete_local" || action.command === "delete_remote")) {

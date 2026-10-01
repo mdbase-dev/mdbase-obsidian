@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
+import { CreateTypedNoteModal } from "../src/createTypedNoteModal";
 import { MdbaseWorkspaceView } from "../src/workspaceView";
 import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
@@ -17,7 +18,7 @@ function fixture(connected = false) {
   const { window } = dom;
   Object.assign(globalThis, { window, document: window.document,
     HTMLElement: window.HTMLElement, HTMLInputElement: window.HTMLInputElement,
-    HTMLTextAreaElement: window.HTMLTextAreaElement, MutationObserver: window.MutationObserver,
+    HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement, MutationObserver: window.MutationObserver,
     requestAnimationFrame: (callback: FrameRequestCallback) => window.setTimeout(() => callback(Date.now()), 0),
     cancelAnimationFrame: (id: number) => window.clearTimeout(id) });
   Object.assign(window, {
@@ -43,6 +44,7 @@ function fixture(connected = false) {
     setAttr(this: HTMLElement, name: string, value: string) { this.setAttribute(name, value); },
     getAttr(this: HTMLElement, name: string) { return this.getAttribute(name); },
     empty(this: HTMLElement) { this.replaceChildren(); },
+    setText(this: HTMLElement, text: string) { this.textContent = text; },
     appendText(this: HTMLElement, text: string) { this.appendChild(this.ownerDocument.createTextNode(text)); },
     scrollIntoView() {},
   });
@@ -63,6 +65,13 @@ function fixture(connected = false) {
     saveTypeDraft: async () => undefined,
     loadTypeDraft: () => null,
     clearTypeDraft: async () => undefined,
+    getArchivedTypeDrafts: () => [] as import("../src/typeEditorTypes").StoredTypeDraft[],
+    discardArchivedTypeDraft: async () => undefined,
+    createNoteFromType: async () => undefined,
+    openContractCatalog: async () => undefined,
+    getValidationSummary: () => "Not checked yet",
+    isValidating: () => false,
+    cancelValidation: () => undefined,
     loadCollectionRecords: async () => [] as Array<{ path: string; frontmatter: Record<string, unknown> }>,
     getQuickFixLabel: () => null as string | null,
     openSettings: () => { settingsOpened++; },
@@ -74,7 +83,7 @@ function fixture(connected = false) {
     sync: null as unknown as SyncSession,
   };
   host.sync = new SyncSession(host.connectSync as never, () => profile as never, history);
-  const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null } } } as never, host as never);
+  const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null, getAllLoadedFiles: () => [], createFolder: async () => undefined, create: async () => ({ path: "export.txt" }) } } } as never, host as never);
   const views = view as unknown as {
     types: { dirty: boolean; model: TypeModel; originalModel: TypeModel; selectedPath: string };
     sync: Record<string, unknown>;
@@ -164,7 +173,7 @@ test("type editing has one save location, optional sections, and an expandable r
   f.state.selectedPath = "_types/note.md";
   f.state.render();
   assert.doesNotMatch(f.text(), /Stable type|Path glob|Display field|No pending changes|No record contracts/);
-  assert.equal(f.root.querySelectorAll(".mdbase-editor-actions button").length, 1, "source action only");
+  assert.equal(f.root.querySelectorAll(".mdbase-editor-actions button").length, 2, "source and new note actions");
   f.state.dirty = true;
   f.state.model.description = "Edited";
   f.state.render();
@@ -220,7 +229,7 @@ test("empty Issues has no redundant filters, counts, or empty panels", () => {
   const f = fixture();
   f.state.destination = "issues";
   f.state.render();
-  assert.equal(f.text(), "Types Sync Issues No issues Validate");
+  assert.equal(f.text(), "Types Sync Issues Validation Not checked yet Validate");
   assert.equal(f.root.querySelector(".mdbase-issue-controls"), null);
   f.dom.window.close();
 });
@@ -686,5 +695,112 @@ test("a plan held for review says why, offers to apply it, and badges the Sync t
   assert.match(f.text(), /Review needed: deletions/);
   assert.ok(button(f.root, "Sync 1 change").classList.contains("mod-cta"));
   assert.equal(f.root.querySelector(".mdbase-nav-button.is-active .mdbase-count")?.textContent, "1");
+  f.dom.window.close();
+});
+
+test("the transfer ledger exposes all reviewed items and filters never change approval scope", () => {
+  const f = fixture(true);
+  const entries = Array.from({ length: 601 }, (_, index) => ({ path: `Notes/${index}.md`, direction: "download", action: index === 600 ? "delete" : "update", detail: "Reviewed exact bytes" }));
+  const plan = { actions: entries, issues: [], summary: { blocking_issues: 0 } };
+  f.state.mirrorPreview = { phase: "incremental", plan, entries, collisions: [], local_issues: [] };
+  f.state.render();
+  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 250);
+  button(f.root, "Next downloads").click();
+  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 250);
+  assert.match(f.text(), /Showing 251–500 of 601/);
+  button(f.root, "Next downloads").click();
+  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 101);
+  assert.equal(button(f.root, "Next downloads").disabled, true);
+  button(f.root, "Previous downloads").click();
+  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 250);
+  const filter = f.root.querySelector<HTMLSelectElement>("select[aria-label='Filter transfers']")!;
+  filter.value = "delete"; filter.dispatchEvent(new f.dom.window.Event("change"));
+  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 1);
+  assert.match(f.text(), /Notes\/600.md/);
+  assert.match(f.text(), /entire reviewed plan/);
+  assert.equal(plan.actions.length, 601);
+  f.dom.window.close();
+});
+
+test("an untouched stale draft survives leaving the type, and is offered recovery actions", async () => {
+  const f = fixture();
+  const source = createDefaultTypeModel(); source.name = "task"; source.sourceRevision = "new";
+  const old = { version: 1, path: "_types/task.md", sourceRevision: "old", model: structuredClone(source), updatedAt: new Date().toISOString() };
+  let cleared = false;
+  Object.assign(f.host, { loadTypeModel: async () => source, loadTypeDraft: () => old, clearTypeDraft: async () => { cleared = true; } });
+  f.state.destination = "types";
+  f.state.schema = { config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() };
+  await (f.view.types as unknown as { selectType(path: string): Promise<void> }).selectType("_types/task.md");
+  assert.equal(f.state.dirty, false);
+  assert.ok(button(f.root, "Compare draft")); assert.ok(button(f.root, "Export draft")); assert.ok(button(f.root, "Discard old draft"));
+  await (f.view.types as unknown as { flushTypeDraft(): Promise<void> }).flushTypeDraft();
+  assert.equal(cleared, false);
+  f.dom.window.close();
+});
+
+test("validation freshness and cancellation remain visible without issue rows", () => {
+  const f = fixture(); f.state.destination = "issues";
+  Object.assign(f.host, { getValidationSummary: () => "Checking 25 of 100 notes…", isValidating: () => true });
+  f.state.render();
+  assert.match(f.text(), /Checking 25 of 100/);
+  assert.equal(button(f.root, "Validate").disabled, true);
+  assert.ok(button(f.root, "Stop validation"));
+  f.dom.window.close();
+});
+
+test("empty collections offer contract packs rather than invented starter types", () => {
+  const f = fixture(); f.state.destination = "types";
+  f.state.schema = { config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() };
+  f.state.render();
+  assert.match(f.text(), /mdbase-contracts/);
+  assert.ok(button(f.root, "Browse ready-made types"));
+  assert.ok(button(f.root, "Design a custom type"));
+  f.dom.window.close();
+});
+
+test("native-style creation modal retains inputs across errors and preserves boolean and enum types", async () => {
+  const f = fixture();
+  const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };
+  const type = { name: "sample", filePath: "_types/sample.md", fields: {
+    title: { type: "string", required: true }, count: { type: "integer", required: true },
+    active: { type: "boolean", required: true }, status: { type: "enum", values: [10, "done"], required: true },
+  } };
+  let created: Record<string, unknown> | null = null;
+  const modal = new CreateTypedNoteModal({ vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } } as never,
+    type, config, new Map([["sample", type]]), async (_path, data) => { created = data; });
+  modal.open();
+  const root = modal.contentEl;
+  const set = (id: string, value: string) => {
+    const el = root.querySelector<HTMLInputElement>(`#${id}`)!; el.value = value;
+    el.dispatchEvent(new f.dom.window.Event("input"));
+  };
+  set("mdbase-note-title", "Keep this text"); set("mdbase-note-count", "12abc");
+  set("mdbase-note-active", "1"); set("mdbase-note-status", "0");
+  button(root, "Create note").click();
+  assert.match(root.textContent ?? "", /whole integer/);
+  assert.equal(root.querySelector<HTMLInputElement>("#mdbase-note-title")!.value, "Keep this text");
+  assert.equal(created, null);
+  set("mdbase-note-count", "12");
+  await new Promise<void>(resolve => setImmediate(resolve));
+  set("mdbase-note-location", "created.md");
+  button(root, "Create note").click();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(created, { type: "sample", title: "Keep this text", count: 12, active: false, status: 10 });
+  assert.equal(modal.containerEl.parentNode, null);
+  f.dom.window.close();
+});
+
+test("restoring a selected path replaces the initially opened type model", async () => {
+  const f = fixture();
+  const one = createDefaultTypeModel(); one.name = "one";
+  const two = createDefaultTypeModel(); two.name = "two";
+  const schema = { config: { spec_version: "0.3.0", settings: { explicit_type_keys: ["type"], types_folder: "_types", exclude: [] } },
+    types: new Map([["one", typeDefFromDraft(one, "_types/one.md")], ["two", typeDefFromDraft(two, "_types/two.md")]]), contracts: new Map() };
+  f.state.model = one; f.state.originalModel = structuredClone(one); f.state.selectedPath = "_types/one.md"; f.state.schema = schema;
+  Object.assign(f.host, { loadWorkspaceSchema: async () => schema, loadTypeModel: async () => structuredClone(two) });
+  await f.view.setState({ selectedPath: "_types/two.md", destination: "types" }, {} as never);
+  assert.equal(f.state.selectedPath, "_types/two.md");
+  assert.equal(f.state.model.name, "two");
+  await f.view.onClose();
   f.dom.window.close();
 });

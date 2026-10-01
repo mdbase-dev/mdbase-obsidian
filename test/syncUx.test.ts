@@ -74,6 +74,12 @@ test("nonblocking frontmatter diagnostics leave exact transfers enabled", () => 
     issues: [{ code: "invalid_frontmatter", path: "opaque.md", message: "Invalid YAML", blocking: false }],
     summary: { uploads: 1, downloads: 0, conflicts: 0, blocking_issues: 0 },
   });
+  const partial = syncReviewPresentation({ ...reviewed, issues: [
+    { code: "file_read_failed", path: "other.md", message: "Unreadable", blocking: true },
+  ], summary: { uploads: 1, downloads: 0, conflicts: 0, blocking_issues: 1 } }, 2);
+  assert.equal(partial.actionDisabled, false);
+  assert.equal(partial.actionLabel, "Sync 1 available change");
+  assert.match(partial.message, /isolated.*do not stop independent/);
   const presentation = syncReviewPresentation(reviewed, 2);
   assert.equal(presentation.actionDisabled, false);
   assert.equal(presentation.actionLabel, "Sync 1 change");

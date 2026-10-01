@@ -388,7 +388,7 @@ export async function loadMdbaseConfig(vault: Vault): Promise<MdbaseConfig | nul
   }
 }
 
-export async function ensureCollectionInitialized(vault: Vault): Promise<{ created: string[] }> {
+export async function ensureCollectionInitialized(vault: Vault, options: { seedNoteType?: boolean } = {}): Promise<{ created: string[] }> {
   const created: string[] = [];
 
   const mdbaseFile = vault.getAbstractFileByPath("mdbase.yaml");
@@ -409,7 +409,7 @@ export async function ensureCollectionInitialized(vault: Vault): Promise<{ creat
 
   const noteTypePath = normalizePath(`${typesFolder}/note.md`);
   const noteTypeExists = await vault.adapter.exists(noteTypePath);
-  if (!noteTypeExists) {
+  if (!noteTypeExists && options.seedNoteType !== false) {
     const content = buildTypeTemplate("note", undefined, config.spec_version);
     await vault.create(noteTypePath, content);
     created.push(noteTypePath);
@@ -1764,6 +1764,7 @@ async function collectUniqueFieldIssues(
   vault: Vault,
   config: MdbaseConfig,
   typeMap: Map<string, MdbaseTypeDef>,
+  options: CollectionValidationOptions = {},
 ): Promise<MdbaseIssue[]> {
   interface UniqueValueInstance {
     path: string;
@@ -1780,6 +1781,7 @@ async function collectUniqueFieldIssues(
   for (const file of vault.getMarkdownFiles()) {
     if (isExcluded(file.path, config)) continue;
 
+    options.signal?.throwIfAborted();
     const raw = await vault.cachedRead(file);
     const parsed = parseFrontmatter(raw);
     if (parsed.error) continue;
@@ -1856,19 +1858,38 @@ export function applyReadDefaults(
   return effective;
 }
 
+export interface CollectionValidationOptions {
+  signal?: AbortSignal;
+  onProgress?: (progress: { completed: number; total: number; phase: "notes" | "uniqueness" }) => void;
+  onFile?: (file: TFile, issues: MdbaseIssue[]) => void;
+}
+
 export async function validateCollection(
   vault: Vault,
   config: MdbaseConfig,
   typeMap: Map<string, MdbaseTypeDef>,
+  options: CollectionValidationOptions = {},
 ): Promise<MdbaseIssue[]> {
   const all: MdbaseIssue[] = [];
-  for (const file of vault.getMarkdownFiles()) {
-    if (isExcluded(file.path, config)) continue;
+  const files = vault.getMarkdownFiles().filter(file => !isExcluded(file.path, config));
+  options.onProgress?.({ completed: 0, total: files.length, phase: "notes" });
+  for (const [index, file] of files.entries()) {
+    options.signal?.throwIfAborted();
     const issues = await validateFile(vault, file, config, typeMap);
+    options.signal?.throwIfAborted();
+    options.onFile?.(file, issues);
     all.push(...issues);
+    options.onProgress?.({ completed: index + 1, total: files.length, phase: "notes" });
+    // Give touch/keyboard cancellation and paint a chance even with cached reads.
+    // This core also runs in Node-based profiling and unit tests.
+    // eslint-disable-next-line obsidianmd/prefer-window-timers -- Host-independent cooperative yield.
+    if (index % 25 === 0) await new Promise(resolve => setTimeout(resolve, 0));
   }
 
-  const uniqueIssues = await collectUniqueFieldIssues(vault, config, typeMap);
+  options.signal?.throwIfAborted();
+  options.onProgress?.({ completed: files.length, total: files.length, phase: "uniqueness" });
+  const uniqueIssues = await collectUniqueFieldIssues(vault, config, typeMap, options);
+  options.signal?.throwIfAborted();
   all.push(...uniqueIssues);
   return all;
 }
@@ -1990,13 +2011,13 @@ export function coerceFieldInput(rawInput: string, fieldDef: MdbaseFieldDef): un
     case "any":
       return trimmed;
     case "integer": {
-      const parsed = Number.parseInt(trimmed, 10);
-      if (!Number.isInteger(parsed)) throw new Error("Expected integer input");
+      const parsed = Number(trimmed);
+      if (!/^[+-]?\d+$/.test(trimmed) || !Number.isSafeInteger(parsed)) throw new Error("Expected a whole integer");
       return parsed;
     }
     case "number": {
-      const parsed = Number.parseFloat(trimmed);
-      if (Number.isNaN(parsed)) throw new Error("Expected numeric input");
+      const parsed = Number(trimmed);
+      if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(trimmed) || !Number.isFinite(parsed)) throw new Error("Expected a finite number");
       return parsed;
     }
     case "boolean": {
@@ -2006,6 +2027,11 @@ export function coerceFieldInput(rawInput: string, fieldDef: MdbaseFieldDef): un
       throw new Error("Expected boolean input: true/false");
     }
     case "list": {
+      if (trimmed.startsWith("[") || /^-\s/.test(trimmed)) {
+        const parsed: unknown = parseYaml(trimmed);
+        if (!Array.isArray(parsed)) throw new Error("Expected a YAML or JSON list");
+        return parsed;
+      }
       const values = trimmed
         .split(",")
         .map((entry) => entry.trim())
@@ -2082,11 +2108,7 @@ export async function buildUniqueNotePath(
     index += 1;
   }
 
-  const slashIndex = candidate.lastIndexOf("/");
-  if (slashIndex > 0) {
-    await ensureFolderExists(vault, candidate.slice(0, slashIndex));
-  }
-
+  // Suggestions must not write folders: cancelling a creation form leaves the vault unchanged.
   return candidate;
 }
 

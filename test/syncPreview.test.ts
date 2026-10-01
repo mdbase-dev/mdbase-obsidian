@@ -241,6 +241,12 @@ test("routine incremental note traffic is safe to apply without review", () => {
     }],
   }));
   assert.deepEqual(syncPlanSafety(preview), { safe: true, reasons: [] });
+  const partial = previewFromPlan({ ...preview.plan,
+    issues: [{ code: "file_read_failed", path: "broken.md", message: "Cannot read", blocking: true }],
+    summary: { ...preview.plan.summary, blocking_issues: 1 },
+  });
+  assert.deepEqual(syncPlanSafety(partial), { safe: true, reasons: [] });
+  assert.equal(syncPlanSafety(previewFromPlan({ ...partial.plan, actions: [] })).safe, false);
 });
 
 test("deletions, conflicts, attachment uploads and first syncs need review", () => {

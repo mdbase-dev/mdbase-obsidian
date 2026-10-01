@@ -1,6 +1,7 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { FileMediaClass, SelectiveSyncPolicy } from "@mdbase-dev/connect-protocol";
 import type MdbasePlugin from "../main";
+import { ATTACHMENT_SCOPE_DESCRIPTION, renderFolderExclusions } from "./folderExclusions";
 import { DisconnectMirrorModal } from "./modals";
 
 const FILE_CLASSES: Array<[FileMediaClass, string]> = [
@@ -121,22 +122,13 @@ export class MdbaseSettingTab extends PluginSettingTab {
         );
     }
 
-    let folders = policy.excluded_folders.join(", ");
-    new Setting(containerEl)
-      .setName("Excluded folders")
-      .setDesc("Comma-separated paths. Applies to notes and attachments.")
-      .addText((text) => text
-        .setPlaceholder("Archive, private exports")
-        .setValue(folders)
-        .onChange((value) => { folders = value; }))
-      .addButton((button) => button.setButtonText("Apply").onClick(async () => {
-        const current = plugin.connectSync.getSelectiveSync();
-        await apply({
-          ...current,
-          excluded_folders: folders.split(",").map((entry) => entry.trim()).filter(Boolean),
-        });
-        new Notice("Excluded folders updated. The next sync applies them.");
-      }));
+    let folders = [...policy.excluded_folders];
+    const exclusions = new Setting(containerEl).setName("Excluded folders").setDesc(ATTACHMENT_SCOPE_DESCRIPTION);
+    renderFolderExclusions(this.app, exclusions.controlEl, folders, next => { folders = next; });
+    exclusions.addButton(button => button.setButtonText("Apply").onClick(async () => {
+      await apply({ ...plugin.connectSync.getSelectiveSync(), excluded_folders: folders });
+      new Notice("Excluded folders updated. The next sync applies them.");
+    }));
 
     new Setting(containerEl)
       .setName("Disconnect")

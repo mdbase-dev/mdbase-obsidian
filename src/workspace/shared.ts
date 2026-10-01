@@ -36,9 +36,16 @@ export interface MdbaseWorkspaceHost {
   loadTypeDraft(path: string | null): StoredTypeDraft | null;
   saveTypeDraft(draft: StoredTypeDraft): Promise<void>;
   clearTypeDraft(path: string | null): Promise<void>;
+  getArchivedTypeDrafts(path: string): StoredTypeDraft[];
+  discardArchivedTypeDraft(draft: StoredTypeDraft): Promise<void>;
+  createNoteFromType(typeName?: string): Promise<void>;
+  openContractCatalog(): Promise<void>;
   initializeCollection(): Promise<void>;
   getIssues(): MdbaseIssue[];
   validateCollection(): Promise<void>;
+  getValidationSummary(): string;
+  isValidating(): boolean;
+  cancelValidation(): void;
   getQuickFixLabel(issue: MdbaseIssue): string | null;
   applyQuickFix(issue: MdbaseIssue): Promise<void>;
   applyQuickFixes(issues: MdbaseIssue[]): Promise<{ changed: number; skipped: number }>;

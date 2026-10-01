@@ -1,17 +1,13 @@
-import { Notice, TFile, normalizePath } from "obsidian";
+import { Notice, TFile } from "obsidian";
+import { CreateTypedNoteModal } from "./createTypedNoteModal";
 import type MdbasePlugin from "../main";
 import {
-  buildInitialFrontmatter,
-  buildUniqueNotePath,
-  coerceFieldInput,
-  createNoteFromType,
   ensureCollectionInitialized,
-  getPromptFields,
   getTypesForFile,
   parseFrontmatter,
   type MdbaseTypeDef,
 } from "./mdbaseCore";
-import { pickType, TextPromptModal } from "./modals";
+import { pickType } from "./modals";
 
 /**
  * Commands are deliberately few. Navigation lives in the workspace's own tabs;
@@ -155,7 +151,7 @@ export async function syncNow(plugin: MdbasePlugin): Promise<void> {
 
 async function initializeCollection(plugin: MdbasePlugin): Promise<void> {
   plugin.connectSync.assertLocalAuthorityWritable();
-  const { created } = await ensureCollectionInitialized(plugin.app.vault);
+  const { created } = await ensureCollectionInitialized(plugin.app.vault, { seedNoteType: false });
   plugin.invalidateSchemaCache();
   new Notice(created.length ? `Initialized mdbase collection: ${created.join(", ")}` : "mdbase collection already initialized.");
 }
@@ -200,79 +196,26 @@ async function validateCurrentNote(plugin: MdbasePlugin, file: TFile): Promise<v
   view.showIssuesForPath(file.path);
 }
 
-async function createNoteFromTypeCommand(plugin: MdbasePlugin): Promise<void> {
-  const { app } = plugin;
-  plugin.connectSync.assertLocalAuthorityWritable();
-  const loaded = await plugin.requireConfigAndTypes();
-  if (!loaded) return;
+export async function createNoteFromTypeCommand(plugin: MdbasePlugin, typeName?: string): Promise<void> {
+    plugin.connectSync.assertLocalAuthorityWritable();
+    const loaded = await plugin.requireConfigAndTypes();
+    if (!loaded) return;
 
-  if (loaded.types.size === 0) {
-    new Notice("No type definitions found.");
-    return;
-  }
-
-  const chosenType = await pickType(app, Array.from(loaded.types.values()));
-  if (!chosenType) return;
-
-  const frontmatter = buildInitialFrontmatter(chosenType, loaded.config);
-  const promptFields = getPromptFields(chosenType, frontmatter);
-
-  const title = `New ${chosenType.name}`;
-  for (const [fieldName, fieldDef] of promptFields) {
-    const value = await new TextPromptModal(app, {
-      title,
-      label: fieldName,
-      description: fieldDef.description ?? `Required · ${fieldDef.type ?? "string"}`,
-      placeholder: fieldDef.type === "date" ? "YYYY-MM-DD" : undefined,
-      submitLabel: "Next",
-      required: true,
-    }).openAndGetValue();
-    if (value == null) return;
-
-    try {
-      frontmatter[fieldName] = coerceFieldInput(value, fieldDef);
-    } catch (error) {
-      new Notice(`Invalid value for ${fieldName}: ${error instanceof Error ? error.message : String(error)}`);
+    if (loaded.types.size === 0) {
+      new Notice("No type definitions found.");
       return;
     }
+
+    if (plugin.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
+    const chosenType = typeName ? loaded.types.get(typeName) : await pickType(plugin.app, Array.from(loaded.types.values()));
+    if (!chosenType) return;
+
+    new CreateTypedNoteModal(plugin.app, chosenType, loaded.config, loaded.types, async (path, frontmatter) => {
+      plugin.connectSync.assertLocalAuthorityWritable();
+      if (plugin.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
+      const { createNoteFromType } = await import("./mdbaseCore");
+      const file = await createNoteFromType(plugin.app.vault, path, frontmatter);
+      await plugin.app.workspace.getLeaf(true).openFile(file);
+      await plugin.validateFileAndStore(file, "manual");
+    }).open();
   }
-
-  const displayKey = chosenType.display_name_key ?? "title";
-  if (frontmatter[displayKey] == null) {
-    const displayValue = await new TextPromptModal(app, {
-      title,
-      label: displayKey,
-      description: "Optional. Used for the file name.",
-      submitLabel: "Next",
-    }).openAndGetValue();
-    if (displayValue == null) return;
-    if (displayValue && displayValue.trim().length > 0) {
-      frontmatter[displayKey] = displayValue.trim();
-    }
-  }
-
-  const suggestedPath = await buildUniqueNotePath(app.vault, chosenType, frontmatter);
-  const chosenPathInput = await new TextPromptModal(app, {
-    title,
-    label: "Location",
-    description: "Path in this vault.",
-    value: suggestedPath,
-    submitLabel: "Create note",
-  }).openAndGetValue();
-
-  if (chosenPathInput == null) return;
-
-  let finalPath = normalizePath(chosenPathInput.trim().length > 0 ? chosenPathInput.trim() : suggestedPath);
-  if (!finalPath.endsWith(".md")) {
-    finalPath = `${finalPath}.md`;
-  }
-
-  try {
-    const file = await createNoteFromType(app.vault, finalPath, frontmatter);
-    await app.workspace.getLeaf(true).openFile(file);
-    new Notice(`Created note: ${file.path}`);
-    await plugin.validateFileAndStore(file, "manual");
-  } catch (error) {
-    new Notice(error instanceof Error ? error.message : String(error));
-  }
-}

@@ -39,6 +39,28 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     super(leaf);
   }
 
+  getState(): Record<string, unknown> {
+    this.captureRenderSnapshot(this.containerEl);
+    return { destination: this.destination, ...this.types.getState(), ...this.issues.getState(), ...this.sync.getState(), disclosures: Object.fromEntries(this.disclosures) };
+  }
+
+  async setState(state: Record<string, unknown>, result: import("obsidian").ViewStateResult): Promise<void> {
+    if (["types", "sync", "issues"].includes(String(state.destination))) this.destination = state.destination as Destination;
+    if (state.disclosures && typeof state.disclosures === "object") for (const [key, value] of Object.entries(state.disclosures)) if (typeof value === "boolean") this.disclosures.set(key, value);
+    await this.types.setState(state);
+    this.issues.setState(state);
+    this.sync.setState(state);
+    await this.refresh();
+    this.types.restoreEditorMode(state.editorMode);
+    await super.setState(state, result);
+  }
+
+  refreshValidationControls(): void {
+    if (this.destination === "issues") this.render();
+  }
+
+  updateValidationProgress(): void { this.issues.updateValidationProgress(); }
+
   getViewType(): string {
     return MDBASE_WORKSPACE_VIEW;
   }
@@ -68,6 +90,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   }
 
   async onClose(): Promise<void> {
+    this.refreshVersion++;
     this.unsubscribeSync?.();
     this.unsubscribeSync = null;
     await this.types.dispose();
@@ -153,6 +176,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     else if (this.destination === "sync") this.sync.render(content);
     else this.issues.render(content);
     this.restoreRenderSnapshot(root, snapshot);
+    this.app.workspace?.requestSaveLayout();
     if (this.pendingFocusKey) {
       root.querySelector<HTMLElement>(`[data-focus-key="${this.pendingFocusKey}"]`)?.focus();
       this.pendingFocusKey = null;
@@ -231,6 +255,11 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     const details = container.createEl("details", { cls: "mdbase-disclosure" });
     details.dataset.disclosure = key;
     details.open = this.disclosures.get(key) ?? initiallyOpen;
+    details.addEventListener("toggle", () => {
+      if (!this.containerEl.contains(details)) return;
+      this.disclosures.set(key, details.open);
+      this.app.workspace?.requestSaveLayout();
+    });
     details.createEl("summary", { text: label }).setAttr("data-focus-key", `disclosure-${key}`);
     return details.createDiv({ cls: "mdbase-disclosure-body" });
   }

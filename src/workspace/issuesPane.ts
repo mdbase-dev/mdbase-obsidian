@@ -12,6 +12,21 @@ export class IssuesPane {
   private issueGroupBy: "file" | "rule" = "file";
   constructor(private readonly ctx: WorkspaceContext) {}
 
+  getState(): Record<string, unknown> {
+    return { issueQuery: this.issueQuery, issueSeverity: this.issueSeverity, issueGroupBy: this.issueGroupBy };
+  }
+
+  setState(state: Record<string, unknown>): void {
+    if (typeof state.issueQuery === "string") this.issueQuery = state.issueQuery.slice(0, 2000);
+    if (["all", "error", "warn"].includes(String(state.issueSeverity))) this.issueSeverity = state.issueSeverity as typeof this.issueSeverity;
+    if (state.issueGroupBy === "rule" || state.issueGroupBy === "file") this.issueGroupBy = state.issueGroupBy;
+  }
+
+  updateValidationProgress(): void {
+    const summary = this.ctx.containerEl.querySelector<HTMLElement>("[data-validation-summary]");
+    if (summary) summary.textContent = this.ctx.host.getValidationSummary();
+  }
+
   /** Narrow the list to one note. */
   filterToPath(path: string): void {
     this.issueQuery = path;
@@ -24,12 +39,20 @@ export class IssuesPane {
     const allFiles = new Set(allIssues.map((issue) => issue.path)).size;
     const header = document.createDiv({ cls: "mdbase-document-header" });
     const heading = header.createDiv();
+    const validationSummary = this.ctx.host.getValidationSummary();
     heading.createEl("h2", { text: allIssues.length
       ? `${allIssues.length.toLocaleString()} ${allIssues.length === 1 ? "issue" : "issues"} · ${allFiles.toLocaleString()} ${allFiles === 1 ? "file" : "files"}`
-      : "No issues",
+      : validationSummary === "Not checked yet" ? "Validation" : "No known issues",
     });
+    const freshness = heading.createDiv({ cls: "mdbase-muted", text: validationSummary });
+    freshness.setAttr("role", "status");
+    freshness.setAttr("data-validation-summary", "true");
+    if (this.ctx.host.isValidating()) {
+      const cancel = header.createEl("button", { text: "Stop validation" });
+      cancel.onclick = () => this.ctx.host.cancelValidation();
+    }
     const refresh = header.createEl("button", { text: "Validate" });
-    refresh.disabled = this.ctx.busy;
+    refresh.disabled = this.ctx.busy || this.ctx.host.isValidating();
     refresh.onclick = () => void this.ctx.perform(async () => {
       await this.ctx.host.validateCollection();
       this.ctx.render();
