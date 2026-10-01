@@ -25,10 +25,12 @@ fs.mkdirSync(shots, {recursive:true});
    app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();
    window.open=()=>null;
  });
- const states=['healthy','scope','local-issue','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload'];
+ const states=['healthy','scope','local-issue','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload','away-offline','away-auth','away-copied','away-paused','away-internal'];
  const results=[];
  for(const state of states) {
   await page.evaluate(state=>{
+   const away=state.startsWith('away-');
+   if(away)state=state.slice(5);
    const p=app.plugins.plugins['mdbase-obsidian'], view=uxView;
    const longPath='Projects/ExtremelyLongFilenameWithoutSpacesOrBreaks_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ.md';
    p.settings.mirrorProfile={name:'Project notes',collectionId:'ux-fixture',replicaId:'ux-device',mode:'read_write',controlUrl:'https://connect.example',syncUrl:'https://connect.example',enrollmentId:'ux-fixture',accessTokenExpiresAt:'2099-01-01T00:00:00Z',selectiveSync:{file_classes:[],excluded_folders:[]}};
@@ -69,15 +71,17 @@ fs.mkdirSync(shots, {recursive:true});
     p.settings.mirrorProfile=null;
     if(state==='upload')view.schema={config:{spec_version:'0.3.0'},types:new Map(),contracts:new Map()};
    }
+   view.destination=away?'issues':'sync';
    view.render();
   },state);
   for(const width of [1100,390])for(const theme of ['theme-dark','theme-light']) {
    await page.setViewportSize({width,height:900});
    await page.evaluate(theme=>{document.body.classList.remove('theme-dark','theme-light');document.body.classList.add(theme)},theme);
-   const checks=await page.locator('.mdbase-sync-document').evaluate(el=>{
+   const checks=await page.locator('.mdbase-sync-document, .mdbase-issues-document').evaluate(el=>{
     const content=el.closest('.mdbase-workspace-content');
     const buttons=[...el.querySelectorAll('.mod-cta, .mod-warning, .mdbase-conflict-row button, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
-    return {paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
+    const topbar=el.closest('.mdbase-workspace').querySelector('.mdbase-topbar');
+    return {topbarOverflow:topbar.scrollWidth>topbar.clientWidth+1,tabStatus:topbar.querySelector('.mdbase-nav-status')?.textContent,paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
    });
    const box=await page.locator('.mdbase-workspace').boundingBox();
    const cdp=await page.context().newCDPSession(page);
@@ -85,6 +89,8 @@ fs.mkdirSync(shots, {recursive:true});
    await cdp.detach();fs.writeFileSync(`${shots}/${prefix}-${state}-${width}-${theme}.png`,Buffer.from(capture.data,'base64'));
    const failures=[];
    if(checks.overflow)failures.push('Horizontal overflow');
+   if(checks.topbarOverflow)failures.push('Destination bar overflow');
+   if(state.startsWith('away-')&&!checks.tabStatus)failures.push('Problem hidden outside Sync');
    if(width===390&&checks.headingWidth!=null&&checks.headingWidth<checks.paneWidth-30)failures.push('Narrow heading squeezed by the action');
    if(width===390&&checks.buttons.some(b=>b.height<43.5))failures.push('Primary/dismiss target below 44px');
    results.push({state,width,theme,...checks,failures});

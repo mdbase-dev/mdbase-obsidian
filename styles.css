@@ -172,6 +172,16 @@
   line-height: 16px;
 }
 
+.mdbase-nav-status {
+  color: var(--text-warning);
+  white-space: nowrap;
+}
+
+.mdbase-nav-status[data-kind="offline"],
+.mdbase-nav-status[data-kind="paused"] {
+  color: var(--text-muted);
+}
+
 .mdbase-workspace-content {
   min-height: 0;
   flex: 1;

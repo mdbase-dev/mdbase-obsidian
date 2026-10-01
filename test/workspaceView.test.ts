@@ -444,6 +444,40 @@ test("background sync badge updates preserve keyboard focus on the destination t
   f.dom.window.close();
 });
 
+test("sync problems remain visible from other destinations, where mobile has no status bar", () => {
+  for (const scenario of [
+    { code: "network_timeout", label: "Offline" },
+    { code: "mirror_credentials_missing", label: "Sign in" },
+    { code: "mirror_other_device", label: "Set up" },
+    { code: "sync_failed", label: "Error" },
+  ]) {
+    const f = fixture(true);
+    f.state.destination = "issues";
+    const problem = f.host.sync.reportProblem(Object.assign(new Error("Fixture problem"), { code: scenario.code }));
+    f.host.sync.refreshStatus = async () => f.host.sync.state.status;
+    f.state.render();
+    const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!;
+    assert.equal(tab.querySelector(".mdbase-nav-status")?.textContent, scenario.label);
+    assert.equal(tab.getAttribute("aria-label"), `Sync · ${problem.title}`);
+    tab.click();
+    assert.equal(f.state.destination, "sync");
+    assert.equal(f.root.querySelector(".mdbase-nav-status"), null, "the active pane already explains the problem");
+    assert.match(f.text(), new RegExp(problem.actionLabel));
+    f.dom.window.close();
+  }
+});
+
+test("sync tab counts have descriptive accessible names, not bare badge numbers", () => {
+  const f = fixture(true);
+  f.state.mirrorStatus = { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] };
+  f.host.getIssues = () => [{ path: "other.md", severity: "error", code: "schema_required", message: "Missing title" }];
+  f.state.destination = "issues";
+  f.state.render();
+  assert.equal(f.root.querySelector("[data-focus-key='destination-sync']")?.getAttribute("aria-label"), "Sync · 1 sync conflict");
+  assert.equal(f.root.querySelector("[data-focus-key='destination-issues']")?.getAttribute("aria-label"), "Issues · 1 validation issue");
+  f.dom.window.close();
+});
+
 test("empty Issues has no redundant filters, counts, or empty panels", () => {
   const f = fixture();
   f.state.destination = "issues";
