@@ -62,7 +62,7 @@ type SyncController = Pick<
 export interface SyncHistoryLog {
   list(collectionId?: string): SyncHistoryRun[];
   append(run: SyncHistoryRun): Promise<void>;
-  remove(id: string): Promise<void>;
+  acknowledge(id: string): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -150,7 +150,7 @@ export class SyncSession {
   }
 
   async dismissEvent(id: string): Promise<void> {
-    await this.history?.remove(id);
+    await this.history?.acknowledge(id);
     this.update({});
   }
 

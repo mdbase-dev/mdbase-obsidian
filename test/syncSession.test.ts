@@ -110,7 +110,7 @@ function harness(initial: MdbaseSyncPreview, options: HarnessOptions = {}) {
   const history = {
     list: () => runs,
     append: async (run: SyncHistoryRun) => { runs.push(run); },
-    remove: async () => undefined,
+    acknowledge: async () => undefined,
     clear: async () => undefined,
   };
   let currentProfile: typeof profile | null = profile;
