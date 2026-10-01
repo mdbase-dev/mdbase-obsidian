@@ -109,6 +109,9 @@ export class SyncScheduler {
 
   /** Something outside the scheduler (settings, a manual sync) changed what is due. */
   requestSoon(): void {
+    // Settings can change the local projection, or re-enable pending uploads,
+    // without advancing the hosted cursor. A probe alone cannot see that work.
+    this.changed = true;
     this.schedule(this.clock.now());
   }
 

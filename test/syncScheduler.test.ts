@@ -196,6 +196,32 @@ test("returning to the app checks at once; in the background it checks rarely", 
   assert.ok(h.calls.probe > hiddenProbes, "coming back to the front checks immediately");
 });
 
+test("a settings change requests inspection even when the remote cursor did not advance", async () => {
+  const h = harness();
+  h.scheduler.start();
+  await h.clock.advance(0);
+  assert.equal(h.calls.autoSync, 1);
+  // Enabling an attachment class changes the local projection, not the
+  // authority head. A change-feed probe cannot discover the required rebuild.
+  h.scheduler.requestSoon();
+  await h.clock.advance(0);
+  assert.equal(h.calls.autoSync, 2, "inspect the new scope immediately, without waiting for a note edit or the safety net");
+});
+
+test("turning automatic sync back on syncs edits already observed while it was off", async () => {
+  let automatic = false;
+  const h = harness({ automatic: () => automatic });
+  h.scheduler.start();
+  await h.clock.advance(0);
+  h.scheduler.noteLocalChange();
+  await h.clock.advance(SYNC_TIMING.localQuietMs);
+  assert.equal(h.calls.refresh, 2, "manual mode has already consumed the edit trigger to refresh status");
+  automatic = true;
+  h.scheduler.requestSoon();
+  await h.clock.advance(0);
+  assert.equal(h.calls.autoSync, 1, "enabling automatic sync catches up without needing another edit");
+});
+
 test("with automatic sync off, the scheduler only keeps status fresh", async () => {
   const h = harness({ automatic: () => false });
   h.scheduler.start();
