@@ -183,6 +183,42 @@ test("a conflict on a conflict copy does not nest copy labels", async () => {
   assert.equal(path, "plan (local conflict copy 2).md");
 });
 
+test("concurrent settling reports one resolution, not a spurious missing-conflict error", async () => {
+  const here = await pair();
+  await here.conflict();
+  const outcomes = (await Promise.all([
+    here.controller.autoResolveConflicts(),
+    here.controller.autoResolveConflicts(),
+  ])).flat();
+  assert.deepEqual(outcomes.map((result) => result.outcome), ["kept_both"]);
+  assert.equal(copies(here.vault).length, 1);
+});
+
+test("inspection cannot see a cleared conflict before its merged write completes", async () => {
+  const base = "---\nstatus: open\npriority: low\n---\nBody\n";
+  const here = await pair(base);
+  await here.conflict(base.replace("status: open", "status: done"), base.replace("priority: low", "priority: high"));
+  let writing!: () => void;
+  const enteredWrite = new Promise<void>((resolve) => { writing = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const process = here.vault.process.bind(here.vault);
+  here.vault.process = async (file, transform) => { writing(); await gate; return process(file, transform); };
+  const settle = here.controller.autoResolveConflicts();
+  await enteredWrite;
+  let inspected = false;
+  const inspection = here.controller.inspect().then((value) => { inspected = true; return value; });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(inspected, false, "inspection must queue behind the whole settlement");
+  } finally {
+    release();
+    await settle;
+    await inspection;
+  }
+  assert.match(here.vault.read("plan.md")!, /status: done[\s\S]*priority: high/);
+});
+
 test("Connect-rejected changes remain explicit and are not retried as copies", async () => {
   const here = await pair();
   let mutations = 0;
