@@ -2148,7 +2148,10 @@ export class ConnectSyncController {
 
   async disconnect(removeSyncedFiles: boolean): Promise<DisconnectMirrorResult> {
     if (this.isSyncing()) throw new SyncError("mirror_busy", "Stop the current synchronization before disconnecting.");
-    return this.withMirrorOperation(() => this.disconnectActive(removeSyncedFiles));
+    return this.withMirrorOperation(async () => {
+      const profile = this.requireProfile();
+      return this.leaseFor(profile).runExclusive(() => this.disconnectActive(removeSyncedFiles));
+    });
   }
 
   private async disconnectActive(removeSyncedFiles: boolean): Promise<DisconnectMirrorResult> {
@@ -2711,13 +2714,16 @@ export class ConnectSyncController {
       fileSystem: this.fileSystem,
       blobStore: this.blobStoreFor(profile),
       selectiveSync: normalizeSelectiveSync(profile.selectiveSync),
-      lease: this.options.leaseFactory?.(profile)
-        ?? new DeviceMirrorLease(`${profile.collectionId}:${profile.replicaId}`),
+      lease: this.leaseFor(profile),
       onProgress,
     };
     return profile.mode === "read_write"
       ? new WritableDirectoryMirror(profile.replicaId, transport, mirrorOptions)
       : new DirectoryMirror(profile.replicaId, transport, mirrorOptions);
+  }
+
+  private leaseFor(profile: MirrorProfile): MirrorLease {
+    return this.options.leaseFactory?.(profile) ?? new DeviceMirrorLease(`${profile.collectionId}:${profile.replicaId}`);
   }
 
   private requireProfile(): MirrorProfile {

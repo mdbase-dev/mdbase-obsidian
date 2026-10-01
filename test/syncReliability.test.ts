@@ -508,6 +508,44 @@ test("independently loaded plugin windows share a browser mirror lease", async (
   }
 });
 
+test("disconnect cannot retire a mirror while another controller holds its SDK lease", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const gate = deferred();
+  const here = await device(hosted, id, {
+    wrapTransport: (transport) => ({ ...transport, openSession: async () => {
+      entered.release();
+      await gate.promise;
+      return transport.openSession();
+    } }),
+  });
+  const running = here.controller.inspect();
+  await entered.promise;
+  let otherProfile = structuredClone(here.profile());
+  const other = new ConnectSyncController({ vault: here.vault, secretStorage: here.secrets } as never, {
+    getMirrorProfile: () => otherProfile,
+    saveMirrorProfile: async (next) => { otherProfile = next; },
+    deviceId: () => "this-device",
+  }, {
+    stateStoreFactory: () => here.state, blobStoreFactory: () => new MemoryMirrorBlobStore(),
+    fileSystem: new ObsidianMirrorFileSystem(here.vault as never),
+    transportFactory: () => hosted.transport(here.replicaId),
+  });
+  try {
+    await assert.rejects(other.disconnect(false), (error: unknown) => (error as { code?: string }).code === "mirror_busy");
+    assert.ok(otherProfile);
+    assert.equal(await here.vault.adapter.exists(".mdbase/connect-role.json"), true);
+  } finally {
+    gate.release();
+    await running;
+  }
+  await other.disconnect(false);
+  assert.equal(otherProfile, null);
+  here.controller.dispose();
+  other.dispose();
+});
+
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
   const hosted = new MemoryAuthority();
   hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "a\n", types: [] }]);
