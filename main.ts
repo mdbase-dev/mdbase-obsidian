@@ -397,10 +397,12 @@ export default class MdbasePlugin extends Plugin {
   otherSyncServices(): string[] {
     const services: string[] = [];
     const app = this.app as unknown as {
-      internalPlugins?: { getEnabledPluginById?(id: string): unknown };
+      internalPlugins?: { getEnabledPluginById?(id: string): { vaultId?: unknown } | null };
       plugins?: { enabledPlugins?: Set<string> };
     };
-    if (app.internalPlugins?.getEnabledPluginById?.("sync")) services.push("Obsidian Sync");
+    // The Sync core plugin is enabled by default; it only syncs once a remote vault is chosen.
+    const obsidianSync = app.internalPlugins?.getEnabledPluginById?.("sync");
+    if (typeof obsidianSync?.vaultId === "string" && obsidianSync.vaultId) services.push("Obsidian Sync");
     const community: Record<string, string> = {
       "obsidian-livesync": "Self-hosted LiveSync",
       "remotely-save": "Remotely Save",
