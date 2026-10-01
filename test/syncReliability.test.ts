@@ -274,6 +274,34 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   assert.equal(controller.isEngineWrite("notes/other.md"), false);
 });
 
+test("binary edits made while a download stream is consumed are not overwritten", async () => {
+  const vault = new MemoryVault();
+  const original = new Uint8Array([1, 2, 3]).buffer;
+  const edited = new Uint8Array([7, 8, 9]).buffer;
+  const file = await vault.createBinary("photo.png", original);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const source = (async function* () {
+    yield new Uint8Array([4]);
+    await vault.modifyBinary(file, edited);
+    yield new Uint8Array([5, 6]);
+  })();
+  await assert.rejects(fs.writeBinary("photo.png", source), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(vault.readBytes("photo.png"), new Uint8Array(edited));
+});
+
+test("a binary file created during a download is not silently overwritten", async () => {
+  const vault = new MemoryVault();
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const source = (async function* () {
+    await vault.createBinary("photo.png", new Uint8Array([7, 8, 9]).buffer);
+    yield new Uint8Array([4, 5, 6]);
+  })();
+  await assert.rejects(fs.writeBinary("photo.png", source), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(vault.readBytes("photo.png"), new Uint8Array([7, 8, 9]));
+});
+
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
   const hosted = new MemoryAuthority();
   hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "a\n", types: [] }]);

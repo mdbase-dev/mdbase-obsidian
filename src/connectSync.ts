@@ -1037,11 +1037,18 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     return binaryInfo(bytes);
   }
 
-  async writeBinary(input: string, source: AsyncIterable<Uint8Array>): Promise<void> {
+  async writeBinary(input: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void> {
     const path = assertVisibleBinaryPath(input);
+    // A stream can take seconds to consume. Remember its destination before
+    // reading any bytes, then recheck it after staging and folder creation.
+    const before = expected === undefined ? await this.inspectBinary(path) : expected;
     const bytes = await collectBinary(source);
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
+    const current = await this.inspectBinary(path);
+    if (current?.content_digest !== before?.content_digest || current?.size !== before?.size) {
+      throw new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
+    }
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing instanceof TFolder) throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     this.assertActive();
