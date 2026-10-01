@@ -140,8 +140,8 @@ export function actionEntry(action: MirrorPlanAction): SyncPreviewEntry {
   };
 }
 
-/** Plans above these sizes are shown for review even when every action is benign. */
-export const AUTO_APPLY_LIMITS = { maxActions: 200, maxBytes: 25 * 1024 * 1024 };
+/** A sync that would delete more than this many files stops for review. */
+export const AUTO_APPLY_LIMITS = { maxDeletions: 20 };
 
 export interface SyncPlanSafety {
   /** True when the plan can be applied without a person reviewing it first. */
@@ -151,28 +151,27 @@ export interface SyncPlanSafety {
 }
 
 /**
- * Separates routine plans from ones that need informed consent. Deletions,
- * conflicts, attachment uploads, the first sync, rebuilds, blocking issues and
- * very large transfers always stop for review; everything else is ordinary
- * create/update/rename traffic that the review would only rubber-stamp.
+ * Separates routine plans from ones that need informed consent. Nearly every
+ * plan is routine: deletions move files to the trash, conflicts are merged or
+ * kept as two files afterwards, and attachments sync like notes. What still
+ * stops for review is what a person would want to see before it happens: a
+ * burst of deletions (often a folder moved out of the vault, or files evicted
+ * by another tool), a rebuild after the collection's scope was reset, and a
+ * first sync that would change the hosted collection.
  */
 export function syncPlanSafety(preview: MdbaseSyncPreview, limits = AUTO_APPLY_LIMITS): SyncPlanSafety {
   const { plan } = preview;
   const reasons: string[] = [];
-  if (plan.kind !== "incremental") reasons.push(plan.kind === "initial" ? "First sync" : "Mirror rebuild");
-  if (plan.summary.blocking_issues > 0 && !plan.actions.some(action => action.command !== "advance_checkpoint")) reasons.push("Blocking issues");
   const actions = plan.actions.filter((action) => action.command !== "advance_checkpoint");
-  if (actions.some((action) => action.command === "record_conflict")) reasons.push("Conflicts");
-  if (actions.some((action) => action.command === "delete_local" || action.command === "delete_remote")) {
-    reasons.push("Deletions");
+  if (plan.kind === "rebuild") reasons.push("Mirror rebuild");
+  if (plan.kind === "initial" && actions.some((action) =>
+    ["put_remote", "move_remote", "delete_remote", "delete_local"].includes(action.command))) {
+    reasons.push("First sync");
   }
-  if (actions.some((action) =>
-    (action.command === "put_remote" && action.target.entity === "file")
-    || (action.command === "move_remote" && action.source.entity === "file"))) {
-    reasons.push("Attachment uploads");
-  }
-  if (actions.length > limits.maxActions) reasons.push(`More than ${limits.maxActions} changes`);
-  const bytes = preview.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0);
-  if (bytes > limits.maxBytes) reasons.push("Large transfer");
+  // Blocked paths are skipped while independent transfers proceed; only a plan
+  // that blocking issues leave with nothing to do needs a person.
+  if (plan.summary.blocking_issues > 0 && !actions.length) reasons.push("Blocking issues");
+  const deletions = actions.filter((action) => action.command === "delete_local" || action.command === "delete_remote").length;
+  if (deletions > limits.maxDeletions) reasons.push(`${deletions} deletions`);
   return { safe: reasons.length === 0, reasons };
 }

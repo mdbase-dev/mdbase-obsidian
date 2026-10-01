@@ -14,9 +14,12 @@ const gzipBytes = gzipSync(bundle).byteLength;
 // Keep a narrow margin over that reviewed production bundle so unintentional
 // dependency growth is visible.
 // Reviewed UX and partial-sync additions on the beta.120 workspace baseline.
-// No new runtime dependencies; leave a narrow margin above the resulting bundle.
-const rawBudget = 768 * 1024;
-const gzipBudget = 221 * 1024;
+// Sync reliability adds ~25 KB raw / ~8 KB gzip: request deadlines and retry,
+// the sync scheduler, automatic conflict settling with a three-way merge
+// (node-diff3 is ~5 KB of that), device ownership and diagnostics.
+// Leave a narrow margin above the resulting bundle.
+const rawBudget = 800 * 1024;
+const gzipBudget = 232 * 1024;
 const forbidden = [
   /require\((["'])node:(?:fs|path|crypto|os|worker_threads|child_process)\1\)/,
   /require\((["'])(?:fs|path|crypto|os|worker_threads|child_process)\1\)/,

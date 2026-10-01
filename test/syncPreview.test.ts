@@ -249,26 +249,26 @@ test("routine incremental note traffic is safe to apply without review", () => {
   assert.equal(syncPlanSafety(previewFromPlan({ ...partial.plan, actions: [] })).safe, false);
 });
 
-test("deletions, conflicts, attachment uploads and first syncs need review", () => {
-  const deletion = previewFromPlan(plan({
-    actions: [{
-      command: "delete_local",
-      action_id: "delete",
-      depends_on: [],
-      target: ref("record", "notes/gone.md"),
-      expected_local: { state: "absent" },
-      expected_path_owner: { state: "absent" },
-      reason: "remote_change",
-    }],
-  }));
-  assert.deepEqual(syncPlanSafety(deletion).reasons, ["Deletions"]);
+const deleteLocal = (path: string): MirrorSyncPlan["actions"][number] => ({
+  command: "delete_local",
+  action_id: `delete-${path}`,
+  depends_on: [],
+  target: ref("record", path),
+  expected_local: { state: "absent" },
+  expected_path_owner: { state: "absent" },
+  reason: "remote_change",
+});
+
+test("deletions, conflicts, attachment uploads and large transfers sync without review", () => {
+  const deletion = previewFromPlan(plan({ actions: [deleteLocal("notes/gone.md")] }));
+  assert.deepEqual(syncPlanSafety(deletion), { safe: true, reasons: [] });
 
   const upload = previewFromPlan(plan({
     actions: [{
       command: "put_remote",
       action_id: "put-file",
       depends_on: [],
-      target: ref("file", "Media/a.png", 10),
+      target: ref("file", "Media/a.png", 30 * 1024 * 1024),
       payload_revision: `sha256:${"4".repeat(64)}`,
       expected_remote: { state: "absent" },
       expected_local: { state: "absent" },
@@ -276,7 +276,7 @@ test("deletions, conflicts, attachment uploads and first syncs need review", () 
       reason: "local_change",
     }],
   }));
-  assert.deepEqual(syncPlanSafety(upload).reasons, ["Attachment uploads"]);
+  assert.deepEqual(syncPlanSafety(upload), { safe: true, reasons: [] });
 
   const conflict = previewFromPlan(plan({
     actions: [{
@@ -291,12 +291,27 @@ test("deletions, conflicts, attachment uploads and first syncs need review", () 
       reason: "remote_change",
     }],
   }));
-  assert.deepEqual(syncPlanSafety(conflict).reasons, ["Conflicts"]);
+  assert.deepEqual(syncPlanSafety(conflict), { safe: true, reasons: [] });
 
-  assert.deepEqual(syncPlanSafety(previewFromPlan(plan({ kind: "initial", actions: [write("a.md")] }))).reasons, ["First sync"]);
+  const many = previewFromPlan(plan({ actions: Array.from({ length: 500 }, (_, index) => write(`n/${index}.md`)) }));
+  assert.equal(syncPlanSafety(many).safe, true);
 });
 
-test("large plans need review even when each action is routine", () => {
-  const preview = previewFromPlan(plan({ actions: [write("a.md"), write("b.md"), write("c.md")] }));
-  assert.deepEqual(syncPlanSafety(preview, { maxActions: 2, maxBytes: Infinity }).reasons, ["More than 2 changes"]);
+test("a burst of deletions, a rebuild and a first sync that changes Connect need review", () => {
+  const deletions = (count: number) => previewFromPlan(plan({
+    actions: Array.from({ length: count }, (_, index) => deleteLocal(`notes/${index}.md`)),
+  }));
+  assert.equal(syncPlanSafety(deletions(2), { maxDeletions: 2 }).safe, true);
+  assert.deepEqual(syncPlanSafety(deletions(3), { maxDeletions: 2 }).reasons, ["3 deletions"]);
+
+  assert.deepEqual(syncPlanSafety(previewFromPlan(plan({ kind: "rebuild", actions: [write("a.md")] }))).reasons, ["Mirror rebuild"]);
+  assert.deepEqual(
+    syncPlanSafety(previewFromPlan(plan({ kind: "initial", actions: [write("a.md")] }))),
+    { safe: true, reasons: [] },
+    "a first sync that only downloads is what connecting asked for",
+  );
+  assert.deepEqual(
+    syncPlanSafety(previewFromPlan(plan({ kind: "initial", actions: [deleteLocal("a.md")] }))).reasons,
+    ["First sync"],
+  );
 });

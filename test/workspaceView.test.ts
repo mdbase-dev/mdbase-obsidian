@@ -75,6 +75,8 @@ function fixture(connected = false) {
     loadCollectionRecords: async () => [] as Array<{ path: string; frontmatter: Record<string, unknown> }>,
     getQuickFixLabel: () => null as string | null,
     openSettings: () => { settingsOpened++; },
+    otherSyncServices: () => [],
+    copySyncDiagnostics: async () => undefined,
     connectSync: {
       getAdoptionMarker: () => null,
       getSelectiveSync: () => ({ file_classes: [] as string[], excluded_folders: [] as string[] }),
@@ -686,13 +688,13 @@ test("a plan held for review says why, offers to apply it, and badges the Sync t
   const f = fixture(true);
   const target = { entity: "record", identity: "r1", path: "Old.md", revision: "x", payload_revision: "x" };
   f.state.mirrorPreview = {
-    phase: "incremental",
-    plan: { kind: "incremental", actions: [{ command: "delete_local", target }], issues: [], summary: { blocking_issues: 0 } },
+    phase: "rebuild",
+    plan: { kind: "rebuild", actions: [{ command: "delete_local", target }], issues: [], summary: { blocking_issues: 0 } },
     entries: [{ kind: "document", path: "Old.md", direction: "download", action: "delete", detail: "Hosted record will delete." }],
     collisions: [], local_issues: [],
   };
   f.state.render();
-  assert.match(f.text(), /Review needed: deletions/);
+  assert.match(f.text(), /Review needed: mirror rebuild/);
   assert.ok(button(f.root, "Sync 1 change").classList.contains("mod-cta"));
   assert.equal(f.root.querySelector(".mdbase-nav-button.is-active .mdbase-count")?.textContent, "1");
   f.dom.window.close();

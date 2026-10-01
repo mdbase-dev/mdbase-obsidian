@@ -148,9 +148,27 @@ export class SyncPane {
       cancel.onclick = () => this.session.cancel();
     }
 
-    if (state.problem || state.status?.recovery_required) {
+    const otherServices = this.ctx.host.otherSyncServices();
+    if (otherServices.length) {
+      status.createDiv({
+        cls: "mdbase-inline-message mdbase-sync-coexistence",
+        text: `${otherServices.join(" and ")} also ${otherServices.length === 1 ? "syncs" : "sync"} this vault. Two services syncing the same notes can duplicate them or bring deleted ones back; let only one of them sync this vault's notes.`,
+      });
+    }
+
+    if (state.paused && !state.problem && !syncing) {
+      this.renderRecoveryCard(status, {
+        code: "sync_paused",
+        kind: "paused",
+        title: "Sync is paused",
+        message: "Changes on this device and in Connect wait until you resume.",
+        action: "resume",
+        actionLabel: "Resume sync",
+      });
+    } else if (state.problem || state.status?.recovery_required) {
       this.renderRecoveryCard(status, state.problem ?? {
         code: "mirror_recovery_required",
+        kind: "recovery",
         title: "Synchronization needs recovery",
         message: "Your original files are safe. Resume from the durable checkpoint before disconnecting this vault.",
         action: "resume",
@@ -212,16 +230,31 @@ export class SyncPane {
 
   private renderRecoveryCard(container: HTMLElement, problem: SyncProblem): void {
     const card = container.createDiv({ cls: "mdbase-recovery-card" });
+    card.setAttr("data-kind", problem.kind);
     const text = card.createDiv();
     text.createEl("strong", { text: problem.title });
     text.createDiv({ text: problem.message });
-    const action = card.createEl("button", { text: problem.actionLabel, cls: "mod-cta" });
+    const retryAt = this.session.state.retryAt;
+    if (retryAt && (problem.kind === "offline" || problem.kind === "internal")) {
+      const seconds = Math.max(0, Math.round((retryAt - Date.now()) / 1000));
+      text.createDiv({
+        cls: "mdbase-muted",
+        text: seconds < 60 ? `Trying again in ${seconds}s.` : `Trying again in ${Math.round(seconds / 60)} min.`,
+      });
+    }
+    const buttons = card.createDiv({ cls: "mdbase-recovery-actions" });
+    const action = buttons.createEl("button", { text: problem.actionLabel, cls: "mod-cta" });
     action.disabled = this.ctx.busy || this.session.state.busy;
     action.onclick = () => {
-      if (problem.action === "retry") void this.reconnectCollection();
+      if (problem.kind === "auth") void this.reconnectCollection();
       else if (problem.action === "reauthorize") void this.ctx.perform(() => this.reauthorizeCollection());
-      else void this.session.review();
+      else if (problem.action === "review") void this.session.review();
+      else void this.session.syncNow();
     };
+    if (problem.kind === "internal" || problem.kind === "recovery") {
+      const copy = buttons.createEl("button", { text: "Copy diagnostics" });
+      copy.onclick = () => void this.ctx.host.copySyncDiagnostics();
+    }
   }
 
   private async reauthorizeCollection(): Promise<void> {

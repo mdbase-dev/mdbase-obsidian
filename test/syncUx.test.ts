@@ -3,11 +3,13 @@ import { test } from "node:test";
 import type { MirrorStatus, MirrorSyncPlan } from "@mdbase-dev/connect-sync/mirror";
 import {
   normalizeActivity,
+  syncFailureProblem,
   syncIndicator,
   syncProblem,
   syncReviewPresentation,
   type SyncActivityEntry,
 } from "../src/syncUx";
+import { HttpStatusError, NetworkError } from "../src/syncHttp";
 
 function status(overrides: Partial<MirrorStatus> = {}): MirrorStatus {
   return {
@@ -114,9 +116,33 @@ test("sync problems translate credentials, cancellation, busy work, stale decisi
   assert.equal(syncProblem(new DOMException("stopped", "AbortError")).action, "resume");
   assert.equal(syncProblem(Object.assign(new Error("busy"), { code: "mirror_busy" })).title, "Synchronization is already running");
   assert.equal(syncProblem(Object.assign(new Error("stale"), { code: "mirror_plan_stale" })).action, "review");
-  const offline = syncProblem(new Error("network unavailable"));
+  const offline = syncProblem(new NetworkError("network_unreachable", "Connect could not be reached."));
+  assert.equal(offline.kind, "offline");
   assert.equal(offline.action, "retry");
-  assert.equal(offline.message, "network unavailable");
+  assert.equal(syncProblem(new HttpStatusError("authority_unavailable", "down", 503)).kind, "offline");
+  assert.equal(syncProblem(Object.assign(new Error("x"), { code: "mirror_enrollment_unreachable" })).kind, "offline");
+});
+
+test("credentials, copied vaults and unexpected failures are told apart from being offline", () => {
+  assert.equal(syncProblem(new HttpStatusError("mirror_access_rejected", "no", 401)).kind, "auth");
+  assert.equal(syncProblem(Object.assign(new Error("gone"), { code: "mirror_pairing_not_found" })).kind, "auth");
+  const copied = syncProblem(Object.assign(new Error("copy"), { code: "mirror_other_device" }));
+  assert.equal(copied.kind, "device");
+  assert.equal(copied.action, "reauthorize");
+  const defect = syncProblem(new Error("undefined is not a function"));
+  assert.equal(defect.kind, "internal");
+  assert.match(defect.message, /^undefined is not a function/);
+  assert.match(defect.message, /diagnostics/);
+  assert.equal(syncFailureProblem({ code: "network_timeout", message: "slow" }).kind, "offline");
+});
+
+test("offline is calm in the status bar; a copied vault asks to be set up", () => {
+  const base = { connected: true, status: status(), progress: null, fileProgress: null, validationIssues: 0, localChangeObserved: false };
+  const offline = syncIndicator({ ...base, problem: syncProblem(new NetworkError("network_unreachable", "x")) });
+  assert.equal(offline.label, "mdbase: Offline");
+  assert.match(offline.detail, /sync when it's back/);
+  const copied = syncIndicator({ ...base, problem: syncProblem(Object.assign(new Error("c"), { code: "mirror_other_device" })) });
+  assert.equal(copied.label, "mdbase: Set up sync");
 });
 
 test("legacy activity is validated strictly before migration", () => {

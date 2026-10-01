@@ -1,16 +1,18 @@
+// Plugin code uses window timers (Obsidian's popout-safe convention); plain
+// Node tests have no window, so give them the global object.
+globalThis.window ??= globalThis;
+
 function normalizePath(path) {
   return String(path).replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/\/+$/, "");
 }
 
+// Obsidian parses real YAML; so does the mock (YAML is a superset of JSON).
+const YAML = require("yaml");
+
 function parseYaml(raw) {
   const trimmed = String(raw).trim();
   if (!trimmed) return null;
-
-  try {
-    return JSON.parse(trimmed);
-  } catch (error) {
-    throw new Error(`Mock parseYaml expects JSON-compatible YAML: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  return YAML.parse(trimmed);
 }
 
 function stringifyYaml(value) {

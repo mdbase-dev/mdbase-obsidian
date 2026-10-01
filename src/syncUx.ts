@@ -1,4 +1,5 @@
 import type { MirrorProgress, MirrorStatus, MirrorSyncPlan } from "@mdbase-dev/connect-sync/mirror";
+import { isTransientError } from "./syncHttp";
 
 export interface FileTransferProgress {
   direction: "upload" | "download";
@@ -20,8 +21,17 @@ export interface SyncActivityEntry {
   requiresAcknowledgement: boolean;
 }
 
+/**
+ * What kind of trouble sync is in decides who acts: `offline` clears up by
+ * itself and is retried automatically; `auth` and `device` need the person to
+ * approve this device; `decision` and `recovery` need a look at the plan;
+ * `paused` waits for the person to resume; `internal` is a defect to report.
+ */
+export type SyncProblemKind = "offline" | "auth" | "device" | "decision" | "recovery" | "paused" | "busy" | "internal";
+
 export interface SyncProblem {
   code: string;
+  kind: SyncProblemKind;
   title: string;
   message: string;
   action: "retry" | "reauthorize" | "review" | "resume";
@@ -131,11 +141,17 @@ export function syncIndicator(input: {
       destination: "sync",
     };
   }
-  if (problem) {
+  if (problem && problem.kind !== "busy") {
     return {
-      state: problem.action === "resume" ? "paused" : problem.action === "retry" ? "offline" : "attention",
-      label: problem.action === "resume" ? "mdbase: Paused" : problem.action === "retry" ? "mdbase: Offline" : "mdbase: Needs attention",
-      detail: problem.title,
+      state: problem.kind === "paused" ? "paused" : problem.kind === "offline" ? "offline" : "attention",
+      label: problem.kind === "paused"
+        ? "mdbase: Paused"
+        : problem.kind === "offline"
+          ? "mdbase: Offline"
+          : problem.kind === "device"
+            ? "mdbase: Set up sync"
+            : "mdbase: Needs attention",
+      detail: problem.kind === "offline" ? `${problem.title}. Changes will sync when it's back.` : problem.title,
       destination: "sync",
     };
   }
@@ -168,38 +184,62 @@ export function syncIndicator(input: {
   return { state: "waiting", label: "mdbase: Ready to sync", detail: "Review the first synchronization", destination: "sync" };
 }
 
+const AUTH_CODES = new Set([
+  "mirror_credentials_missing",
+  "invalid_mirror_enrollment",
+  "mirror_enrollment_expired",
+  "mirror_pairing_not_found",
+  "invalid_mirror_pairing",
+  "mirror_access_rejected",
+  "replica_revoked",
+]);
+
 export function syncProblem(error: unknown): SyncProblem {
   const code = errorCode(error);
   if (code === "mirror_busy") {
     return {
       code,
+      kind: "busy",
       title: "Synchronization is already running",
       message: "The active transfer is still using this vault. Its progress is shown below.",
       action: "resume",
       actionLabel: "Show progress",
     };
   }
-  if (["mirror_credentials_missing", "invalid_mirror_enrollment", "mirror_enrollment_expired"].includes(code)) {
+  if (code === "mirror_other_device") {
     return {
       code,
+      kind: "device",
+      title: "Set up sync on this device",
+      message: "This vault's sync settings came from another device or another copy of the vault, probably through a different sync service. Approve this copy to give it its own connection. Your files stay as they are.",
+      action: "reauthorize",
+      actionLabel: "Set up this device",
+    };
+  }
+  if (AUTH_CODES.has(code)) {
+    return {
+      code,
+      kind: "auth",
       title: "Connect approval is required again",
       message: "Your local files and mirror checkpoint are safe. Approve this vault again to restore access.",
       action: "reauthorize",
       actionLabel: "Sign in again",
     };
   }
-  if (["operation_cancelled", "cancelled", "AbortError"].includes(code)) {
+  if (["operation_cancelled", "cancelled", "sync_cancelled", "AbortError"].includes(code)) {
     return {
       code,
-      title: "Synchronization paused safely",
-      message: "Completed changes remain checkpointed. Review the current plan before resuming.",
+      kind: "paused",
+      title: "Synchronization paused",
+      message: "Completed changes are saved. Sync resumes from the same point when you continue.",
       action: "resume",
-      actionLabel: "Review and resume",
+      actionLabel: "Resume sync",
     };
   }
-  if (["stale", "stale_mirror_plan", "mirror_plan_stale", "conflict_decision_stale"].includes(code)) {
+  if (["stale", "stale_mirror_plan", "mirror_plan_stale", "sync_plan_stale", "conflict_decision_stale"].includes(code)) {
     return {
       code,
+      kind: "decision",
       title: "The collection changed again",
       message: "No stale decision was applied. Review the newest local and hosted versions.",
       action: "review",
@@ -209,19 +249,36 @@ export function syncProblem(error: unknown): SyncProblem {
   if (["enrollment_recovery_required", "mirror_recovery_required", "pending_mirror_recovery"].includes(code)) {
     return {
       code,
+      kind: "recovery",
       title: "Synchronization needs recovery",
       message: "Your original files are safe. Resume from the durable checkpoint before disconnecting this vault.",
       action: "resume",
       actionLabel: "Resume recovery",
     };
   }
+  if (isTransientError(error)) {
+    return {
+      code,
+      kind: "offline",
+      title: "Can't reach mdbase Connect",
+      message: "Your changes are saved on this device and sync automatically when the connection returns.",
+      action: "retry",
+      actionLabel: "Retry now",
+    };
+  }
   return {
     code,
-    title: "Connect could not be reached",
-    message: errorMessage(error, "Your local files are safe. Check the connection and try again."),
+    kind: "internal",
+    title: "Sync stopped unexpectedly",
+    message: `${errorMessage(error, "An unexpected error stopped synchronization.")} Your files are safe. Sync tries again automatically; if this keeps happening, copy the diagnostics and report it.`,
     action: "retry",
-    actionLabel: "Retry connection",
+    actionLabel: "Try again",
   };
+}
+
+/** A failure recorded by the engine (an outcome, not a thrown error) as a problem. */
+export function syncFailureProblem(failure: { code: string; message: string }): SyncProblem {
+  return syncProblem(Object.assign(new Error(failure.message), { code: failure.code }));
 }
 
 /** Reads the pre-0.4 activity log so it can be migrated into sync history. */
