@@ -101,6 +101,12 @@ async function collectionId(hosted: MemoryAuthority): Promise<string> {
   return (await hosted.transport(probe).openSession()).collection_id;
 }
 
+function deferred() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
+}
+
 const note = (status: string, priority: string, body = "Body\n") => `---\nstatus: ${status}\npriority: ${priority}\n---\n${body}`;
 
 test("edits to different fields on two devices are merged and synced without asking", async () => {
@@ -325,6 +331,56 @@ test("credentials stored under the old collection-only key are found and carried
   assert.deepEqual(renewals, ["legacy-refresh"]);
   assert.equal(secrets.getSecret(`mdbase-connect-refresh-${here.replicaId}`), "legacy-refresh");
   assert.equal(secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "renewed");
+});
+
+test("a token renewal finishing after disconnect cannot recreate the connection", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const finish = deferred();
+  const here = await device(hosted, id, {
+    enrollmentClient: {
+      renew: async (enrollment) => {
+        entered.release();
+        await finish.promise;
+        return { ...enrollment, accessToken: "renewed", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z" };
+      },
+    },
+  });
+  const renewal = here.controller.reconnect();
+  // Install the rejection handler before releasing either operation.
+  const completed = Promise.allSettled([renewal]);
+  await entered.promise;
+  await here.controller.disconnect(false);
+  assert.equal(here.profile(), null);
+  finish.release();
+  await completed;
+  assert.equal(here.profile(), null, "a late response must not resurrect a disconnected profile");
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "");
+});
+
+test("token renewal preserves selective-sync settings changed while it was in flight", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const finish = deferred();
+  const here = await device(hosted, id, {
+    enrollmentClient: {
+      renew: async (enrollment) => {
+        entered.release();
+        await finish.promise;
+        return { ...enrollment, accessToken: "renewed", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z" };
+      },
+    },
+  });
+  await here.controller.configureSelectiveSync({ file_classes: [], excluded_folders: [] });
+  const renewal = here.controller.reconnect();
+  await entered.promise;
+  const policy = { file_classes: ["image" as const], excluded_folders: ["private"] };
+  await here.controller.configureSelectiveSync(policy);
+  finish.release();
+  await renewal;
+  assert.deepEqual(here.profile()?.selectiveSync, policy);
 });
 
 test("overlapping operations share one token renewal instead of revoking each other's token", async () => {

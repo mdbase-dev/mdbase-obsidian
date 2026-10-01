@@ -2802,8 +2802,16 @@ export class ConnectSyncController {
       accessToken: this.readSecret("access", profile) ?? "",
       refreshCredential,
       accessTokenExpiresAt: profile.accessTokenExpiresAt,
-    });
-    await this.persistEnrollment(renewed, profile.selectiveSync);
+    }, { signal: this.lifetime.signal });
+    // Renewal may overlap a disconnect or a fresh browser enrollment. Never
+    // recreate the retired connection (or replace the new one's credentials).
+    const current = this.requireProfile();
+    if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
+      || current.enrollmentId !== profile.enrollmentId) {
+      throw new SyncError("mirror_identity_conflict", "The connection changed while credentials were renewing. Retry with the current connection.");
+    }
+    // Settings can change independently while the request is in flight.
+    await this.persistEnrollment(renewed, current.selectiveSync);
     return renewed.accessToken;
   }
 
