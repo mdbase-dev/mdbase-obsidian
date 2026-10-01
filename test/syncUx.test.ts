@@ -111,6 +111,15 @@ test("sync indicator gives transfer, attention, waiting, and synced states stabl
   assert.match(transferring.detail, /large\.bin/);
 });
 
+test("checking a new sync plan does not claim the old healthy checkpoint is already Synced", () => {
+  const base = { connected: true, status: status(), progress: null, fileProgress: null, problem: null, validationIssues: 0, localChangeObserved: false, busy: true };
+  const indicator = syncIndicator(base);
+  assert.equal(indicator.state, "syncing");
+  assert.equal(indicator.label, "mdbase: Checking…");
+  assert.match(indicator.detail, /Checking/);
+  assert.match(syncIndicator({ ...base, fileProgress: { direction: "upload", path: "a.md", transferredBytes: 1, totalBytes: 2 } as const }).label, /Uploading/);
+});
+
 test("an explicit pause cannot claim Synced just because the last checkpoint is healthy", () => {
   const base = { connected: true, status: status(), progress: null, fileProgress: null, problem: null, validationIssues: 0, localChangeObserved: false, paused: true };
   const indicator = syncIndicator(base);

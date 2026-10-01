@@ -829,6 +829,7 @@ export default class MdbasePlugin extends Plugin {
       validationIssues,
       localChangeObserved: state.localChangeObserved,
       paused: state.paused,
+      busy: state.busy,
       reviewChanges: safety && !safety.safe ? state.preview?.plan.actions.length ?? 0 : 0,
     });
   }
