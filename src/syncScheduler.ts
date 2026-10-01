@@ -124,6 +124,13 @@ export class SyncScheduler {
     let retryIn: number | null = null;
     try {
       retryIn = await this.decide();
+    } catch (error) {
+      // A host operation may reject before returning a SyncNowResult. Keep
+      // that failure inside the scheduler's retry boundary, not an unhandled
+      // timer rejection that forgets the local changes this attempt consumed.
+      this.host.reportProblem(error);
+      const kind = this.host.problemKind();
+      retryIn = kind && WAITING_FOR_PERSON.has(kind) ? this.settled() : this.failed(isTransientError(error));
     } finally {
       this.running = false;
       const now = this.clock.now();

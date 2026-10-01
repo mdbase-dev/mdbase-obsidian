@@ -208,6 +208,27 @@ test("with automatic sync off, the scheduler only keeps status fresh", async () 
   assert.equal(h.calls.autoSync, 0);
 });
 
+test("a rejected automatic run reports the failure and keeps retrying instead of escaping the timer", async () => {
+  let attempts = 0;
+  let reported = 0;
+  const h = harness({
+    autoSync: async () => {
+      attempts++;
+      if (attempts === 1) throw new NetworkError("network_unreachable", "offline");
+      return "applied";
+    },
+    reportProblem: () => { reported++; },
+  });
+  h.scheduler.start();
+  // tick's public promise must absorb failures just like its timer callback.
+  await h.scheduler.tick();
+  assert.equal(reported, 1);
+  assert.equal(h.retryAt(), SYNC_TIMING.retryBaseMs);
+  await h.clock.advance(SYNC_TIMING.retryBaseMs);
+  assert.ok(attempts >= 2, "the pending run is retried");
+  assert.equal(h.retryAt(), null);
+});
+
 test("a run that finds sync busy tries again shortly and keeps the pending edits", async () => {
   const h = harness();
   h.setResult("busy");
