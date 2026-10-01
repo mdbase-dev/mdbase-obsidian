@@ -6,11 +6,13 @@ import { MemoryAuthority, type SyncTransport } from "@mdbase-dev/connect-sync";
 import {
   MemoryMirrorBlobStore,
   MemoryMirrorStateStore,
+  type MirrorState,
   WritableDirectoryMirror,
 } from "@mdbase-dev/connect-sync/mirror";
 import type { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
 import { ConnectSyncController, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
+import { SyncSession } from "../src/syncSession";
 
 /** Enforces Obsidian's SecretStorage ID rule, which the plugin must respect. */
 class MemorySecrets {
@@ -515,6 +517,104 @@ test("reauthorization refuses to discard a batch prepared while browser approval
   here.vault.failCreatePath = null;
   assert.equal((await here.syncOnce()).status, "applied", "the original checkpoint can still resume");
   assert.equal(here.vault.read("b.md"), "new note\n");
+});
+
+test("every checkpoint-write boundary survives a quota error and a retry without losing files", async () => {
+  class FaultStore extends MemoryMirrorStateStore {
+    writes = 0;
+    failAt: number | null = null;
+    failures = 0;
+    override async write(state: MirrorState): Promise<void> {
+      this.writes++;
+      if (this.writes === this.failAt) {
+        this.failures++;
+        throw new DOMException("Injected quota failure", "QuotaExceededError");
+      }
+      return super.write(state);
+    }
+  }
+  for (let boundary = 1; boundary <= 20; boundary++) {
+    const hosted = new MemoryAuthority();
+    hosted.seed(["a", "b", "c"].map((name) => ({ record_id: name, path: `${name}.md`, frontmatter: {}, body: `${name}\n`, types: [] })));
+    const id = await collectionId(hosted);
+    const state = new FaultStore();
+    const here = await device(hosted, id, { state });
+    const there = otherDevice(hosted);
+    await here.syncOnce();
+    await there.mirror.sync();
+    await edit(there.vault, "b.md", "hosted edit\n");
+    await there.mirror.sync();
+    await edit(here.vault, "a.md", "local edit\n");
+    await here.vault.create("d.md", "new local note\n");
+    await here.vault.delete(here.vault.getAbstractFileByPath("c.md") as TFile);
+    state.failAt = state.writes + boundary;
+    const session = new SyncSession(here.controller, here.profile, null);
+    let result = await session.autoSync();
+    state.failAt = null;
+    for (let retry = 0; retry < 8 && !["applied", "up_to_date"].includes(result); retry++) result = await session.syncNow();
+    assert.ok(["applied", "up_to_date"].includes(result), `write boundary ${boundary}: ${result}, ${session.state.problem?.message}`);
+    await session.syncNow();
+    await there.mirror.sync();
+    for (const vault of [here.vault, there.vault]) {
+      assert.equal(vault.read("a.md"), "local edit\n", `write boundary ${boundary}`);
+      assert.equal(vault.read("b.md"), "hosted edit\n", `write boundary ${boundary}`);
+      assert.equal(vault.read("c.md"), null, `write boundary ${boundary}`);
+      assert.equal(vault.read("d.md"), "new local note\n", `write boundary ${boundary}`);
+    }
+    assert.equal((await state.read())?.batch, undefined, `write boundary ${boundary}: no wedged batch`);
+    here.controller.dispose();
+  }
+});
+
+test("offline edit bursts converge on both devices with every latest field edit intact", async () => {
+  const seeds = Number(process.env.MDBASE_RELIABILITY_SEEDS ?? 3);
+  for (let seed = 1; seed <= seeds; seed++) {
+    let randomState = seed;
+    const randomIndex = (count: number) => {
+      randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0;
+      return Math.floor(randomState / 2 ** 32 * count);
+    };
+    const hosted = new MemoryAuthority();
+    const count = 16;
+    hosted.seed(Array.from({ length: count }, (_, index) => ({
+      record_id: `n${index}`, path: `notes/n${index}.md`, frontmatter: { left: 0, right: 0 }, body: "Body\n", types: [],
+    })));
+    const id = await collectionId(hosted);
+    const here = await device(hosted, id);
+    const there = otherDevice(hosted);
+    const session = new SyncSession(here.controller, here.profile, null);
+    await here.syncOnce();
+    await there.mirror.sync();
+    const left = new Array<number>(count).fill(0);
+    const right = new Array<number>(count).fill(0);
+    for (let editNumber = 1; editNumber <= 200; editNumber++) {
+      const localIndex = randomIndex(count);
+      const remoteIndex = randomIndex(count);
+      const localPath = `notes/n${localIndex}.md`;
+      const remotePath = `notes/n${remoteIndex}.md`;
+      left[localIndex] = editNumber;
+      right[remoteIndex] = editNumber;
+      await edit(here.vault, localPath, here.vault.read(localPath)!.replace(/left: \d+/, `left: ${editNumber}`));
+      await edit(there.vault, remotePath, there.vault.read(remotePath)!.replace(/right: \d+/, `right: ${editNumber}`));
+    }
+    await there.mirror.sync();
+    for (let round = 0; round < 8; round++) {
+      const result = await session.autoSync();
+      assert.ok(["applied", "up_to_date", "pending"].includes(result), `seed ${seed}: ${result}`);
+      if (result !== "pending") break;
+    }
+    await there.mirror.sync();
+    for (let index = 0; index < count; index++) {
+      const path = `notes/n${index}.md`;
+      const document = here.vault.read(path)!;
+      assert.match(document, new RegExp(`left: ${left[index]}\\n`), `seed ${seed}: latest local edit at ${path}`);
+      assert.match(document, new RegExp(`right: ${right[index]}\\n`), `seed ${seed}: latest hosted edit at ${path}`);
+      assert.equal(there.vault.read(path), document, `seed ${seed}: devices agree at ${path}`);
+    }
+    assert.equal((await here.controller.status())?.conflicts.length, 0);
+    assert.equal((await here.controller.status())?.pending, 0);
+    here.controller.dispose();
+  }
 });
 
 test("overlapping operations share one token renewal instead of revoking each other's token", async () => {
