@@ -121,6 +121,14 @@ test("checking a new sync plan does not claim the old healthy checkpoint is alre
   assert.match(syncIndicator({ ...base, fileProgress: { direction: "upload", path: "a.md", transferredBytes: 1, totalBytes: 2 } as const }).label, /Uploading/);
 });
 
+test("an explicit idle pause takes precedence over a previous retryable failure", () => {
+  const base = { connected: true, status: status(), progress: null, fileProgress: null, problem: syncProblem(Object.assign(new Error("Offline"), { code: "network_timeout" })), validationIssues: 0, localChangeObserved: false, paused: true };
+  assert.equal(syncIndicator(base).state, "paused");
+  assert.equal(syncIndicator(base).label, "mdbase: Paused");
+  assert.doesNotMatch(base.problem.message, /automatically/, "classification does not know whether automatic sync is enabled");
+  assert.doesNotMatch(syncProblem(new Error("Unexpected failure")).message, /automatically/);
+});
+
 test("an explicit pause cannot claim Synced just because the last checkpoint is healthy", () => {
   const base = { connected: true, status: status(), progress: null, fileProgress: null, problem: null, validationIssues: 0, localChangeObserved: false, paused: true };
   const indicator = syncIndicator(base);

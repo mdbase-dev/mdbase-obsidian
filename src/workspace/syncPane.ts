@@ -106,14 +106,15 @@ export class SyncPane {
     const state = this.session.state;
     const syncing = Boolean(state.fileProgress || state.progress);
     const problem = state.problem?.kind === "busy" ? null : state.problem;
-    const recoveryProblem: SyncProblem | null = problem ?? (state.paused && !syncing ? {
+    const pauseNeedsResume = state.paused && !syncing && !state.busy && (!problem || ["offline", "internal"].includes(problem.kind));
+    const recoveryProblem: SyncProblem | null = pauseNeedsResume ? {
       code: "sync_paused",
       kind: "paused",
       title: "Sync is paused",
       message: "Changes on this device and in Connect wait until you resume.",
       action: "resume",
       actionLabel: "Resume sync",
-    } : state.status?.recovery_required ? {
+    } : problem ?? (state.status?.recovery_required ? {
       code: "mirror_recovery_required",
       kind: "recovery",
       title: "Synchronization needs recovery",
@@ -125,7 +126,7 @@ export class SyncPane {
     const preview = state.preview;
     const safety = this.session.safety();
     const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
-    const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? "Checking…"
+    const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? state.paused ? "Stopping…" : "Checking…"
       : recoveryProblem?.kind === "paused" ? "Paused"
       : recoveryProblem?.kind === "offline" ? "Offline"
       : recoveryProblem?.kind === "auth" ? "Approval needed"
@@ -138,8 +139,10 @@ export class SyncPane {
     status.setAttr("data-state", state.status?.state ?? "checking");
     const heading = status.createDiv({ cls: "mdbase-sync-heading" });
     heading.createEl("h2", { text: profile.name });
-    heading.createDiv({ cls: "mdbase-muted", text:
-      `${label} · ${relativeTime(state.status?.last_synced_at)}`,
+    const settled = !authorizing && !syncing && !state.busy && !recoveryProblem && !reviewing
+      && state.status?.state === "up_to_date";
+    heading.createDiv({ cls: "mdbase-muted", text: settled && state.status?.last_synced_at
+      ? `${label} · ${relativeTime(state.status.last_synced_at)}` : label,
     });
     const scope = heading.createDiv({ cls: "mdbase-muted mdbase-sync-scope" });
     scope.createSpan({ text: this.syncScopeText(profile.mode) });
@@ -1047,8 +1050,19 @@ export class SyncPane {
     }
   }
 
+  /** Loading disables its opener. Return focus only if the person hasn't moved it. */
+  private comparisonFocus(key: string): () => void {
+    const document = this.ctx.containerEl.ownerDocument;
+    const wasFocused = document.activeElement?.getAttribute("data-focus-key") === key;
+    return () => {
+      if (wasFocused && this.ctx.destination === "sync" && this.ctx.containerEl.ownerDocument === document
+        && document.activeElement === document.body) this.ctx.pendingFocusKey = key;
+    };
+  }
+
   private async loadPreviewComparison(key: string, recordId: string, path: string, preview: MdbaseSyncPreview): Promise<void> {
     if (this.session.state.preview !== preview) return;
+    const returnFocus = this.comparisonFocus(`preview-compare-${key}`);
     this.loadingPreviewComparisons.add(key);
     this.ctx.render();
     try {
@@ -1058,7 +1072,10 @@ export class SyncPane {
       if (this.session.state.preview === preview) this.ctx.message = syncProblem(error).message;
     } finally {
       // An old request must not clear a newer plan's loading indicator for this path.
-      if (this.session.state.preview === preview) this.loadingPreviewComparisons.delete(key);
+      if (this.session.state.preview === preview) {
+        this.loadingPreviewComparisons.delete(key);
+        returnFocus();
+      }
       this.ctx.render();
     }
   }
@@ -1067,6 +1084,7 @@ export class SyncPane {
     conflict: MirrorStatus["conflicts"][number],
     comparisonKey: string,
   ): Promise<void> {
+    const returnFocus = this.comparisonFocus(`compare-${comparisonKey}`);
     this.loadingConflictComparisons.add(comparisonKey);
     this.ctx.render();
     try {
@@ -1076,6 +1094,7 @@ export class SyncPane {
       if (problem.code === "conflict_decision_stale") await this.session.refreshStatus();
     } finally {
       this.loadingConflictComparisons.delete(comparisonKey);
+      returnFocus();
       this.ctx.render();
     }
   }

@@ -2,6 +2,7 @@ import {
   App,
   normalizePath,
   parseYaml,
+  type MarkdownView,
   type RequestUrlResponse,
   stringifyYaml,
   TFile,
@@ -290,9 +291,9 @@ export function normalizeSelectiveSync(input?: Partial<SelectiveSyncPolicy> | nu
   }
   const folders = rawFolders
     .map((value) => normalizeSafeRelativePath(value.trim()))
-    .sort((left, right) => left.toLocaleLowerCase().localeCompare(right.toLocaleLowerCase()));
+    .sort((left, right) => portablePathKey(left).localeCompare(portablePathKey(right)));
   if (folders.length > 100) throw new SyncError("invalid_file_materialization", "File sync supports at most 100 excluded folders.");
-  if (new Set(folders.map((folder) => folder.toLocaleLowerCase())).size !== folders.length) {
+  if (new Set(folders.map(portablePathKey)).size !== folders.length) {
     throw new SyncError("invalid_file_materialization", "Excluded folders must be unique on portable filesystems.");
   }
   for (const folder of folders) assertVisibleBinaryPath(folder, true);
@@ -314,8 +315,11 @@ function assertAdoptionPaths(preview: AdoptionPreview): void {
 
 function binaryPathSelected(policy: SelectiveSyncPolicy, path: string, mediaClass = classifyBinaryPath(path)): boolean {
   if (!policy.file_classes.includes(mediaClass)) return false;
-  const normalized = normalizePath(path);
-  return !policy.excluded_folders.some((folder) => normalized === folder || normalized.startsWith(`${folder}/`));
+  const key = portablePathKey(normalizePath(path));
+  return !policy.excluded_folders.some((folder) => {
+    const folderKey = portablePathKey(folder);
+    return key === folderKey || key.startsWith(`${folderKey}/`);
+  });
 }
 
 // Record extensions fixed by the sync SDK (Markdown notes and Obsidian Bases as
@@ -963,6 +967,34 @@ async function ensureFolder(vault: Vault, path: string): Promise<void> {
   }
 }
 
+function editorComparable(value: string): string {
+  // CodeMirror normalizes line separators and may omit the encoding BOM.
+  return value.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
+/** Fence unsaved buffers; advance clean views before disk IO so its notification
+ * cannot replace typing that happens while the write is awaiting the adapter. */
+export function prepareMirrorEditorChange(app: App, path: string, before: string | undefined, after: string | null): void {
+  const leaves = (app.workspace?.getLeavesOfType?.("markdown") ?? []).filter((leaf) => {
+    const view = leaf.view as MarkdownView;
+    return view.file && portablePathKey(view.file.path) === portablePathKey(path);
+  });
+  for (const leaf of leaves) {
+    const view = leaf.view as MarkdownView;
+    if (view.getMode() === "source" && editorComparable(view.editor.getValue()) !== editorComparable(before ?? view.data)) {
+      throw new SyncError("sync_plan_stale", `${path} has unsaved editor changes. Let them save before syncing again.`);
+    }
+  }
+  for (const leaf of leaves) {
+    const view = leaf.view as MarkdownView;
+    if (after === null) leaf.detach();
+    else {
+      view.setViewData(after, false);
+      view.data = after;
+    }
+  }
+}
+
 export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   constructor(
     private readonly vault: Vault,
@@ -971,6 +1003,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     private readonly assertActive: () => void = () => undefined,
     /** Told about every path this adapter is about to change, so the host can tell its own writes from the user's. */
     private readonly observeWrite: (path: string) => void = () => undefined,
+    private readonly prepareEditorChange: (path: string, before: string | undefined, after: string | null) => void = () => undefined,
   ) {}
 
   /** Resolve a disk alias only after proving its physical name is unambiguous. */
@@ -1078,6 +1111,10 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
         this.assertActive();
         if (existing.path !== spelling || this.vault.getAbstractFileByPath(spelling) !== existing) throw stale();
         if (current !== before && current !== value) throw stale();
+        // Vault.process does not emit a modification when the transform is a
+        // no-op. Do not reserve an echo that would consume the next user save.
+        if (current === value) return current;
+        this.prepareEditorChange(spelling, current, value);
         this.observeWrite(path);
         this.observeWrite(spelling);
         return value;
@@ -1135,6 +1172,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     }
     this.assertActive();
     this.assertEntry(path, existing);
+    this.prepareEditorChange(existing.path, typeof expected === "string" ? expected : undefined, null);
     this.observeWrite(path);
     this.observeWrite(existing.path);
     await this.trashFile(existing);
@@ -1542,9 +1580,9 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
 }
 
 export class DeviceMirrorLease implements MirrorLease {
-  private static readonly active = new Set<string>();
+  private static readonly waiting = new Map<string, Promise<void>>();
 
-  constructor(private readonly key: string) {}
+  constructor(private readonly key: string, private readonly waitForOwner = false) {}
 
   async runExclusive<Value>(operation: () => Promise<Value>): Promise<Value> {
     // Static fields only protect one plugin/renderer instance. Web Locks share
@@ -1552,20 +1590,23 @@ export class DeviceMirrorLease implements MirrorLease {
     // independently evaluated plugin bundles.
     const locks = typeof navigator === "undefined" ? null : navigator.locks;
     if (locks) {
-      return locks.request(`mdbase-mirror:${this.key}`, { ifAvailable: true }, async (lock) => {
+      const options = this.waitForOwner ? {} : { ifAvailable: true };
+      return locks.request(`mdbase-mirror:${this.key}`, options, async (lock) => {
         if (!lock) throw new SyncError("mirror_busy", "Another window is synchronizing this vault.");
         return operation();
       });
     }
-    if (DeviceMirrorLease.active.has(this.key)) {
+    const previous = DeviceMirrorLease.waiting.get(this.key);
+    if (previous && !this.waitForOwner) {
       throw new SyncError("mirror_busy", "A mirror operation is already running for this vault.");
     }
-    DeviceMirrorLease.active.add(this.key);
-    try {
-      return await operation();
-    } finally {
-      DeviceMirrorLease.active.delete(this.key);
-    }
+    const result = (previous ?? Promise.resolve()).then(operation);
+    const released = result.finally(() => {
+      if (DeviceMirrorLease.waiting.get(this.key) === tail) DeviceMirrorLease.waiting.delete(this.key);
+    });
+    const tail = released.then(() => undefined, () => undefined);
+    DeviceMirrorLease.waiting.set(this.key, tail);
+    return released;
   }
 }
 
@@ -1651,6 +1692,7 @@ export class ConnectSyncController {
       (file) => app.fileManager.trashFile(file),
       () => this.assertActive(),
       (path) => this.noteEngineWrite(path),
+      (path, before, after) => prepareMirrorEditorChange(app, path, before, after),
     );
     this.enrollmentClient = options.enrollmentClient ?? new MirrorEnrollmentClient({
       request: createObsidianEnrollmentRequester(),
@@ -3103,6 +3145,15 @@ export class ConnectSyncController {
   }
 
   private async renewAccessTokenOnce(profile: MirrorProfile): Promise<string> {
+    // Rotation invalidates the previous token before the HTTP response arrives.
+    // Serialize requests, not just commits, so reversed responses cannot store
+    // a revoked token. This is separate from the directory lease: disconnect
+    // must remain available while authentication is waiting on the network.
+    const lease = new DeviceMirrorLease(`credentials:${profile.collectionId}:${profile.replicaId}`, true);
+    return lease.runExclusive(() => this.renewAccessTokenUnderLease(profile));
+  }
+
+  private async renewAccessTokenUnderLease(profile: MirrorProfile): Promise<string> {
     const refreshCredential = this.readSecret("refresh", profile);
     if (!refreshCredential) {
       throw new SyncError("mirror_credentials_missing", "The mirror refresh credential is missing. Approve this vault again.");

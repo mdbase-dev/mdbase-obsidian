@@ -756,12 +756,15 @@ test("device lease rejects concurrent mirror ownership and releases after failur
     release = resolve;
   });
   const first = lease.runExclusive(async () => blocker);
-  await assert.rejects(
-    lease.runExclusive(async () => undefined),
-    /already running/,
-  );
-  release();
-  await first;
+  try {
+    await assert.rejects(
+      lease.runExclusive(async () => undefined),
+      (error: unknown) => error instanceof Error && "code" in error && error.code === "mirror_busy",
+    );
+  } finally {
+    release();
+    await first;
+  }
   await assert.rejects(
     lease.runExclusive(async () => {
       throw new Error("operation failed");

@@ -258,6 +258,49 @@ test("a stale reviewed plan cannot be applied before refreshing the newest chang
   f.dom.window.close();
 });
 
+test("a prior sync timestamp does not pretend to date the current approval, recovery or review", () => {
+  const f = fixture(true);
+  const status = { state: "up_to_date", last_synced_at: "2001-01-01T00:00:00Z", conflicts: [], local_issues: [] };
+  const subtitle = () => f.root.querySelector(".mdbase-sync-heading > .mdbase-muted")?.textContent;
+  f.state.mirrorStatus = status;
+  f.state.render();
+  assert.match(subtitle()!, /Up to date ·/);
+  for (const scenario of [
+    { patch: { busy: true }, label: "Checking…" },
+    { patch: { paused: true }, label: "Paused" },
+    { patch: { problem: { kind: "offline", title: "Offline", message: "Changes stay here", action: "retry", actionLabel: "Retry now" } }, label: "Offline" },
+    { patch: { status: { ...status, recovery_required: true } }, label: "Needs attention" },
+    { patch: { preview: { phase: "initial", plan: { kind: "initial", actions: [{ command: "put_remote" }], issues: [], summary: { blocking_issues: 0 } }, entries: [{ direction: "upload", action: "create", kind: "document", path: "note.md" }], local_issues: [], collisions: [] } }, label: "Review needed" },
+  ]) {
+    f.host.sync.update({ busy: false, paused: false, problem: null, preview: null });
+    f.state.mirrorStatus = status;
+    f.host.sync.update(scenario.patch as never);
+    f.state.render();
+    assert.equal(subtitle(), scenario.label);
+  }
+  f.host.sync.update({ busy: false, paused: false, problem: null, preview: null });
+  (f.view as unknown as { sync: { enrollmentAbort: AbortController | null } }).sync.enrollmentAbort = new AbortController();
+  f.state.render();
+  assert.equal(subtitle(), "Waiting for approval");
+  f.dom.window.close();
+});
+
+test("an explicit idle pause supersedes an old offline retry without discarding its diagnostic cause", () => {
+  const f = fixture(true);
+  f.host.sync.reportProblem(Object.assign(new Error("Offline"), { code: "network_timeout" }));
+  f.host.sync.setRetryAt(Date.now() + 30000);
+  f.host.sync.cancel();
+  f.state.render();
+  assert.equal(f.root.querySelector(".mdbase-sync-heading > .mdbase-muted")?.textContent?.split(" · ")[0], "Paused");
+  assert.ok(button(f.root, "Resume sync"));
+  assert.doesNotMatch(f.text(), /Retry now|Trying again|sync automatically/);
+  assert.equal(f.host.sync.state.problem?.kind, "offline", "retain the cause for recovery/diagnostics");
+  f.state.destination = "issues";
+  f.state.render();
+  assert.equal(f.root.querySelector(".mdbase-nav-status")?.textContent, "Paused");
+  f.dom.window.close();
+});
+
 test("a diagnostics copy failure is reported and returns focus instead of an unhandled rejection", async () => {
   const f = fixture(true);
   f.host.sync.reportProblem(new Error("Sync stopped"));
@@ -461,6 +504,23 @@ test("destination tabs expose a labelled panel and native roving keyboard naviga
     assert.equal(selected().tabIndex, 0);
   }
   await settle();
+  f.dom.window.close();
+});
+
+test("destination tabs leave modified or already handled keys to Obsidian", () => {
+  const f = fixture(true);
+  f.state.render();
+  const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!;
+  for (const modifier of ["ctrlKey", "metaKey", "altKey"] as const) {
+    const event = new f.dom.window.KeyboardEvent("keydown", { key: "ArrowRight", [modifier]: true, bubbles: true, cancelable: true });
+    tab.dispatchEvent(event);
+    assert.equal(f.state.destination, "sync");
+    assert.equal(event.defaultPrevented, false);
+  }
+  const handled = new f.dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true });
+  handled.preventDefault();
+  tab.dispatchEvent(handled);
+  assert.equal(f.state.destination, "sync");
   f.dom.window.close();
 });
 
@@ -997,6 +1057,28 @@ test("popout inputs retain their selection even when DOM constructors belong to 
   main.dom.window.close();
 });
 
+test("moving an existing workspace input to a popout preserves its first redraw selection", () => {
+  const original = fixture(true);
+  original.host.getIssues = () => [{ path: "notes.md", severity: "error", code: "required", message: "Missing title" }];
+  original.state.destination = "issues";
+  original.state.render();
+  let search = original.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.value = "notes";
+  search.dispatchEvent(new original.dom.window.Event("input"));
+  const popout = fixture();
+  popout.dom.window.document.body.appendChild(original.root);
+  search = original.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.focus();
+  search.setSelectionRange(1, 3);
+  original.state.render();
+  const restored = original.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  assert.equal(popout.dom.window.document.activeElement, restored);
+  assert.equal(restored.selectionStart, 1);
+  assert.equal(restored.selectionEnd, 3);
+  original.dom.window.close();
+  popout.dom.window.close();
+});
+
 test("quoted transfer paths cannot break focus restoration while comparing changes", () => {
   const f = fixture(true);
   (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
@@ -1030,6 +1112,31 @@ test("pending record updates can be compared before syncing", async () => {
   assert.match(f.text(), /Local line.*Hosted line/);
   assert.ok(button(f.root, "Hide"));
   f.dom.window.close();
+});
+
+test("comparison loading returns keyboard focus without stealing it from another control", async () => {
+  for (const conflict of [false, true]) for (const moveFocus of [false, true]) {
+    const f = fixture(true);
+    let finish: (value: unknown) => void = () => assert.fail("Comparison not requested");
+    const request = () => new Promise(resolve => { finish = resolve; });
+    if (conflict) {
+      f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{ entity: "record", object_id: "record", decision_id: "decision", path: "note.md" }] };
+      Object.assign(f.host.connectSync, { conflictComparison: request });
+    } else {
+      f.state.mirrorPreview = { phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } }, entries: [{ kind: "document", path: "note.md", direction: "download", action: "update", detail: "Download change", recordId: "record" }], collisions: [], local_issues: [] };
+      (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+      Object.assign(f.host.connectSync, { recordComparison: request });
+    }
+    f.state.render();
+    const opener = button(f.root, conflict ? "Resolve…" : "Compare");
+    opener.focus();
+    opener.click();
+    if (moveFocus) f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!.focus();
+    finish({ entity: "record", objectId: "record", decisionId: "decision", local: { state: "exact", document: "Local edit" }, remote: { state: "exact", document: "Hosted edit" } });
+    await settle();
+    assert.equal(f.dom.window.document.activeElement, moveFocus ? f.root.querySelector("[data-focus-key='destination-sync']") : button(f.root, "Hide"));
+    f.dom.window.close();
+  }
 });
 
 test("pending comparisons cannot replace a newer plan's versions or loading state", async () => {

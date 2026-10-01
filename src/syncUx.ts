@@ -150,7 +150,7 @@ export function syncIndicator(input: {
       ? { state: "syncing", label: "mdbase: Stopping…", detail: "Stopping synchronization", destination: "sync" }
       : { state: "syncing", label: "mdbase: Checking…", detail: "Checking sync", destination: "sync" };
   }
-  if (input.paused && !problem) {
+  if (input.paused) {
     return { state: "paused", label: "mdbase: Paused", detail: "Changes wait until you resume sync", destination: "sync" };
   }
   if (problem && problem.kind !== "busy") {
@@ -273,7 +273,7 @@ export function syncProblem(error: unknown): SyncProblem {
       code,
       kind: "offline",
       title: "Can't reach mdbase Connect",
-      message: "Your changes are saved on this device and sync automatically when the connection returns.",
+      message: "Your changes are saved on this device. Sync can continue when the connection returns.",
       action: "retry",
       actionLabel: "Retry now",
     };
@@ -282,7 +282,7 @@ export function syncProblem(error: unknown): SyncProblem {
     code,
     kind: "internal",
     title: "Sync stopped unexpectedly",
-    message: `${errorMessage(error, "An unexpected error stopped synchronization.")} Your files are safe. Sync tries again automatically; if this keeps happening, copy the diagnostics and report it.`,
+    message: `${errorMessage(error, "An unexpected error stopped synchronization.")} Your files are safe. If this keeps happening, copy diagnostics and report it.`,
     action: "retry",
     actionLabel: "Try again",
   };

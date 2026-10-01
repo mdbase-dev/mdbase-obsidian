@@ -230,10 +230,10 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (this.destination === "sync" || !this.host.getMirrorProfile()) return null;
     const { problem, paused, status, progress, fileProgress } = this.host.sync.state;
     if (progress || fileProgress) return null;
-    const kind = problem?.kind ?? (paused ? "paused" : status?.recovery_required ? "recovery" : null);
+    const kind = paused ? "paused" : problem?.kind ?? (status?.recovery_required ? "recovery" : null);
     if (!kind || kind === "busy") return null;
     const labels = { offline: "Offline", auth: "Sign in", device: "Set up", internal: "Error", decision: "Review", recovery: "Review", paused: "Paused" };
-    return { kind, label: labels[kind], detail: problem?.title ?? (paused ? "Sync is paused" : "Synchronization needs recovery") };
+    return { kind, label: labels[kind], detail: paused ? "Sync is paused" : problem?.title ?? "Synchronization needs recovery" };
   }
 
   /** Refresh tab badges without rebuilding the active pane (and losing its focus). */
@@ -257,8 +257,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     }
     const activeDocument = root.ownerDocument;
     const active = root.contains(activeDocument.activeElement) ? activeDocument.activeElement as HTMLElement : null;
-    const ownerWindow = activeDocument.defaultView;
-    const editable = ownerWindow && (active instanceof ownerWindow.HTMLInputElement || active instanceof ownerWindow.HTMLTextAreaElement) ? active : null;
+    // Adopted nodes keep their original realm's prototypes when a leaf moves.
+    const editable = active?.matches("input, textarea") ? active as HTMLInputElement | HTMLTextAreaElement : null;
     const scroll = new Map<string, { top: number; left: number }>();
     for (const element of Array.from(root.querySelectorAll<HTMLElement>("[data-scroll-key]"))) {
       const key = element.getAttr("data-scroll-key");
@@ -282,12 +282,11 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (!snapshot.focusKey) return;
     const active = this.focusTarget(root, snapshot.focusKey);
     active?.focus({ preventScroll: true });
-    const ownerWindow = root.ownerDocument.defaultView;
+    const editable = active?.matches("input, textarea") ? active as HTMLInputElement | HTMLTextAreaElement : null;
     if (
-      ownerWindow && (active instanceof ownerWindow.HTMLInputElement || active instanceof ownerWindow.HTMLTextAreaElement)
-      && snapshot.selectionStart !== null
+      editable && snapshot.selectionStart !== null
       && snapshot.selectionEnd !== null
-    ) active.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+    ) editable.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
   }
 
   /** Paths and field names are opaque keys, not CSS selector fragments. */
@@ -354,6 +353,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       }
       button.onclick = () => this.showDestination(destination);
       button.onkeydown = (event) => {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
         const nextIndex = event.key === "ArrowRight" ? (index + 1) % destinations.length
           : event.key === "ArrowLeft" ? (index + destinations.length - 1) % destinations.length
           : event.key === "Home" ? 0
