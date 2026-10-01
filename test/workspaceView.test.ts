@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { CreateTypedNoteModal } from "../src/createTypedNoteModal";
+import { DisconnectMirrorModal } from "../src/modals";
 import { MdbaseWorkspaceView } from "../src/workspaceView";
 import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
@@ -600,6 +601,32 @@ test("conflict choices respect absent versions and name destructive outcomes", a
   }
 });
 
+test("conflict decisions wait for active sync while their comparison remains readable", async () => {
+  const f = fixture(true);
+  f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{ entity: "record", object_id: "record", decision_id: "decision", path: "note.md" }] };
+  let syncing = false;
+  Object.assign(f.host.connectSync, {
+    isSyncing: () => syncing,
+    conflictComparison: async () => ({ entity: "record", objectId: "record", decisionId: "decision", local: { state: "exact", document: "Local edit" }, remote: { state: "exact", document: "Hosted edit" } }),
+  });
+  f.state.render();
+  button(f.root, "Resolve…").click();
+  await settle();
+  for (const busySession of [true, false]) {
+    syncing = !busySession;
+    f.host.sync.update({ busy: busySession });
+    f.state.render();
+    for (const label of ["Keep local", "Use hosted", "Keep both"]) assert.equal(button(f.root, label).disabled, true, label);
+    assert.equal(button(f.root, "Hide").disabled, false, "review remains available without committing a stale decision");
+    assert.match(f.text(), /Local edit.*Hosted edit/);
+  }
+  syncing = false;
+  f.host.sync.update({ busy: false });
+  f.state.render();
+  assert.equal(button(f.root, "Keep both").disabled, false);
+  f.dom.window.close();
+});
+
 test("the single save bar updates validity while typing without replacing the focused input", async () => {
   const f = fixture();
   f.state.destination = "types";
@@ -948,6 +975,28 @@ test("sync actions and filters preserve focus across progress and review renders
   f.dom.window.close();
 });
 
+test("popout inputs retain their selection even when DOM constructors belong to another window", () => {
+  const popout = fixture(true);
+  // A second realm represents the main window where the plugin module executes.
+  const main = fixture();
+  popout.host.getIssues = () => [{ path: "notes.md", severity: "error", code: "required", message: "Missing title" }];
+  popout.state.destination = "issues";
+  popout.state.render();
+  let search = popout.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.value = "notes";
+  search.dispatchEvent(new popout.dom.window.Event("input"));
+  search = popout.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.focus();
+  search.setSelectionRange(1, 3);
+  popout.state.render();
+  const restored = popout.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  assert.equal(popout.dom.window.document.activeElement, restored);
+  assert.equal(restored.selectionStart, 1);
+  assert.equal(restored.selectionEnd, 3);
+  popout.dom.window.close();
+  main.dom.window.close();
+});
+
 test("quoted transfer paths cannot break focus restoration while comparing changes", () => {
   const f = fixture(true);
   (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
@@ -981,6 +1030,38 @@ test("pending record updates can be compared before syncing", async () => {
   assert.match(f.text(), /Local line.*Hosted line/);
   assert.ok(button(f.root, "Hide"));
   f.dom.window.close();
+});
+
+test("pending comparisons cannot replace a newer plan's versions or loading state", async () => {
+  for (const concurrent of [false, true]) for (const rejectOld of [false, true]) {
+    const f = fixture(true);
+    const requests: Array<{ resolve(value: unknown): void; reject(error: Error): void }> = [];
+    const preview = () => ({ phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } }, entries: [{ kind: "document", path: "note.md", direction: "download", action: "update", detail: "Download change", recordId: "record" }], collisions: [], local_issues: [] });
+    const comparison = (version: string) => ({ entity: "record", objectId: "record", decisionId: "", local: { state: "exact", document: `${version} local line` }, remote: { state: "exact", document: `${version} hosted line` } });
+    (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+    Object.assign(f.host.connectSync, { recordComparison: () => new Promise((resolve, reject) => requests.push({ resolve, reject })) });
+    f.state.mirrorPreview = preview();
+    f.state.render();
+    button(f.root, "Compare").click();
+    f.state.mirrorPreview = preview();
+    f.state.render();
+    if (concurrent) button(f.root, "Compare").click();
+    if (rejectOld) requests[0].reject(new Error("Outdated request failed"));
+    else requests[0].resolve(comparison("Outdated"));
+    await settle();
+    assert.doesNotMatch(f.text(), /Outdated local line|Outdated hosted line/, "old results must not appear under the new plan");
+    assert.equal(f.state.transientMessage, "", "obsolete errors must not interrupt the newer review");
+    if (concurrent) {
+      assert.equal(button(f.root, "Loading…").disabled, true, "old cleanup must not enable a newer pending request");
+    } else {
+      assert.equal(button(f.root, "Compare").disabled, false);
+      button(f.root, "Compare").click();
+    }
+    requests[1].resolve(comparison("Newest"));
+    await settle();
+    assert.match(f.text(), /Newest local line.*Newest hosted line/);
+    f.dom.window.close();
+  }
 });
 
 test("collapsed history does not construct hidden transfer ledgers", () => {
@@ -1239,6 +1320,20 @@ test("empty collections offer contract packs rather than invented starter types"
   assert.match(f.text(), /mdbase-contracts/);
   assert.ok(button(f.root, "Browse ready-made types"));
   assert.ok(button(f.root, "Design a custom type"));
+  f.dom.window.close();
+});
+
+test("disconnect names the trash boundary and retains the safe keep-files default", async () => {
+  const f = fixture();
+  for (const [label, expected] of [["Cancel", null], ["Keep files", "keep"], ["Trash unchanged files", "remove"]] as const) {
+    const modal = new DisconnectMirrorModal({} as never);
+    const choice = modal.choose("Project notes");
+    assert.match(modal.contentEl.textContent!, /move unchanged synced files to trash.*Local edits are kept either way/);
+    assert.ok(button(modal.contentEl, "Keep files").classList.contains("mod-cta"));
+    assert.ok(button(modal.contentEl, "Trash unchanged files").classList.contains("mod-warning"));
+    button(modal.contentEl, label).click();
+    assert.equal(await choice, expected);
+  }
   f.dom.window.close();
 });
 

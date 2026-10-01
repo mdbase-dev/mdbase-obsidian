@@ -63,6 +63,12 @@ export class MdbaseSettingTab extends PluginSettingTab {
     this.displaySync(containerEl);
   }
 
+  /** Settings can be a native popout; finish that surface before approval opens. */
+  private openSync(): ReturnType<MdbasePlugin["openWorkspace"]> {
+    (this.app as unknown as { setting?: { close(): void } }).setting?.close();
+    return this.plugin.openWorkspace("sync");
+  }
+
   private displaySync(containerEl: HTMLElement): void {
     const { plugin } = this;
     const profile = plugin.getMirrorProfile();
@@ -71,8 +77,12 @@ export class MdbaseSettingTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName("Not connected")
         .setDesc("Connect this vault to mdbase Connect from the sync tab of the mdbase workspace.")
-        .addButton((button) => button.setButtonText("Open sync").onClick(() => {
-          void plugin.openWorkspace("sync");
+        .addButton((button) => button.setButtonText("Open sync").onClick(async () => {
+          try {
+            await this.openSync();
+          } catch (error) {
+            new Notice(error instanceof Error ? error.message : String(error));
+          }
         }));
       return;
     }
@@ -83,7 +93,7 @@ export class MdbaseSettingTab extends PluginSettingTab {
       .addButton((button) => button.setButtonText("Reconnect").onClick(async () => {
         button.setDisabled(true);
         try {
-          await plugin.openWorkspace("sync").then((view) => view.reconnectCollection());
+          await this.openSync().then((view) => view.reconnectCollection());
         } catch (error) {
           new Notice(error instanceof Error ? error.message : String(error));
         } finally {
@@ -152,13 +162,17 @@ export class MdbaseSettingTab extends PluginSettingTab {
         .setWarning()
         .setDisabled(plugin.sync.isSyncing())
         .onClick(async () => {
-          const choice = await new DisconnectMirrorModal(this.app).choose(profile.name);
-          if (!choice) return;
+          button.setDisabled(true);
           try {
+            const choice = await new DisconnectMirrorModal(this.app).choose(profile.name);
+            if (!choice) return;
+            button.setButtonText("Disconnecting…");
             await plugin.sync.disconnect(profile, choice === "remove");
             new Notice(plugin.sync.state.message);
           } catch (error) {
             new Notice(error instanceof Error ? error.message : String(error));
+          } finally {
+            button.setDisabled(false);
           }
           this.display();
         }));

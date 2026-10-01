@@ -193,6 +193,7 @@ export class SyncPane {
     // Comparisons belong to the plan they were opened from.
     if (preview !== this.comparedPreview) {
       this.previewComparisons.clear();
+      this.loadingPreviewComparisons.clear();
       this.comparedPreview = preview;
       this.transferPages.clear();
     }
@@ -962,7 +963,7 @@ export class SyncPane {
             if (comparison) {
               this.previewComparisons.delete(key);
               this.ctx.render();
-            } else void this.loadPreviewComparison(key, recordId, entry.path);
+            } else void this.loadPreviewComparison(key, recordId, entry.path, preview);
           };
           if (comparison) this.renderConflictComparison(body, comparison);
         }
@@ -1022,6 +1023,7 @@ export class SyncPane {
         void this.loadConflictComparison(conflict, comparisonKey);
       };
       if (comparison) {
+        const resolutionBusy = this.ctx.busy || this.session.state.busy || this.session.isSyncing();
         for (const resolution of ["local", "remote"] as const) {
           const destructive = comparison[resolution].state === "absent";
           const button = actions.createEl("button", {
@@ -1031,13 +1033,13 @@ export class SyncPane {
             cls: destructive ? "mod-warning" : "",
           });
           button.setAttr("data-focus-key", `resolve-${comparisonKey}-${resolution}`);
-          button.disabled = this.ctx.busy;
+          button.disabled = resolutionBusy;
           button.onclick = () => void this.resolveMirrorConflict(conflict, resolution, false);
         }
         if (conflict.path && comparison.local.state === "exact") {
           const keepBoth = actions.createEl("button", { text: comparison.remote.state === "absent" ? "Keep a local copy" : "Keep both" });
           keepBoth.setAttr("data-focus-key", `resolve-${comparisonKey}-both`);
-          keepBoth.disabled = this.ctx.busy;
+          keepBoth.disabled = resolutionBusy;
           keepBoth.onclick = () => void this.resolveMirrorConflict(conflict, "remote", true);
         }
         this.renderConflictComparison(row, comparison, Boolean(conflict.path));
@@ -1045,15 +1047,18 @@ export class SyncPane {
     }
   }
 
-  private async loadPreviewComparison(key: string, recordId: string, path: string): Promise<void> {
+  private async loadPreviewComparison(key: string, recordId: string, path: string, preview: MdbaseSyncPreview): Promise<void> {
+    if (this.session.state.preview !== preview) return;
     this.loadingPreviewComparisons.add(key);
     this.ctx.render();
     try {
-      this.previewComparisons.set(key, await this.ctx.host.connectSync.recordComparison(recordId, path));
+      const comparison = await this.ctx.host.connectSync.recordComparison(recordId, path);
+      if (this.session.state.preview === preview) this.previewComparisons.set(key, comparison);
     } catch (error) {
-      this.ctx.message = syncProblem(error).message;
+      if (this.session.state.preview === preview) this.ctx.message = syncProblem(error).message;
     } finally {
-      this.loadingPreviewComparisons.delete(key);
+      // An old request must not clear a newer plan's loading indicator for this path.
+      if (this.session.state.preview === preview) this.loadingPreviewComparisons.delete(key);
       this.ctx.render();
     }
   }

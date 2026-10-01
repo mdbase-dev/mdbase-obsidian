@@ -257,7 +257,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     }
     const activeDocument = root.ownerDocument;
     const active = root.contains(activeDocument.activeElement) ? activeDocument.activeElement as HTMLElement : null;
-    const editable = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active : null;
+    const ownerWindow = activeDocument.defaultView;
+    const editable = ownerWindow && (active instanceof ownerWindow.HTMLInputElement || active instanceof ownerWindow.HTMLTextAreaElement) ? active : null;
     const scroll = new Map<string, { top: number; left: number }>();
     for (const element of Array.from(root.querySelectorAll<HTMLElement>("[data-scroll-key]"))) {
       const key = element.getAttr("data-scroll-key");
@@ -281,8 +282,9 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (!snapshot.focusKey) return;
     const active = this.focusTarget(root, snapshot.focusKey);
     active?.focus({ preventScroll: true });
+    const ownerWindow = root.ownerDocument.defaultView;
     if (
-      (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
+      ownerWindow && (active instanceof ownerWindow.HTMLInputElement || active instanceof ownerWindow.HTMLTextAreaElement)
       && snapshot.selectionStart !== null
       && snapshot.selectionEnd !== null
     ) active.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);

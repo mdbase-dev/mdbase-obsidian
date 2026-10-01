@@ -25,7 +25,7 @@ fs.mkdirSync(shots, {recursive:true});
    app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();
    window.open=()=>null;
  });
- const states=['healthy','scope','local-issue','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload','away-offline','away-auth','away-copied','away-paused','away-internal'];
+ const states=['healthy','scope','local-issue','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-busy','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload','away-offline','away-auth','away-copied','away-paused','away-internal'];
  const results=[];
  for(const state of states) {
   await page.evaluate(state=>{
@@ -63,6 +63,7 @@ fs.mkdirSync(shots, {recursive:true});
     p.sync.update({status:{state:'attention',conflicts:[{entity:'record',object_id:'record',decision_id:'decision',path:longPath,message:'Both versions changed. Choose which version to sync.'}],local_issues:[]}});
     view.sync.conflictComparisons.set('record:decision',{entity:'record',objectId:'record',decisionId:'decision',local:state==='conflict-local-absent'?{state:'absent'}:{state:'exact',document:'Line from this device'},remote:state==='conflict-hosted-absent'?{state:'absent'}:{state:'exact',document:'Line from another device'}});
    }
+   if(state==='conflict-busy')p.sync.update({busy:true});
    if(state==='history') {
     const at=new Date().toISOString();
     window.fixtureRuns=[{id:'fixture-conflict',collectionId:'ux-fixture',startedAt:at,finishedAt:at,outcome:'event',files:[],summary:'Kept both versions of '+longPath.split('/').pop(),message:"This device's version was saved as "+longPath.replace('.md',' (local conflict copy).md'),path:longPath,tone:'attention',needsAcknowledgement:true}];
@@ -80,8 +81,9 @@ fs.mkdirSync(shots, {recursive:true});
    const checks=await page.locator('.mdbase-sync-document, .mdbase-issues-document').evaluate(el=>{
     const content=el.closest('.mdbase-workspace-content');
     const buttons=[...el.querySelectorAll('.mod-cta, .mod-warning, .mdbase-conflict-row button, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
+    const choices=[...el.querySelectorAll('button[data-focus-key^="resolve-"]')].map(b=>({text:b.textContent,disabled:b.disabled}));
     const topbar=el.closest('.mdbase-workspace').querySelector('.mdbase-topbar');
-    return {topbarOverflow:topbar.scrollWidth>topbar.clientWidth+1,tabStatus:topbar.querySelector('.mdbase-nav-status')?.textContent,paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
+    return {topbarOverflow:topbar.scrollWidth>topbar.clientWidth+1,tabStatus:topbar.querySelector('.mdbase-nav-status')?.textContent,paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons,choices};
    });
    const box=await page.locator('.mdbase-workspace').boundingBox();
    const cdp=await page.context().newCDPSession(page);
@@ -91,6 +93,7 @@ fs.mkdirSync(shots, {recursive:true});
    if(checks.overflow)failures.push('Horizontal overflow');
    if(checks.topbarOverflow)failures.push('Destination bar overflow');
    if(state.startsWith('away-')&&!checks.tabStatus)failures.push('Problem hidden outside Sync');
+   if(state==='conflict-busy'&&(checks.choices.length!==3||checks.choices.some(b=>!b.disabled)))failures.push('Conflict decisions enabled during sync');
    if(width===390&&checks.headingWidth!=null&&checks.headingWidth<checks.paneWidth-30)failures.push('Narrow heading squeezed by the action');
    if(width===390&&checks.buttons.some(b=>b.height<43.5))failures.push('Primary/dismiss target below 44px');
    results.push({state,width,theme,...checks,failures});
