@@ -7,7 +7,7 @@ import { SyncSession } from "../src/syncSession";
 import type { AutoResolution } from "../src/connectSync";
 
 const digest = `sha256:${"4".repeat(64)}`;
-const profile = { collectionId: "c1", name: "Notes" };
+const profile = { collectionId: "c1", replicaId: "r1", name: "Notes" };
 
 function status(overrides: Partial<MirrorStatus> = {}): MirrorStatus {
   return {
@@ -113,8 +113,13 @@ function harness(initial: MdbaseSyncPreview, options: HarnessOptions = {}) {
     acknowledge: async () => undefined,
     clear: async () => undefined,
   };
-  const session = new SyncSession(controller as never, () => profile as never, history);
-  return { session, controller, applied, runs, resolveCalls: () => resolveCalls, setNext: (preview: MdbaseSyncPreview) => { next = preview; } };
+  let currentProfile: typeof profile | null = profile;
+  const session = new SyncSession(controller as never, () => currentProfile as never, history);
+  return {
+    session, controller, applied, runs, resolveCalls: () => resolveCalls,
+    setNext: (preview: MdbaseSyncPreview) => { next = preview; },
+    setProfile: (next: typeof profile | null) => { currentProfile = next; },
+  };
 }
 
 test("progress and unrelated updates do not rescan a large plan's consent policy", () => {
@@ -190,6 +195,17 @@ test("a plan that changed underneath is inspected again and applied, not shown a
   assert.equal(session.state.problem, null);
 });
 
+test("continually stale plans request a follow-up instead of claiming the vault is up to date", async () => {
+  const h = harness(previewFromPlan(plan([write("a.md")])), {
+    outcomes: Array.from({ length: 4 }, () => ({ status: "stale" })),
+  });
+  assert.equal(await h.session.autoSync(), "pending");
+  assert.equal(h.applied.length, 4, "one attempt remains bounded so the vault stays responsive");
+  assert.equal(h.session.state.problem, null, "a changing plan is routine, not a defect");
+  assert.ok(h.session.state.preview?.plan.actions.length);
+  assert.equal(await h.session.autoSync(), "applied", "a later attempt can finish");
+});
+
 test("a failure recorded by the engine is a problem, and an offline one is retried quietly", async () => {
   const offline = harness(previewFromPlan(plan([write("a.md")])), {
     outcomes: [{ status: "failed", failure: { code: "network_unreachable", message: "offline" } }],
@@ -217,6 +233,26 @@ test("conflicts are settled after a sync and the settled files synced in the sam
   // The first apply recorded the conflict; after settling, the merged file is uploaded.
   assert.equal(applied.length, 2);
   assert.ok(runs.some((run) => run.summary === "Merged edits to a.md"));
+});
+
+test("a failed conflict settlement remains a failed sync eligible for retry", async () => {
+  const conflict = { entity: "record", object_id: "r1", decision_id: "d1", path: "a.md", kind: "conflicted", message: "c" } as const;
+  const h = harness(previewFromPlan(plan([])), { conflicts: [conflict] });
+  h.controller.autoResolveConflicts = async () => {
+    throw Object.assign(new Error("offline while loading conflict versions"), { code: "network_unreachable" });
+  };
+  assert.equal(await h.session.syncNow(), "failed");
+  assert.equal(h.session.state.problem?.kind, "offline");
+  assert.notEqual(h.session.state.message, "Already up to date.");
+});
+
+test("an unresolved conflict never reports Already up to date", async () => {
+  const conflict = { entity: "record", object_id: "r1", decision_id: "d1", path: "a.md", kind: "conflicted", message: "refused" } as const;
+  const h = harness(previewFromPlan(plan([])), {
+    conflicts: [conflict], resolutions: [{ path: "a.md", outcome: "unresolved", reason: "Connect refused this change." }],
+  });
+  assert.equal(await h.session.syncNow(), "needs_review");
+  assert.notEqual(h.session.state.message, "Already up to date.");
 });
 
 test("automatic sync waits while paused or while Connect needs approval", async () => {
@@ -262,6 +298,38 @@ test("reconnect reports when Connect needs a fresh approval instead of failing",
   assert.equal(await session.reconnect(), "reauthorize");
   assert.equal(session.state.problem?.action, "reauthorize");
   assert.equal(session.state.busy, false);
+});
+
+test("a status request from a retired replica cannot overwrite the reauthorized session", async () => {
+  const h = harness(previewFromPlan(plan([])));
+  let release!: () => void;
+  h.controller.status = () => new Promise((resolve) => { release = () => resolve(status({ cursor: 99 })); });
+  const refreshing = h.session.refreshStatus();
+  h.setProfile({ ...profile, replicaId: "r2" });
+  h.session.update({ status: status({ cursor: 4 }) });
+  release();
+  assert.equal(await refreshing, null);
+  assert.equal(h.session.state.status?.cursor, 4);
+});
+
+test("inspection finishing after disconnect cannot restore the old preview or problems", async () => {
+  const h = harness(previewFromPlan(plan([write("a.md")])));
+  const inspect = h.controller.inspect;
+  let release!: () => void;
+  h.controller.inspect = async () => {
+    h.controller.inspect = inspect;
+    await new Promise<void>((resolve) => { release = resolve; });
+    return inspect();
+  };
+  const running = h.session.syncNow();
+  h.setProfile(null);
+  h.session.reset();
+  release();
+  await running;
+  assert.equal(h.session.state.status, null);
+  assert.equal(h.session.state.preview, null);
+  assert.equal(h.session.state.problem, null);
+  assert.equal(h.applied.length, 0);
 });
 
 test("listeners hear every state change", async () => {

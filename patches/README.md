@@ -48,6 +48,22 @@ addition is the optional `ancestor_document` below):
 - `sync-executor.js`: the special receive-only malformed-frontmatter repair
   allowance applies only to that explicitly identified target, never every
   download in a partial plan. Conditional writes remain enforced.
+- `directory-mirror.js`: a hosted conflict resolution accepts only the inspected
+  local document revision, not whatever bytes happen to exist after loading the
+  authority snapshot. A user edit or recreated file during that await leaves
+  the decision stale instead of silently overwriting bytes absent from the copy.
+  Ported exactly from mdbase-connect `56dabd74` (local revalidation after the
+  snapshot, decision-bound `acceptedHash`). Integration regression:
+  `test/connectSync.settlement.test.ts`.
+- `directory-mirror.js` / `.d.ts`: `resolveConflict(identity, decisionId, "local",
+  mergedDocument?)` optionally persists a merged record with the adapter's
+  conditional write before clearing its durable conflict. Without this ordering,
+  a hard restart between clearing and the plugin's write could upload unmerged
+  local text over the hosted edit. Only an exact local record accepts a merged
+  document; a failed write leaves the conflict intact. No protocol or persisted
+  state change. This additional SDK API needs an upstream source port before
+  upgrading/removing the patch. Regressions simulate restart at the write
+  boundary, disk-full failure, and a user edit during the atomic write.
 - `directory-mirror.js`: partial completion reports attention, not failure or
   falsely complete synchronization, while preserving its unresolved diagnostics.
 - `directory-mirror.js`: release stale batches at the SDK's existing safe journal

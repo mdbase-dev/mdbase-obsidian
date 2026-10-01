@@ -244,11 +244,14 @@ export class SyncHistoryStore {
   ) {}
 
   async load(): Promise<void> {
-    const loaded = await this.adapter.exists(this.path)
-      ? parseHistory(await this.adapter.read(this.path))
-      : [];
-    this.runs = pruneRuns(loaded, this.limits);
-    if (this.runs.length !== loaded.length) await this.rewrite();
+    await this.enqueue(async () => {
+      const source = await this.adapter.exists(this.path) ? await this.adapter.read(this.path) : "";
+      const loaded = pruneRuns(parseHistory(source), this.limits);
+      const repaired = serializeRuns(loaded);
+      // Drop corrupt/torn lines before append can join a new entry to them.
+      if (source !== repaired) await this.adapter.write(this.path, repaired);
+      this.runs = loaded;
+    });
   }
 
   list(collectionId?: string): SyncHistoryRun[] {
@@ -256,35 +259,45 @@ export class SyncHistoryStore {
   }
 
   append(run: SyncHistoryRun): Promise<void> {
-    const before = this.runs.length + 1;
-    this.runs = pruneRuns([...this.runs, run], this.limits);
-    const pruned = this.runs.length !== before;
     return this.enqueue(async () => {
-      if (pruned || !await this.adapter.exists(this.path)) await this.rewrite();
+      const next = pruneRuns([...this.runs, run], this.limits);
+      const pruned = next.length !== this.runs.length + 1;
+      if (pruned || !await this.adapter.exists(this.path)) await this.rewrite(next);
       else await this.adapter.append(this.path, `${JSON.stringify(run)}\n`);
+      this.runs = next;
     });
   }
 
   /** Dismisses the pinned notice, retaining its evidence in ordinary history. */
   acknowledge(id: string): Promise<void> {
-    this.runs = this.runs.map((run) => run.id === id ? { ...run, needsAcknowledgement: false } : run);
-    return this.enqueue(() => this.rewrite());
+    return this.enqueue(async () => {
+      const next = this.runs.map((run) => run.id === id ? { ...run, needsAcknowledgement: false } : run);
+      await this.rewrite(next);
+      this.runs = next;
+    });
   }
 
   /** Clears history but keeps events that still need acknowledgement. */
   clear(): Promise<void> {
-    this.runs = this.runs.filter((run) => run.needsAcknowledgement);
-    return this.enqueue(() => this.rewrite());
+    return this.enqueue(async () => {
+      const next = this.runs.filter((run) => run.needsAcknowledgement);
+      await this.rewrite(next);
+      this.runs = next;
+    });
   }
 
-  private rewrite(): Promise<void> {
-    return this.adapter.write(this.path, this.runs.map((run) => `${JSON.stringify(run)}\n`).join(""));
+  private rewrite(runs: readonly SyncHistoryRun[]): Promise<void> {
+    return this.adapter.write(this.path, serializeRuns(runs));
   }
 
   private enqueue(operation: () => Promise<void>): Promise<void> {
     this.writes = this.writes.then(operation, operation);
     return this.writes;
   }
+}
+
+function serializeRuns(runs: readonly SyncHistoryRun[]): string {
+  return runs.map((run) => `${JSON.stringify(run)}\n`).join("");
 }
 
 const PAST_TENSE: Record<SyncPreviewAction, string> = {

@@ -99,6 +99,13 @@ test("a hosted field reorder is never silently discarded", () => {
   if (result.clean) assert.equal(result.text, doc("priority: low\ntitle: Plan\nstatus: done", "Body\n"));
 });
 
+test("the same field added at incompatible positions is not silently placed on only one side", () => {
+  const base = doc("a: 1\nb: 2", "Body\n");
+  const local = doc("a: 1\nc: 3\nb: 2", "Body\n");
+  const remote = doc("a: 1\nb: 2\nc: 3", "Body\n");
+  assert.equal(merge(base, local, remote).clean, false);
+});
+
 test("changes to a closing fence's line ending are not silently discarded", () => {
   const base = doc("status: open", "Body\n");
   const local = doc("status: done", "Body\n");

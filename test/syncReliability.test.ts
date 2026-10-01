@@ -6,11 +6,13 @@ import { MemoryAuthority, type SyncTransport } from "@mdbase-dev/connect-sync";
 import {
   MemoryMirrorBlobStore,
   MemoryMirrorStateStore,
+  type MirrorState,
   WritableDirectoryMirror,
 } from "@mdbase-dev/connect-sync/mirror";
 import type { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
-import { ConnectSyncController, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
+import { ConnectSyncController, normalizeMirrorProfile, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
+import { SyncSession } from "../src/syncSession";
 
 /** Enforces Obsidian's SecretStorage ID rule, which the plugin must respect. */
 class MemorySecrets {
@@ -278,8 +280,71 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   const { preview } = await controller.inspect();
   await controller.sync(preview);
   assert.equal(vault.read("notes/a.md")?.endsWith("a\n"), true);
-  assert.equal(controller.isEngineWrite("notes/a.md"), true);
-  assert.equal(controller.isEngineWrite("notes/other.md"), false);
+  assert.equal(controller.consumeEngineWrite("notes/a.md"), true);
+  await edit(vault, "notes/a.md", "typed immediately after the download\n");
+  assert.equal(controller.consumeEngineWrite("notes/a.md"), false, "the next edit event is not another echo just because it arrived within two seconds");
+  assert.equal(controller.consumeEngineWrite("notes/other.md"), false);
+});
+
+test("text downloads cannot follow a TFile renamed while Vault.process is queued", async () => {
+  const vault = new MemoryVault();
+  const file = await vault.create("note.md", "base\n");
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const process = vault.process.bind(vault);
+  vault.process = async (target, transform) => {
+    // Real Obsidian renames the TFile object in place, unlike MemoryVault.rename.
+    const entry = vault.files.get(target.path)!;
+    vault.files.delete(target.path);
+    target.path = "moved.md";
+    vault.files.set(target.path, entry);
+    return process(target, transform);
+  };
+  await assert.rejects(fs.write("note.md", "hosted update\n", "base\n"), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.equal(file.path, "moved.md");
+  assert.equal(vault.read("moved.md"), "base\n", "the engine must not write through the moved object");
+});
+
+test("a stale conditional text write does not reserve an echo for a user's edit", async () => {
+  const vault = new MemoryVault();
+  await vault.create("note.md", "base\n");
+  const writes: string[] = [];
+  const fs = new ObsidianMirrorFileSystem(vault as never, undefined, undefined, (path) => writes.push(path));
+  const process = vault.process.bind(vault);
+  vault.process = async (file, transform) => {
+    await vault.modify(file, "user edit\n");
+    return process(file, transform);
+  };
+  await assert.rejects(fs.write("note.md", "hosted\n", "base\n"), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(writes, [], "an abandoned write must not hide the real modify event");
+});
+
+test("receive-only UTF-8 repair cannot overwrite an edit queued before the Vault write", async () => {
+  const vault = new MemoryVault();
+  await vault.createBinary("note.md", Uint8Array.of(0x80).buffer);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const modify = vault.modify.bind(vault);
+  const process = vault.process.bind(vault);
+  vault.modify = async (file, value) => {
+    await modify(file, "user repaired the note\n");
+    await modify(file, value);
+  };
+  vault.process = async (file, transform) => {
+    await modify(file, "user repaired the note\n");
+    return process(file, transform);
+  };
+  await assert.rejects(fs.write("note.md", "hosted version\n"), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.equal(await fs.read("note.md"), "user repaired the note\n");
+});
+
+test("receive-only UTF-8 repair still writes when the invalid text is unchanged", async () => {
+  const vault = new MemoryVault();
+  await vault.createBinary("note.md", Uint8Array.of(0x80).buffer);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  await fs.write("note.md", "hosted version\n");
+  assert.equal(await fs.read("note.md"), "hosted version\n");
 });
 
 test("binary edits made while a download stream is consumed are not overwritten", async () => {
@@ -334,6 +399,18 @@ test("a vault copied to another device or folder refuses to sync until it is set
   assert.deepEqual(await original.state.read(), before, "the original's checkpoint survives the copy disconnecting");
   assert.ok(original.secrets.listSecrets().some((secretId) => original.secrets.getSecret(secretId) === "refresh"));
   assert.equal((await original.syncOnce()).status, "applied");
+});
+
+test("malformed stored selective-sync policies fail closed without losing the enrollment", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const here = await device(hosted, id);
+  for (const policy of [null, false, "bad", [], {}, { file_classes: "image", excluded_folders: [] }, { file_classes: [], excluded_folders: null }]) {
+    const normalized = normalizeMirrorProfile({ ...here.profile(), selectiveSync: policy });
+    assert.equal(normalized?.replicaId, here.replicaId, `policy ${JSON.stringify(policy)} retains credentials' identity`);
+    assert.deepEqual(normalized?.selectiveSync, { file_classes: [], excluded_folders: [] });
+  }
+  for (const input of [null, [], "bad", { ...here.profile(), collectionId: 12 }]) assert.equal(normalizeMirrorProfile(input), null);
 });
 
 test("profiles from before device ownership are claimed by the first device to open them", async () => {
@@ -496,6 +573,116 @@ test("reauthorization refuses to discard a batch prepared while browser approval
   here.vault.failCreatePath = null;
   assert.equal((await here.syncOnce()).status, "applied", "the original checkpoint can still resume");
   assert.equal(here.vault.read("b.md"), "new note\n");
+});
+
+test("every checkpoint-write boundary survives a quota error and a retry without losing files", async () => {
+  class FaultStore extends MemoryMirrorStateStore {
+    writes = 0;
+    failAt: number | null = null;
+    failures = 0;
+    override async write(state: MirrorState): Promise<void> {
+      this.writes++;
+      if (this.writes === this.failAt) {
+        this.failures++;
+        throw new DOMException("Injected quota failure", "QuotaExceededError");
+      }
+      return super.write(state);
+    }
+  }
+  for (let boundary = 1; boundary <= 20; boundary++) {
+    const hosted = new MemoryAuthority();
+    hosted.seed(["a", "b", "c"].map((name) => ({ record_id: name, path: `${name}.md`, frontmatter: {}, body: `${name}\n`, types: [] })));
+    const id = await collectionId(hosted);
+    const state = new FaultStore();
+    const here = await device(hosted, id, { state });
+    const there = otherDevice(hosted);
+    await here.syncOnce();
+    await there.mirror.sync();
+    await edit(there.vault, "b.md", "hosted edit\n");
+    await there.mirror.sync();
+    await edit(here.vault, "a.md", "local edit\n");
+    await here.vault.create("d.md", "new local note\n");
+    await here.vault.delete(here.vault.getAbstractFileByPath("c.md") as TFile);
+    state.failAt = state.writes + boundary;
+    const session = new SyncSession(here.controller, here.profile, null);
+    let result = await session.autoSync();
+    state.failAt = null;
+    for (let retry = 0; retry < 8 && !["applied", "up_to_date"].includes(result); retry++) result = await session.syncNow();
+    assert.ok(["applied", "up_to_date"].includes(result), `write boundary ${boundary}: ${result}, ${session.state.problem?.message}`);
+    await session.syncNow();
+    await there.mirror.sync();
+    for (const vault of [here.vault, there.vault]) {
+      assert.equal(vault.read("a.md"), "local edit\n", `write boundary ${boundary}`);
+      assert.equal(vault.read("b.md"), "hosted edit\n", `write boundary ${boundary}`);
+      assert.equal(vault.read("c.md"), null, `write boundary ${boundary}`);
+      assert.equal(vault.read("d.md"), "new local note\n", `write boundary ${boundary}`);
+    }
+    assert.equal((await state.read())?.batch, undefined, `write boundary ${boundary}: no wedged batch`);
+    here.controller.dispose();
+  }
+});
+
+test("offline edit bursts converge despite intermittent quota errors, with every latest field edit intact", async () => {
+  const seeds = Number(process.env.MDBASE_RELIABILITY_SEEDS ?? 3);
+  const offset = Number(process.env.MDBASE_RELIABILITY_SEED_OFFSET ?? 0);
+  for (let seed = offset + 1; seed <= offset + seeds; seed++) {
+    let randomState = seed;
+    const randomIndex = (count: number) => {
+      randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0;
+      return Math.floor(randomState / 2 ** 32 * count);
+    };
+    const hosted = new MemoryAuthority();
+    const count = 16;
+    hosted.seed(Array.from({ length: count }, (_, index) => ({
+      record_id: `n${index}`, path: `notes/n${index}.md`, frontmatter: { left: 0, right: 0 }, body: "Body\n", types: [],
+    })));
+    const id = await collectionId(hosted);
+    const state = new MemoryMirrorStateStore();
+    const here = await device(hosted, id, { state });
+    const there = otherDevice(hosted);
+    const session = new SyncSession(here.controller, here.profile, null);
+    await here.syncOnce();
+    await there.mirror.sync();
+    const left = new Array<number>(count).fill(0);
+    const right = new Array<number>(count).fill(0);
+    for (let editNumber = 1; editNumber <= 200; editNumber++) {
+      const localIndex = randomIndex(count);
+      const remoteIndex = randomIndex(count);
+      const localPath = `notes/n${localIndex}.md`;
+      const remotePath = `notes/n${remoteIndex}.md`;
+      left[localIndex] = editNumber;
+      right[remoteIndex] = editNumber;
+      await edit(here.vault, localPath, here.vault.read(localPath)!.replace(/left: \d+/, `left: ${editNumber}`));
+      await edit(there.vault, remotePath, there.vault.read(remotePath)!.replace(/right: \d+/, `right: ${editNumber}`));
+    }
+    await there.mirror.sync();
+    if (seed % 2 === 0) {
+      const quotaBoundary = randomIndex(12) + 1;
+      let writes = 0;
+      const write = state.write.bind(state);
+      state.write = async (next) => {
+        if (++writes === quotaBoundary) throw new DOMException("Intermittent quota error", "QuotaExceededError");
+        return write(next);
+      };
+    }
+    for (let round = 0; round < 8; round++) {
+      const result = await session.autoSync();
+      assert.ok(["applied", "up_to_date", "pending", "failed", "needs_review"].includes(result), `seed ${seed}: ${result}`);
+      if (["applied", "up_to_date"].includes(result) && !session.state.status?.conflicts.length
+        && !session.state.preview?.plan.actions.length) break;
+    }
+    await there.mirror.sync();
+    for (let index = 0; index < count; index++) {
+      const path = `notes/n${index}.md`;
+      const document = here.vault.read(path)!;
+      assert.match(document, new RegExp(`left: ${left[index]}\\n`), `seed ${seed}: latest local edit at ${path}`);
+      assert.match(document, new RegExp(`right: ${right[index]}\\n`), `seed ${seed}: latest hosted edit at ${path}`);
+      assert.equal(there.vault.read(path), document, `seed ${seed}: devices agree at ${path}`);
+    }
+    assert.equal((await here.controller.status())?.conflicts.length, 0);
+    assert.equal((await here.controller.status())?.pending, 0);
+    here.controller.dispose();
+  }
 });
 
 test("overlapping operations share one token renewal instead of revoking each other's token", async () => {

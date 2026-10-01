@@ -57,6 +57,7 @@ test("platform send uses the privileged desktop stack with that stack's own abor
   }
   const send = platformSend({
     AbortController: TrackingController,
+    headers: (headers) => Object.fromEntries(headers),
     fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
       desktopCalls += 1;
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer device-secret");
@@ -74,6 +75,31 @@ test("platform send uses the privileged desktop stack with that stack's own abor
   assert.equal(result.status, 200);
   assert.deepEqual(result.json, { protocol_version: 1 });
   assert.equal(desktopCalls, 1);
+});
+
+test("desktop response headers are serialized in their owning process before returning", async () => {
+  // Electron remote callbacks and iterators do not synchronously enumerate in
+  // the renderer. In particular, missing ETag breaks every multipart upload.
+  const remoteHeaders = {
+    forEach: (callback: (value: string, name: string) => void) => {
+      setTimeout(() => callback('"part-etag"', "etag"), 0);
+    },
+    [Symbol.iterator]: function* () {},
+  };
+  const send = platformSend({
+    AbortController,
+    fetch: async () => ({
+      status: 200,
+      headers: remoteHeaders,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    }) as unknown as Response,
+    headers: (headers: Headers) => {
+      assert.equal(headers, remoteHeaders);
+      return { etag: '"part-etag"', "retry-after": "7", "content-length": "0" };
+    },
+  });
+  const result = await send({ url: "https://objects.example/part", method: "PUT", throw: false });
+  assert.deepEqual(result.headers, { etag: '"part-etag"', "retry-after": "7", "content-length": "0" });
 });
 
 test("a desktop request that never answers times out instead of hanging sync", async () => {

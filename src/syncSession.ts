@@ -37,7 +37,7 @@ export interface SyncSessionState {
   retryAt: number | null;
 }
 
-export type SyncNowResult = "applied" | "up_to_date" | "needs_review" | "failed" | "busy" | "paused";
+export type SyncNowResult = "applied" | "up_to_date" | "needs_review" | "failed" | "busy" | "paused" | "pending";
 
 /** Rounds of inspect, apply and settle conflicts one Sync now may take before it stops. */
 const MAX_SYNC_ROUNDS = 4;
@@ -219,7 +219,9 @@ export class SyncSession {
         if (!preview.plan.actions.length) {
           const settled = await this.settleConflicts();
           if (this.current.paused) return "paused";
+          if (settled === null) return "failed";
           if (settled) continue;
+          if (this.current.status?.conflicts.length) return "needs_review";
           if (!applied && !options.quiet) this.update({ message: "Already up to date." });
           return applied ? "applied" : "up_to_date";
         }
@@ -235,10 +237,14 @@ export class SyncSession {
         if (this.current.paused) return "paused";
         const settled = await this.settleConflicts();
         if (this.current.paused) return "paused";
+        if (settled === null) return "failed";
         if (settled) continue;
+        if (this.current.status?.conflicts.length) return "needs_review";
         if (!this.current.preview) return "applied";
       }
-      return applied ? "applied" : "up_to_date";
+      // Yield after a bounded number of changing plans, but keep the scheduler
+      // chasing the remaining work instead of declaring it settled for 15 min.
+      return "pending";
     }, options.quiet);
     return result ?? "failed";
   }
@@ -256,15 +262,16 @@ export class SyncSession {
     if (this.current.retryAt !== retryAt) this.update({ retryAt });
   }
 
-  /** Settle open conflicts; true when that changed files that now need syncing. */
-  private async settleConflicts(): Promise<boolean> {
+  /** True when files changed, false when none did, null when settling failed. */
+  private async settleConflicts(): Promise<boolean | null> {
     if (!this.current.status?.conflicts.length) return false;
     let resolutions: AutoResolution[];
     try {
       resolutions = await this.controller.autoResolveConflicts();
     } catch (error) {
-      this.update({ problem: syncProblem(error) });
-      return false;
+      const problem = syncProblem(error);
+      this.update({ problem, message: problem.message });
+      return null;
     }
     for (const resolution of resolutions) {
       await this.recordEvent(conflictEvent(resolution));
@@ -408,11 +415,15 @@ export class SyncSession {
 
   /** One inspection gives both the plan and the status. Null when it failed. */
   private async loadPreview(): Promise<MdbaseSyncPreview | null> {
+    const profile = this.getProfile();
+    if (!profile) return null;
     try {
       const { preview, status } = await this.controller.inspect();
+      if (!sameProfile(profile, this.getProfile())) return null;
       this.update({ preview, status, problem: null });
       return preview;
     } catch (error) {
+      if (!sameProfile(profile, this.getProfile())) return null;
       const problem = syncProblem(error);
       this.update({ problem, message: problem.message });
       return null;
@@ -524,7 +535,9 @@ export class SyncSession {
 }
 
 function sameProfile(a: MirrorProfile | null, b: MirrorProfile | null): boolean {
-  return a?.collectionId === b?.collectionId;
+  return a?.collectionId === b?.collectionId
+    && a?.replicaId === b?.replicaId
+    && a?.enrollmentId === b?.enrollmentId;
 }
 
 function conflictEvent(resolution: AutoResolution): SyncEventInput {
