@@ -1037,11 +1037,18 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     return binaryInfo(bytes);
   }
 
-  async writeBinary(input: string, source: AsyncIterable<Uint8Array>): Promise<void> {
+  async writeBinary(input: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void> {
     const path = assertVisibleBinaryPath(input);
+    // A stream can take seconds to consume. Remember its destination before
+    // reading any bytes, then recheck it after staging and folder creation.
+    const before = expected === undefined ? await this.inspectBinary(path) : expected;
     const bytes = await collectBinary(source);
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
+    const current = await this.inspectBinary(path);
+    if (current?.content_digest !== before?.content_digest || current?.size !== before?.size) {
+      throw new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
+    }
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing instanceof TFolder) throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     this.assertActive();
@@ -1769,21 +1776,34 @@ export class ConnectSyncController {
     if (enrollment.collectionId !== profile.collectionId) {
       throw new SyncError("mirror_identity_conflict", "Connect approved a different collection. The existing mirror was not changed.");
     }
-    const nextProfile = profileFromEnrollment(enrollment, profile.selectiveSync);
-    if (oldState && enrollment.replicaId !== profile.replicaId) {
-      await this.stateStoreFor(nextProfile).write({
-        ...oldState,
-        replica_id: enrollment.replicaId,
-      });
-    }
-    await this.persistEnrollment(enrollment, profile.selectiveSync);
-    if (!copied && enrollment.replicaId !== profile.replicaId) {
-      this.clearCredentials(profile);
-      if ("clear" in oldStore && typeof oldStore.clear === "function") await oldStore.clear();
-    }
-    const status = await this.status();
-    if (!status) throw new SyncError("mirror_not_configured", "The reauthorized mirror profile could not be loaded.");
-    return status;
+    return this.withMirrorOperation(async () => {
+      // Browser approval can stay open while background sync advances or a
+      // disconnect retires this connection. Only migrate its latest checkpoint,
+      // under the same queue that protects all other mirror state operations.
+      const current = this.requireProfile();
+      if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
+        || current.enrollmentId !== profile.enrollmentId) {
+        throw new SyncError("mirror_identity_conflict", "The connection changed during approval. The current mirror was not changed.");
+      }
+      const latestState = copied ? null : await oldStore.read();
+      if (latestState?.batch) {
+        throw new SyncError("mirror_recovery_required", "Resume the durable synchronization checkpoint before approving this vault again.");
+      }
+      const nextProfile = profileFromEnrollment(enrollment, current.selectiveSync);
+      if (latestState && enrollment.replicaId !== profile.replicaId) {
+        await this.stateStoreFor(nextProfile).write({
+          ...latestState,
+          replica_id: enrollment.replicaId,
+        });
+      }
+      await this.persistEnrollment(enrollment, current.selectiveSync);
+      if (!copied && enrollment.replicaId !== profile.replicaId) {
+        this.clearCredentials(profile);
+        if ("clear" in oldStore && typeof oldStore.clear === "function") await oldStore.clear();
+      }
+      const mirror = await this.createMirror();
+      return mirror.status();
+    });
   }
 
   async conflictComparison(
@@ -2017,32 +2037,55 @@ export class ConnectSyncController {
 
   private async writeConflictCopy(pathInput: string, document: string, label: string): Promise<string> {
     const path = safeMirrorPath(this.app.vault, pathInput);
-    const target = await this.conflictCopyPath(path, label);
-    await this.app.vault.create(target, document);
-    return target;
+    return this.createConflictCopy(path, new TextEncoder().encode(document).buffer, label);
   }
 
-  private async conflictCopyPath(path: string, label: string): Promise<string> {
+  private async createConflictCopy(path: string, document: ArrayBuffer, label: string): Promise<string> {
     const slash = path.lastIndexOf("/");
     const dot = path.lastIndexOf(".");
     const extension = dot > slash ? path.slice(dot) : "";
-    const base = extension ? path.slice(0, -extension.length) : path;
-    let target = `${base} (${label})${extension}`;
-    let suffix = 2;
-    while (this.app.vault.getAbstractFileByPath(target) || await this.app.vault.adapter.exists(target)) {
-      target = `${base} (${label} ${suffix})${extension}`;
-      suffix += 1;
+    const stem = extension ? path.slice(0, -extension.length) : path;
+    // A copy can itself conflict on another device. Keep the sibling names
+    // flat rather than producing copies of copies of copies.
+    const base = stem.replace(/(?: \((?:local|hosted) conflict copy(?: \d+)?\))+$/, "");
+    const bytes = new Uint8Array(document);
+    let suffix = 1;
+    while (true) {
+      const target = `${base} (${label}${suffix === 1 ? "" : ` ${suffix}`})${extension}`;
+      if (target === path) {
+        suffix += 1;
+        continue;
+      }
+      if (this.app.vault.getAbstractFileByPath(target) || await this.app.vault.adapter.exists(target)) {
+        // A stale decision may be retried after its copy was already saved.
+        // Reuse only byte-identical copies; never modify an older recovery file.
+        try {
+          const existing = new Uint8Array(await this.app.vault.adapter.readBinary(target));
+          if (existing.length === bytes.length && existing.every((byte, index) => byte === bytes[index])) return target;
+        } catch {
+          // Folders and unreadable copies still reserve their name.
+        }
+        suffix += 1;
+        continue;
+      }
+      try {
+        // Unlike adapter.copy, Vault.createBinary refuses an occupied target,
+        // including one that appears after the name check. Preserve exact bytes.
+        await this.app.vault.createBinary(target, document);
+        return target;
+      } catch (error) {
+        if (!await this.app.vault.adapter.exists(target)) throw error;
+        // A concurrent creator won this name. Inspect it before choosing again.
+      }
     }
-    return target;
   }
 
   async preserveConflictCopy(pathInput: string): Promise<string> {
     const path = safeMirrorPath(this.app.vault, pathInput);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (!(existing instanceof TFile)) throw new SyncError("mirror_conflict_copy_missing", `No local file exists at ${path}.`);
-    const target = await this.conflictCopyPath(path, "local conflict copy");
-    await this.app.vault.adapter.copy(path, target);
-    return target;
+    const document = await this.app.vault.adapter.readBinary(path);
+    return this.createConflictCopy(path, document, "local conflict copy");
   }
 
   async disconnect(removeSyncedFiles: boolean): Promise<DisconnectMirrorResult> {
@@ -2802,8 +2845,16 @@ export class ConnectSyncController {
       accessToken: this.readSecret("access", profile) ?? "",
       refreshCredential,
       accessTokenExpiresAt: profile.accessTokenExpiresAt,
-    });
-    await this.persistEnrollment(renewed, profile.selectiveSync);
+    }, { signal: this.lifetime.signal });
+    // Renewal may overlap a disconnect or a fresh browser enrollment. Never
+    // recreate the retired connection (or replace the new one's credentials).
+    const current = this.requireProfile();
+    if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
+      || current.enrollmentId !== profile.enrollmentId) {
+      throw new SyncError("mirror_identity_conflict", "The connection changed while credentials were renewing. Retry with the current connection.");
+    }
+    // Settings can change independently while the request is in flight.
+    await this.persistEnrollment(renewed, current.selectiveSync);
     return renewed.accessToken;
   }
 

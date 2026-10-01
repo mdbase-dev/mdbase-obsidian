@@ -91,9 +91,9 @@ export class MemoryVault {
   }
 
   async cachedRead(file: TFile): Promise<string> {
-    const entry = this.files.get(file.path);
-    if (!entry) throw new Error(`missing ${file.path}`);
-    return entry.content;
+    const text = this.read(file.path);
+    if (text === null) throw new Error(`missing ${file.path}`);
+    return text;
   }
 
   async create(path: string, content: string): Promise<TFile> {
@@ -180,7 +180,12 @@ export class MemoryVault {
   }
 
   read(path: string): string | null {
-    return this.files.get(normalizePath(path))?.content ?? null;
+    const normalized = normalizePath(path);
+    const text = this.files.get(normalized);
+    if (text) return text.content;
+    const binary = this.binaryFiles.get(normalized);
+    // Vault.createBinary may create Markdown; Obsidian can still read its text.
+    return binary ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(binary.content) : null;
   }
 
   readBytes(path: string): Uint8Array | null {

@@ -87,6 +87,8 @@ const EMPTY_STATE: SyncSessionState = {
 export class SyncSession {
   private current: SyncSessionState = { ...EMPTY_STATE };
   private readonly listeners = new Set<() => void>();
+  private safetyPreview: MdbaseSyncPreview | null = null;
+  private previewSafety: SyncPlanSafety | null = null;
 
   /** The last failure pinned to history, so automatic retries do not pin it again. */
   private pinnedFailure: string | null = null;
@@ -208,10 +210,16 @@ export class SyncSession {
     const result = await this.exclusive(async (): Promise<SyncNowResult> => {
       let applied = false;
       for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
+        if (this.current.paused) return "paused";
         const preview = await this.loadPreview();
+        // Inspection is not a transfer and cannot be cancelled by cancelSync().
+        // Honour Stop before starting any writes once that inspection returns.
+        if (this.current.paused) return "paused";
         if (!preview) return "failed";
         if (!preview.plan.actions.length) {
-          if (await this.settleConflicts()) continue;
+          const settled = await this.settleConflicts();
+          if (this.current.paused) return "paused";
+          if (settled) continue;
           if (!applied && !options.quiet) this.update({ message: "Already up to date." });
           return applied ? "applied" : "up_to_date";
         }
@@ -224,7 +232,10 @@ export class SyncSession {
         if (outcome === "cancelled") return "paused";
         if (outcome === "failed") return "failed";
         applied = true;
-        if (await this.settleConflicts()) continue;
+        if (this.current.paused) return "paused";
+        const settled = await this.settleConflicts();
+        if (this.current.paused) return "paused";
+        if (settled) continue;
         if (!this.current.preview) return "applied";
       }
       return applied ? "applied" : "up_to_date";
@@ -267,7 +278,14 @@ export class SyncSession {
   }
 
   safety(): SyncPlanSafety | null {
-    return this.current.preview ? syncPlanSafety(this.current.preview) : null;
+    const preview = this.current.preview;
+    // Engine previews are replaced, not mutated. Transfer progress can notify
+    // several surfaces per file; none needs to rescan the same consent policy.
+    if (preview !== this.safetyPreview) {
+      this.safetyPreview = preview;
+      this.previewSafety = preview ? syncPlanSafety(preview) : null;
+    }
+    return this.previewSafety;
   }
 
   /** Stop now and keep automatic sync off until the person resumes it. */

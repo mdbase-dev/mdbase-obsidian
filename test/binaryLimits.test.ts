@@ -17,7 +17,7 @@ test("oversized local binaries are rejected before the Vault allocates their con
 });
 
 test("oversized incoming streams never reach a Vault write", async () => {
-  const adapter = new ObsidianMirrorFileSystem({} as never);
+  const adapter = new ObsidianMirrorFileSystem({ getAbstractFileByPath: () => null } as never);
   await assert.rejects(adapter.writeBinary("large.mp4", (async function* () {
     const chunk = new Uint8Array(1024 * 1024);
     for (let i = 0; i < 33; i++) yield chunk;

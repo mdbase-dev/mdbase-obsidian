@@ -131,9 +131,12 @@ export class SyncScheduler {
         this.rerun = false;
         this.schedule(now);
       } else if (retryIn !== null) {
+        // A routine probe must not preempt the advertised failure backoff.
+        // Explicit edits, online and foreground events can still request sooner.
         this.schedule(now + retryIn);
+      } else {
+        this.schedule(now + (this.visible ? this.timing.probeVisibleMs : this.timing.probeHiddenMs));
       }
-      this.schedule(now + (this.visible ? this.timing.probeVisibleMs : this.timing.probeHiddenMs));
     }
   }
 

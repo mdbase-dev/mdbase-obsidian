@@ -95,7 +95,7 @@ export function historyFileFromReceipt(
  * A resumed batch already carries earlier receipts; they are the baseline.
  */
 export class ReceiptObservingStateStore implements MirrorStateStore {
-  private readonly seen = new Map<string, number>();
+  private readonly seen = new Map<string, { receipts: number; actions: Map<string, MirrorPlanAction> }>();
 
   constructor(
     private readonly inner: MirrorStateStore,
@@ -112,10 +112,17 @@ export class ReceiptObservingStateStore implements MirrorStateStore {
     if (!batch) return;
     const fingerprint = batch.plan.fingerprint;
     const previous = this.seen.get(fingerprint);
-    this.seen.set(fingerprint, batch.receipts.length);
-    if (previous === undefined) return;
-    for (const receipt of batch.receipts.slice(previous)) {
-      const action = batch.plan.actions.find((candidate) => candidate.action_id === receipt.action_id);
+    if (previous === undefined) {
+      this.seen.set(fingerprint, {
+        receipts: batch.receipts.length,
+        actions: new Map(batch.plan.actions.map((action) => [action.action_id, action])),
+      });
+      return;
+    }
+    const start = previous.receipts;
+    previous.receipts = batch.receipts.length;
+    for (const receipt of batch.receipts.slice(start)) {
+      const action = previous.actions.get(receipt.action_id);
       if (action) this.onReceipt(action, receipt);
     }
   }
