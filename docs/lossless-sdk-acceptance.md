@@ -2,18 +2,19 @@
 
 ## Shipping versus candidate behavior
 
-The tracked dependency pins remain `connect-sync` / `connect-protocol`
-`0.1.0-beta.91`. That released mirror engine still blocks malformed frontmatter.
-This branch prepares consumer messaging and fixes BOM preservation; it does not
-pretend that an unpublished SDK fix is already shipped in the plugin.
+The tracked dependency pins are `connect-sync` / `connect-protocol`
+`0.1.0-beta.120`. That release includes the lossless behavior first qualified
+below as a candidate (Connect commit `87e28391233c`): readable malformed YAML is a
+nonblocking structural diagnostic by default, with no option, protocol change, or
+public TypeScript shape change. `npm test` now runs the strict lossless check
+(`npm run test:lossless`) against the installed SDK, which passes on beta.120.
 
-Connect commit `87e28391233c` makes readable malformed YAML a nonblocking
-structural diagnostic by default. No option, protocol change, or public
-TypeScript shape change is required. Its immutable candidate artifacts were
-produced with Connect's guarded `package:consumer` script, not published to npm.
-Advance the released pins and lockfile after the SDK release, rerun the strict
-candidate test, and include that check in normal qualification at that point.
-Do not commit machine-local tarball paths or a nonexistent registry version.
+beta.120 also synchronizes Obsidian Bases (`.base`) as YAML document records. The
+Obsidian adapter therefore lists `.md` and `.base` files as records and never as
+binary files, matching the SDK's Node adapter.
+
+The historical results below were recorded before the upgrade, against beta.91
+and the unpublished candidate.
 
 ## Consumer changes
 
@@ -47,20 +48,20 @@ YAML, duplicate keys, scalar/null/list frontmatter, BOM/CRLF, missing final
 newline, BOM-prefixed valid mappings and body-only notes, and a valid sibling. It checks that the preview enables the transfers
 and the receive-only mirror settles without attempting repeated repairs.
 
-The released beta.91 control run fails this stricter command at the expected
-assertion: seven blocking issues instead of zero. The candidate passes without
-changing the test or adding a runtime option. To qualify an immutable
-candidate without changing tracked dependency pins:
+The released beta.91 control run failed this stricter command at the expected
+assertion: seven blocking issues instead of zero. The candidate passed without
+changing the test or adding a runtime option, as does released beta.120. To
+qualify a future immutable candidate without changing tracked dependency pins:
 
 ```sh
 npm ci --ignore-scripts
 npm install --no-save --package-lock=false --ignore-scripts \
   /path/to/immutable-protocol.tgz /path/to/immutable-sync.tgz
+npx patch-package   # the reliability patch is version-specific; rebase if needed
 npm test
-npm run test:sdk-candidate
 npm run check:mobile
 # Restore released dependencies and the release-pinned generated bundle:
-npm ci --ignore-scripts
+npm ci
 npm run check:mobile
 ```
 

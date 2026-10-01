@@ -250,12 +250,18 @@ function binaryPathSelected(policy: SelectiveSyncPolicy, path: string, mediaClas
   return !policy.excluded_folders.some((folder) => normalized === folder || normalized.startsWith(`${folder}/`));
 }
 
+// Record extensions fixed by the sync SDK (Markdown notes and Obsidian Bases as
+// YAML document records). Matches its private `hasMirrorRecordExtension`:
+// record enumeration is case-sensitive; binary exclusion ignores case.
+const MIRROR_RECORD_PATH = /\.(?:md|base)$/;
+const MIRROR_RECORD_PATH_ANY_CASE = /\.(?:md|base)$/i;
+
 function assertVisibleBinaryPath(input: string, folder = false): string {
   const path = normalizeSafeRelativePath(input);
   const components = path.split("/");
   if (
     path.length > 1024
-    || (!folder && /\.md$/i.test(path))
+    || (!folder && MIRROR_RECORD_PATH_ANY_CASE.test(path))
     || components.some((component) => component.startsWith(".")
       || RESERVED_BINARY_COMPONENTS.has(component.toLowerCase())
       || /[<>"|?*]/u.test(component)
@@ -998,10 +1004,9 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   }
 
   async listMarkdown(excluded: ReadonlySet<string>): Promise<string[]> {
-    return this.vault
-      .getMarkdownFiles()
+    return listFiles(this.vault)
       .map((file) => normalizePath(file.path))
-      .filter((path) => !excluded.has(path))
+      .filter((path) => MIRROR_RECORD_PATH.test(path) && !excluded.has(path))
       .filter((path) => !reservedWriteFolders(this.vault)
         .some((folder) => path === folder || path.startsWith(`${folder}/`)))
       .sort();
@@ -1033,7 +1038,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   async listBinary(excluded: ReadonlySet<string>): Promise<string[]> {
     return listFiles(this.vault)
       .map((file) => normalizePath(file.path))
-      .filter((path) => !/\.md$/i.test(path) && !excluded.has(path))
+      .filter((path) => !MIRROR_RECORD_PATH_ANY_CASE.test(path) && !excluded.has(path))
       .filter((path) => {
         try {
           assertVisibleBinaryPath(path);
