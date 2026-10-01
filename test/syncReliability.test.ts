@@ -854,6 +854,30 @@ test("a token renewal finishing after disconnect cannot recreate the connection"
   assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "");
 });
 
+test("normal mirror must not upload a provider-equivalent Greek excluded-folder alias", {
+  // P1: beta.120 (and current SDK source) lowercases whole strings; the Rust
+  // provider and adoption key lowercase each scalar. Remove TODO after the
+  // SDK's canonical policy is aligned, not by adding a second plugin filter.
+  todo: "SDK/provider Unicode exclusion policy mismatch; see merge report MP12",
+}, async () => {
+  const hosted = new MemoryAuthority();
+  const attempted: string[] = [];
+  const here = await device(hosted, hosted.collectionId, { wrapTransport: transport => ({
+    ...transport,
+    uploadFile: async (request, source) => {
+      for await (const _chunk of source) { /* drain the immutable synthetic snapshot */ }
+      attempted.push(request.path);
+      throw new Error("Synthetic no-op: stop before any hosted effect");
+    },
+  }) });
+  try {
+    await here.vault.createBinary("ΟΣ/private.png", Uint8Array.of(1).buffer);
+    await here.controller.configureSelectiveSync({ file_classes: ["image"], excluded_folders: ["οσ"] });
+    await here.syncOnce();
+    assert.deepEqual(attempted, [], "excluded bytes must not reach the upload transport");
+  } finally { here.controller.dispose(); }
+});
+
 test("token renewal preserves selective-sync settings changed while it was in flight", async () => {
   const hosted = new MemoryAuthority();
   const id = await collectionId(hosted);
