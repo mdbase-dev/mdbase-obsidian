@@ -1420,7 +1420,7 @@ test("conflict copy uses a collision-safe sibling without changing the original"
   const vault = new MemoryVault();
   await vault.createFolder("notes");
   await vault.create("notes/conflict.md", "local version\n");
-  await vault.create("notes/conflict (local conflict copy).md", "older copy\n");
+  await vault.create("notes/conflict (local conflict copy replica).md", "older copy\n");
   const profile = {
     version: 1 as const,
     syncUrl: "https://sync.example/v1/authorities/collection/sync",
@@ -1442,7 +1442,8 @@ test("conflict copy uses a collision-safe sibling without changing the original"
 
   const copied = await controller.preserveConflictCopy("notes/conflict.md");
 
-  assert.equal(copied, "notes/conflict (local conflict copy 2).md");
+  assert.equal(copied, "notes/conflict (local conflict copy replica 2).md");
+  assert.equal(vault.read("notes/conflict (local conflict copy replica).md"), "older copy\n");
   assert.equal(vault.read(copied), "local version\n");
   assert.equal(vault.read("notes/conflict.md"), "local version\n");
 });

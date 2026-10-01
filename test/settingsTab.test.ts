@@ -21,6 +21,8 @@ function fixture() {
     },
     createDiv(this: HTMLElement, options = {}) { return this.createEl("div", options); },
     setAttr(this: HTMLElement, name: string, value: string) { this.setAttribute(name, value); },
+    setText(this: HTMLElement, value: string) { this.textContent = value; },
+    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
     empty(this: HTMLElement) { this.replaceChildren(); },
   });
   const notices = (Notice as unknown as { messages: string[] }).messages;
@@ -31,16 +33,18 @@ function fixture() {
     saveSettings: async () => undefined,
     requestSync: () => undefined,
     getMirrorProfile: () => ({ name: "Notes", mode: "read_write", controlUrl: "https://connect.example" }),
-    openWorkspace: async () => ({ reconnectCollection: async () => undefined }),
+    openWorkspace: async (_destination: string) => ({ reconnectCollection: async () => undefined }),
     connectSync: { getSelectiveSync: () => policy },
     sync: {
       isSyncing: () => false,
       configureSelectiveSync: async (next: typeof policy) => { policy = next; },
     },
   };
-  const tab = new MdbaseSettingTab({ vault: { getAllLoadedFiles: () => [] } } as never, plugin as never);
+  let settingsClosed = 0;
+  const app = { vault: { getAllLoadedFiles: () => [] }, setting: { close: () => { settingsClosed++; } } };
+  const tab = new MdbaseSettingTab(app as never, plugin as never);
   tab.display();
-  return { dom, plugin, tab, root: tab.containerEl, notices, policy: () => policy };
+  return { dom, plugin, tab, root: tab.containerEl, notices, policy: () => policy, settingsClosed: () => settingsClosed };
 }
 
 function button(root: HTMLElement, label: string): HTMLButtonElement {
@@ -50,6 +54,27 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
 }
 
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("Open sync and Reconnect close settings before handing off to the workspace", async () => {
+  for (const connected of [false, true]) {
+    const f = fixture();
+    if (!connected) Object.assign(f.plugin, { getMirrorProfile: () => null });
+    let opened = 0;
+    let reconnected = 0;
+    f.plugin.openWorkspace = async (destination) => {
+      assert.equal(destination, "sync");
+      assert.equal(f.settingsClosed(), 1, "approval and cancellation must not stay hidden behind settings");
+      opened++;
+      return { reconnectCollection: async () => { reconnected++; } };
+    };
+    f.tab.display();
+    button(f.root, connected ? "Reconnect" : "Open sync").click();
+    await settle();
+    assert.equal(opened, 1);
+    assert.equal(reconnected, connected ? 1 : 0);
+    f.dom.window.close();
+  }
+});
 
 test("failed exclusion changes report only failure and leave the saved scope unchanged", async () => {
   const f = fixture();
@@ -83,6 +108,53 @@ test("applying exclusions waits for persistence and prevents duplicate requests"
   await settle();
   assert.deepEqual(f.notices, ["Excluded folders updated. The next sync applies them."]);
   assert.equal(apply.disabled, false);
+  f.dom.window.close();
+});
+
+test("disconnect stays disabled through its decision and completion, without duplicate requests", async () => {
+  const f = fixture();
+  let disconnected = 0;
+  let finish: () => void = () => assert.fail("Disconnect not started");
+  Object.assign(f.plugin.sync, {
+    state: { message: "Disconnected. Local files kept." },
+    disconnect: async () => { disconnected++; await new Promise<void>(resolve => { finish = resolve; }); },
+  });
+  const disconnect = button(f.root, "Disconnect…");
+  disconnect.click();
+  assert.equal(disconnect.disabled, true, "only one disconnect decision at a time");
+  button(f.dom.window.document.body, "Keep files").click();
+  await settle();
+  assert.equal(disconnect.disabled, true, "do not offer another disconnect while cleanup is running");
+  assert.equal(disconnect.textContent, "Disconnecting…");
+  disconnect.click();
+  assert.equal(disconnected, 1);
+  finish();
+  await settle();
+  assert.deepEqual(f.notices, ["Disconnected. Local files kept."]);
+  assert.equal(button(f.root, "Disconnect…").disabled, false);
+  f.dom.window.close();
+});
+
+test("cancelling disconnect restores its original action without rerendering settings", async () => {
+  const f = fixture();
+  const disconnect = button(f.root, "Disconnect…");
+  disconnect.click();
+  button(f.dom.window.document.body, "Cancel").click();
+  await settle();
+  assert.equal(button(f.root, "Disconnect…"), disconnect, "native focus can return to the same button");
+  assert.equal(disconnect.disabled, false);
+  assert.deepEqual(f.notices, []);
+  f.dom.window.close();
+});
+
+test("Open sync failures report a notice instead of an unhandled settings rejection", async () => {
+  const f = fixture();
+  Object.assign(f.plugin, { getMirrorProfile: () => null });
+  f.plugin.openWorkspace = async () => { throw new Error("Workspace could not open"); };
+  f.tab.display();
+  button(f.root, "Open sync").click();
+  await settle();
+  assert.deepEqual(f.notices, ["Workspace could not open"]);
   f.dom.window.close();
 });
 

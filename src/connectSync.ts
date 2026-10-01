@@ -388,8 +388,17 @@ async function adoptionRequestBody(value: unknown, raw: boolean | undefined): Pr
   throw new SyncError("invalid_file_upload", "The adoption upload body was not binary data.");
 }
 
-function parseJsonResponse(text: string, parsed: unknown): unknown {
-  if (parsed !== undefined && parsed !== null) return parsed;
+function parseJsonResponse(response: { text: string; json: unknown }): unknown {
+  // Mobile requestUrl exposes JSON as a lazy getter. Proxy/plain-text errors
+  // (and empty 204 replies) can make that getter throw before HTTP status is
+  // classified. Keep parsing best-effort so retries/auth retain their meaning.
+  try {
+    const parsed = response.json;
+    if (parsed !== undefined && parsed !== null) return parsed;
+  } catch {
+    // Parse text below if it is JSON; otherwise retain the HTTP error fallback.
+  }
+  const text = response.text;
   if (!text.trim()) return {};
   try {
     return JSON.parse(text);
@@ -416,7 +425,7 @@ export function createObsidianEnrollmentRequester(): MirrorEnrollmentRequester {
     if (request.signal?.aborted) throw new DOMException("Enrollment cancelled.", "AbortError");
     return {
       status: response.status,
-      body: parseJsonResponse(response.text, response.json),
+      body: parseJsonResponse(response),
       retryAfterMs: retryAfterMilliseconds(response.headers),
     };
   };
@@ -438,7 +447,7 @@ export function createObsidianAdoptionRequester(): AuthorityAdoptionRequester {
     if (request.signal?.aborted) throw new DOMException("Collection adoption cancelled.", "AbortError");
     return {
       status: response.status,
-      body: parseJsonResponse(response.text, response.json),
+      body: parseJsonResponse(response),
       retryAfterMs: retryAfterMilliseconds(response.headers),
       headers: response.headers,
     };
@@ -587,6 +596,21 @@ implements SyncTransport<Frontmatter> {
       throw new SyncError("invalid_sync_response", "Authority returned an invalid upload part size.");
     }
     const reader = new BinaryPartReader(source);
+    try {
+      return await this.uploadParts(request, session, partSize, reader);
+    } finally {
+      // Cancellation abandons native requests but must still release the staged
+      // source. Cleanup must not hide a transfer failure or a committed receipt.
+      await reader.close().catch(() => undefined);
+    }
+  }
+
+  private async uploadParts(
+    request: OpenFileUploadRequest,
+    session: FileTransferSession,
+    partSize: number,
+    reader: BinaryPartReader,
+  ): Promise<CommitFileUploadReceipt> {
     const count = Math.max(1, Math.ceil(request.size / partSize));
     if (
       session.received.some((index) => !Number.isSafeInteger(index) || index < 0 || index >= count)
@@ -617,8 +641,11 @@ implements SyncTransport<Frontmatter> {
     for (let index = 0; index < count; index += 1) {
       const offset = index * partSize;
       const length = Math.min(partSize, Math.max(0, request.size - offset));
+      if (received.has(index)) {
+        await reader.skip(length);
+        continue;
+      }
       const bytes = await reader.read(length);
-      if (received.has(index)) continue;
       const prepared = await this.fileRequest<PreparedFilePart>(
         "POST",
         `uploads/${encodeURIComponent(request.transfer_id)}/parts`,
@@ -718,7 +745,7 @@ implements SyncTransport<Frontmatter> {
       contentType: body === undefined ? undefined : "application/json",
       throw: false,
     });
-    const value = parseJsonResponse(response.text, response.json);
+    const value = parseJsonResponse(response);
     if (response.status < 200 || response.status >= 300) {
       throw this.responseError(response, "sync_failed");
     }
@@ -744,7 +771,7 @@ implements SyncTransport<Frontmatter> {
     response: { status: number; text: string; json: unknown; headers?: Record<string, string> },
     fallbackCode: string,
   ): SyncError {
-    const value = parseJsonResponse(response.text, response.json);
+    const value = parseJsonResponse(response);
     const error = isRecord(value) && isRecord(value.error) ? value.error : {};
     const code = typeof error.code === "string"
       ? error.code
@@ -772,6 +799,15 @@ class BinaryPartReader {
 
   async read(length: number): Promise<Uint8Array<ArrayBuffer>> {
     const output = new Uint8Array(new ArrayBuffer(length));
+    await this.consume(length, output);
+    return output;
+  }
+
+  async skip(length: number): Promise<void> {
+    await this.consume(length);
+  }
+
+  private async consume(length: number, output?: Uint8Array): Promise<void> {
     let offset = 0;
     while (offset < length) {
       if (!this.remainder.byteLength) {
@@ -783,14 +819,18 @@ class BinaryPartReader {
         if (!this.remainder.byteLength) continue;
       }
       const count = Math.min(length - offset, this.remainder.byteLength);
-      output.set(this.remainder.subarray(0, count), offset);
+      output?.set(this.remainder.subarray(0, count), offset);
       offset += count;
       // The source chunk was copied on receipt, so a view of its unread tail is
       // safe. Copying each tail makes small multipart uploads quadratic. Drop
       // the exhausted view to release its backing buffer during the last PUT.
       this.remainder = count === this.remainder.byteLength ? new Uint8Array() : this.remainder.subarray(count);
     }
-    return output;
+  }
+
+  async close(): Promise<void> {
+    this.remainder = new Uint8Array();
+    await this.iterator.return?.();
   }
 
   async expectEnd(): Promise<void> {
@@ -950,6 +990,14 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     return cached[0] ?? null;
   }
 
+  private assertEntry(path: string, entry: TAbstractFile): void {
+    // TFile.path is mutable. An awaited alias lookup must not return a file
+    // that the user has since renamed elsewhere or replaced in the cache.
+    if (portablePathKey(entry.path) !== portablePathKey(path) || this.vault.getAbstractFileByPath(entry.path) !== entry) {
+      throw new SyncError("sync_plan_stale", `${path} moved before it could be changed. Review sync again.`);
+    }
+  }
+
   async exists(input: string): Promise<boolean> {
     const path = safeMirrorPath(this.vault, input);
     return this.vault.getAbstractFileByPath(path) !== null || await this.vault.adapter.exists(path);
@@ -1024,6 +1072,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     }
     this.assertActive();
     if (existing instanceof TFile) {
+      this.assertEntry(path, existing);
       const spelling = existing.path;
       await this.vault.process(existing, (current) => {
         this.assertActive();
@@ -1049,6 +1098,8 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     if (!(file instanceof TFile)) {
       throw new SyncError("mirror_path_collision", `Expected a file at ${source}.`);
     }
+    this.assertEntry(source, file);
+    const spelling = file.path;
     const destination = await this.cachedEntry(target);
     const sameFile = destination === file && portablePathKey(source) === portablePathKey(target);
     if (!sameFile && (destination !== null || await this.vault.adapter.exists(target))) {
@@ -1057,6 +1108,8 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const slash = target.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, target.slice(0, slash));
     this.assertActive();
+    this.assertEntry(source, file);
+    if (file.path !== spelling) throw new SyncError("sync_plan_stale", `${source} moved before it could be renamed. Review sync again.`);
     this.observeWrite(source);
     this.observeWrite(file.path);
     this.observeWrite(target);
@@ -1081,6 +1134,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
     }
     this.assertActive();
+    this.assertEntry(path, existing);
     this.observeWrite(path);
     this.observeWrite(existing.path);
     await this.trashFile(existing);
@@ -1100,6 +1154,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const file = await this.cachedEntry(path);
     if (file == null) return null;
     if (!(file instanceof TFile)) throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
+    this.assertEntry(path, file);
     assertBinarySize(file.stat.size);
     const bytes = await this.vault.readBinary(file);
     assertBinarySize(bytes.byteLength);
@@ -1123,6 +1178,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     this.assertActive();
     this.observeWrite(path);
     if (existing instanceof TFile) {
+      this.assertEntry(path, existing);
       this.observeWrite(existing.path);
       await this.vault.modifyBinary(existing, bytes);
     }
@@ -1149,6 +1205,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const file = await this.cachedEntry(path);
     if (file == null) return null;
     if (!(file instanceof TFile)) throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
+    this.assertEntry(path, file);
     assertBinarySize(file.stat.size);
     const bytes = new Uint8Array(await this.vault.readBinary(file));
     assertBinarySize(bytes.byteLength);
@@ -2231,11 +2288,24 @@ export class ConnectSyncController {
     const stem = extension ? path.slice(0, -extension.length) : path;
     // A copy can itself conflict on another device. Keep the sibling names
     // flat rather than producing copies of copies of copies.
-    const base = stem.replace(/(?: \((?:local|hosted) conflict copy(?: \d+)?\))+$/, "");
+    const base = stem.replace(/(?: \((?:local|hosted) conflict copy(?: [a-zA-Z0-9%_-]+)?(?: \d+)?\))+$/, "");
+    // Two devices can preserve different bytes before either sees the other's
+    // copy. Numbering within one vault cannot reserve a hosted path: partition
+    // connected copies by the existing replica identity, not by device names.
+    // Standalone copies (without an enrollment) retain ordinary local numbering.
+    const replica = this.settingsHost.getMirrorProfile()?.replicaId;
+    const namespace = replica ? ` ${encodeURIComponent(replica)}` : "";
     const bytes = new Uint8Array(document);
+    const parent = base.slice(0, base.lastIndexOf("/") + 1);
+    const encoder = new TextEncoder();
     let suffix = 1;
     while (true) {
-      const target = `${base} (${label}${suffix === 1 ? "" : ` ${suffix}`})${extension}`;
+      const tail = ` (${label}${namespace}${suffix === 1 ? "" : ` ${suffix}`})${extension}`;
+      const budget = Math.min(255, 1024 - parent.length) - encoder.encode(tail).byteLength;
+      if (budget < 1) throw new SyncError("mirror_path_collision", "This filename leaves no room for a recovery copy. Shorten it before settling the conflict.");
+      const leaf = [...base.slice(parent.length)];
+      while (encoder.encode(leaf.join("")).byteLength > budget) leaf.pop();
+      const target = `${parent}${leaf.join("")}${tail}`;
       if (target === path) {
         suffix += 1;
         continue;
@@ -2352,11 +2422,16 @@ export class ConnectSyncController {
   private readonly engineWrites = new Map<string, number>();
 
   private noteEngineWrite(path: string): void {
-    const now = Date.now();
+    const now = performance.now();
+    // Refreshing keys at the tail keeps monotonic timestamps in insertion
+    // order. Each expired entry is visited once, not once per bulk write.
     for (const [known, at] of this.engineWrites) {
-      if (now - at > ENGINE_WRITE_ECHO_MS) this.engineWrites.delete(known);
+      if (now - at <= ENGINE_WRITE_ECHO_MS) break;
+      this.engineWrites.delete(known);
     }
-    this.engineWrites.set(normalizePath(path), now);
+    const key = normalizePath(path);
+    this.engineWrites.delete(key);
+    this.engineWrites.set(key, now);
   }
 
   /** Suppress one echo, not every user edit arriving soon after that write. */
@@ -2364,7 +2439,7 @@ export class ConnectSyncController {
     const key = normalizePath(path);
     const at = this.engineWrites.get(key);
     this.engineWrites.delete(key);
-    const elapsed = at === undefined ? -1 : Date.now() - at;
+    const elapsed = at === undefined ? -1 : performance.now() - at;
     return elapsed >= 0 && elapsed <= ENGINE_WRITE_ECHO_MS;
   }
 

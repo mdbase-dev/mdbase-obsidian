@@ -9,9 +9,9 @@ import { MemoryMirrorBlobStore, MemoryMirrorStateStore, WritableDirectoryMirror,
 import { ConnectSyncController, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
 
-async function pair(document = "base line\n", extraRecords: { record_id: string; path: string; document: string }[] = []) {
-  const hosted = new MemoryAuthority();
-  hosted.seed([{ record_id: "plan", path: "plan.md", frontmatter: {}, body: document, document, types: [] },
+async function pair(document = "base line\n", extraRecords: { record_id: string; path: string; document: string }[] = [], authority?: MemoryAuthority) {
+  const hosted = authority ?? new MemoryAuthority();
+  if (!authority) hosted.seed([{ record_id: "plan", path: "plan.md", frontmatter: {}, body: document, document, types: [] },
     ...extraRecords.map((record) => ({ ...record, frontmatter: {}, body: record.document, types: [] }))]);
   const replicaId = hosted.registerReplica({ name: "Here", mode: "read_write" });
   const vault = new MemoryVault();
@@ -51,7 +51,7 @@ async function pair(document = "base line\n", extraRecords: { record_id: string;
     await vault.modify(vault.getAbstractFileByPath("plan.md") as TFile, local);
     assert.equal((await sync()).status, "attention");
   };
-  return { hosted, vault, state, controller, remoteVault, remoteMirror, sync, conflict,
+  return { hosted, vault, state, controller, remoteVault, remoteMirror, sync, conflict, replicaId,
     wrap: (wrapper: typeof wrapTransport) => { wrapTransport = wrapper; } };
 }
 
@@ -271,14 +271,49 @@ test("an old conflict without ancestor capture keeps both and settles only once"
   assert.equal(copies(here.vault).length, 1);
 });
 
+test("two devices preserving different versions choose distinct sibling names before either uploads", async () => {
+  const left = await pair();
+  const right = await pair("base line\n", [], left.hosted);
+  await left.vault.modify(left.vault.getAbstractFileByPath("plan.md") as TFile, "left recovery bytes\n");
+  await right.vault.modify(right.vault.getAbstractFileByPath("plan.md") as TFile, "right recovery bytes\n");
+  const [leftCopy, rightCopy] = await Promise.all([
+    left.controller.preserveConflictCopy("plan.md"),
+    right.controller.preserveConflictCopy("plan.md"),
+  ]);
+  assert.notEqual(leftCopy, rightCopy, "local-only numbering races for one hosted path and strands a rejected recovery copy");
+  await left.sync();
+  await right.sync();
+  await left.remoteMirror.sync();
+  assert.equal(left.remoteVault.read(leftCopy), "left recovery bytes\n");
+  assert.equal(left.remoteVault.read(rightCopy), "right recovery bytes\n");
+});
+
+test("namespaced recovery copies fit a filesystem component without splitting Unicode", async () => {
+  const here = await pair();
+  const original = `notes/${"📚".repeat(50)}.md`;
+  await here.vault.createFolder("notes");
+  await here.vault.create(original, "long-name recovery bytes\n");
+  const create = here.vault.createBinary.bind(here.vault);
+  here.vault.createBinary = async (path, bytes) => {
+    assert.ok(new TextEncoder().encode(path.split("/").at(-1)!).byteLength <= 255, "the OS refuses an oversized leaf name");
+    return create(path, bytes);
+  };
+  const copy = await here.controller.preserveConflictCopy(original);
+  assert.ok(copy.endsWith(`(local conflict copy ${here.replicaId}).md`));
+  assert.ok(!copy.includes("�"), "truncate complete code points, not UTF-16 halves or UTF-8 bytes");
+  assert.equal(here.vault.read(copy), "long-name recovery bytes\n");
+  assert.equal(here.vault.read(original), "long-name recovery bytes\n");
+});
+
 test("existing copy-name collisions preserve older files", async () => {
   const here = await pair();
   await here.conflict();
-  await here.vault.create("plan (local conflict copy).md", "older copy\n");
-  await here.vault.createFolder("plan (local conflict copy 2).md");
+  const first = `plan (local conflict copy ${here.replicaId}).md`;
+  await here.vault.create(first, "older copy\n");
+  await here.vault.createFolder(`plan (local conflict copy ${here.replicaId} 2).md`);
   const [result] = await here.controller.autoResolveConflicts();
-  assert.equal(result?.copyPath, "plan (local conflict copy 3).md");
-  assert.equal(here.vault.read("plan (local conflict copy).md"), "older copy\n");
+  assert.equal(result?.copyPath, `plan (local conflict copy ${here.replicaId} 3).md`);
+  assert.equal(here.vault.read(first), "older copy\n");
   assert.equal(here.vault.read(result!.copyPath!), "local line\n");
 });
 
@@ -286,18 +321,19 @@ test("a collision created after naming a binary copy is never overwritten", asyn
   const here = await pair();
   const content = new Uint8Array([0, 255, 1, 128]);
   await here.vault.createBinary("image.png", content.buffer);
+  const first = `image (local conflict copy ${here.replicaId}).png`;
   const exists = here.vault.adapter.exists.bind(here.vault.adapter);
   let raced = false;
   here.vault.adapter.exists = async (path) => {
     const occupied = await exists(path);
-    if (path === "image (local conflict copy).png" && !raced) {
+    if (path === first && !raced) {
       raced = true;
       await here.vault.createBinary(path, new Uint8Array([7, 8, 9]).buffer);
     }
     return occupied;
   };
   try { await here.controller.preserveConflictCopy("image.png"); } catch { /* Refusing the copy is safe. */ }
-  assert.deepEqual(here.vault.readBytes("image (local conflict copy).png"), new Uint8Array([7, 8, 9]));
+  assert.deepEqual(here.vault.readBytes(first), new Uint8Array([7, 8, 9]));
   assert.deepEqual(here.vault.readBytes("image.png"), content);
 });
 
@@ -305,7 +341,10 @@ test("a conflict on a conflict copy does not nest copy labels", async () => {
   const here = await pair();
   await here.vault.create("plan (local conflict copy).md", "copy edited again\n");
   const path = await here.controller.preserveConflictCopy("plan (local conflict copy).md");
-  assert.equal(path, "plan (local conflict copy 2).md");
+  assert.equal(path, `plan (local conflict copy ${here.replicaId}).md`);
+  await here.vault.modify(here.vault.getAbstractFileByPath(path) as TFile, "copy changed again\n");
+  const next = await here.controller.preserveConflictCopy(path);
+  assert.equal(next, `plan (local conflict copy ${here.replicaId} 2).md`, "namespaced copies flatten too");
 });
 
 test("concurrent settling reports one resolution, not a spurious missing-conflict error", async () => {

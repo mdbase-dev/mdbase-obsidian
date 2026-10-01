@@ -255,13 +255,13 @@ test("the same line edited on two devices keeps both versions and loses nothing"
 
   const [resolution] = await here.controller.autoResolveConflicts();
   assert.equal(resolution?.outcome, "kept_both");
-  assert.equal(resolution?.copyPath, "plan (local conflict copy).md");
+  assert.match(resolution!.copyPath!, /^plan \(local conflict copy [a-zA-Z0-9%_-]+\)\.md$/);
   assert.equal(here.vault.read("plan.md"), "remote line\n");
-  assert.equal(here.vault.read("plan (local conflict copy).md"), "local line\n");
+  assert.equal(here.vault.read(resolution!.copyPath!), "local line\n");
 
   await here.syncOnce();
   await there.mirror.sync();
-  assert.equal(there.vault.read("plan (local conflict copy).md"), "local line\n", "the kept copy reaches every device");
+  assert.equal(there.vault.read(resolution!.copyPath!), "local line\n", "the kept copy reaches every device");
 });
 
 test("an edit beats a deletion in either direction", async () => {
@@ -341,6 +341,43 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   await edit(vault, "notes/a.md", "typed immediately after the download\n");
   assert.equal(controller.consumeEngineWrite("notes/a.md"), false, "the next edit event is not another echo just because it arrived within two seconds");
   assert.equal(controller.consumeEngineWrite("notes/other.md"), false);
+});
+
+test("bulk mirror echo tracking expires ordered entries without scanning every live path", () => {
+  const controller = new ConnectSyncController({ vault: new MemoryVault() } as never, {
+    getMirrorProfile: () => null, saveMirrorProfile: async () => undefined,
+  });
+  const tracker = controller as unknown as {
+    engineWrites: Map<string, number>; noteEngineWrite(path: string): void;
+  };
+  let clock = 10_000;
+  const now = performance.now;
+  const wallNow = Date.now;
+  performance.now = () => clock;
+  Date.now = () => clock;
+  let visited = 0;
+  const iterator = tracker.engineWrites[Symbol.iterator].bind(tracker.engineWrites);
+  tracker.engineWrites[Symbol.iterator] = function* () {
+    for (const entry of iterator()) { visited++; yield entry; }
+  };
+  try {
+    for (let index = 0; index < 10_000; index++) tracker.noteEngineWrite(`${index}.md`);
+    assert.ok(visited <= 20_000, `Bulk writes visited ${visited} live echo entries`);
+    clock += 1_000;
+    tracker.noteEngineWrite("0.md"); // Refreshing an old key must move it to the tail.
+    clock += 1_001;
+    tracker.noteEngineWrite("new.md");
+    assert.equal(tracker.engineWrites.size, 2, "expired entries behind a refreshed key must be removed");
+    Date.now = () => 9e12;
+    assert.equal(controller.consumeEngineWrite("0.md"), true, "wall-clock jumps do not change the echo's age");
+    assert.equal(controller.consumeEngineWrite("0.md"), false, "one echo only; the next edit is real");
+    clock += 2_001;
+    assert.equal(controller.consumeEngineWrite("new.md"), false, "expired writes cannot hide an edit");
+  } finally {
+    performance.now = now;
+    Date.now = wallNow;
+    controller.dispose();
+  }
 });
 
 test("text downloads cannot follow a TFile renamed while Vault.process is queued", async () => {
