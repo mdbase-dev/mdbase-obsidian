@@ -596,6 +596,21 @@ implements SyncTransport<Frontmatter> {
       throw new SyncError("invalid_sync_response", "Authority returned an invalid upload part size.");
     }
     const reader = new BinaryPartReader(source);
+    try {
+      return await this.uploadParts(request, session, partSize, reader);
+    } finally {
+      // Cancellation abandons native requests but must still release the staged
+      // source. Cleanup must not hide a transfer failure or a committed receipt.
+      await reader.close().catch(() => undefined);
+    }
+  }
+
+  private async uploadParts(
+    request: OpenFileUploadRequest,
+    session: FileTransferSession,
+    partSize: number,
+    reader: BinaryPartReader,
+  ): Promise<CommitFileUploadReceipt> {
     const count = Math.max(1, Math.ceil(request.size / partSize));
     if (
       session.received.some((index) => !Number.isSafeInteger(index) || index < 0 || index >= count)
@@ -800,6 +815,11 @@ class BinaryPartReader {
       this.remainder = count === this.remainder.byteLength ? new Uint8Array() : this.remainder.subarray(count);
     }
     return output;
+  }
+
+  async close(): Promise<void> {
+    this.remainder = new Uint8Array();
+    await this.iterator.return?.();
   }
 
   async expectEnd(): Promise<void> {

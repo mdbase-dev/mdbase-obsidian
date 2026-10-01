@@ -338,6 +338,43 @@ test("Obsidian HTTP transport downloads bounded binary parts and cleans up the t
   ]);
 });
 
+test("failed/cancelled object PUTs close their source without corrupting retained native request bytes", async () => {
+  for (const failure of ["http", "abort", "cleanup_error"] as const) {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const file = descriptor("Media/cancelled.png", bytes);
+    const transferId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    let closed = false;
+    let nativeBody: ArrayBuffer | undefined;
+    const source = (async function* () {
+      try { yield bytes; } finally {
+        closed = true;
+        bytes.fill(0);
+        if (failure === "cleanup_error") throw new Error("source cleanup failed");
+      }
+    })();
+    const transport = new ObsidianSyncTransport(syncUrl, "test-token", async (request) => {
+      if (request.url.endsWith("/uploads")) return response(200, {
+        protocol_version: 1, type: "file_transfer", transfer_id: transferId, direction: "upload", protection: "transport_tls",
+        total_size: 3, strategy: { kind: "object_put" }, received: [], uploaded_parts: [],
+      });
+      if (request.url.endsWith("/parts")) return response(200, {
+        protocol_version: 1, type: "file_part", transfer_id: transferId, part_index: 0, offset: 0, content_length: 3,
+        method: "PUT", url: "https://objects.example/part", headers: {}, expires_at: "2099-01-01T00:00:00.000Z",
+      });
+      if (request.url === "https://objects.example/part") {
+        nativeBody = request.body as ArrayBuffer;
+        if (failure === "abort") throw new DOMException("cancelled", "AbortError");
+        return response(503);
+      }
+      throw new Error("unexpected test request");
+    });
+    await assert.rejects(transport.uploadFile({ protocol_version: 1, type: "open_file_upload", transfer_id: transferId,
+      path: file.path, size: file.size, content_digest: file.content_digest }, source), failure === "abort" ? /cancelled/ : /HTTP 503/);
+    assert.equal(closed, true, "source cleanup must run on cancellation/failed transfer");
+    assert.deepEqual(new Uint8Array(nativeBody!), new Uint8Array([1, 2, 3]), "late native PUT must retain the original snapshot");
+  }
+});
+
 test("multipart uploads do not repeatedly copy the whole unconsumed source tail", async () => {
   const bytes = new Uint8Array(8 * 1024 * 1024).fill(7);
   const file = descriptor("Media/large.png", bytes);
