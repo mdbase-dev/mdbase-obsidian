@@ -34,9 +34,9 @@ addition is the optional `ancestor_document` below):
   prevents a competing create/edit between SDK preflight and adapter invocation
   from becoming the overwrite baseline. Existing adapters may ignore this
   optional argument. Obsidian has no binary `Vault.process`, so this is a
-  pre-write check rather than an OS-wide atomic compare-and-swap. This API still
-  needs an upstream SDK source port before removing/upgrading the patch.
-  Regression: `test/syncReliability.test.ts` SDK binary preflight race.
+  pre-write check rather than an OS-wide atomic compare-and-swap. The matching
+  upstream source port is SDK commit `4e10ac0a`; retain this slice until a
+  published SDK includes it. Regression: `test/syncReliability.test.ts` SDK binary preflight race.
 - `mirror-materializer.js` / `mirror-state.d.ts`: pass inspected text/binary
   expectations to managed-file removal (`remove(path, expected)`) and recheck
   them in the plugin before trashing. This rejects competing edits between SDK
@@ -82,8 +82,8 @@ addition is the optional `ancestor_document` below):
   a hard restart between clearing and the plugin's write could upload unmerged
   local text over the hosted edit. Only an exact local record accepts a merged
   document; a failed write leaves the conflict intact. No protocol or persisted
-  state change. This additional SDK API needs an upstream source port before
-  upgrading/removing the patch. Regressions simulate restart at the write
+  state change. The matching upstream source port is SDK commit `2063435a`;
+  retain this slice until a published SDK includes it. Regressions simulate restart at the write
   boundary, disk-full failure, and a user edit during the atomic write.
 - `directory-mirror.js`: partial completion reports attention, not failure or
   falsely complete synchronization, while preserving its unresolved diagnostics.
