@@ -133,6 +133,29 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   return result;
 }
 
+test("Sync and Issues refreshes do not parse all records or run type impact scans", async () => {
+  const f = fixture(true);
+  let recordLoads = 0;
+  Object.assign(f.host, {
+    loadWorkspaceSchema: async () => ({ config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() }),
+    loadCollectionRecords: async () => { recordLoads++; return []; },
+  });
+  await f.view.refresh();
+  assert.equal(recordLoads, 0, "Sync does not consume collection records");
+  f.state.destination = "issues";
+  await f.view.refresh();
+  assert.equal(recordLoads, 0, "Issues does not consume collection records either");
+  let pending: Promise<void> | null = null;
+  const refresh = f.view.refresh.bind(f.view);
+  f.view.refresh = (...args) => (pending = refresh(...args));
+  f.view.showDestination("types");
+  assert.ok(pending, "switching to Types must load its record statistics");
+  await pending;
+  assert.equal(recordLoads, 1);
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
 test("transfer notifications coalesce renders, keep completion immediate, and cancel on close", async () => {
   const f = fixture(true);
   await f.view.onOpen();

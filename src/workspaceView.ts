@@ -127,15 +127,16 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       const schema = await this.host.loadWorkspaceSchema(forceReload);
       if (!isCurrent()) return;
       this.schema = schema;
-      await this.types.onSchemaLoaded(forceReload, isCurrent);
+      if (this.destination === "types") {
+        await this.types.onSchemaLoaded(forceReload, isCurrent);
+        if (!isCurrent()) return;
+        const records = schema ? await this.host.loadCollectionRecords() : null;
+        if (!isCurrent()) return;
+        const recordsChanged = records !== this.records;
+        this.records = records;
+        this.types.onRecordsLoaded(recordsChanged || forceReload);
+      } else if (this.destination === "sync") await this.sync.refresh();
       if (!isCurrent()) return;
-      if (this.destination === "sync") await this.sync.refresh();
-      if (!isCurrent()) return;
-      const records = schema ? await this.host.loadCollectionRecords() : null;
-      if (!isCurrent()) return;
-      const recordsChanged = records !== this.records;
-      this.records = records;
-      this.types.onRecordsLoaded(recordsChanged || forceReload);
       this.render();
     } catch (error) {
       if (!isCurrent()) return;
@@ -147,7 +148,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   showDestination(destination: Destination): void {
     this.destination = destination;
     this.render();
-    if (destination === "sync") void this.sync.refresh().then(() => this.render());
+    if (destination === "types") void this.refresh();
+    else if (destination === "sync") void this.sync.refresh().then(() => this.render());
   }
 
   /** Open Issues filtered to one note. */
