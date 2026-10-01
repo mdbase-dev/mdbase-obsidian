@@ -225,6 +225,17 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     return changes ? { count: changes, label: `${changes} ${changes === 1 ? "change needs" : "changes need"} review` } : null;
   }
 
+  /** Mobile has no status bar; trouble must remain discoverable outside Sync. */
+  private syncTabStatus(): { label: string; detail: string; kind: string } | null {
+    if (this.destination === "sync" || !this.host.getMirrorProfile()) return null;
+    const { problem, paused, status, progress, fileProgress } = this.host.sync.state;
+    if (progress || fileProgress) return null;
+    const kind = problem?.kind ?? (paused ? "paused" : status?.recovery_required ? "recovery" : null);
+    if (!kind || kind === "busy") return null;
+    const labels = { offline: "Offline", auth: "Sign in", device: "Set up", internal: "Error", decision: "Review", recovery: "Review", paused: "Paused" };
+    return { kind, label: labels[kind], detail: problem?.title ?? (paused ? "Sync is paused" : "Synchronization needs recovery") };
+  }
+
   /** Refresh tab badges without rebuilding the active pane (and losing its focus). */
   private renderTopbarOnly(): void {
     const topbar = this.containerEl.querySelector<HTMLElement>(".mdbase-topbar");
@@ -325,11 +336,19 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
         const issueCount = this.host.getIssues().length;
         const count = button.createSpan({ cls: "mdbase-count", text: compactCount(issueCount) });
         count.setAttr("title", `${issueCount} issues`);
+        button.setAttr("aria-label", `Issues · ${issueCount} validation ${issueCount === 1 ? "issue" : "issues"}`);
       }
+      const tabStatus = destination === "sync" ? this.syncTabStatus() : null;
       const attention = destination === "sync" ? this.syncAttention() : null;
-      if (attention) {
+      if (tabStatus) {
+        const indicator = button.createSpan({ cls: "mdbase-count mdbase-nav-status", text: tabStatus.label });
+        indicator.setAttr("data-kind", tabStatus.kind);
+        indicator.setAttr("title", tabStatus.detail);
+        button.setAttr("aria-label", `Sync · ${tabStatus.detail}`);
+      } else if (attention) {
         const count = button.createSpan({ cls: "mdbase-count", text: compactCount(attention.count) });
         count.setAttr("title", attention.label);
+        button.setAttr("aria-label", `Sync · ${attention.label}`);
       }
       button.onclick = () => this.showDestination(destination);
       button.onkeydown = (event) => {

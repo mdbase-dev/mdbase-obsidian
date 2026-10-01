@@ -25,10 +25,12 @@ fs.mkdirSync(shots, {recursive:true});
    app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();
    window.open=()=>null;
  });
- const states=['healthy','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','history','enrollment','upload'];
+ const states=['healthy','scope','local-issue','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload','away-offline','away-auth','away-copied','away-paused','away-internal'];
  const results=[];
  for(const state of states) {
   await page.evaluate(state=>{
+   const away=state.startsWith('away-');
+   if(away)state=state.slice(5);
    const p=app.plugins.plugins['mdbase-obsidian'], view=uxView;
    const longPath='Projects/ExtremelyLongFilenameWithoutSpacesOrBreaks_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ.md';
    p.settings.mirrorProfile={name:'Project notes',collectionId:'ux-fixture',replicaId:'ux-device',mode:'read_write',controlUrl:'https://connect.example',syncUrl:'https://connect.example',enrollmentId:'ux-fixture',accessTokenExpiresAt:'2099-01-01T00:00:00Z',selectiveSync:{file_classes:[],excluded_folders:[]}};
@@ -42,6 +44,8 @@ fs.mkdirSync(shots, {recursive:true});
     copied:{kind:'device',title:'Set up sync on this device',message:"This vault's sync settings came from another device or another copy of the vault. Approve this copy to give it its own connection. Your files stay as they are.",action:'reauthorize',actionLabel:'Set up this device'},
     internal:{kind:'internal',title:'Sync stopped unexpectedly',message:'An unexpected error stopped synchronization. Your files are safe. Copy diagnostics if it happens again.',action:'retry',actionLabel:'Try again'}
    };
+   if(state==='scope')p.settings.mirrorProfile.selectiveSync.excluded_folders=[longPath.replace('.md','')];
+   if(state==='local-issue')p.sync.update({status:{state:'attention',conflicts:[],local_issues:[{code:'file_read_failed',path:longPath,message:'Could not read this file. Open it to inspect the problem.'}]}});
    if(problems[state])p.sync.update({problem:{code:'fixture',...problems[state]},retryAt:state==='offline'?Date.now()+40000:null});
    if(state==='paused')p.sync.update({paused:true});
    if(state==='progress')p.sync.update({fileProgress:{direction:'upload',path:longPath,transferredBytes:32768,totalBytes:8388608}});
@@ -55,9 +59,9 @@ fs.mkdirSync(shots, {recursive:true});
     const kind=state==='first-sync'?'initial':state==='rebuild'?'rebuild':'incremental';
     p.sync.update({preview:{phase:kind,entries,plan:{kind,actions,issues:[],summary:{blocking_issues:0}},collisions:[],local_issues:[]}});
    }
-   if(state==='conflict') {
+   if(state.startsWith('conflict')) {
     p.sync.update({status:{state:'attention',conflicts:[{entity:'record',object_id:'record',decision_id:'decision',path:longPath,message:'Both versions changed. Choose which version to sync.'}],local_issues:[]}});
-    view.sync.conflictComparisons.set('record:decision',{entity:'record',objectId:'record',decisionId:'decision',local:{state:'exact',document:'Line from this device'},remote:{state:'exact',document:'Line from another device'}});
+    view.sync.conflictComparisons.set('record:decision',{entity:'record',objectId:'record',decisionId:'decision',local:state==='conflict-local-absent'?{state:'absent'}:{state:'exact',document:'Line from this device'},remote:state==='conflict-hosted-absent'?{state:'absent'}:{state:'exact',document:'Line from another device'}});
    }
    if(state==='history') {
     const at=new Date().toISOString();
@@ -67,15 +71,17 @@ fs.mkdirSync(shots, {recursive:true});
     p.settings.mirrorProfile=null;
     if(state==='upload')view.schema={config:{spec_version:'0.3.0'},types:new Map(),contracts:new Map()};
    }
+   view.destination=away?'issues':'sync';
    view.render();
   },state);
   for(const width of [1100,390])for(const theme of ['theme-dark','theme-light']) {
    await page.setViewportSize({width,height:900});
    await page.evaluate(theme=>{document.body.classList.remove('theme-dark','theme-light');document.body.classList.add(theme)},theme);
-   const checks=await page.locator('.mdbase-sync-document').evaluate(el=>{
+   const checks=await page.locator('.mdbase-sync-document, .mdbase-issues-document').evaluate(el=>{
     const content=el.closest('.mdbase-workspace-content');
-    const buttons=[...el.querySelectorAll('.mod-cta, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
-    return {paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
+    const buttons=[...el.querySelectorAll('.mod-cta, .mod-warning, .mdbase-conflict-row button, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
+    const topbar=el.closest('.mdbase-workspace').querySelector('.mdbase-topbar');
+    return {topbarOverflow:topbar.scrollWidth>topbar.clientWidth+1,tabStatus:topbar.querySelector('.mdbase-nav-status')?.textContent,paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
    });
    const box=await page.locator('.mdbase-workspace').boundingBox();
    const cdp=await page.context().newCDPSession(page);
@@ -83,6 +89,8 @@ fs.mkdirSync(shots, {recursive:true});
    await cdp.detach();fs.writeFileSync(`${shots}/${prefix}-${state}-${width}-${theme}.png`,Buffer.from(capture.data,'base64'));
    const failures=[];
    if(checks.overflow)failures.push('Horizontal overflow');
+   if(checks.topbarOverflow)failures.push('Destination bar overflow');
+   if(state.startsWith('away-')&&!checks.tabStatus)failures.push('Problem hidden outside Sync');
    if(width===390&&checks.headingWidth!=null&&checks.headingWidth<checks.paneWidth-30)failures.push('Narrow heading squeezed by the action');
    if(width===390&&checks.buttons.some(b=>b.height<43.5))failures.push('Primary/dismiss target below 44px');
    results.push({state,width,theme,...checks,failures});
