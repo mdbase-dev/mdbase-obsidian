@@ -6,6 +6,7 @@ import {
   stringifyYaml,
   TFile,
   TFolder,
+  type TAbstractFile,
   Vault,
 } from "obsidian";
 import picomatch from "picomatch";
@@ -784,7 +785,9 @@ class BinaryPartReader {
       const count = Math.min(length - offset, this.remainder.byteLength);
       output.set(this.remainder.subarray(0, count), offset);
       offset += count;
-      this.remainder = this.remainder.slice(count);
+      // Keep a view of our owned chunk, not a new copy of its entire tail
+      // for every part (quadratic allocation for large mobile attachments).
+      this.remainder = this.remainder.subarray(count);
     }
     return output;
   }
@@ -852,7 +855,8 @@ function reservedWriteFolders(vault: Vault): string[] {
 
 function safeMirrorPath(vault: Vault, input: string): string {
   const path = normalizeSafeRelativePath(input);
-  if (reservedWriteFolders(vault).some((folder) => path === folder || path.startsWith(`${folder}/`))) {
+  const key = portablePathKey(path);
+  if (reservedWriteFolders(vault).some((folder) => key === portablePathKey(folder) || key.startsWith(`${portablePathKey(folder)}/`))) {
     throw new SyncError("unsafe_mirror_path", `The collection authority attempted to write a reserved path: ${path}`);
   }
   return path;
@@ -928,6 +932,23 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     private readonly observeWrite: (path: string) => void = () => undefined,
   ) {}
 
+  /** Resolve a disk alias only after proving its physical name is unambiguous. */
+  private async cachedEntry(path: string): Promise<TAbstractFile | null> {
+    const exact = this.vault.getAbstractFileByPath(path);
+    if (exact || !await this.vault.adapter.exists(path)) return exact;
+    const slash = path.lastIndexOf("/");
+    const listing = await this.vault.adapter.list(slash < 0 ? "" : path.slice(0, slash));
+    const key = portablePathKey(path);
+    const aliases = [...listing.files, ...listing.folders].filter((candidate) => portablePathKey(candidate) === key);
+    if (aliases.length !== 1) throw new SyncError("mirror_path_collision", `More than one physical spelling blocks ${path}.`);
+    const diskEntry = this.vault.getAbstractFileByPath(aliases[0]);
+    if (diskEntry) return diskEntry;
+    // APFS can report NFC while Obsidian's cache still holds NFD (or vice versa).
+    const cached = this.vault.getAllLoadedFiles().filter((entry) => portablePathKey(entry.path) === key);
+    if (cached.length > 1) throw new SyncError("mirror_path_collision", `More than one cached spelling blocks ${path}.`);
+    return cached[0] ?? null;
+  }
+
   async exists(input: string): Promise<boolean> {
     const path = safeMirrorPath(this.vault, input);
     return this.vault.getAbstractFileByPath(path) !== null || await this.vault.adapter.exists(path);
@@ -941,6 +962,8 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
 
   async readText(input: string): Promise<MirrorTextReadResult> {
     const path = safeMirrorPath(this.vault, input);
+    // Byte reads already follow the filesystem's aliases. Only writes/renames
+    // need a cache lookup; avoid listing disk paths for ordinary text scans.
     const file = this.vault.getAbstractFileByPath(path);
     if (file instanceof TFolder) {
       throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
@@ -994,17 +1017,19 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     }
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
-    const existing = this.vault.getAbstractFileByPath(path);
+    const existing = await this.cachedEntry(path);
     if (existing instanceof TFolder) {
       throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     }
     this.assertActive();
     if (existing instanceof TFile) {
+      const spelling = existing.path;
       await this.vault.process(existing, (current) => {
         this.assertActive();
-        if (existing.path !== path || this.vault.getAbstractFileByPath(path) !== existing) throw stale();
+        if (existing.path !== spelling || this.vault.getAbstractFileByPath(spelling) !== existing) throw stale();
         if (current !== before && current !== value) throw stale();
         this.observeWrite(path);
+        this.observeWrite(spelling);
         return value;
       });
     } else {
@@ -1019,17 +1044,20 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   async move(sourceInput: string, targetInput: string): Promise<void> {
     const source = safeMirrorPath(this.vault, sourceInput);
     const target = safeMirrorPath(this.vault, targetInput);
-    const file = this.vault.getAbstractFileByPath(source);
+    const file = await this.cachedEntry(source);
     if (!(file instanceof TFile)) {
       throw new SyncError("mirror_path_collision", `Expected a file at ${source}.`);
     }
-    if (this.vault.getAbstractFileByPath(target) !== null || await this.vault.adapter.exists(target)) {
+    const destination = await this.cachedEntry(target);
+    const sameFile = destination === file && portablePathKey(source) === portablePathKey(target);
+    if (!sameFile && (destination !== null || await this.vault.adapter.exists(target))) {
       throw new SyncError("mirror_path_collision", `A file or folder blocks the mirror path ${target}.`);
     }
     const slash = target.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, target.slice(0, slash));
     this.assertActive();
     this.observeWrite(source);
+    this.observeWrite(file.path);
     this.observeWrite(target);
     await this.vault.rename(file, target);
   }
@@ -1046,13 +1074,14 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       }
       if (!exact) throw new SyncError("sync_plan_stale", `${path} changed before it could be removed. Review sync again.`);
     }
-    const existing = this.vault.getAbstractFileByPath(path);
+    const existing = await this.cachedEntry(path);
     if (existing == null) return;
     if (!(existing instanceof TFile)) {
       throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
     }
     this.assertActive();
     this.observeWrite(path);
+    this.observeWrite(existing.path);
     await this.trashFile(existing);
   }
 
@@ -1061,13 +1090,13 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       .map((file) => normalizePath(file.path))
       .filter((path) => MIRROR_RECORD_PATH.test(path) && !excluded.has(path))
       .filter((path) => !reservedWriteFolders(this.vault)
-        .some((folder) => path === folder || path.startsWith(`${folder}/`)))
+        .some((folder) => portablePathKey(path) === portablePathKey(folder) || portablePathKey(path).startsWith(`${portablePathKey(folder)}/`)))
       .sort();
   }
 
   async inspectBinary(input: string): Promise<MirrorBinaryInfo | null> {
-    const path = assertVisibleBinaryPath(input);
-    const file = this.vault.getAbstractFileByPath(path);
+    const path = assertVisibleBinaryPath(safeMirrorPath(this.vault, input));
+    const file = await this.cachedEntry(path);
     if (file == null) return null;
     if (!(file instanceof TFile)) throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
     assertBinarySize(file.stat.size);
@@ -1077,7 +1106,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   }
 
   async writeBinary(input: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void> {
-    const path = assertVisibleBinaryPath(input);
+    const path = assertVisibleBinaryPath(safeMirrorPath(this.vault, input));
     // A stream can take seconds to consume. Remember its destination before
     // reading any bytes, then recheck it after staging and folder creation.
     const before = expected === undefined ? await this.inspectBinary(path) : expected;
@@ -1088,11 +1117,14 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     if (current?.content_digest !== before?.content_digest || current?.size !== before?.size) {
       throw new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
     }
-    const existing = this.vault.getAbstractFileByPath(path);
+    const existing = await this.cachedEntry(path);
     if (existing instanceof TFolder) throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     this.assertActive();
     this.observeWrite(path);
-    if (existing instanceof TFile) await this.vault.modifyBinary(existing, bytes);
+    if (existing instanceof TFile) {
+      this.observeWrite(existing.path);
+      await this.vault.modifyBinary(existing, bytes);
+    }
     else await this.vault.createBinary(path, bytes);
   }
 
@@ -1102,7 +1134,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       .filter((path) => !MIRROR_RECORD_PATH_ANY_CASE.test(path) && !excluded.has(path))
       .filter((path) => {
         try {
-          assertVisibleBinaryPath(path);
+          assertVisibleBinaryPath(safeMirrorPath(this.vault, path));
           return true;
         } catch {
           return false;
@@ -1112,8 +1144,8 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   }
 
   async readBinary(input: string): Promise<AsyncIterable<Uint8Array> | null> {
-    const path = assertVisibleBinaryPath(input);
-    const file = this.vault.getAbstractFileByPath(path);
+    const path = assertVisibleBinaryPath(safeMirrorPath(this.vault, input));
+    const file = await this.cachedEntry(path);
     if (file == null) return null;
     if (!(file instanceof TFile)) throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
     assertBinarySize(file.stat.size);
@@ -1295,7 +1327,15 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
         if (!request.result.objectStoreNames.contains(BLOB_CHUNK_STORE)) request.result.createObjectStore(BLOB_CHUNK_STORE);
       };
       request.onerror = () => reject(indexedDbError(request.error, "binary store open"));
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const database = request.result;
+        const forget = () => { if (this.database === opening) this.database = null; };
+        // WebKit can close a connection while the app is suspended. Do not
+        // cache the dead handle forever; the scheduler's next retry reopens it.
+        database.onclose = forget;
+        database.onversionchange = () => { database.close(); forget(); };
+        resolve(database);
+      };
     });
     this.database = opening;
     void opening.catch(() => {
@@ -1359,7 +1399,13 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
         }
       };
       request.onerror = () => reject(indexedDbError(request.error, "mirror state store open"));
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const database = request.result;
+        const forget = () => { if (this.database === opening) this.database = null; };
+        database.onclose = forget;
+        database.onversionchange = () => { database.close(); forget(); };
+        resolve(database);
+      };
     });
     this.database = opening;
     void opening.catch(() => {

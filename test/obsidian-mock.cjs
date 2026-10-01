@@ -158,7 +158,20 @@ async function requestUrl() {
   throw new Error("requestUrl is not configured in this unit test.");
 }
 
+// Main-plugin UI tests exercise methods through its prototype, not Obsidian's
+// loader/lifecycle. Keep these desktop-only base classes deliberately inert.
+class Plugin {}
+class FileSystemAdapter {}
+class MarkdownView {}
+function addIcon() {}
+const apiVersion = "1.12.7";
+
 module.exports = {
+  Plugin,
+  FileSystemAdapter,
+  MarkdownView,
+  addIcon,
+  apiVersion,
   normalizePath,
   getFrontMatterInfo,
   parseYaml,

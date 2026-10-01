@@ -58,6 +58,25 @@
 .mdbase-status-bar[data-state="paused"] { color: var(--text-warning); }
 .mdbase-status-bar[data-state="offline"] { color: var(--text-muted); }
 
+/* Mobile has no status bar: keep trouble discoverable on its existing ribbon. */
+.is-mobile .mdbase-ribbon { position: relative; }
+
+.is-mobile .mdbase-ribbon[data-state="attention"]::after,
+.is-mobile .mdbase-ribbon[data-state="paused"]::after,
+.is-mobile .mdbase-ribbon[data-state="offline"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-warning);
+  pointer-events: none;
+}
+
+.is-mobile .mdbase-ribbon[data-state="offline"]::after { background: var(--text-muted); }
+
 .mdbase-note-status {
   cursor: pointer;
   color: var(--text-muted);
