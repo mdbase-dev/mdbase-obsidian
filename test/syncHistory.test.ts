@@ -207,6 +207,29 @@ test("the store appends one line per run, filters by collection and survives a r
   assert.equal(adapter.files.get("history.jsonl"), "");
 });
 
+test("concurrent history appends never duplicate entries on disk", async () => {
+  const adapter = new MemoryAdapter();
+  const now = new Date().toISOString();
+  const store = new SyncHistoryStore(adapter, "history.jsonl");
+  await store.load();
+  await Promise.all(Array.from({ length: 5 }, (_, index) => store.append(run(String(index), now, [`${index}.md`]))));
+  const reloaded = new SyncHistoryStore(adapter, "history.jsonl");
+  await reloaded.load();
+  assert.deepEqual(reloaded.list().map((entry) => entry.id), ["0", "1", "2", "3", "4"]);
+});
+
+test("history repairs a torn tail before appending the next run", async () => {
+  const adapter = new MemoryAdapter();
+  const now = new Date().toISOString();
+  adapter.files.set("history.jsonl", `${JSON.stringify(run("first", now, ["a.md"]))}\n{"id":"torn`);
+  const store = new SyncHistoryStore(adapter, "history.jsonl");
+  await store.load();
+  await store.append(run("next", now, ["b.md"]));
+  const reloaded = new SyncHistoryStore(adapter, "history.jsonl");
+  await reloaded.load();
+  assert.deepEqual(reloaded.list().map((entry) => entry.id), ["first", "next"]);
+});
+
 test("events share the log: they filter by path, appear in note history, and pinned ones survive clearing", async () => {
   const adapter = new MemoryAdapter();
   const store = new SyncHistoryStore(adapter, "history.jsonl");
