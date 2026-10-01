@@ -465,6 +465,35 @@ test("conflicts reveal resolution actions only after loading the versions", asyn
   f.dom.window.close();
 });
 
+test("conflict choices respect absent versions and name destructive outcomes", async () => {
+  for (const absent of ["local", "remote"] as const) {
+    const f = fixture(true);
+    f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{
+      entity: "record", object_id: "record", decision_id: "decision", path: "note.md", message: "The versions differ.",
+    }] };
+    Object.assign(f.host.connectSync, { conflictComparison: async () => ({
+      entity: "record", objectId: "record", decisionId: "decision",
+      local: absent === "local" ? { state: "absent" } : { state: "exact", document: "Unsynced local edit" },
+      remote: absent === "remote" ? { state: "absent" } : { state: "exact", document: "Hosted edit" },
+    }) });
+    f.state.render();
+    button(f.root, "Resolve…").click();
+    await settle();
+    if (absent === "local") {
+      assert.match(f.text(), /No local version/);
+      assert.doesNotMatch(f.text(), /Keep both|Keep a local copy/);
+      assert.ok(button(f.root, "Delete from Connect").classList.contains("mod-warning"));
+      assert.ok(button(f.root, "Use hosted"));
+    } else {
+      assert.match(f.text(), /No hosted version.*before moving the original to trash/);
+      assert.ok(button(f.root, "Move local file to trash").classList.contains("mod-warning"));
+      assert.ok(button(f.root, "Keep a local copy"));
+      assert.doesNotMatch(f.text(), /Use hosted|Keep both/);
+    }
+    f.dom.window.close();
+  }
+});
+
 test("the single save bar updates validity while typing without replacing the focused input", async () => {
   const f = fixture();
   f.state.destination = "types";

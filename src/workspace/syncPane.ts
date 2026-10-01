@@ -1003,18 +1003,24 @@ export class SyncPane {
       };
       if (comparison) {
         for (const resolution of ["local", "remote"] as const) {
+          const destructive = comparison[resolution].state === "absent";
           const button = actions.createEl("button", {
-            text: resolution === "local" ? "Keep local" : "Use hosted",
+            text: resolution === "local"
+              ? destructive ? "Delete from Connect" : "Keep local"
+              : destructive ? "Move local file to trash" : "Use hosted",
+            cls: destructive ? "mod-warning" : "",
           });
+          button.setAttr("data-focus-key", `resolve-${comparisonKey}-${resolution}`);
           button.disabled = this.ctx.busy;
           button.onclick = () => void this.resolveMirrorConflict(conflict, resolution, false);
         }
-        if (conflict.path) {
-          const keepBoth = actions.createEl("button", { text: "Keep both" });
+        if (conflict.path && comparison.local.state === "exact") {
+          const keepBoth = actions.createEl("button", { text: comparison.remote.state === "absent" ? "Keep a local copy" : "Keep both" });
+          keepBoth.setAttr("data-focus-key", `resolve-${comparisonKey}-both`);
           keepBoth.disabled = this.ctx.busy;
           keepBoth.onclick = () => void this.resolveMirrorConflict(conflict, "remote", true);
         }
-        this.renderConflictComparison(row, comparison);
+        this.renderConflictComparison(row, comparison, Boolean(conflict.path));
       }
     }
   }
@@ -1049,8 +1055,15 @@ export class SyncPane {
     }
   }
 
-  private renderConflictComparison(container: HTMLElement, comparison: MirrorConflictComparison): void {
+  private renderConflictComparison(container: HTMLElement, comparison: MirrorConflictComparison, canKeepCopy = false): void {
     const comparisonEl = container.createDiv({ cls: "mdbase-conflict-comparison" });
+    if (comparison.local.state === "absent") comparisonEl.createDiv({ cls: "mdbase-muted", text: "No local version." });
+    if (comparison.remote.state === "absent") comparisonEl.createDiv({
+      cls: "mdbase-muted",
+      text: canKeepCopy && comparison.local.state === "exact"
+        ? "No hosted version. Keeping a local copy saves this device's version before moving the original to trash."
+        : "No hosted version.",
+    });
     if (comparison.entity === "record") {
       const diff = boundedLineDiff(comparison.local.document ?? "", comparison.remote.document ?? "");
       const legend = comparisonEl.createDiv({ cls: "mdbase-conflict-legend" });

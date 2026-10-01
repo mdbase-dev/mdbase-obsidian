@@ -25,7 +25,7 @@ fs.mkdirSync(shots, {recursive:true});
    app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();
    window.open=()=>null;
  });
- const states=['healthy','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','history','enrollment','upload'];
+ const states=['healthy','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload'];
  const results=[];
  for(const state of states) {
   await page.evaluate(state=>{
@@ -55,9 +55,9 @@ fs.mkdirSync(shots, {recursive:true});
     const kind=state==='first-sync'?'initial':state==='rebuild'?'rebuild':'incremental';
     p.sync.update({preview:{phase:kind,entries,plan:{kind,actions,issues:[],summary:{blocking_issues:0}},collisions:[],local_issues:[]}});
    }
-   if(state==='conflict') {
+   if(state.startsWith('conflict')) {
     p.sync.update({status:{state:'attention',conflicts:[{entity:'record',object_id:'record',decision_id:'decision',path:longPath,message:'Both versions changed. Choose which version to sync.'}],local_issues:[]}});
-    view.sync.conflictComparisons.set('record:decision',{entity:'record',objectId:'record',decisionId:'decision',local:{state:'exact',document:'Line from this device'},remote:{state:'exact',document:'Line from another device'}});
+    view.sync.conflictComparisons.set('record:decision',{entity:'record',objectId:'record',decisionId:'decision',local:state==='conflict-local-absent'?{state:'absent'}:{state:'exact',document:'Line from this device'},remote:state==='conflict-hosted-absent'?{state:'absent'}:{state:'exact',document:'Line from another device'}});
    }
    if(state==='history') {
     const at=new Date().toISOString();
@@ -74,7 +74,7 @@ fs.mkdirSync(shots, {recursive:true});
    await page.evaluate(theme=>{document.body.classList.remove('theme-dark','theme-light');document.body.classList.add(theme)},theme);
    const checks=await page.locator('.mdbase-sync-document').evaluate(el=>{
     const content=el.closest('.mdbase-workspace-content');
-    const buttons=[...el.querySelectorAll('.mod-cta, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
+    const buttons=[...el.querySelectorAll('.mod-cta, .mod-warning, .mdbase-conflict-row button, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
     return {paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
    });
    const box=await page.locator('.mdbase-workspace').boundingBox();
