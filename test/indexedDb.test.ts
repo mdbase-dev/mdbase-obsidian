@@ -40,6 +40,20 @@ test("change probes read only the tiny checkpoint summary, not 20k stored record
   store.close();
 });
 
+test("probe summaries observe another adapter's atomic write and clear, not a cached cursor", async () => {
+  const key = crypto.randomUUID();
+  const reader = new IndexedDbMirrorStateStore(key) as CheckpointStore;
+  const writer = new IndexedDbMirrorStateStore(key);
+  await reader.write({ cursor: 1, scope_epoch: 2, records: {} } as MirrorState);
+  assert.deepEqual(await reader.readCheckpoint(), { cursor: 1, scope_epoch: 2, recovery_required: false });
+  await writer.write({ cursor: 3, scope_epoch: 4, records: {}, batch: { phase: "prepared" } } as MirrorState);
+  assert.deepEqual(await reader.readCheckpoint(), { cursor: 3, scope_epoch: 4, recovery_required: true });
+  await writer.clear();
+  assert.equal(await reader.readCheckpoint(), null);
+  reader.close();
+  writer.close();
+});
+
 test("a reopened adapter repairs summaries left stale or missing by older plugins once", async () => {
   const key = crypto.randomUUID();
   const original = new IndexedDbMirrorStateStore(key);
