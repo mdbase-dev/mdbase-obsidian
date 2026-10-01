@@ -200,3 +200,29 @@ test("a run that finds sync busy tries again shortly and keeps the pending edits
   await h.clock.advance(2_000);
   assert.equal(h.calls.autoSync, 2);
 });
+
+test("a trigger that fires while a sync is running is not lost, and later syncs still happen", async () => {
+  // Regression: a timer firing mid-run left a stale due time that made every
+  // later schedule() think a timer was already pending, so sync stopped forever.
+  let release!: () => void;
+  let calls = 0;
+  const h = harness({
+    autoSync: async () => {
+      calls += 1;
+      if (calls === 1) await new Promise<void>((resolve) => { release = resolve; });
+      return "applied";
+    },
+  });
+  h.scheduler.start();
+  await h.clock.advance(0);
+  assert.equal(calls, 1, "first run in flight");
+  h.scheduler.noteLocalChange();
+  await h.clock.advance(SYNC_TIMING.localQuietMs);
+  release();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  await h.clock.advance(0);
+  assert.equal(calls, 2, "the edit made during the run is synced right after it");
+  h.setRemote(true);
+  await h.clock.advance(SYNC_TIMING.probeVisibleMs);
+  assert.equal(calls, 3, "and the scheduler keeps running afterwards");
+});

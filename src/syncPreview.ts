@@ -140,7 +140,7 @@ export function actionEntry(action: MirrorPlanAction): SyncPreviewEntry {
   };
 }
 
-/** A sync that would delete more than this many files stops for review. */
+/** A sync that would delete more than this many hosted files stops for review. */
 export const AUTO_APPLY_LIMITS = { maxDeletions: 20 };
 
 export interface SyncPlanSafety {
@@ -171,7 +171,9 @@ export function syncPlanSafety(preview: MdbaseSyncPreview, limits = AUTO_APPLY_L
   // Blocked paths are skipped while independent transfers proceed; only a plan
   // that blocking issues leave with nothing to do needs a person.
   if (plan.summary.blocking_issues > 0 && !actions.length) reasons.push("Blocking issues");
-  const deletions = actions.filter((action) => action.command === "delete_local" || action.command === "delete_remote").length;
+  // Only deletions made here: a burst arriving from Connect was already
+  // reviewed on the device that made it, and lands in this device's trash.
+  const deletions = actions.filter((action) => action.command === "delete_remote").length;
   if (deletions > limits.maxDeletions) reasons.push(`${deletions} deletions`);
   return { safe: reasons.length === 0, reasons };
 }

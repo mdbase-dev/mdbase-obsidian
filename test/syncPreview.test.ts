@@ -298,11 +298,26 @@ test("deletions, conflicts, attachment uploads and large transfers sync without 
 });
 
 test("a burst of deletions, a rebuild and a first sync that changes Connect need review", () => {
-  const deletions = (count: number) => previewFromPlan(plan({
-    actions: Array.from({ length: count }, (_, index) => deleteLocal(`notes/${index}.md`)),
+  const deleteRemote = (path: string): MirrorSyncPlan["actions"][number] => ({
+    command: "delete_remote",
+    action_id: `delete-remote-${path}`,
+    depends_on: [],
+    target: ref("record", path),
+    expected_remote: { state: "absent" },
+    expected_local: { state: "absent" },
+    idempotency_key: `delete-remote-${path}`,
+    reason: "local_change",
+  });
+  const deletions = (count: number, make = deleteRemote) => previewFromPlan(plan({
+    actions: Array.from({ length: count }, (_, index) => make(`notes/${index}.md`)),
   }));
   assert.equal(syncPlanSafety(deletions(2), { maxDeletions: 2 }).safe, true);
   assert.deepEqual(syncPlanSafety(deletions(3), { maxDeletions: 2 }).reasons, ["3 deletions"]);
+  assert.equal(
+    syncPlanSafety(deletions(30, deleteLocal), { maxDeletions: 2 }).safe,
+    true,
+    "a burst arriving from Connect was reviewed where it was made and goes to the trash here",
+  );
 
   assert.deepEqual(syncPlanSafety(previewFromPlan(plan({ kind: "rebuild", actions: [write("a.md")] }))).reasons, ["Mirror rebuild"]);
   assert.deepEqual(

@@ -2624,13 +2624,14 @@ export class ConnectSyncController {
 
   /**
    * Credentials are keyed by replica: two vaults on one device (a copied vault
-   * set up again) must never overwrite each other's tokens. Earlier versions
-   * keyed them by collection alone; those are read once and copied forward.
+   * set up again) must never overwrite each other's tokens. Replica IDs are
+   * globally unique, and prefix plus UUID stays within Obsidian's 64-character
+   * secret ID limit. Earlier versions keyed them by collection; those are read
+   * once and copied forward.
    */
   private secretIds(kind: "access" | "refresh", profile: Pick<MirrorProfile, "collectionId" | "replicaId">): { current: string; legacy: string } {
     const prefix = kind === "access" ? ACCESS_SECRET_PREFIX : REFRESH_SECRET_PREFIX;
-    const collection = profile.collectionId.toLowerCase();
-    return { current: `${prefix}${collection}-${profile.replicaId.toLowerCase()}`, legacy: `${prefix}${collection}` };
+    return { current: `${prefix}${profile.replicaId.toLowerCase()}`, legacy: `${prefix}${profile.collectionId.toLowerCase()}` };
   }
 
   private readSecret(kind: "access" | "refresh", profile: Pick<MirrorProfile, "collectionId" | "replicaId">): string | null {

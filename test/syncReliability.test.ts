@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TFile } from "obsidian";
-import { MemoryAuthority } from "@mdbase-dev/connect-sync";
+import { MemoryAuthority, type SyncTransport } from "@mdbase-dev/connect-sync";
 import {
   MemoryMirrorBlobStore,
   MemoryMirrorStateStore,
@@ -12,9 +12,13 @@ import type { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment
 import { ConnectSyncController, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
 
+/** Enforces Obsidian's SecretStorage ID rule, which the plugin must respect. */
 class MemorySecrets {
   readonly values = new Map<string, string>();
   setSecret(id: string, value: string): void {
+    if (!/^[a-z0-9-]{1,64}$/.test(id)) {
+      throw new Error("Secret ID is invalid. Use only lowercase letters, numbers and dashes. 64 characters max.");
+    }
     this.values.set(id, value);
   }
   getSecret(id: string): string | null {
@@ -32,6 +36,7 @@ interface DeviceOptions {
   state?: MemoryMirrorStateStore;
   enrollmentClient?: Partial<MirrorEnrollmentClient>;
   expiresAt?: string;
+  wrapTransport?: (transport: SyncTransport) => SyncTransport;
 }
 
 /** One Obsidian vault with this plugin's controller, connected to a shared authority. */
@@ -54,8 +59,8 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
     accessTokenExpiresAt: options.expiresAt ?? "2099-01-01T00:00:00.000Z",
     ...(options.profileDeviceId ? { deviceId: options.profileDeviceId } : {}),
   };
-  secrets.setSecret(`mdbase-connect-access-${collectionId}-${replicaId}`, "access");
-  secrets.setSecret(`mdbase-connect-refresh-${collectionId}-${replicaId}`, "refresh");
+  secrets.setSecret(`mdbase-connect-access-${replicaId}`, "access");
+  secrets.setSecret(`mdbase-connect-refresh-${replicaId}`, "refresh");
   const controller = new ConnectSyncController({ vault, secretStorage: secrets } as never, {
     getMirrorProfile: () => profile && structuredClone(profile),
     saveMirrorProfile: async (next) => {
@@ -66,7 +71,7 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
     stateStoreFactory: () => state,
     blobStoreFactory: () => new MemoryMirrorBlobStore(),
     fileSystem: new ObsidianMirrorFileSystem(vault as never),
-    transportFactory: () => hosted.transport(replicaId),
+    transportFactory: () => options.wrapTransport?.(hosted.transport(replicaId)) ?? hosted.transport(replicaId),
     ...(options.enrollmentClient ? { enrollmentClient: options.enrollmentClient as MirrorEnrollmentClient } : {}),
   });
   const syncOnce = async () => {
@@ -123,6 +128,43 @@ test("edits to different fields on two devices are merged and synced without ask
   await there.mirror.sync();
   assert.equal(there.vault.read("plan.md"), merged, "both devices end with both edits");
   assert.equal((await here.controller.status())?.conflicts.length, 0);
+});
+
+test("edits made at the same moment, reported by Connect on upload, still merge", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "plan", path: "plan.md", frontmatter: { status: "open", priority: "low" }, body: "Body\n", types: [] }]);
+  const id = await collectionId(hosted);
+  const there = otherDevice(hosted);
+  let base = "";
+  let raced = false;
+  // The other device uploads its edit between this device's plan and its upload.
+  const here = await device(hosted, id, {
+    wrapTransport: (transport) => ({
+      ...transport,
+      openSession: () => transport.openSession(),
+      snapshot: (snapshotId, page) => transport.snapshot(snapshotId, page),
+      changes: (after, limit) => transport.changes(after, limit),
+      mutate: async (mutation) => {
+        if (base && !raced) {
+          raced = true;
+          await edit(there.vault, "plan.md", base.replace("priority: low", "priority: high"));
+          await there.mirror.sync();
+        }
+        return transport.mutate(mutation);
+      },
+    }),
+  });
+  await here.syncOnce();
+  await there.mirror.sync();
+  base = here.vault.read("plan.md")!;
+  await edit(here.vault, "plan.md", base.replace("status: open", "status: done"));
+  assert.equal((await here.syncOnce()).status, "attention");
+  assert.equal(raced, true);
+  const resolutions = await here.controller.autoResolveConflicts();
+  assert.deepEqual(resolutions.map((resolution) => resolution.outcome), ["merged"]);
+  await here.syncOnce();
+  await there.mirror.sync();
+  assert.match(there.vault.read("plan.md")!, /status: done[\s\S]*priority: high/);
 });
 
 test("the same line edited on two devices keeps both versions and loses nothing", async () => {
@@ -202,7 +244,7 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   await vault.create(".mdbase/connect-role.json", `${JSON.stringify({ version: 1, role: "mirror", collection_id: id })}\n`);
   const replicaId = hosted.registerReplica({ name: "Echo", mode: "read_write" });
   const secrets = new MemorySecrets();
-  secrets.setSecret(`mdbase-connect-access-${id}-${replicaId}`, "access");
+  secrets.setSecret(`mdbase-connect-access-${replicaId}`, "access");
   const controller = new ConnectSyncController({
     vault,
     secretStorage: secrets,
@@ -281,8 +323,8 @@ test("credentials stored under the old collection-only key are found and carried
   secrets.setSecret(`mdbase-connect-refresh-${id}`, "legacy-refresh");
   await here.controller.inspect();
   assert.deepEqual(renewals, ["legacy-refresh"]);
-  assert.equal(secrets.getSecret(`mdbase-connect-refresh-${id}-${here.replicaId}`), "legacy-refresh");
-  assert.equal(secrets.getSecret(`mdbase-connect-access-${id}-${here.replicaId}`), "renewed");
+  assert.equal(secrets.getSecret(`mdbase-connect-refresh-${here.replicaId}`), "legacy-refresh");
+  assert.equal(secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "renewed");
 });
 
 test("overlapping operations share one token renewal instead of revoking each other's token", async () => {

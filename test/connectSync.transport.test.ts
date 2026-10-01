@@ -43,13 +43,27 @@ async function collect(source: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
 
 const noSleep = { attempts: 4, baseDelayMs: 1, maxDelayMs: 1, sleep: async () => undefined, random: () => 0 };
 
-test("platform send uses the privileged desktop stack and nothing else", async () => {
+test("platform send uses the privileged desktop stack with that stack's own abort signals", async () => {
   let desktopCalls = 0;
-  const send = platformSend(async (_input: RequestInfo | URL, init?: RequestInit) => {
-    desktopCalls += 1;
-    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer device-secret");
-    assert.ok(init?.signal, "desktop requests are cancellable");
-    return new Response(JSON.stringify({ protocol_version: 1 }), { status: 200 });
+  // Electron's remote net.fetch rejects renderer AbortSignals; the signal must
+  // come from the stack's (main-process) AbortController.
+  class StackAbortController extends AbortController {}
+  const stackSignals = new WeakSet<AbortSignal>();
+  class TrackingController extends StackAbortController {
+    constructor() {
+      super();
+      stackSignals.add(this.signal);
+    }
+  }
+  const send = platformSend({
+    AbortController: TrackingController,
+    fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+      desktopCalls += 1;
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer device-secret");
+      assert.ok(init?.signal && stackSignals.has(init.signal), "the signal comes from the stack's controller");
+      assert.equal(Object.getPrototypeOf(init?.headers), Object.prototype, "headers cross the bridge as a plain object");
+      return new Response(JSON.stringify({ protocol_version: 1 }), { status: 200 });
+    },
   });
   const result = await send({
     url: `${syncUrl}/sessions`,

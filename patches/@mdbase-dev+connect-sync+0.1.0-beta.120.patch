@@ -158,7 +158,7 @@ index 5a3bad2..c4207b7 100644
              validatePortableMirrorPath(conflict.local.object.path);
          if (conflict.remote.state === "exact")
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
-index 599bcb8..71ebab5 100644
+index 599bcb8..30c92d0 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 @@ -1,7 +1,7 @@
@@ -241,6 +241,25 @@ index 599bcb8..71ebab5 100644
          await this.materializer.putFile(state, file, state);
          this.installPathOwner(action.target);
          return { action_id: action.action_id, status: "completed" };
+@@ -372,12 +389,17 @@ export class PlanOnlySyncExecutor {
+                 : action.expected_remote;
+         state.planned_conflicts ??= {};
+         const conflictKind = receipt.status === "rejected" ? "rejected" : "both_changed";
++        // Captured before the base is rebased onto the authority's current record below.
++        const ancestor = identity in state.planned_conflicts
++            ? state.planned_conflicts[identity].ancestor_document
++            : state.records[identity]?.record?.document;
+         state.planned_conflicts[identity] = {
+             decision_id: conflictDecisionId("record", identity, action.expected_local, remote, conflictKind, this.ports.runtime.digest),
+             entity: "record",
+             local: action.expected_local,
+             remote,
+-            conflict_kind: conflictKind
++            conflict_kind: conflictKind,
++            ...(ancestor === undefined ? {} : { ancestor_document: ancestor })
+         };
+         state.local_bindings ??= {};
+         if (action.expected_local.state === "exact") {
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
 index 19ee11d..01e31ea 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js

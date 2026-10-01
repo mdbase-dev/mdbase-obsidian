@@ -9,7 +9,7 @@ The plugin supports two collection roles:
 - A local collection, initialized by writing a canonical mdbase v0.3 `mdbase.yaml`.
 - A hosted mirror, enrolled through mdbase Connect and synchronized into the vault through the portable directory-mirror engine.
 
-The local vault remains useful while offline. Synchronization should feel like a mature desktop sync client: it runs by itself shortly after edits and as soon as Connect has changes, rides out network failures with automatic retries, and never loses an edit. Deleted files go to the trash. Conflicting edits are merged when they touch different fields or lines and otherwise kept as two files, so sync never waits on a conflict. Only a burst of deletions, a rebuild after a scope reset, and a first sync that would change Connect stop for review.
+The local vault remains useful while offline. Synchronization should feel like a mature desktop sync client: it runs by itself shortly after edits and as soon as Connect has changes, rides out network failures with automatic retries, and never loses an edit. Deleted files go to the trash. Conflicting edits are merged when they touch different fields or lines and otherwise kept as two files, so sync never waits on a conflict. Only a burst of deletions made on this device, a rebuild after a scope reset, and a first sync that would change Connect stop for review.
 
 ## Primary users
 

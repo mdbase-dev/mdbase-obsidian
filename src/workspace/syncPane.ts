@@ -239,7 +239,9 @@ export class SyncPane {
       const seconds = Math.max(0, Math.round((retryAt - Date.now()) / 1000));
       text.createDiv({
         cls: "mdbase-muted",
-        text: seconds < 60 ? `Trying again in ${seconds}s.` : `Trying again in ${Math.round(seconds / 60)} min.`,
+        text: seconds <= 1
+          ? "Trying again now…"
+          : seconds < 60 ? `Trying again in ${seconds}s.` : `Trying again in ${Math.round(seconds / 60)} min.`,
       });
     }
     const buttons = card.createDiv({ cls: "mdbase-recovery-actions" });

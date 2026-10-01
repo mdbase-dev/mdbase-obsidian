@@ -132,7 +132,17 @@ test("ordinary deletions sync at once; a burst of deletions stops for review", a
   assert.equal(await few.session.syncNow(), "applied");
   assert.equal(few.applied.length, 1);
 
-  const many = harness(previewFromPlan(plan(Array.from({ length: 25 }, (_, index) => remove(`n${index}.md`)))));
+  const removeRemote = (path: string): MirrorSyncPlan["actions"][number] => ({
+    command: "delete_remote",
+    action_id: `delete-remote-${path}`,
+    depends_on: [],
+    reason: "local_change",
+    target: target(path),
+    expected_remote: { state: "absent" },
+    expected_local: { state: "absent" },
+    idempotency_key: `delete-remote-${path}`,
+  });
+  const many = harness(previewFromPlan(plan(Array.from({ length: 25 }, (_, index) => removeRemote(`n${index}.md`)))));
   assert.equal(await many.session.syncNow(), "needs_review");
   assert.equal(many.applied.length, 0);
   assert.deepEqual(many.session.safety()?.reasons, ["25 deletions"]);

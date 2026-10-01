@@ -207,12 +207,16 @@ export class SyncScheduler {
    */
   private schedule(at: number, debounce = false): void {
     if (this.stopped) return;
-    if (this.dueAt !== null && this.dueAt <= at && !(debounce && this.dueIsDebounce)) return;
+    // A due time only counts while its timer is pending; a fired timer whose
+    // tick was deferred into a rerun must not block later scheduling.
+    const pendingAt = this.timer === null ? null : this.dueAt;
+    if (pendingAt !== null && pendingAt <= at && !(debounce && this.dueIsDebounce)) return;
     if (this.timer !== null) this.clock.clearTimeout(this.timer);
     this.dueAt = at;
     this.dueIsDebounce = debounce;
     this.timer = this.clock.setTimeout(() => {
       this.timer = null;
+      this.dueAt = null;
       void this.tick();
     }, Math.max(0, at - this.clock.now()));
   }

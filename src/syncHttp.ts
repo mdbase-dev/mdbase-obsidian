@@ -115,35 +115,61 @@ export function reliableSend(send: HttpSend, policy: RetryPolicy = DEFAULT_RETRY
  * that reached the server but lost its response must not be sent again by a
  * second stack outside the retry policy.
  */
-export function platformSend(desktop: typeof window.fetch | null = privilegedDesktopFetch()): HttpSend {
+export function platformSend(desktop: FetchStack | null = privilegedDesktopStack()): HttpSend {
   return desktop
-    ? (request) => fetchSend(request, desktop)
+    ? (request) => fetchSend(request, desktop.fetch, desktop.AbortController)
     : (request) => requestUrlSend(request);
 }
 
-export function privilegedDesktopFetch(): typeof window.fetch | null {
+/** A fetch implementation and the AbortController its signals must come from. */
+export interface FetchStack {
+  fetch: typeof window.fetch;
+  AbortController: typeof AbortController;
+}
+
+/**
+ * Electron's main-process `net.fetch`, reached through `remote`. Its signal must
+ * be a main-process AbortSignal: `remote` cannot pass a renderer signal across
+ * (fetch rejects it), so the controller is constructed in the main process too.
+ */
+export function privilegedDesktopStack(): FetchStack | null {
   try {
     if (typeof require !== "function") return null;
     // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron is desktop-only and a static import breaks Obsidian mobile.
-    const remoteNet = (require("electron") as {
-      remote?: { net?: { fetch?: typeof window.fetch } };
-    }).remote?.net;
-    return remoteNet?.fetch ? remoteNet.fetch.bind(remoteNet) : null;
+    const remote = (require("electron") as {
+      remote?: { net?: { fetch?: typeof window.fetch }; getGlobal?(name: string): unknown };
+    }).remote;
+    const fetch = remote?.net?.fetch;
+    const MainAbortController = remote?.getGlobal?.("AbortController") as typeof AbortController | undefined;
+    if (!fetch || !remote?.net || typeof MainAbortController !== "function") return null;
+    return { fetch: fetch.bind(remote.net), AbortController: MainAbortController };
   } catch {
     return null;
   }
 }
 
 /** fetch-compatible stacks support real cancellation of the in-flight request. */
-export async function fetchSend(request: HttpRequest, send: typeof window.fetch): Promise<RequestUrlResponse> {
+export async function fetchSend(
+  request: HttpRequest,
+  send: typeof window.fetch,
+  StackAbortController: typeof AbortController = AbortController,
+): Promise<RequestUrlResponse> {
   const { signal, dispose } = deadline(request.signal, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  // The stack's own controller is aborted whenever ours is, without a reason
+  // object: ours records why, and a reason need not cross a process boundary.
+  const stack = new StackAbortController();
+  const abortStack = () => stack.abort();
+  if (signal.aborted) abortStack();
+  else signal.addEventListener("abort", abortStack, { once: true });
   try {
-    const headers = new Headers(request.headers);
-    if (request.contentType && !headers.has("content-type")) headers.set("content-type", request.contentType);
+    const headers: Record<string, string> = { ...(request.headers ?? {}) };
+    if (request.contentType && !Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+      headers["content-type"] = request.contentType;
+    }
     let response: Response;
     let arrayBuffer: ArrayBuffer;
     try {
-      response = await send(request.url, { method: request.method, headers, body: request.body, signal });
+      response = await send(request.url, { method: request.method, headers, body: request.body, signal: stack.signal });
       arrayBuffer = await response.arrayBuffer();
     } catch (error) {
       throw networkFailure(error, request.signal, signal);
@@ -158,6 +184,7 @@ export async function fetchSend(request: HttpRequest, send: typeof window.fetch)
     });
     return { status: response.status, headers: responseHeaders, arrayBuffer, json: parseJson(text), text };
   } finally {
+    signal.removeEventListener("abort", abortStack);
     dispose();
   }
 }

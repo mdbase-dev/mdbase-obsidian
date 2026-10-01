@@ -24,7 +24,7 @@ On mobile, the list and editor become separate navigation states. Controls remai
 ## Information and copy
 
 - Types opens with name, description, and fields. Matching, options, application contracts, and detailed change review expand in place.
-- Sync opens with connection status and one primary action, **Sync now**. It applies routine plans directly and shows the review, with its reasons, only when a plan needs consent (a burst of deletions, a rebuild, or a first sync that changes Connect). Connection, attachment and disconnect settings live in the plugin settings tab; history is a secondary disclosure. Keep transfer paths, directions, destructive actions, conflicts, and blocking errors visible when relevant.
+- Sync opens with connection status and one primary action, **Sync now**. It applies routine plans directly and shows the review, with its reasons, only when a plan needs consent (a burst of deletions made on this device, a rebuild, or a first sync that changes Connect). Connection, attachment and disconnect settings live in the plugin settings tab; history is a secondary disclosure. Keep transfer paths, directions, destructive actions, conflicts, and blocking errors visible when relevant.
 - Issues has one count and one validation action. Do not show empty filters, repeated summaries, or a second empty-state panel.
 - Prefer labels to explanations. Remove sentences that merely describe the adjacent control or promise implementation details such as checkpoint precision.
 - Keep concise, explicit warnings at upload, authority-transfer, schema-change, and deletion boundaries. Fewer words must not mean less informed consent.
