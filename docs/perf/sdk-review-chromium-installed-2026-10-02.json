@@ -1,0 +1,15 @@
+{
+  "notes": 20000,
+  "ms": 2868.0999999046326,
+  "reads": 20000,
+  "max_timer_gap_ms": 180.30000019073486,
+  "ticks": 161,
+  "long_tasks_ms": [],
+  "plan_actions": 0,
+  "uploads": 0,
+  "downloads": 0,
+  "blocking_issues": 0,
+  "persistence_writes": 0,
+  "hosted_requests": 0,
+  "sdk": "installed beta120 plus plugin patches"
+}
