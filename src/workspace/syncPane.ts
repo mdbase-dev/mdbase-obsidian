@@ -122,12 +122,17 @@ export class SyncPane {
       actionLabel: "Resume recovery",
     } : null);
     const authorizing = Boolean(this.enrollmentAbort);
+    const preview = state.preview;
+    const safety = this.session.safety();
+    const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
     const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? "Checking…"
       : recoveryProblem?.kind === "paused" ? "Paused"
       : recoveryProblem?.kind === "offline" ? "Offline"
       : recoveryProblem?.kind === "auth" ? "Approval needed"
       : recoveryProblem?.kind === "device" ? "Set up this device"
-      : recoveryProblem ? "Needs attention" : syncStateLabel(state.status);
+      : recoveryProblem ? "Needs attention"
+      : reviewing && safety && !safety.safe ? "Review needed"
+      : preview?.plan.actions.length ? "Changes waiting" : syncStateLabel(state.status);
 
     const status = document.createEl("section", { cls: "mdbase-sync-status" });
     status.setAttr("data-state", state.status?.state ?? "checking");
@@ -185,15 +190,15 @@ export class SyncPane {
     else if (recoveryProblem) this.renderRecoveryCard(status, recoveryProblem);
 
     const busy = this.ctx.busy || state.busy || syncing;
-    const preview = state.preview;
     // Comparisons belong to the plan they were opened from.
     if (preview !== this.comparedPreview) {
       this.previewComparisons.clear();
       this.comparedPreview = preview;
       this.transferPages.clear();
     }
-    const safety = this.session.safety();
-    const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
+    if (reviewing && safety && !safety.safe && preview?.plan.actions.length) {
+      status.createDiv({ cls: "mdbase-muted mdbase-review-reasons", text: `${safety.reasons.join(", ")}.` });
+    }
     if (!syncing && !recoveryProblem && !authorizing) {
       const actions = status.createDiv({ cls: "mdbase-sync-actions" });
       if (reviewing && preview) {
@@ -215,9 +220,6 @@ export class SyncPane {
         sync.disabled = busy;
         sync.onclick = () => void this.session.syncNow();
       }
-    }
-    if (reviewing && safety && !safety.safe && preview?.plan.actions.length) {
-      status.createDiv({ cls: "mdbase-muted mdbase-review-reasons", text: `Review needed: ${safety.reasons.join(", ").toLowerCase()}.` });
     }
 
     if (preview && reviewing) this.renderMirrorPreview(document, preview);

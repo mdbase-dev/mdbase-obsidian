@@ -1235,7 +1235,9 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-sync-status > .mdbase-sync-progress,
 .mdbase-sync-status > .mdbase-recovery-card,
-.mdbase-sync-status > .mdbase-approval-link {
+.mdbase-sync-status > .mdbase-approval-link,
+.mdbase-sync-status > .mdbase-notice,
+.mdbase-sync-status > .mdbase-review-reasons {
   grid-column: 1 / -1;
 }
 
@@ -2368,6 +2370,16 @@ button.mdbase-transfer-open:hover code {
   .mdbase-disclosure > summary {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  .mdbase-sync-status {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mdbase-sync-status > .mdbase-sync-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
   }
 
   .mdbase-sync-actions {

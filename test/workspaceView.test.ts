@@ -973,7 +973,9 @@ test("a plan held for review says why, offers to apply it, and badges the Sync t
     collisions: [], local_issues: [],
   };
   f.state.render();
-  assert.match(f.text(), /Review needed: mirror rebuild/);
+  assert.match(f.root.querySelector(".mdbase-sync-heading")!.textContent!, /Review needed/);
+  assert.doesNotMatch(f.root.querySelector(".mdbase-sync-heading")!.textContent!, /Up to date/);
+  assert.equal(f.root.querySelector(".mdbase-review-reasons")?.textContent, "Mirror rebuild.");
   assert.ok(button(f.root, "Sync 1 change").classList.contains("mod-cta"));
   assert.equal(f.root.querySelector(".mdbase-nav-button.is-active .mdbase-count")?.textContent, "1");
   f.dom.window.close();

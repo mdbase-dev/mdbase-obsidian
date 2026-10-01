@@ -75,7 +75,7 @@ fs.mkdirSync(shots, {recursive:true});
    const checks=await page.locator('.mdbase-sync-document').evaluate(el=>{
     const content=el.closest('.mdbase-workspace-content');
     const buttons=[...el.querySelectorAll('.mod-cta, .mdbase-activity-row > button')].map(b=>({text:b.textContent,height:b.getBoundingClientRect().height}));
-    return {paneWidth:content.clientWidth,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
+    return {paneWidth:content.clientWidth,headingWidth:el.querySelector('.mdbase-sync-heading')?.getBoundingClientRect().width,scrollWidth:content.scrollWidth,overflow:content.scrollWidth>content.clientWidth+1,buttons};
    });
    const box=await page.locator('.mdbase-workspace').boundingBox();
    const cdp=await page.context().newCDPSession(page);
@@ -83,6 +83,7 @@ fs.mkdirSync(shots, {recursive:true});
    await cdp.detach();fs.writeFileSync(`${shots}/${prefix}-${state}-${width}-${theme}.png`,Buffer.from(capture.data,'base64'));
    const failures=[];
    if(checks.overflow)failures.push('Horizontal overflow');
+   if(width===390&&checks.headingWidth!=null&&checks.headingWidth<checks.paneWidth-30)failures.push('Narrow heading squeezed by the action');
    if(width===390&&checks.buttons.some(b=>b.height<43.5))failures.push('Primary/dismiss target below 44px');
    results.push({state,width,theme,...checks,failures});
    if(failures.length)console.log(JSON.stringify(results.at(-1)));
