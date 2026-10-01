@@ -28,6 +28,27 @@ addition is the optional `ancestor_document` below):
   guarantee applies to this plugin's conditional-write implementation. This uses
   Obsidian's serialized read/modify/write contract, not an OS-wide lock against
   arbitrary external writers.
+- `mirror-materializer.js` / `mirror-state.d.ts`: pass the inspected binary
+  destination to `writeBinary(path, source, expected)`. `null` requires absence;
+  otherwise the plugin rechecks digest/size after draining the stream. This
+  prevents a competing create/edit between SDK preflight and adapter invocation
+  from becoming the overwrite baseline. Existing adapters may ignore this
+  optional argument. Obsidian has no binary `Vault.process`, so this is a
+  pre-write check rather than an OS-wide atomic compare-and-swap. This API still
+  needs an upstream SDK source port before removing/upgrading the patch.
+  Regression: `test/syncReliability.test.ts` SDK binary preflight race.
+- `mirror-materializer.js` / `mirror-state.d.ts`: pass inspected text/binary
+  expectations to managed-file removal (`remove(path, expected)`) and recheck
+  them in the plugin before trashing. This rejects competing edits between SDK
+  preflight and adapter removal. Like binary writes, it is a pre-trash check,
+  not an OS-wide atomic delete. The optional argument is backward compatible
+  with old adapters and needs an upstream SDK source port. Regression:
+  `test/syncReliability.test.ts` SDK delete preflight race and binary removal.
+  `directory-mirror.js` also binds hosted-deletion conflict resolution to the
+  inspected local revision and passes its expected bytes to removal; binary
+  binding cleanup does likewise. `sync-executor.js` checks the expected resource
+  revision before its missing-metadata removal branch. These close the same gap
+  outside MirrorMaterializer; the final trash API still is not atomic.
 - `sync-inspector.js` / `mirror-state.d.ts`: optional physical `pathKind` detects
   destination directories and ancestor files. Blocking issues enter the normal
   planner/fingerprint instead of creating an impossible transfer. No local file

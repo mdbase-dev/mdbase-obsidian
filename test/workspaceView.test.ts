@@ -136,6 +136,24 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   return result;
 }
 
+test("opening waits for the requested destination before scanning collection records", async () => {
+  const f = fixture(true);
+  f.state.destination = "types";
+  let recordLoads = 0;
+  Object.assign(f.host, {
+    loadWorkspaceSchema: async () => ({ config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() }),
+    loadCollectionRecords: async () => { recordLoads++; return []; },
+  });
+  await f.view.onOpen();
+  assert.equal(recordLoads, 0, "onOpen must not scan Types before setState can restore Sync");
+  await f.view.setState({ destination: "sync" }, {} as never);
+  assert.equal(recordLoads, 0);
+  await f.view.setState({ destination: "types" }, {} as never);
+  assert.equal(recordLoads, 1, "opening Types still loads its statistics");
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
 test("Sync and Issues refreshes do not parse all records or run type impact scans", async () => {
   const f = fixture(true);
   let recordLoads = 0;
@@ -236,6 +254,21 @@ test("a stale reviewed plan cannot be applied before refreshing the newest chang
   assert.equal(f.root.querySelectorAll(".mod-cta").length, 1, f.text());
   assert.ok(button(f.root, "Review newest changes"));
   assert.doesNotMatch(f.text(), /Sync 1 change|Refresh review/);
+  f.dom.window.close();
+});
+
+test("a diagnostics copy failure is reported and returns focus instead of an unhandled rejection", async () => {
+  const f = fixture(true);
+  f.host.sync.reportProblem(new Error("Sync stopped"));
+  f.host.copySyncDiagnostics = async () => { throw new Error("Clipboard is unavailable"); };
+  f.state.render();
+  button(f.root, "Copy diagnostics").focus();
+  button(f.root, "Copy diagnostics").click();
+  await settle();
+  assert.match(f.text(), /Clipboard is unavailable/);
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Copy diagnostics"));
+  assert.equal(button(f.root, "Copy diagnostics").disabled, false);
+  assert.ok(button(f.root, "Try again"));
   f.dom.window.close();
 });
 
@@ -435,12 +468,47 @@ test("background sync badge updates preserve keyboard focus on the destination t
   f.state.destination = "issues";
   Object.assign(f.host, { loadWorkspaceSchema: async () => null });
   await f.view.onOpen();
+  await f.view.setState({ destination: "issues" }, {} as never);
   const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-issues']")!;
   tab.focus();
   f.host.sync.update({ status: { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] } as never });
   assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "destination-issues");
   assert.notEqual(f.dom.window.document.activeElement, tab, "focus follows the replacement tab");
   await f.view.onClose();
+  f.dom.window.close();
+});
+
+test("sync problems remain visible from other destinations, where mobile has no status bar", () => {
+  for (const scenario of [
+    { code: "network_timeout", label: "Offline" },
+    { code: "mirror_credentials_missing", label: "Sign in" },
+    { code: "mirror_other_device", label: "Set up" },
+    { code: "sync_failed", label: "Error" },
+  ]) {
+    const f = fixture(true);
+    f.state.destination = "issues";
+    const problem = f.host.sync.reportProblem(Object.assign(new Error("Fixture problem"), { code: scenario.code }));
+    f.host.sync.refreshStatus = async () => f.host.sync.state.status;
+    f.state.render();
+    const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!;
+    assert.equal(tab.querySelector(".mdbase-nav-status")?.textContent, scenario.label);
+    assert.equal(tab.getAttribute("aria-label"), `Sync · ${problem.title}`);
+    tab.click();
+    assert.equal(f.state.destination, "sync");
+    assert.equal(f.root.querySelector(".mdbase-nav-status"), null, "the active pane already explains the problem");
+    assert.match(f.text(), new RegExp(problem.actionLabel));
+    f.dom.window.close();
+  }
+});
+
+test("sync tab counts have descriptive accessible names, not bare badge numbers", () => {
+  const f = fixture(true);
+  f.state.mirrorStatus = { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] };
+  f.host.getIssues = () => [{ path: "other.md", severity: "error", code: "schema_required", message: "Missing title" }];
+  f.state.destination = "issues";
+  f.state.render();
+  assert.equal(f.root.querySelector("[data-focus-key='destination-sync']")?.getAttribute("aria-label"), "Sync · 1 sync conflict");
+  assert.equal(f.root.querySelector("[data-focus-key='destination-issues']")?.getAttribute("aria-label"), "Issues · 1 validation issue");
   f.dom.window.close();
 });
 
@@ -470,6 +538,21 @@ test("blocking review shows the issue without a misleading apply button or dupli
   f.dom.window.close();
 });
 
+test("opening a local sync issue preserves the path action's focus across redraw", () => {
+  const f = fixture(true);
+  const path = 'Projects/Long review "draft".md';
+  f.state.mirrorStatus = { state: "attention", conflicts: [], local_issues: [{ code: "file_read_failed", path, message: "Could not read this file." }] };
+  const opened: string[] = [];
+  Object.assign(f.host, { openFileByPath: async (path: string) => { opened.push(path); } });
+  f.state.render();
+  button(f.root, "Open file").focus();
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Open file"));
+  button(f.root, "Open file").click();
+  assert.deepEqual(opened, [path]);
+  f.dom.window.close();
+});
+
 test("conflicts reveal resolution actions only after loading the versions", async () => {
   const f = fixture(true);
   f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{
@@ -486,6 +569,35 @@ test("conflicts reveal resolution actions only after loading the versions", asyn
   assert.match(f.text(), /Keep local.*Use hosted.*Keep both/);
   assert.match(f.text(), /Local version.*Hosted version/);
   f.dom.window.close();
+});
+
+test("conflict choices respect absent versions and name destructive outcomes", async () => {
+  for (const absent of ["local", "remote"] as const) {
+    const f = fixture(true);
+    f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{
+      entity: "record", object_id: "record", decision_id: "decision", path: "note.md", message: "The versions differ.",
+    }] };
+    Object.assign(f.host.connectSync, { conflictComparison: async () => ({
+      entity: "record", objectId: "record", decisionId: "decision",
+      local: absent === "local" ? { state: "absent" } : { state: "exact", document: "Unsynced local edit" },
+      remote: absent === "remote" ? { state: "absent" } : { state: "exact", document: "Hosted edit" },
+    }) });
+    f.state.render();
+    button(f.root, "Resolve…").click();
+    await settle();
+    if (absent === "local") {
+      assert.match(f.text(), /No local version/);
+      assert.doesNotMatch(f.text(), /Keep both|Keep a local copy/);
+      assert.ok(button(f.root, "Delete from Connect").classList.contains("mod-warning"));
+      assert.ok(button(f.root, "Use hosted"));
+    } else {
+      assert.match(f.text(), /No hosted version.*before moving the original to trash/);
+      assert.ok(button(f.root, "Move local file to trash").classList.contains("mod-warning"));
+      assert.ok(button(f.root, "Keep a local copy"));
+      assert.doesNotMatch(f.text(), /Use hosted|Keep both/);
+    }
+    f.dom.window.close();
+  }
 });
 
 test("the single save bar updates validity while typing without replacing the focused input", async () => {

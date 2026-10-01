@@ -164,7 +164,7 @@ export async function fetchSend(
   StackAbortController: typeof AbortController = AbortController,
   readHeaders: FetchStack["headers"] = (headers) => Object.fromEntries(headers),
 ): Promise<RequestUrlResponse> {
-  const { signal, dispose } = deadline(request.signal, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const { signal, check, dispose } = deadline(request.signal, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   // The stack's own controller is aborted whenever ours is, without a reason
   // object: ours records why, and a reason need not cross a process boundary.
   const stack = new StackAbortController();
@@ -184,6 +184,8 @@ export async function fetchSend(
     } catch (error) {
       throw networkFailure(error, request.signal, signal);
     }
+    check();
+    if (signal.aborted) throw networkFailure(signal.reason, request.signal, signal);
     const text = new TextDecoder().decode(arrayBuffer);
     if (request.throw !== false && response.status >= 400) {
       throw new HttpStatusError(`http_${response.status}`, `Request failed with status ${response.status}`, response.status);
@@ -204,16 +206,22 @@ export async function requestUrlSend(
   send: (request: RequestUrlParam) => Promise<RequestUrlResponse> = (input) => requestUrl(input),
 ): Promise<RequestUrlResponse> {
   const { signal, timeoutMs, ...param } = request;
-  const { signal: limit, dispose } = deadline(signal, timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const { signal: limit, check, dispose } = deadline(signal, timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  let removeAbort = () => {};
   try {
     return await new Promise<RequestUrlResponse>((resolve, reject) => {
       const onAbort = () => reject(networkFailure(limit.reason, signal, limit));
       if (limit.aborted) return onAbort();
       limit.addEventListener("abort", onAbort, { once: true });
-      send(param).then(resolve, (error: unknown) => reject(networkFailure(error, signal, limit)))
-        .finally(() => limit.removeEventListener("abort", onAbort));
+      removeAbort = () => limit.removeEventListener("abort", onAbort);
+      send(param).then((response) => {
+        check();
+        if (limit.aborted) onAbort();
+        else resolve(response);
+      }, (error: unknown) => reject(networkFailure(error, signal, limit)));
     });
   } finally {
+    removeAbort();
     dispose();
   }
 }
@@ -257,14 +265,19 @@ function isAbort(error: unknown): boolean {
 }
 
 /** Combines the caller's cancellation with a per-attempt deadline. */
-function deadline(parent: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; dispose: () => void } {
+function deadline(parent: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; check: () => void; dispose: () => void } {
   const controller = new AbortController();
+  const expiresAt = Date.now() + timeoutMs;
   const onParentAbort = () => controller.abort(abortError());
   if (parent?.aborted) onParentAbort();
   else parent?.addEventListener("abort", onParentAbort, { once: true });
-  const timer = window.setTimeout(() => controller.abort(new NetworkError("network_timeout", "Connect did not respond in time.")), timeoutMs);
+  const timeout = () => controller.abort(new NetworkError("network_timeout", "Connect did not respond in time."));
+  const timer = window.setTimeout(timeout, timeoutMs);
   return {
     signal: controller.signal,
+    // Mobile can freeze JS while native networking continues. The response
+    // microtask may run before an overdue timer on resume; check wall time too.
+    check: () => { if (!controller.signal.aborted && Date.now() >= expiresAt) timeout(); },
     dispose: () => {
       window.clearTimeout(timer);
       parent?.removeEventListener("abort", onParentAbort);
