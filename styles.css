@@ -56,7 +56,7 @@
 .mdbase-status-bar[data-state="waiting"] { color: var(--text-muted); }
 .mdbase-status-bar[data-state="attention"],
 .mdbase-status-bar[data-state="paused"] { color: var(--text-warning); }
-.mdbase-status-bar[data-state="offline"] { color: var(--text-error); }
+.mdbase-status-bar[data-state="offline"] { color: var(--text-muted); }
 
 .mdbase-note-status {
   cursor: pointer;
@@ -1158,6 +1158,7 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-progress-label {
   margin-top: 5px;
+  overflow-wrap: anywhere;
 }
 
 /* Default surfaces are quiet; configuration and diagnostics expand in place. */
@@ -1506,6 +1507,7 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-activity-row[data-tone="error"] > span:first-child { color: var(--text-error); }
 .mdbase-activity-row svg { width: 16px; height: 16px; }
 .mdbase-activity-row strong { display: block; }
+.mdbase-activity-row > div { min-width: 0; overflow-wrap: anywhere; }
 .mdbase-activity-row > div > div { margin: 2px 0; color: var(--text-muted); }
 
 /* Sync history: runs expand to the files they changed. */
@@ -1571,7 +1573,7 @@ button.mdbase-yaml-problem:disabled {
   gap: 16px;
 }
 
-.mdbase-conflict-summary { min-width: 0; }
+.mdbase-conflict-summary { min-width: 0; overflow-wrap: anywhere; }
 .mdbase-conflict-comparison { grid-column: 1 / -1; margin-top: 12px; }
 
 .mdbase-conflict-legend {
@@ -2341,7 +2343,11 @@ button.mdbase-transfer-open:hover code {
     min-height: 44px;
   }
 
-  .mdbase-conflict-row,
+  .mdbase-conflict-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
   .mdbase-document-header {
     align-items: stretch;
     flex-direction: column;
@@ -2370,7 +2376,9 @@ button.mdbase-transfer-open:hover code {
 
   .mdbase-sync-actions button,
   .mdbase-sync-progress button,
-  .mdbase-transfer-row button {
+  .mdbase-transfer-row button,
+  .mdbase-recovery-actions button,
+  .mdbase-activity-row button {
     min-height: 44px;
   }
 
