@@ -82,8 +82,13 @@ export class MdbaseSettingTab extends PluginSettingTab {
       .setDesc(`${profile.mode === "read_write" ? "Read and write" : "Read only"} · ${new URL(profile.controlUrl).host}`)
       .addButton((button) => button.setButtonText("Reconnect").onClick(async () => {
         button.setDisabled(true);
-        await plugin.openWorkspace("sync").then((view) => view.reconnectCollection());
-        button.setDisabled(false);
+        try {
+          await plugin.openWorkspace("sync").then((view) => view.reconnectCollection());
+        } catch (error) {
+          new Notice(error instanceof Error ? error.message : String(error));
+        } finally {
+          button.setDisabled(false);
+        }
       }));
 
     new Setting(containerEl)
@@ -101,9 +106,11 @@ export class MdbaseSettingTab extends PluginSettingTab {
     const apply = async (next: SelectiveSyncPolicy) => {
       try {
         await plugin.sync.configureSelectiveSync(next);
+        return true;
       } catch (error) {
         new Notice(error instanceof Error ? error.message : String(error));
         this.display();
+        return false;
       }
     };
     for (const [value, label] of FILE_CLASSES) {
@@ -127,8 +134,14 @@ export class MdbaseSettingTab extends PluginSettingTab {
     const exclusions = new Setting(containerEl).setName("Excluded folders").setDesc(ATTACHMENT_SCOPE_DESCRIPTION);
     renderFolderExclusions(this.app, exclusions.controlEl, folders, next => { folders = next; });
     exclusions.addButton(button => button.setButtonText("Apply").onClick(async () => {
-      await apply({ ...plugin.connectSync.getSelectiveSync(), excluded_folders: folders });
-      new Notice("Excluded folders updated. The next sync applies them.");
+      button.setDisabled(true);
+      try {
+        if (await apply({ ...plugin.connectSync.getSelectiveSync(), excluded_folders: folders })) {
+          new Notice("Excluded folders updated. The next sync applies them.");
+        }
+      } finally {
+        button.setDisabled(false);
+      }
     }));
 
     new Setting(containerEl)

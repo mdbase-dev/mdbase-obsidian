@@ -117,7 +117,7 @@ export function reliableSend(send: HttpSend, policy: RetryPolicy = DEFAULT_RETRY
  */
 export function platformSend(desktop: FetchStack | null = privilegedDesktopStack()): HttpSend {
   return desktop
-    ? (request) => fetchSend(request, desktop.fetch, desktop.AbortController)
+    ? (request) => fetchSend(request, desktop.fetch, desktop.AbortController, desktop.headers)
     : (request) => requestUrlSend(request);
 }
 
@@ -125,6 +125,8 @@ export function platformSend(desktop: FetchStack | null = privilegedDesktopStack
 export interface FetchStack {
   fetch: typeof window.fetch;
   AbortController: typeof AbortController;
+  /** Serialize Headers in the process that owns them, without renderer callbacks. */
+  headers: (headers: Headers) => Record<string, string>;
 }
 
 /**
@@ -141,8 +143,15 @@ export function privilegedDesktopStack(): FetchStack | null {
     }).remote;
     const fetch = remote?.net?.fetch;
     const MainAbortController = remote?.getGlobal?.("AbortController") as typeof AbortController | undefined;
-    if (!fetch || !remote?.net || typeof MainAbortController !== "function") return null;
-    return { fetch: fetch.bind(remote.net), AbortController: MainAbortController };
+    const MainObject = remote?.getGlobal?.("Object") as typeof Object | undefined;
+    if (!fetch || !remote?.net || typeof MainAbortController !== "function" || !MainObject) return null;
+    return {
+      fetch: fetch.bind(remote.net),
+      AbortController: MainAbortController,
+      // remote callbacks arrive asynchronously; remote iterators cannot be
+      // consumed in the renderer either. Keep enumeration in the main process.
+      headers: (headers) => MainObject.fromEntries(headers),
+    };
   } catch {
     return null;
   }
@@ -153,6 +162,7 @@ export async function fetchSend(
   request: HttpRequest,
   send: typeof window.fetch,
   StackAbortController: typeof AbortController = AbortController,
+  readHeaders: FetchStack["headers"] = (headers) => Object.fromEntries(headers),
 ): Promise<RequestUrlResponse> {
   const { signal, dispose } = deadline(request.signal, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   // The stack's own controller is aborted whenever ours is, without a reason
@@ -178,11 +188,7 @@ export async function fetchSend(
     if (request.throw !== false && response.status >= 400) {
       throw new HttpStatusError(`http_${response.status}`, `Request failed with status ${response.status}`, response.status);
     }
-    const responseHeaders: Record<string, string> = {};
-    response.headers.forEach((value, name) => {
-      responseHeaders[name] = value;
-    });
-    return { status: response.status, headers: responseHeaders, arrayBuffer, json: parseJson(text), text };
+    return { status: response.status, headers: readHeaders(response.headers), arrayBuffer, json: parseJson(text), text };
   } finally {
     signal.removeEventListener("abort", abortStack);
     dispose();

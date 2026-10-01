@@ -24,6 +24,32 @@ test("aborted IndexedDB writes reject without replacing the last durable checkpo
   assert.deepEqual(await new IndexedDbMirrorStateStore(key).read(), original);
 });
 
+test("a transient IndexedDB open failure does not poison either adapter forever", async () => {
+  const adapters = [
+    { store: new IndexedDbMirrorStateStore(crypto.randomUUID()), read: function () { return this.store.read(); } },
+    { store: new IndexedDbMirrorBlobStore(crypto.randomUUID()), read: function () { return this.store.has(digest); } },
+  ];
+  for (const adapter of adapters) {
+    const open = indexedDB.open;
+    let opens = 0;
+    indexedDB.open = function (...args: Parameters<typeof open>) {
+      opens++;
+      if (opens > 1) return open.apply(this, args);
+      const request = { error: new DOMException("temporary storage error", "UnknownError") } as IDBOpenDBRequest;
+      queueMicrotask(() => request.onerror?.call(request, new Event("error")));
+      return request;
+    };
+    try {
+      await assert.rejects(adapter.read(), /temporary storage error/);
+      await adapter.read();
+      assert.equal(opens, 2, "the next retry must really reopen storage");
+    } finally {
+      indexedDB.open = open;
+      adapter.store.close();
+    }
+  }
+});
+
 test("old binary-stage cleanup failure cannot corrupt a published replacement", async () => {
   const store = new IndexedDbMirrorBlobStore(crypto.randomUUID());
   await store.write(digest, bytes());

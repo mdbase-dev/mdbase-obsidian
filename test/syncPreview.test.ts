@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { MirrorSyncPlan } from "@mdbase-dev/connect-sync/mirror";
-import { previewFromPlan, syncPlanSafety } from "../src/syncPreview";
+import { actionEntry, previewFromPlan, syncPlanSafety } from "../src/syncPreview";
 
 function plan(overrides: Partial<MirrorSyncPlan> = {}): MirrorSyncPlan {
   return {
@@ -257,6 +257,23 @@ const deleteLocal = (path: string): MirrorSyncPlan["actions"][number] => ({
   expected_local: { state: "absent" },
   expected_path_owner: { state: "absent" },
   reason: "remote_change",
+});
+
+test("destructive transfer details name where the deletion or rename happens", () => {
+  assert.equal(actionEntry(deleteLocal("notes/gone.md")).detail, "Move this device's copy to trash.");
+  assert.equal(actionEntry({
+    command: "delete_remote", action_id: "delete-hosted", depends_on: [], target: ref("record", "notes/gone.md"),
+    expected_remote: { state: "absent" }, expected_local: { state: "absent" }, idempotency_key: "delete-hosted", reason: "local_change",
+  }).detail, "Delete from Connect.");
+  for (const command of ["move_local", "move_remote"] as const) {
+    const action = {
+      command, action_id: command, depends_on: [], source: ref("record", "notes/old.md"), target_path: "notes/new.md",
+      expected_source_owner: { state: "absent" }, expected_target_owner: { state: "absent" }, reason: "remote_change",
+    } as MirrorSyncPlan["actions"][number];
+    assert.equal(actionEntry(action).detail, command === "move_local"
+      ? "Rename on this device from notes/old.md."
+      : "Rename in Connect from notes/old.md.");
+  }
 });
 
 test("deletions, conflicts, attachment uploads and large transfers sync without review", () => {
