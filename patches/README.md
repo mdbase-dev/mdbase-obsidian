@@ -44,6 +44,11 @@ addition is the optional `ancestor_document` below):
   not an OS-wide atomic delete. The optional argument is backward compatible
   with old adapters and needs an upstream SDK source port. Regression:
   `test/syncReliability.test.ts` SDK delete preflight race and binary removal.
+  `directory-mirror.js` also binds hosted-deletion conflict resolution to the
+  inspected local revision and passes its expected bytes to removal; binary
+  binding cleanup does likewise. `sync-executor.js` checks the expected resource
+  revision before its missing-metadata removal branch. These close the same gap
+  outside MirrorMaterializer; the final trash API still is not atomic.
 - `sync-inspector.js` / `mirror-state.d.ts`: optional physical `pathKind` detects
   destination directories and ancestor files. Blocking issues enter the normal
   planner/fingerprint instead of creating an impossible transfer. No local file

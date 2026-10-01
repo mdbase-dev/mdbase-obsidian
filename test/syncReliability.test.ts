@@ -446,6 +446,36 @@ test("conditional binary removal refuses changed bytes and still trashes an exac
   assert.equal(vault.readBytes("photo.png"), null);
 });
 
+test("a hosted deletion conflict decision cannot discard an edit made just before trash", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "base\n", types: [] }]);
+  const replica = hosted.registerReplica({ name: "Writer", mode: "read_write" });
+  const vault = new MemoryVault();
+  let race = false;
+  class RacyFileSystem extends ObsidianMirrorFileSystem {
+    override async remove(path: string, expected?: string | MirrorBinaryInfo | null): Promise<void> {
+      if (race) await edit(vault, path, "newer local edit\n");
+      return super.remove(path, expected);
+    }
+  }
+  const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new RacyFileSystem(vault as never), stateStore: new MemoryMirrorStateStore(),
+  });
+  await mirror.sync();
+  const there = otherDevice(hosted);
+  await there.mirror.sync();
+  await there.vault.delete(there.vault.getAbstractFileByPath("a.md") as TFile);
+  await there.mirror.sync();
+  await edit(vault, "a.md", "local edit\n");
+  await mirror.sync();
+  const conflict = (await mirror.status()).conflicts[0]!;
+  assert.ok(conflict);
+  race = true;
+  await assert.rejects(mirror.resolveConflict(conflict.object_id, conflict.decision_id, "remote"), (error: unknown) =>
+    ["sync_plan_stale", "conflict_decision_stale"].includes((error as { code: string }).code));
+  assert.equal(vault.read("a.md"), "newer local edit\n");
+});
+
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
   const hosted = new MemoryAuthority();
   hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "a\n", types: [] }]);

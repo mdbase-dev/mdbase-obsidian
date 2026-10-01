@@ -23,7 +23,7 @@ index dd5830c..868ba93 100644
      private installRemoteRecord;
      private installRemoteFile;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
-index a9018ff..ba68459 100644
+index a9018ff..647646c 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 @@ -8,6 +8,7 @@ import { checkpointMirrorStatus, mirrorStatusFromPlan } from "./mirror-status.js
@@ -175,6 +175,51 @@ index a9018ff..ba68459 100644
                      : {})
              });
              return;
+@@ -330,8 +358,15 @@ export class DirectoryMirror {
+         const path = conflict?.local.state === "exact"
+             ? conflict.local.object.path
+             : state.records[identity]?.path;
+-        if (path && await this.fileSystem.read(path) !== null)
+-            await this.fileSystem.remove(path);
++        if (path) {
++            const expected = await this.fileSystem.read(path);
++            if (expected !== null) {
++                if (conflict?.local.state !== "exact"
++                    || runtimeDocumentRevision(expected, this.runtime) !== conflict.local.object.payload_revision)
++                    throw staleConflict();
++                await this.fileSystem.remove(path, expected);
++            }
++        }
+         delete state.records[identity];
+     }
+     async installRemoteFile(state, identity, current) {
+@@ -349,15 +384,23 @@ export class DirectoryMirror {
+             const localPath = state.local_bindings?.[identity]?.path;
+             await this.materializer.putFile(state, current, state, acceptedLocal);
+             if (localPath && localPath !== current.path)
+-                await this.fileSystem.remove(localPath);
++                await this.fileSystem.remove(localPath, acceptedLocal ?? null);
+             return;
+         }
+         const conflict = state.planned_conflicts?.[identity];
+         const path = conflict?.local.state === "exact"
+             ? conflict.local.object.path
+             : state.files?.[identity]?.file.path;
+-        if (path && await this.fileSystem.inspectBinary(path) !== null)
+-            await this.fileSystem.remove(path);
++        if (path) {
++            const expected = await this.fileSystem.inspectBinary(path);
++            if (expected !== null) {
++                if (conflict?.local.state !== "exact"
++                    || expected.content_digest !== conflict.local.object.payload_revision
++                    || (conflict.local.object.size !== undefined && expected.size !== conflict.local.object.size))
++                    throw staleConflict();
++                await this.fileSystem.remove(path, expected);
++            }
++        }
+         delete state.files?.[identity];
+     }
+     async readState() {
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 index 6936f79..491236e 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
@@ -307,7 +352,7 @@ index 5a3bad2..c4207b7 100644
              validatePortableMirrorPath(conflict.local.object.path);
          if (conflict.remote.state === "exact")
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
-index 599bcb8..30c92d0 100644
+index 599bcb8..22e1bf6 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 @@ -1,7 +1,7 @@
@@ -390,7 +435,24 @@ index 599bcb8..30c92d0 100644
          await this.materializer.putFile(state, file, state);
          this.installPathOwner(action.target);
          return { action_id: action.action_id, status: "completed" };
-@@ -372,12 +389,17 @@ export class PlanOnlySyncExecutor {
+@@ -196,8 +213,14 @@ export class PlanOnlySyncExecutor {
+                 const entry = state.resources?.[action.target.identity];
+                 if (entry)
+                     await this.materializer.removeResource(state, action.target.path, entry);
+-                else
+-                    await this.ports.fileSystem.remove(action.target.path);
++                else {
++                    const expected = await this.ports.fileSystem.read(action.target.path);
++                    if (expected !== null) {
++                        if (runtimeDocumentRevision(expected, this.ports.runtime) !== action.target.payload_revision)
++                            throw stale(`${action.target.path} changed before removal.`);
++                        await this.ports.fileSystem.remove(action.target.path, expected);
++                    }
++                }
+             }
+             else {
+                 await this.materializer.removeFile(state, action.target.identity);
+@@ -372,12 +395,17 @@ export class PlanOnlySyncExecutor {
                  : action.expected_remote;
          state.planned_conflicts ??= {};
          const conflictKind = receipt.status === "rejected" ? "rejected" : "both_changed";
