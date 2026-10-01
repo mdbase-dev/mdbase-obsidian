@@ -176,7 +176,7 @@ index a9018ff..ba68459 100644
              });
              return;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
-index 6936f79..64b0670 100644
+index 6936f79..08ca0f6 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 @@ -28,12 +28,16 @@ export class MirrorMaterializer {
@@ -209,6 +209,15 @@ index 6936f79..64b0670 100644
          }
          state.records[record.record_id] = {
              path: record.path,
+@@ -104,7 +108,7 @@ export class MirrorMaterializer {
+             }
+         }
+         if (!sameBinaryInfo(target, file)) {
+-            await this.fileSystem.writeBinary(file.path, verifiedFileBytes(this.blobStore.read(file.content_digest), file));
++            await this.fileSystem.writeBinary(file.path, verifiedFileBytes(this.blobStore.read(file.content_digest), file), target);
+         }
+         if (prior && prior.file.path !== file.path) {
+             await this.fileSystem.remove(prior.file.path);
 @@ -145,7 +149,7 @@ export class MirrorMaterializer {
              && (!prior || this.runtime.digest(existing) !== prior.hash)) {
              throw new MirrorDivergenceError(`resource:${resource.path}`, resource.path);
@@ -219,7 +228,7 @@ index 6936f79..64b0670 100644
          state.resources[resource.path] = {
              path: resource.path,
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
-index 7c7372e..ae211aa 100644
+index 7c7372e..84c60a1 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 @@ -85,6 +85,8 @@ export interface MirrorState {
@@ -231,7 +240,7 @@ index 7c7372e..ae211aa 100644
      }>;
      /** Temporary stable-identity bindings when local paths differ from the base. */
      local_bindings?: Record<string, {
-@@ -132,7 +134,10 @@ export interface MirrorFileSystem {
+@@ -132,14 +134,17 @@ export interface MirrorFileSystem {
      read(path: string): Promise<string | null>;
      /** Exact UTF-8 read, preserving a leading BOM; expected I/O failures reject as `SyncError("file_read_failed")`. */
      readText(path: string): Promise<MirrorTextReadResult>;
@@ -243,6 +252,14 @@ index 7c7372e..ae211aa 100644
      /** Atomically rename one managed path without changing its bytes. */
      move(source: string, target: string): Promise<void>;
      remove(path: string): Promise<void>;
+     listMarkdown(excluded: ReadonlySet<string>): Promise<string[]>;
+     inspectBinary(path: string): Promise<MirrorBinaryInfo | null>;
+     /** Atomically install a fully-drained byte stream at path. */
+-    writeBinary(path: string, source: AsyncIterable<Uint8Array>): Promise<void>;
++    writeBinary(path: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void>;
+     /** Writable-file adapters enumerate only eligible non-Markdown regular files. */
+     listBinary?(excluded: ReadonlySet<string>): Promise<string[]>;
+     /** Opens a fresh stream for a stable path snapshot. */
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js
 index 5a3bad2..c4207b7 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js

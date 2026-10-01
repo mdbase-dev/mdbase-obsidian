@@ -28,6 +28,15 @@ addition is the optional `ancestor_document` below):
   guarantee applies to this plugin's conditional-write implementation. This uses
   Obsidian's serialized read/modify/write contract, not an OS-wide lock against
   arbitrary external writers.
+- `mirror-materializer.js` / `mirror-state.d.ts`: pass the inspected binary
+  destination to `writeBinary(path, source, expected)`. `null` requires absence;
+  otherwise the plugin rechecks digest/size after draining the stream. This
+  prevents a competing create/edit between SDK preflight and adapter invocation
+  from becoming the overwrite baseline. Existing adapters may ignore this
+  optional argument. Obsidian has no binary `Vault.process`, so this is a
+  pre-write check rather than an OS-wide atomic compare-and-swap. This API still
+  needs an upstream SDK source port before removing/upgrading the patch.
+  Regression: `test/syncReliability.test.ts` SDK binary preflight race.
 - `sync-inspector.js` / `mirror-state.d.ts`: optional physical `pathKind` detects
   destination directories and ancestor files. Blocking issues enter the normal
   planner/fingerprint instead of creating an impossible transfer. No local file

@@ -4,8 +4,10 @@ import { test } from "node:test";
 import type { TFile } from "obsidian";
 import { MemoryAuthority, type SyncTransport } from "@mdbase-dev/connect-sync";
 import {
+  DirectoryMirror,
   MemoryMirrorBlobStore,
   MemoryMirrorStateStore,
+  type MirrorBinaryInfo,
   type MirrorState,
   WritableDirectoryMirror,
 } from "@mdbase-dev/connect-sync/mirror";
@@ -373,6 +375,38 @@ test("a binary file created during a download is not silently overwritten", asyn
   await assert.rejects(fs.writeBinary("photo.png", source), (error: unknown) =>
     (error as { code?: string }).code === "sync_plan_stale");
   assert.deepEqual(vault.readBytes("photo.png"), new Uint8Array([7, 8, 9]));
+});
+
+test("SDK binary preflight expectations protect a file created before adapter materialization", async () => {
+  const hosted = new MemoryAuthority();
+  const replica = hosted.registerReplica({ name: "Binary reader", mode: "read_only" });
+  const base = hosted.transport(replica);
+  const bytes = Uint8Array.of(4, 5, 6);
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const digest = `sha256:${Array.from(hash, (value) => value.toString(16).padStart(2, "0")).join("")}` as const;
+  const file = {
+    file_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", path: "photo.png", revision: digest,
+    content_digest: digest, size: bytes.byteLength, media_class: "image" as const,
+    modified_at: "2026-01-01T00:00:00.000Z",
+  };
+  const vault = new MemoryVault();
+  class RacyFileSystem extends ObsidianMirrorFileSystem {
+    override async writeBinary(path: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void> {
+      await vault.createBinary(path, Uint8Array.of(7, 8, 9).buffer);
+      return super.writeBinary(path, source, expected);
+    }
+  }
+  const mirror = new DirectoryMirror(replica, {
+    ...base,
+    fileSnapshot: async (snapshotId, page) => ({ ...await base.fileSnapshot(snapshotId, page), files: [file] }),
+    downloadFile: async function* () { yield bytes; },
+  }, {
+    fileSystem: new RacyFileSystem(vault as never), stateStore: new MemoryMirrorStateStore(),
+    blobStore: new MemoryMirrorBlobStore(), selectiveSync: { file_classes: ["image"], excluded_folders: [] },
+  });
+  const outcome = await mirror.apply(await mirror.inspect());
+  assert.equal(outcome.status, "stale");
+  assert.deepEqual(vault.readBytes("photo.png"), Uint8Array.of(7, 8, 9));
 });
 
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
