@@ -27,21 +27,23 @@ export function mergeDocuments(
   if (parts.every((part) => part === null)) {
     const merged = mergeLines(base, local, remote);
     return merged === null
-      ? { clean: false, reason: "Both versions changed the same lines." }
+      ? { clean: false, reason: "The line edits could not be merged safely." }
       : { clean: true, text: merged };
   }
   const [b, l, r] = parts;
   if (!b || !l || !r || b.open !== l.open || l.open !== r.open) {
     return { clean: false, reason: "Only one version has frontmatter." };
   }
+  const close = mergeValue(b.close, l.close, r.close);
+  if (close === null) return { clean: false, reason: "Both versions changed the frontmatter fence." };
   const frontmatter = mergeFrontmatter(b.frontmatter, l.frontmatter, r.frontmatter);
   if (frontmatter === null) return { clean: false, reason: "Both versions changed the same field." };
   const body = mergeLines(b.body, l.body, r.body);
-  if (body === null) return { clean: false, reason: "Both versions changed the same lines." };
-  if (frontmatter.length && !validFrontmatter(frontmatter.join("\n"))) {
+  if (body === null) return { clean: false, reason: "The line edits could not be merged safely." };
+  if (frontmatter.length && !validFrontmatter(frontmatter.join("\n") + "\n")) {
     return { clean: false, reason: "The combined frontmatter would not be valid YAML." };
   }
-  return { clean: true, text: [l.open, ...frontmatter, l.close].join("\n") + body };
+  return { clean: true, text: [l.open, ...frontmatter, close].join("\n") + body };
 }
 
 interface DocumentParts {
@@ -68,11 +70,22 @@ function splitDocument(document: string): DocumentParts | null {
 }
 
 function mergeLines(base: string, local: string, remote: string): string | null {
-  const regions = diff3Merge(local.split("\n"), base.split("\n"), remote.split("\n"), { excludeFalseConflicts: true });
+  if (local === remote || remote === base) return local;
+  if (local === base) return remote;
+  const b = base.split("\n");
+  const l = local.split("\n");
+  const r = remote.split("\n");
+  // node-diff3's LCS is quadratic in the worst case (especially repeated
+  // lines). Never freeze Obsidian's UI trying to merge a pathological note:
+  // the caller keeps both exact documents instead. Ordinary field/body edits
+  // above avoid diffing an unchanged body regardless of its size.
+  const work = b.length * (l.length + r.length);
+  if (work > 4_000_000) return null;
+  const regions = diff3Merge(l, b, r, { excludeFalseConflicts: true });
   const merged: string[] = [];
   for (const region of regions) {
     if (region.conflict) return null;
-    merged.push(...(region.ok ?? []));
+    for (const line of region.ok ?? []) merged.push(line);
   }
   return merged.join("\n");
 }
@@ -100,14 +113,21 @@ function fieldBlocks(lines: string[]): FieldBlocks | null {
       blocks.get(current)?.push(line);
     }
   }
-  return { order, blocks: new Map([...blocks].map(([key, value]) => [key, value.join("\n")])) };
+  return { order, blocks: new Map([...blocks].filter(([, value]) => value.length > 0).map(([key, value]) => [key, value.join("\n")])) };
 }
 
 function mergeFrontmatter(base: string[], local: string[], remote: string[]): string[] | null {
   const b = fieldBlocks(base);
   const l = fieldBlocks(local);
   const r = fieldBlocks(remote);
-  if (!b || !l || !r) {
+  // Field-wise merging cannot represent moves. A line merge either preserves
+  // the reordered text or conservatively keeps both versions.
+  const reordered = (ancestor: FieldBlocks, changed: FieldBlocks) => {
+    const common = new Set(ancestor.order.filter((key) => changed.blocks.has(key)));
+    return ancestor.order.filter((key) => common.has(key)).join("\n")
+      !== changed.order.filter((key) => common.has(key)).join("\n");
+  };
+  if (!b || !l || !r || reordered(b, l) || reordered(b, r)) {
     return mergeLines(base.join("\n"), local.join("\n"), remote.join("\n"))?.split("\n") ?? null;
   }
   const merged = new Map<string, string>();
@@ -123,11 +143,8 @@ function mergeFrontmatter(base: string[], local: string[], remote: string[]): st
     const before = r.order.slice(0, index).reverse().find((candidate) => order.includes(candidate));
     order.splice(before === undefined ? 0 : order.indexOf(before) + 1, 0, key);
   }
-  // An empty preamble is the absence of lines, not an empty one.
-  return order.flatMap((key) => {
-    const value = merged.get(key) ?? "";
-    return key === PREAMBLE && value === "" ? [] : value.split("\n");
-  });
+  // An absent preamble is different from one containing a single blank line.
+  return order.flatMap((key) => (merged.get(key) ?? "").split("\n"));
 }
 
 /** `undefined` is an absent field; `null` means both sides changed it differently. */

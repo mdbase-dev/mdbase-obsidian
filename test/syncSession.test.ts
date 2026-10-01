@@ -114,8 +114,33 @@ function harness(initial: MdbaseSyncPreview, options: HarnessOptions = {}) {
     clear: async () => undefined,
   };
   const session = new SyncSession(controller as never, () => profile as never, history);
-  return { session, applied, runs, resolveCalls: () => resolveCalls, setNext: (preview: MdbaseSyncPreview) => { next = preview; } };
+  return { session, controller, applied, runs, resolveCalls: () => resolveCalls, setNext: (preview: MdbaseSyncPreview) => { next = preview; } };
 }
+
+test("progress and unrelated updates do not rescan a large plan's consent policy", () => {
+  const preview = previewFromPlan(plan(Array.from({ length: 20_000 }, (_, index) => write(`${index}.md`))));
+  const { session } = harness(preview);
+  let reads = 0;
+  for (const action of preview.plan.actions) {
+    const command = action.command;
+    Object.defineProperty(action, "command", { get: () => { reads++; return command; } });
+  }
+  session.update({ preview });
+  const safety = session.safety();
+  const baselineReads = reads;
+  for (let index = 0; index < 100; index++) {
+    session.update({ progress: { phase: "downloading", completed: index, total: 20_000, done: false } });
+    assert.deepEqual(session.safety(), safety);
+  }
+  assert.equal(reads, baselineReads, "the immutable preview's safety should be reused during transfers");
+  const deletionPreview = previewFromPlan(plan(Array.from({ length: 21 }, (_, index) => ({
+    ...remove(`${index}.md`), command: "delete_remote", expected_remote: { state: "absent" },
+  } as MirrorSyncPlan["actions"][number]))));
+  session.update({ preview: deletionPreview });
+  assert.equal(session.safety()?.safe, false, "a replacement preview must recompute consent");
+  session.update({ preview: null });
+  assert.equal(session.safety(), null);
+});
 
 test("Sync now applies a routine plan in one step and records the outcome", async () => {
   const { session, applied, runs } = harness(previewFromPlan(plan([write("a.md"), write("b.md")])));
@@ -204,6 +229,25 @@ test("automatic sync waits while paused or while Connect needs approval", async 
 
   session.update({ problem: { code: "x", kind: "auth", title: "t", message: "m", action: "reauthorize", actionLabel: "a" } });
   assert.equal(await session.autoSync(), "needs_review");
+});
+
+test("Stop sync during inspection never starts the reviewed transfer", async () => {
+  const h = harness(previewFromPlan(plan([write("a.md")])));
+  const inspect = h.controller.inspect;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  h.controller.inspect = async () => {
+    await gate;
+    return inspect();
+  };
+  const running = h.session.syncNow();
+  assert.equal(h.session.state.busy, true);
+  h.session.cancel();
+  release();
+  assert.equal(await running, "paused");
+  assert.equal(h.applied.length, 0, "stopping an inspection must not upload or delete files afterward");
+  assert.equal(h.session.state.paused, true);
+  assert.equal(await h.session.syncNow(), "applied", "manual retry resumes the paused plan");
 });
 
 test("automatic sync keeps the last message instead of clearing it", async () => {
