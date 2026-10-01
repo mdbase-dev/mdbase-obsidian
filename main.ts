@@ -309,10 +309,12 @@ export default class MdbasePlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
     // Before version 2 automatic sync was off by default and stopped for most
     // plans, so a stored `false` is almost always the old default, not a choice.
-    if (stored && (stored.syncSettingsVersion ?? 1) < 2) {
-      this.settings.autoSync = true;
-      this.settings.syncSettingsVersion = 2;
-    }
+    const version = typeof stored?.syncSettingsVersion === "number"
+      && Number.isSafeInteger(stored.syncSettingsVersion) && stored.syncSettingsVersion >= 1
+      ? stored.syncSettingsVersion : 1;
+    this.settings.syncSettingsVersion = Math.max(2, version);
+    this.settings.autoSync = version < 2 || typeof stored?.autoSync !== "boolean"
+      ? DEFAULT_SETTINGS.autoSync : stored.autoSync;
     this.settings.mirrorProfile = normalizeMirrorProfile(this.settings.mirrorProfile);
     if (!this.settings.typeDrafts || typeof this.settings.typeDrafts !== "object" || Array.isArray(this.settings.typeDrafts)) {
       this.settings.typeDrafts = {};

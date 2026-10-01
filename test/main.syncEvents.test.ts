@@ -45,6 +45,27 @@ test("folder-only rename events schedule sync and invalidate cached descendant r
   f.plugin.connectSync.dispose();
 });
 
+test("malformed settings versions cannot silently retain the pre-automatic-sync default", async () => {
+  for (const version of [null, "bad", "2", {}, [], -1, 1.5, NaN]) {
+    const f = fixture();
+    f.plugin.loadData = async () => ({ autoSync: false, syncSettingsVersion: version });
+    await f.plugin.loadSettings();
+    assert.equal(f.plugin.settings.autoSync, true, `malformed version ${JSON.stringify(version)} migrates safely`);
+    assert.equal(f.plugin.settings.syncSettingsVersion, 2);
+    f.plugin.connectSync.dispose();
+  }
+});
+
+test("automatic sync normalizes corrupt booleans but respects an explicit version-2 opt-out", async () => {
+  for (const autoSync of [null, "false", 0, {}, undefined, false]) {
+    const f = fixture();
+    f.plugin.loadData = async () => ({ autoSync, syncSettingsVersion: 2 });
+    await f.plugin.loadSettings();
+    assert.equal(f.plugin.settings.autoSync, autoSync === false ? false : true);
+    f.plugin.connectSync.dispose();
+  }
+});
+
 test("paused sync takes precedence over a previous offline problem in scheduler wiring", () => {
   const f = fixture();
   f.plugin.sync = { state: { paused: true, problem: { kind: "offline" } } } as never;
