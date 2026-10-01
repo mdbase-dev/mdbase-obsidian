@@ -464,6 +464,23 @@ test("destination tabs expose a labelled panel and native roving keyboard naviga
   f.dom.window.close();
 });
 
+test("destination tabs leave modified or already handled keys to Obsidian", () => {
+  const f = fixture(true);
+  f.state.render();
+  const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!;
+  for (const modifier of ["ctrlKey", "metaKey", "altKey"] as const) {
+    const event = new f.dom.window.KeyboardEvent("keydown", { key: "ArrowRight", [modifier]: true, bubbles: true, cancelable: true });
+    tab.dispatchEvent(event);
+    assert.equal(f.state.destination, "sync");
+    assert.equal(event.defaultPrevented, false);
+  }
+  const handled = new f.dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true });
+  handled.preventDefault();
+  tab.dispatchEvent(handled);
+  assert.equal(f.state.destination, "sync");
+  f.dom.window.close();
+});
+
 test("background sync badge updates preserve keyboard focus on the destination tabs", async () => {
   const f = fixture(true);
   f.state.destination = "issues";

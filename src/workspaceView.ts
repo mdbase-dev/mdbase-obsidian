@@ -353,6 +353,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       }
       button.onclick = () => this.showDestination(destination);
       button.onkeydown = (event) => {
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
         const nextIndex = event.key === "ArrowRight" ? (index + 1) % destinations.length
           : event.key === "ArrowLeft" ? (index + destinations.length - 1) % destinations.length
           : event.key === "Home" ? 0
