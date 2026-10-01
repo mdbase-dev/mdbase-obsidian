@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { CreateTypedNoteModal } from "../src/createTypedNoteModal";
+import { DisconnectMirrorModal } from "../src/modals";
 import { MdbaseWorkspaceView } from "../src/workspaceView";
 import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
@@ -1220,6 +1221,20 @@ test("empty collections offer contract packs rather than invented starter types"
   assert.match(f.text(), /mdbase-contracts/);
   assert.ok(button(f.root, "Browse ready-made types"));
   assert.ok(button(f.root, "Design a custom type"));
+  f.dom.window.close();
+});
+
+test("disconnect names the trash boundary and retains the safe keep-files default", async () => {
+  const f = fixture();
+  for (const [label, expected] of [["Cancel", null], ["Keep files", "keep"], ["Trash unchanged files", "remove"]] as const) {
+    const modal = new DisconnectMirrorModal({} as never);
+    const choice = modal.choose("Project notes");
+    assert.match(modal.contentEl.textContent!, /move unchanged synced files to trash.*Local edits are kept either way/);
+    assert.ok(button(modal.contentEl, "Keep files").classList.contains("mod-cta"));
+    assert.ok(button(modal.contentEl, "Trash unchanged files").classList.contains("mod-warning"));
+    button(modal.contentEl, label).click();
+    assert.equal(await choice, expected);
+  }
   f.dom.window.close();
 });
 
