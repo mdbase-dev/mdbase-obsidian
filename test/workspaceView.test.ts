@@ -601,6 +601,32 @@ test("conflict choices respect absent versions and name destructive outcomes", a
   }
 });
 
+test("conflict decisions wait for active sync while their comparison remains readable", async () => {
+  const f = fixture(true);
+  f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{ entity: "record", object_id: "record", decision_id: "decision", path: "note.md" }] };
+  let syncing = false;
+  Object.assign(f.host.connectSync, {
+    isSyncing: () => syncing,
+    conflictComparison: async () => ({ entity: "record", objectId: "record", decisionId: "decision", local: { state: "exact", document: "Local edit" }, remote: { state: "exact", document: "Hosted edit" } }),
+  });
+  f.state.render();
+  button(f.root, "Resolve…").click();
+  await settle();
+  for (const busySession of [true, false]) {
+    syncing = !busySession;
+    f.host.sync.update({ busy: busySession });
+    f.state.render();
+    for (const label of ["Keep local", "Use hosted", "Keep both"]) assert.equal(button(f.root, label).disabled, true, label);
+    assert.equal(button(f.root, "Hide").disabled, false, "review remains available without committing a stale decision");
+    assert.match(f.text(), /Local edit.*Hosted edit/);
+  }
+  syncing = false;
+  f.host.sync.update({ busy: false });
+  f.state.render();
+  assert.equal(button(f.root, "Keep both").disabled, false);
+  f.dom.window.close();
+});
+
 test("the single save bar updates validity while typing without replacing the focused input", async () => {
   const f = fixture();
   f.state.destination = "types";

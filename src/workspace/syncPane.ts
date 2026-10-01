@@ -1022,6 +1022,7 @@ export class SyncPane {
         void this.loadConflictComparison(conflict, comparisonKey);
       };
       if (comparison) {
+        const resolutionBusy = this.ctx.busy || this.session.state.busy || this.session.isSyncing();
         for (const resolution of ["local", "remote"] as const) {
           const destructive = comparison[resolution].state === "absent";
           const button = actions.createEl("button", {
@@ -1031,13 +1032,13 @@ export class SyncPane {
             cls: destructive ? "mod-warning" : "",
           });
           button.setAttr("data-focus-key", `resolve-${comparisonKey}-${resolution}`);
-          button.disabled = this.ctx.busy;
+          button.disabled = resolutionBusy;
           button.onclick = () => void this.resolveMirrorConflict(conflict, resolution, false);
         }
         if (conflict.path && comparison.local.state === "exact") {
           const keepBoth = actions.createEl("button", { text: comparison.remote.state === "absent" ? "Keep a local copy" : "Keep both" });
           keepBoth.setAttr("data-focus-key", `resolve-${comparisonKey}-both`);
-          keepBoth.disabled = this.ctx.busy;
+          keepBoth.disabled = resolutionBusy;
           keepBoth.onclick = () => void this.resolveMirrorConflict(conflict, "remote", true);
         }
         this.renderConflictComparison(row, comparison, Boolean(conflict.path));
