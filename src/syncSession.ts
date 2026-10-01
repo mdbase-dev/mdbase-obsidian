@@ -87,6 +87,8 @@ const EMPTY_STATE: SyncSessionState = {
 export class SyncSession {
   private current: SyncSessionState = { ...EMPTY_STATE };
   private readonly listeners = new Set<() => void>();
+  private safetyPreview: MdbaseSyncPreview | null = null;
+  private previewSafety: SyncPlanSafety | null = null;
 
   /** The last failure pinned to history, so automatic retries do not pin it again. */
   private pinnedFailure: string | null = null;
@@ -267,7 +269,14 @@ export class SyncSession {
   }
 
   safety(): SyncPlanSafety | null {
-    return this.current.preview ? syncPlanSafety(this.current.preview) : null;
+    const preview = this.current.preview;
+    // Engine previews are replaced, not mutated. Transfer progress can notify
+    // several surfaces per file; none needs to rescan the same consent policy.
+    if (preview !== this.safetyPreview) {
+      this.safetyPreview = preview;
+      this.previewSafety = preview ? syncPlanSafety(preview) : null;
+    }
+    return this.previewSafety;
   }
 
   /** Stop now and keep automatic sync off until the person resumes it. */
