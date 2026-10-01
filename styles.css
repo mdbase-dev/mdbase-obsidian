@@ -191,6 +191,16 @@
   line-height: 16px;
 }
 
+.mdbase-nav-status {
+  color: var(--text-warning);
+  white-space: nowrap;
+}
+
+.mdbase-nav-status[data-kind="offline"],
+.mdbase-nav-status[data-kind="paused"] {
+  color: var(--text-muted);
+}
+
 .mdbase-workspace-content {
   min-height: 0;
   flex: 1;
@@ -2062,6 +2072,7 @@ button.mdbase-match-row:hover {
   align-items: baseline;
   gap: 4px 12px;
   margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
 .mdbase-review-reasons {
@@ -2075,6 +2086,7 @@ button.mdbase-match-row:hover {
   align-items: baseline;
   gap: 4px 12px;
   font-size: var(--font-ui-small);
+  overflow-wrap: anywhere;
 }
 
 .mdbase-enrollment-actions {

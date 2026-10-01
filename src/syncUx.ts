@@ -107,6 +107,8 @@ export function syncIndicator(input: {
   problem: SyncProblem | null;
   validationIssues: number;
   localChangeObserved: boolean;
+  /** Automatic sync stays off after the person stops it, even with a healthy checkpoint. */
+  paused?: boolean;
   /** Changes in a plan that stopped for review instead of applying automatically. */
   reviewChanges?: number;
 }): SyncIndicator {
@@ -140,6 +142,9 @@ export function syncIndicator(input: {
       detail: "Open synchronization progress",
       destination: "sync",
     };
+  }
+  if (input.paused && !problem) {
+    return { state: "paused", label: "mdbase: Paused", detail: "Changes wait until you resume sync", destination: "sync" };
   }
   if (problem && problem.kind !== "busy") {
     return {
@@ -236,7 +241,7 @@ export function syncProblem(error: unknown): SyncProblem {
       actionLabel: "Resume sync",
     };
   }
-  if (["stale", "stale_mirror_plan", "mirror_plan_stale", "sync_plan_stale", "conflict_decision_stale"].includes(code)) {
+  if (["stale", "stale_mirror_plan", "mirror_plan_stale", "sync_plan_stale", "conflict_decision_stale", "mirror_conflict_copy_missing"].includes(code)) {
     return {
       code,
       kind: "decision",

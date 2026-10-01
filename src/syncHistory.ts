@@ -197,17 +197,24 @@ export function pruneRuns(
 }
 
 export function parseHistory(source: string): SyncHistoryRun[] {
+  return parseHistoryLog(source).runs;
+}
+
+function parseHistoryLog(source: string): { runs: SyncHistoryRun[]; needsRepair: boolean } {
   const runs: SyncHistoryRun[] = [];
+  let needsRepair = source.length > 0 && !source.endsWith("\n");
   for (const line of source.split("\n")) {
     if (!line.trim()) continue;
     try {
       const value: unknown = JSON.parse(line);
       if (isRun(value)) runs.push(value);
+      else needsRepair = true;
     } catch {
       // A torn final line from an interrupted append is skipped, not fatal.
+      needsRepair = true;
     }
   }
-  return runs.sort((a, b) => a.finishedAt.localeCompare(b.finishedAt));
+  return { runs: runs.sort((a, b) => a.finishedAt.localeCompare(b.finishedAt)), needsRepair };
 }
 
 function isRun(value: unknown): value is SyncHistoryRun {
@@ -246,10 +253,11 @@ export class SyncHistoryStore {
   async load(): Promise<void> {
     await this.enqueue(async () => {
       const source = await this.adapter.exists(this.path) ? await this.adapter.read(this.path) : "";
-      const loaded = pruneRuns(parseHistory(source), this.limits);
-      const repaired = serializeRuns(loaded);
+      const parsed = parseHistoryLog(source);
+      const loaded = pruneRuns(parsed.runs, this.limits);
       // Drop corrupt/torn lines before append can join a new entry to them.
-      if (source !== repaired) await this.adapter.write(this.path, repaired);
+      // An intact log needs no second serialization of every recorded transfer.
+      if (parsed.needsRepair || loaded.length !== parsed.runs.length) await this.rewrite(loaded);
       this.runs = loaded;
     });
   }

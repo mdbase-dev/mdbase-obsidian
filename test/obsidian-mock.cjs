@@ -57,6 +57,15 @@ class TFolder {
 }
 
 class Vault {}
+class Plugin {
+  constructor(app, manifest) { this.app = app; this.manifest = manifest; }
+  registerEvent() {}
+  registerDomEvent() {}
+}
+class FileSystemAdapter {}
+class MarkdownView {}
+const apiVersion = "1.12.0";
+function addIcon() {}
 
 class ItemView {
   constructor(leaf) {
@@ -149,20 +158,8 @@ async function requestUrl() {
   throw new Error("requestUrl is not configured in this unit test.");
 }
 
-// Main-plugin UI tests exercise methods through its prototype, not Obsidian's
-// loader/lifecycle. Keep these desktop-only base classes deliberately inert.
-class Plugin {}
-class FileSystemAdapter {}
-class MarkdownView {}
-function addIcon() {}
-const apiVersion = "1.12.7";
 
 module.exports = {
-  Plugin,
-  FileSystemAdapter,
-  MarkdownView,
-  addIcon,
-  apiVersion,
   normalizePath,
   getFrontMatterInfo,
   parseYaml,
@@ -170,6 +167,11 @@ module.exports = {
   TFile,
   TFolder,
   Vault,
+  Plugin,
+  FileSystemAdapter,
+  MarkdownView,
+  apiVersion,
+  addIcon,
   ItemView,
   Menu,
   Modal,

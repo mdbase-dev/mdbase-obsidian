@@ -4,13 +4,15 @@ import { test } from "node:test";
 import type { TFile } from "obsidian";
 import { MemoryAuthority, type SyncTransport } from "@mdbase-dev/connect-sync";
 import {
+  DirectoryMirror,
   MemoryMirrorBlobStore,
   MemoryMirrorStateStore,
+  type MirrorBinaryInfo,
   type MirrorState,
   WritableDirectoryMirror,
 } from "@mdbase-dev/connect-sync/mirror";
 import type { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
-import { ConnectSyncController, normalizeMirrorProfile, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
+import { ConnectSyncController, DeviceMirrorLease, normalizeMirrorProfile, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
 import { SyncSession } from "../src/syncSession";
 
@@ -90,6 +92,35 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
   };
   return { vault, controller, state, states, secrets, replicaId, profile: () => profile, syncOnce };
 }
+
+test("the remote change probe uses the state store's lean checkpoint port", async () => {
+  class ProbeState extends MemoryMirrorStateStore {
+    reads = 0;
+    checkpoint: { cursor: number; scope_epoch: number; recovery_required: boolean } | null = {
+      cursor: 0, scope_epoch: 1, recovery_required: false,
+    };
+    override async read(): Promise<MirrorState | null> {
+      this.reads++;
+      throw new Error("A probe must not read the full state");
+    }
+    async readCheckpoint() { return this.checkpoint; }
+  }
+  const hosted = new MemoryAuthority();
+  const state = new ProbeState();
+  let changes = 0;
+  const here = await device(hosted, hosted.collectionId, { state, wrapTransport: transport => ({
+    ...transport, changes: async (...args) => { changes++; return transport.changes(...args); },
+  }) });
+  assert.equal(await here.controller.remoteChangesWaiting(), false);
+  assert.equal(state.reads, 0);
+  assert.equal(changes, 1);
+  state.checkpoint!.recovery_required = true;
+  assert.equal(await here.controller.remoteChangesWaiting(), true, "a prepared batch must recover without probing Connect");
+  state.checkpoint = null;
+  assert.equal(await here.controller.remoteChangesWaiting(), true, "an uninitialized mirror always has work");
+  assert.equal(changes, 1);
+  here.controller.dispose();
+});
 
 /** A second device that edits through the bare SDK engine. */
 function otherDevice(hosted: MemoryAuthority) {
@@ -373,6 +404,175 @@ test("a binary file created during a download is not silently overwritten", asyn
   await assert.rejects(fs.writeBinary("photo.png", source), (error: unknown) =>
     (error as { code?: string }).code === "sync_plan_stale");
   assert.deepEqual(vault.readBytes("photo.png"), new Uint8Array([7, 8, 9]));
+});
+
+test("SDK binary preflight expectations protect a file created before adapter materialization", async () => {
+  const hosted = new MemoryAuthority();
+  const replica = hosted.registerReplica({ name: "Binary reader", mode: "read_only" });
+  const base = hosted.transport(replica);
+  const bytes = Uint8Array.of(4, 5, 6);
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const digest = `sha256:${Array.from(hash, (value) => value.toString(16).padStart(2, "0")).join("")}` as const;
+  const file = {
+    file_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", path: "photo.png", revision: digest,
+    content_digest: digest, size: bytes.byteLength, media_class: "image" as const,
+    modified_at: "2026-01-01T00:00:00.000Z",
+  };
+  const vault = new MemoryVault();
+  class RacyFileSystem extends ObsidianMirrorFileSystem {
+    override async writeBinary(path: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void> {
+      await vault.createBinary(path, Uint8Array.of(7, 8, 9).buffer);
+      return super.writeBinary(path, source, expected);
+    }
+  }
+  const mirror = new DirectoryMirror(replica, {
+    ...base,
+    fileSnapshot: async (snapshotId, page) => ({ ...await base.fileSnapshot(snapshotId, page), files: [file] }),
+    downloadFile: async function* () { yield bytes; },
+  }, {
+    fileSystem: new RacyFileSystem(vault as never), stateStore: new MemoryMirrorStateStore(),
+    blobStore: new MemoryMirrorBlobStore(), selectiveSync: { file_classes: ["image"], excluded_folders: [] },
+  });
+  const outcome = await mirror.apply(await mirror.inspect());
+  assert.equal(outcome.status, "stale");
+  assert.deepEqual(vault.readBytes("photo.png"), Uint8Array.of(7, 8, 9));
+});
+
+test("SDK delete preflight expectations protect an edit made before adapter removal", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "base\n", types: [] }]);
+  const replica = hosted.registerReplica({ name: "Reader", mode: "read_only" });
+  const vault = new MemoryVault();
+  class RacyFileSystem extends ObsidianMirrorFileSystem {
+    override async remove(path: string, expected?: string | MirrorBinaryInfo | null): Promise<void> {
+      await edit(vault, path, "edited before trash\n");
+      return super.remove(path, expected);
+    }
+  }
+  const mirror = new DirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new RacyFileSystem(vault as never), stateStore: new MemoryMirrorStateStore(),
+  });
+  await mirror.sync();
+  const there = otherDevice(hosted);
+  await there.mirror.sync();
+  await there.vault.delete(there.vault.getAbstractFileByPath("a.md") as TFile);
+  await there.mirror.sync();
+  const outcome = await mirror.apply(await mirror.inspect());
+  assert.equal(outcome.status, "stale");
+  assert.equal(vault.read("a.md"), "edited before trash\n");
+});
+
+test("conditional binary removal refuses changed bytes and still trashes an exact file", async () => {
+  const vault = new MemoryVault();
+  const file = await vault.createBinary("photo.png", Uint8Array.of(1, 2, 3).buffer);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const expected = await fs.inspectBinary("photo.png");
+  await vault.modifyBinary(file, Uint8Array.of(7, 8, 9).buffer);
+  await assert.rejects(fs.remove("photo.png", expected), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(vault.readBytes("photo.png"), Uint8Array.of(7, 8, 9));
+  await fs.remove("photo.png", await fs.inspectBinary("photo.png"));
+  assert.equal(vault.readBytes("photo.png"), null);
+});
+
+test("a hosted deletion conflict decision cannot discard an edit made just before trash", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "base\n", types: [] }]);
+  const replica = hosted.registerReplica({ name: "Writer", mode: "read_write" });
+  const vault = new MemoryVault();
+  let race = false;
+  class RacyFileSystem extends ObsidianMirrorFileSystem {
+    override async remove(path: string, expected?: string | MirrorBinaryInfo | null): Promise<void> {
+      if (race) await edit(vault, path, "newer local edit\n");
+      return super.remove(path, expected);
+    }
+  }
+  const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new RacyFileSystem(vault as never), stateStore: new MemoryMirrorStateStore(),
+  });
+  await mirror.sync();
+  const there = otherDevice(hosted);
+  await there.mirror.sync();
+  await there.vault.delete(there.vault.getAbstractFileByPath("a.md") as TFile);
+  await there.mirror.sync();
+  await edit(vault, "a.md", "local edit\n");
+  await mirror.sync();
+  const conflict = (await mirror.status()).conflicts[0]!;
+  assert.ok(conflict);
+  race = true;
+  await assert.rejects(mirror.resolveConflict(conflict.object_id, conflict.decision_id, "remote"), (error: unknown) =>
+    ["sync_plan_stale", "conflict_decision_stale"].includes((error as { code: string }).code));
+  assert.equal(vault.read("a.md"), "newer local edit\n");
+});
+
+test("independently loaded plugin windows share a browser mirror lease", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const held = new Set<string>();
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: {
+    request: async (name: string, _options: unknown, callback: (lock: object | null) => Promise<unknown>) => {
+      if (held.has(name)) return callback(null);
+      held.add(name);
+      try { return await callback({ name }); } finally { held.delete(name); }
+    },
+  } } });
+  const moduleUrl = new URL("../src/connectSync.js", import.meta.url);
+  moduleUrl.search = "?second-window";
+  const other = await import(moduleUrl.href) as typeof import("../src/connectSync");
+  const key = crypto.randomUUID();
+  const first = new DeviceMirrorLease(key);
+  const second = new other.DeviceMirrorLease(key);
+  const gate = deferred();
+  const running = first.runExclusive(() => gate.promise);
+  try {
+    await assert.rejects(second.runExclusive(async () => "concurrent writer"), (error: unknown) =>
+      (error as { code?: string }).code === "mirror_busy");
+    gate.release();
+    await running;
+    assert.equal(await second.runExclusive(async () => "released"), "released");
+  } finally {
+    gate.release();
+    await running;
+    if (descriptor) Object.defineProperty(globalThis, "navigator", descriptor);
+    else Reflect.deleteProperty(globalThis, "navigator");
+  }
+});
+
+test("disconnect cannot retire a mirror while another controller holds its SDK lease", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const gate = deferred();
+  const here = await device(hosted, id, {
+    wrapTransport: (transport) => ({ ...transport, openSession: async () => {
+      entered.release();
+      await gate.promise;
+      return transport.openSession();
+    } }),
+  });
+  const running = here.controller.inspect();
+  await entered.promise;
+  let otherProfile = structuredClone(here.profile());
+  const other = new ConnectSyncController({ vault: here.vault, secretStorage: here.secrets } as never, {
+    getMirrorProfile: () => otherProfile,
+    saveMirrorProfile: async (next) => { otherProfile = next; },
+    deviceId: () => "this-device",
+  }, {
+    stateStoreFactory: () => here.state, blobStoreFactory: () => new MemoryMirrorBlobStore(),
+    fileSystem: new ObsidianMirrorFileSystem(here.vault as never),
+    transportFactory: () => hosted.transport(here.replicaId),
+  });
+  try {
+    await assert.rejects(other.disconnect(false), (error: unknown) => (error as { code?: string }).code === "mirror_busy");
+    assert.ok(otherProfile);
+    assert.equal(await here.vault.adapter.exists(".mdbase/connect-role.json"), true);
+  } finally {
+    gate.release();
+    await running;
+  }
+  await other.disconnect(false);
+  assert.equal(otherProfile, null);
+  here.controller.dispose();
+  other.dispose();
 });
 
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {

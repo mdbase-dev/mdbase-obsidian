@@ -23,7 +23,7 @@ index dd5830c..868ba93 100644
      private installRemoteRecord;
      private installRemoteFile;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
-index a9018ff..ba68459 100644
+index a9018ff..647646c 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 @@ -8,6 +8,7 @@ import { checkpointMirrorStatus, mirrorStatusFromPlan } from "./mirror-status.js
@@ -175,8 +175,53 @@ index a9018ff..ba68459 100644
                      : {})
              });
              return;
+@@ -330,8 +358,15 @@ export class DirectoryMirror {
+         const path = conflict?.local.state === "exact"
+             ? conflict.local.object.path
+             : state.records[identity]?.path;
+-        if (path && await this.fileSystem.read(path) !== null)
+-            await this.fileSystem.remove(path);
++        if (path) {
++            const expected = await this.fileSystem.read(path);
++            if (expected !== null) {
++                if (conflict?.local.state !== "exact"
++                    || runtimeDocumentRevision(expected, this.runtime) !== conflict.local.object.payload_revision)
++                    throw staleConflict();
++                await this.fileSystem.remove(path, expected);
++            }
++        }
+         delete state.records[identity];
+     }
+     async installRemoteFile(state, identity, current) {
+@@ -349,15 +384,23 @@ export class DirectoryMirror {
+             const localPath = state.local_bindings?.[identity]?.path;
+             await this.materializer.putFile(state, current, state, acceptedLocal);
+             if (localPath && localPath !== current.path)
+-                await this.fileSystem.remove(localPath);
++                await this.fileSystem.remove(localPath, acceptedLocal ?? null);
+             return;
+         }
+         const conflict = state.planned_conflicts?.[identity];
+         const path = conflict?.local.state === "exact"
+             ? conflict.local.object.path
+             : state.files?.[identity]?.file.path;
+-        if (path && await this.fileSystem.inspectBinary(path) !== null)
+-            await this.fileSystem.remove(path);
++        if (path) {
++            const expected = await this.fileSystem.inspectBinary(path);
++            if (expected !== null) {
++                if (conflict?.local.state !== "exact"
++                    || expected.content_digest !== conflict.local.object.payload_revision
++                    || (conflict.local.object.size !== undefined && expected.size !== conflict.local.object.size))
++                    throw staleConflict();
++                await this.fileSystem.remove(path, expected);
++            }
++        }
+         delete state.files?.[identity];
+     }
+     async readState() {
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
-index 6936f79..64b0670 100644
+index 6936f79..491236e 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 @@ -28,12 +28,16 @@ export class MirrorMaterializer {
@@ -209,6 +254,37 @@ index 6936f79..64b0670 100644
          }
          state.records[record.record_id] = {
              path: record.path,
+@@ -104,10 +108,10 @@ export class MirrorMaterializer {
+             }
+         }
+         if (!sameBinaryInfo(target, file)) {
+-            await this.fileSystem.writeBinary(file.path, verifiedFileBytes(this.blobStore.read(file.content_digest), file));
++            await this.fileSystem.writeBinary(file.path, verifiedFileBytes(this.blobStore.read(file.content_digest), file), target);
+         }
+         if (prior && prior.file.path !== file.path) {
+-            await this.fileSystem.remove(prior.file.path);
++            await this.fileSystem.remove(prior.file.path, prior.file);
+         }
+         state.files[file.file_id] = { file };
+     }
+@@ -120,7 +124,7 @@ export class MirrorMaterializer {
+             throw new MirrorDivergenceError(fileId, entry.file.path);
+         }
+         if (local !== null)
+-            await this.fileSystem.remove(entry.file.path);
++            await this.fileSystem.remove(entry.file.path, local);
+         delete state.files[fileId];
+     }
+     async remove(state, recordId, pathValue, options = {}) {
+@@ -134,7 +138,7 @@ export class MirrorMaterializer {
+             throw new MirrorDivergenceError(recordId, entry.path);
+         }
+         if (existing !== null)
+-            await this.fileSystem.remove(path);
++            await this.fileSystem.remove(path, existing);
+         delete state.records[recordId];
+     }
+     async putResource(state, resource, managedState) {
 @@ -145,7 +149,7 @@ export class MirrorMaterializer {
              && (!prior || this.runtime.digest(existing) !== prior.hash)) {
              throw new MirrorDivergenceError(`resource:${resource.path}`, resource.path);
@@ -218,8 +294,17 @@ index 6936f79..64b0670 100644
          state.resources ??= {};
          state.resources[resource.path] = {
              path: resource.path,
+@@ -159,7 +163,7 @@ export class MirrorMaterializer {
+             throw new MirrorDivergenceError(`resource:${pathValue}`, pathValue);
+         }
+         if (existing !== null)
+-            await this.fileSystem.remove(pathValue);
++            await this.fileSystem.remove(pathValue, existing);
+         if (state.resources)
+             delete state.resources[pathValue];
+     }
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
-index 7c7372e..ae211aa 100644
+index 7c7372e..f6445cf 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 @@ -85,6 +85,8 @@ export interface MirrorState {
@@ -231,7 +316,7 @@ index 7c7372e..ae211aa 100644
      }>;
      /** Temporary stable-identity bindings when local paths differ from the base. */
      local_bindings?: Record<string, {
-@@ -132,7 +134,10 @@ export interface MirrorFileSystem {
+@@ -132,14 +134,17 @@ export interface MirrorFileSystem {
      read(path: string): Promise<string | null>;
      /** Exact UTF-8 read, preserving a leading BOM; expected I/O failures reject as `SyncError("file_read_failed")`. */
      readText(path: string): Promise<MirrorTextReadResult>;
@@ -242,7 +327,16 @@ index 7c7372e..ae211aa 100644
 +    pathKind?(path: string): Promise<"file" | "folder" | null>;
      /** Atomically rename one managed path without changing its bytes. */
      move(source: string, target: string): Promise<void>;
-     remove(path: string): Promise<void>;
+-    remove(path: string): Promise<void>;
++    remove(path: string, expected?: string | MirrorBinaryInfo | null): Promise<void>;
+     listMarkdown(excluded: ReadonlySet<string>): Promise<string[]>;
+     inspectBinary(path: string): Promise<MirrorBinaryInfo | null>;
+     /** Atomically install a fully-drained byte stream at path. */
+-    writeBinary(path: string, source: AsyncIterable<Uint8Array>): Promise<void>;
++    writeBinary(path: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void>;
+     /** Writable-file adapters enumerate only eligible non-Markdown regular files. */
+     listBinary?(excluded: ReadonlySet<string>): Promise<string[]>;
+     /** Opens a fresh stream for a stable path snapshot. */
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js
 index 5a3bad2..c4207b7 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js
@@ -258,7 +352,7 @@ index 5a3bad2..c4207b7 100644
              validatePortableMirrorPath(conflict.local.object.path);
          if (conflict.remote.state === "exact")
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
-index 599bcb8..30c92d0 100644
+index 599bcb8..22e1bf6 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 @@ -1,7 +1,7 @@
@@ -341,7 +435,24 @@ index 599bcb8..30c92d0 100644
          await this.materializer.putFile(state, file, state);
          this.installPathOwner(action.target);
          return { action_id: action.action_id, status: "completed" };
-@@ -372,12 +389,17 @@ export class PlanOnlySyncExecutor {
+@@ -196,8 +213,14 @@ export class PlanOnlySyncExecutor {
+                 const entry = state.resources?.[action.target.identity];
+                 if (entry)
+                     await this.materializer.removeResource(state, action.target.path, entry);
+-                else
+-                    await this.ports.fileSystem.remove(action.target.path);
++                else {
++                    const expected = await this.ports.fileSystem.read(action.target.path);
++                    if (expected !== null) {
++                        if (runtimeDocumentRevision(expected, this.ports.runtime) !== action.target.payload_revision)
++                            throw stale(`${action.target.path} changed before removal.`);
++                        await this.ports.fileSystem.remove(action.target.path, expected);
++                    }
++                }
+             }
+             else {
+                 await this.materializer.removeFile(state, action.target.identity);
+@@ -372,12 +395,17 @@ export class PlanOnlySyncExecutor {
                  : action.expected_remote;
          state.planned_conflicts ??= {};
          const conflictKind = receipt.status === "rejected" ? "rejected" : "both_changed";
