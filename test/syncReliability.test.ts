@@ -409,6 +409,43 @@ test("SDK binary preflight expectations protect a file created before adapter ma
   assert.deepEqual(vault.readBytes("photo.png"), Uint8Array.of(7, 8, 9));
 });
 
+test("SDK delete preflight expectations protect an edit made before adapter removal", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "base\n", types: [] }]);
+  const replica = hosted.registerReplica({ name: "Reader", mode: "read_only" });
+  const vault = new MemoryVault();
+  class RacyFileSystem extends ObsidianMirrorFileSystem {
+    override async remove(path: string, expected?: string | MirrorBinaryInfo | null): Promise<void> {
+      await edit(vault, path, "edited before trash\n");
+      return super.remove(path, expected);
+    }
+  }
+  const mirror = new DirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new RacyFileSystem(vault as never), stateStore: new MemoryMirrorStateStore(),
+  });
+  await mirror.sync();
+  const there = otherDevice(hosted);
+  await there.mirror.sync();
+  await there.vault.delete(there.vault.getAbstractFileByPath("a.md") as TFile);
+  await there.mirror.sync();
+  const outcome = await mirror.apply(await mirror.inspect());
+  assert.equal(outcome.status, "stale");
+  assert.equal(vault.read("a.md"), "edited before trash\n");
+});
+
+test("conditional binary removal refuses changed bytes and still trashes an exact file", async () => {
+  const vault = new MemoryVault();
+  const file = await vault.createBinary("photo.png", Uint8Array.of(1, 2, 3).buffer);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const expected = await fs.inspectBinary("photo.png");
+  await vault.modifyBinary(file, Uint8Array.of(7, 8, 9).buffer);
+  await assert.rejects(fs.remove("photo.png", expected), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(vault.readBytes("photo.png"), Uint8Array.of(7, 8, 9));
+  await fs.remove("photo.png", await fs.inspectBinary("photo.png"));
+  assert.equal(vault.readBytes("photo.png"), null);
+});
+
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
   const hosted = new MemoryAuthority();
   hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "a\n", types: [] }]);

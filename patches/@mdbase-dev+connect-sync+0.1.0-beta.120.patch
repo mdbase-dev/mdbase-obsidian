@@ -176,7 +176,7 @@ index a9018ff..ba68459 100644
              });
              return;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
-index 6936f79..08ca0f6 100644
+index 6936f79..491236e 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 @@ -28,12 +28,16 @@ export class MirrorMaterializer {
@@ -209,7 +209,7 @@ index 6936f79..08ca0f6 100644
          }
          state.records[record.record_id] = {
              path: record.path,
-@@ -104,7 +108,7 @@ export class MirrorMaterializer {
+@@ -104,10 +108,10 @@ export class MirrorMaterializer {
              }
          }
          if (!sameBinaryInfo(target, file)) {
@@ -217,7 +217,29 @@ index 6936f79..08ca0f6 100644
 +            await this.fileSystem.writeBinary(file.path, verifiedFileBytes(this.blobStore.read(file.content_digest), file), target);
          }
          if (prior && prior.file.path !== file.path) {
-             await this.fileSystem.remove(prior.file.path);
+-            await this.fileSystem.remove(prior.file.path);
++            await this.fileSystem.remove(prior.file.path, prior.file);
+         }
+         state.files[file.file_id] = { file };
+     }
+@@ -120,7 +124,7 @@ export class MirrorMaterializer {
+             throw new MirrorDivergenceError(fileId, entry.file.path);
+         }
+         if (local !== null)
+-            await this.fileSystem.remove(entry.file.path);
++            await this.fileSystem.remove(entry.file.path, local);
+         delete state.files[fileId];
+     }
+     async remove(state, recordId, pathValue, options = {}) {
+@@ -134,7 +138,7 @@ export class MirrorMaterializer {
+             throw new MirrorDivergenceError(recordId, entry.path);
+         }
+         if (existing !== null)
+-            await this.fileSystem.remove(path);
++            await this.fileSystem.remove(path, existing);
+         delete state.records[recordId];
+     }
+     async putResource(state, resource, managedState) {
 @@ -145,7 +149,7 @@ export class MirrorMaterializer {
              && (!prior || this.runtime.digest(existing) !== prior.hash)) {
              throw new MirrorDivergenceError(`resource:${resource.path}`, resource.path);
@@ -227,8 +249,17 @@ index 6936f79..08ca0f6 100644
          state.resources ??= {};
          state.resources[resource.path] = {
              path: resource.path,
+@@ -159,7 +163,7 @@ export class MirrorMaterializer {
+             throw new MirrorDivergenceError(`resource:${pathValue}`, pathValue);
+         }
+         if (existing !== null)
+-            await this.fileSystem.remove(pathValue);
++            await this.fileSystem.remove(pathValue, existing);
+         if (state.resources)
+             delete state.resources[pathValue];
+     }
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
-index 7c7372e..84c60a1 100644
+index 7c7372e..f6445cf 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 @@ -85,6 +85,8 @@ export interface MirrorState {
@@ -251,7 +282,8 @@ index 7c7372e..84c60a1 100644
 +    pathKind?(path: string): Promise<"file" | "folder" | null>;
      /** Atomically rename one managed path without changing its bytes. */
      move(source: string, target: string): Promise<void>;
-     remove(path: string): Promise<void>;
+-    remove(path: string): Promise<void>;
++    remove(path: string, expected?: string | MirrorBinaryInfo | null): Promise<void>;
      listMarkdown(excluded: ReadonlySet<string>): Promise<string[]>;
      inspectBinary(path: string): Promise<MirrorBinaryInfo | null>;
      /** Atomically install a fully-drained byte stream at path. */

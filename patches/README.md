@@ -37,6 +37,13 @@ addition is the optional `ancestor_document` below):
   pre-write check rather than an OS-wide atomic compare-and-swap. This API still
   needs an upstream SDK source port before removing/upgrading the patch.
   Regression: `test/syncReliability.test.ts` SDK binary preflight race.
+- `mirror-materializer.js` / `mirror-state.d.ts`: pass inspected text/binary
+  expectations to managed-file removal (`remove(path, expected)`) and recheck
+  them in the plugin before trashing. This rejects competing edits between SDK
+  preflight and adapter removal. Like binary writes, it is a pre-trash check,
+  not an OS-wide atomic delete. The optional argument is backward compatible
+  with old adapters and needs an upstream SDK source port. Regression:
+  `test/syncReliability.test.ts` SDK delete preflight race and binary removal.
 - `sync-inspector.js` / `mirror-state.d.ts`: optional physical `pathKind` detects
   destination directories and ancestor files. Blocking issues enter the normal
   planner/fingerprint instead of creating an impossible transfer. No local file

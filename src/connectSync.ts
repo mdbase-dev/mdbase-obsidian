@@ -1034,8 +1034,18 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     await this.vault.rename(file, target);
   }
 
-  async remove(input: string): Promise<void> {
+  async remove(input: string, expected?: string | MirrorBinaryInfo | null): Promise<void> {
     const path = safeMirrorPath(this.vault, input);
+    if (expected !== undefined) {
+      let exact: boolean;
+      if (expected === null) exact = !await this.exists(path);
+      else if (typeof expected === "string") exact = await this.read(path) === expected;
+      else {
+        const current = await this.inspectBinary(path);
+        exact = current?.content_digest === expected.content_digest && current?.size === expected.size;
+      }
+      if (!exact) throw new SyncError("sync_plan_stale", `${path} changed before it could be removed. Review sync again.`);
+    }
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing == null) return;
     if (!(existing instanceof TFile)) {
