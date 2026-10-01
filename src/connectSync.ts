@@ -290,9 +290,9 @@ export function normalizeSelectiveSync(input?: Partial<SelectiveSyncPolicy> | nu
   }
   const folders = rawFolders
     .map((value) => normalizeSafeRelativePath(value.trim()))
-    .sort((left, right) => left.toLocaleLowerCase().localeCompare(right.toLocaleLowerCase()));
+    .sort((left, right) => portablePathKey(left).localeCompare(portablePathKey(right)));
   if (folders.length > 100) throw new SyncError("invalid_file_materialization", "File sync supports at most 100 excluded folders.");
-  if (new Set(folders.map((folder) => folder.toLocaleLowerCase())).size !== folders.length) {
+  if (new Set(folders.map(portablePathKey)).size !== folders.length) {
     throw new SyncError("invalid_file_materialization", "Excluded folders must be unique on portable filesystems.");
   }
   for (const folder of folders) assertVisibleBinaryPath(folder, true);
@@ -314,8 +314,11 @@ function assertAdoptionPaths(preview: AdoptionPreview): void {
 
 function binaryPathSelected(policy: SelectiveSyncPolicy, path: string, mediaClass = classifyBinaryPath(path)): boolean {
   if (!policy.file_classes.includes(mediaClass)) return false;
-  const normalized = normalizePath(path);
-  return !policy.excluded_folders.some((folder) => normalized === folder || normalized.startsWith(`${folder}/`));
+  const key = portablePathKey(normalizePath(path));
+  return !policy.excluded_folders.some((folder) => {
+    const folderKey = portablePathKey(folder);
+    return key === folderKey || key.startsWith(`${folderKey}/`);
+  });
 }
 
 // Record extensions fixed by the sync SDK (Markdown notes and Obsidian Bases as

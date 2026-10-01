@@ -19,6 +19,7 @@ import type {
 import {
   ConnectSyncController,
   findAdoptionPathConflicts,
+  normalizeSelectiveSync,
   type ConnectSyncSettingsHost,
   type MirrorProfile,
 } from "../src/connectSync";
@@ -577,6 +578,28 @@ test("preflight includes resource-record overlaps and selected attachment paths"
   assert.equal((await s.controller.previewAdoption()).conflicts.length, 1);
   assert.equal((await s.controller.previewAdoption({ file_classes: ["image"], excluded_folders: [] })).conflicts.length, 2);
   assert.equal((await s.controller.previewAdoption({ file_classes: ["image"], excluded_folders: ["assets"] })).conflicts.length, 1);
+});
+
+test("adoption never uploads case/Unicode aliases of excluded attachment folders", async () => {
+  for (const [disk, excluded] of [["Private", "private"], ["Cafe\u0301", "CAFÉ"], ["ΟΣ", "οσ"]]) {
+    const s = await fixture();
+    await s.vault.putBinary(`${disk}/secret.png`, Uint8Array.of(1));
+    const sibling = `${excluded}-sibling/public.png`;
+    await s.vault.putBinary(sibling, Uint8Array.of(2));
+    const policy = { file_classes: ["image" as const], excluded_folders: [excluded] };
+    assert.equal((await s.controller.previewAdoption(policy)).files, 1, "portable exclusions must apply before approval");
+    await s.controller.adoptLocalCollection({ controlUrl: "https://connect.example", mirrorName: "Obsidian", selectiveSync: policy }, {
+      onVerification: () => undefined,
+    });
+    assert.deepEqual(s.adoption.uploads[0].files.map(file => file.path), [sibling]);
+    assert.ok(s.vault.getAbstractFileByPath(`${disk}/secret.png`), "excluded original stays local");
+  }
+});
+
+test("selective-sync settings reject canonically equivalent and scalar-case duplicate folders", () => {
+  for (const folders of [["Café", "Cafe\u0301"], ["ΟΣ", "οσ"]]) {
+    assert.throws(() => normalizeSelectiveSync({ excluded_folders: folders }), /unique/);
+  }
 });
 
 test("approved moves retain the server import deadline rather than the shorter approval deadline", async () => {
