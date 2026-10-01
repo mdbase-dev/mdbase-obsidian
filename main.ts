@@ -12,6 +12,7 @@ import {
   Platform,
   Plugin,
   TFile,
+  TFolder,
   normalizePath,
 } from "obsidian";
 import { ObsidianInteropBridge, type MdbaseObsidianInteropApi } from "./src/interopBridge";
@@ -214,33 +215,7 @@ export default class MdbasePlugin extends Plugin {
 
     registerCommands(this);
 
-    this.registerEvent(
-      this.app.vault.on("modify", (file) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultModify(file);
-      }),
-    );
-
-    this.registerEvent(
-      this.app.vault.on("rename", (file, oldPath) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultRename(file, oldPath);
-      }),
-    );
-
-    this.registerEvent(
-      this.app.vault.on("delete", (file) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultDelete(file);
-      }),
-    );
-
-    this.registerEvent(
-      this.app.vault.on("create", (file) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultCreate(file);
-      }),
-    );
+    this.registerVaultEvents();
 
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
@@ -986,6 +961,33 @@ export default class MdbasePlugin extends Plugin {
     }
 
     return loaded;
+  }
+
+  private registerVaultEvents(): void {
+    this.registerEvent(this.app.vault.on("modify", (file) => {
+      if (file instanceof TFile) this.onVaultModify(file);
+    }));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (file instanceof TFile) this.onVaultRename(file, oldPath);
+      else if (file instanceof TFolder) this.onVaultFolderChange(oldPath, file.path);
+    }));
+    this.registerEvent(this.app.vault.on("delete", (file) => {
+      if (file instanceof TFile) this.onVaultDelete(file);
+      else if (file instanceof TFolder) this.onVaultFolderChange(file.path);
+    }));
+    this.registerEvent(this.app.vault.on("create", (file) => {
+      if (file instanceof TFile) this.onVaultCreate(file);
+    }));
+  }
+
+  private onVaultFolderChange(...paths: string[]): void {
+    for (const path of paths) this.observeLocalMirrorChange(path);
+    // A folder event need not be accompanied by child-file events. The old
+    // descendant paths are no longer a valid incremental record/schema cache.
+    this.recordCache = null;
+    this.recordList = null;
+    this.dirtyRecordPaths.clear();
+    this.refreshSchemaNow();
   }
 
   private onVaultModify(file: TFile): void {

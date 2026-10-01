@@ -57,6 +57,14 @@ class TFolder {
 }
 
 class Vault {}
+class Plugin {
+  constructor(app, manifest) { this.app = app; this.manifest = manifest; }
+  registerEvent() {}
+}
+class FileSystemAdapter {}
+class MarkdownView {}
+const apiVersion = "1.12.0";
+function addIcon() {}
 
 class ItemView {
   constructor(leaf) {
@@ -157,6 +165,11 @@ module.exports = {
   TFile,
   TFolder,
   Vault,
+  Plugin,
+  FileSystemAdapter,
+  MarkdownView,
+  apiVersion,
+  addIcon,
   ItemView,
   Menu,
   Modal,
