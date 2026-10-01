@@ -784,7 +784,10 @@ class BinaryPartReader {
       const count = Math.min(length - offset, this.remainder.byteLength);
       output.set(this.remainder.subarray(0, count), offset);
       offset += count;
-      this.remainder = this.remainder.slice(count);
+      // The source chunk was copied on receipt, so a view of its unread tail is
+      // safe. Copying each tail makes small multipart uploads quadratic. Drop
+      // the exhausted view to release its backing buffer during the last PUT.
+      this.remainder = count === this.remainder.byteLength ? new Uint8Array() : this.remainder.subarray(count);
     }
     return output;
   }
