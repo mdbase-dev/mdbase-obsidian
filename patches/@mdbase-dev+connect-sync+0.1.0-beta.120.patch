@@ -1,8 +1,8 @@
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts
-index dd5830c..e774a50 100644
+index dd5830c..868ba93 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts
-@@ -34,6 +34,11 @@ export declare class DirectoryMirror<Frontmatter extends JsonObject = JsonObject
+@@ -34,12 +34,18 @@ export declare class DirectoryMirror<Frontmatter extends JsonObject = JsonObject
       * into the durable base before the checkpoint action runs.
       */
      private initialUnchangedState;
@@ -14,11 +14,27 @@ index dd5830c..e774a50 100644
      status(): Promise<MirrorStatus>;
      checkpointStatus(): Promise<MirrorStatus>;
      private checkpointStatusUnlocked;
+     authorityPromotionManifest(): Promise<AuthorityPromotionManifest>;
+     previewInitialization(): Promise<MirrorInitializationPreview>;
+-    resolveConflict(identity: string, decisionId: string, resolution: "local" | "remote"): Promise<void>;
++    /** An optional merged record is written conditionally before the durable conflict is cleared. */
++    resolveConflict(identity: string, decisionId: string, resolution: "local" | "remote", mergedDocument?: string): Promise<void>;
+     private resolveConflictUnlocked;
+     private installRemoteRecord;
+     private installRemoteFile;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
-index a9018ff..39a316a 100644
+index a9018ff..ba68459 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
-@@ -68,7 +68,7 @@ export class DirectoryMirror {
+@@ -8,6 +8,7 @@ import { checkpointMirrorStatus, mirrorStatusFromPlan } from "./mirror-status.js
+ import { PlanOnlyMirrorInspector } from "./sync-inspector.js";
+ import { PlanOnlySyncExecutor } from "./sync-executor.js";
+ import { PlanRevalidator } from "./sync-revalidator.js";
++import { runtimeDocumentRevision } from "./mirror-format.js";
+ import { abandonStaleBatch, prepareSyncBatch } from "./sync-journal.js";
+ import { advanceEmptySyncCheckpoint, advanceSyncCheckpoint } from "./sync-checkpoint.js";
+ import { loadMirrorSnapshot } from "./sync-snapshot-loader.js";
+@@ -68,7 +69,7 @@ export class DirectoryMirror {
              }
              if (state?.last_completed_plan === plan.fingerprint) {
                  const checkpoint = checkpointMirrorStatus(state, this.mode);
@@ -27,7 +43,7 @@ index a9018ff..39a316a 100644
              }
              const inspection = await this.inspectDetailed(state);
              if (inspection.plan.fingerprint !== plan.fingerprint) {
-@@ -126,6 +126,9 @@ export class DirectoryMirror {
+@@ -126,6 +127,9 @@ export class DirectoryMirror {
              })
          }).execute(state, signal);
          if (result.status !== "effects_complete") {
@@ -37,7 +53,7 @@ index a9018ff..39a316a 100644
              const checkpoint = checkpointMirrorStatus(state, this.mode);
              return mirrorApplyResult(result.status === "blocked" ? "failed" : result.status, batch.plan, checkpoint, result.completed, result.failure);
          }
-@@ -135,7 +138,8 @@ export class DirectoryMirror {
+@@ -135,7 +139,8 @@ export class DirectoryMirror {
          const checkpoint = checkpointMirrorStatus(state, this.mode);
          const attention = checkpoint.conflicts.length > 0
              || checkpoint.local_issues.length > 0
@@ -47,7 +63,7 @@ index a9018ff..39a316a 100644
          return mirrorApplyResult(attention ? "attention" : "applied", plan, checkpoint, result.completed);
      }
      inspectDetailed(state) {
-@@ -196,13 +200,21 @@ export class DirectoryMirror {
+@@ -196,13 +201,21 @@ export class DirectoryMirror {
              planned_conflicts: {}
          };
      }
@@ -75,7 +91,21 @@ index a9018ff..39a316a 100644
      }
      async checkpointStatus() {
          return this.lease.runExclusive(() => this.checkpointStatusUnlocked());
-@@ -280,13 +292,6 @@ export class DirectoryMirror {
+@@ -263,10 +276,10 @@ export class DirectoryMirror {
+                 .map((issue) => ({ code: "invalid_frontmatter", message: issue.message, path: issue.path }))
+         };
+     }
+-    async resolveConflict(identity, decisionId, resolution) {
+-        await this.lease.runExclusive(() => this.resolveConflictUnlocked(identity, decisionId, resolution));
++    async resolveConflict(identity, decisionId, resolution, mergedDocument) {
++        await this.lease.runExclusive(() => this.resolveConflictUnlocked(identity, decisionId, resolution, mergedDocument));
+     }
+-    async resolveConflictUnlocked(identity, decisionId, resolution) {
++    async resolveConflictUnlocked(identity, decisionId, resolution, mergedDocument) {
+         if (this.mode !== "read_write") {
+             throw new SyncError("mirror_read_only", "Receive-only mirrors have no writable conflicts.");
+         }
+@@ -280,12 +293,9 @@ export class DirectoryMirror {
          }
          if ((planned.decision_id ?? "") !== decisionId)
              throw staleConflict();
@@ -85,11 +115,13 @@ index a9018ff..39a316a 100644
 -        }
 -        else if (planned.remote.state === "exact") {
 -            await revalidator.validateExpectedAt(planned.remote.object.path, planned.local);
--        }
++        if (mergedDocument !== undefined && (resolution !== "local"
++            || planned.entity !== "record" || planned.local.state !== "exact")) {
++            throw new SyncError("invalid_conflict_resolution", "A merged document requires an exact local record conflict.");
+         }
          const snapshot = await loadMirrorSnapshot(this.replicaId, this.transport, this.mode, this.selectiveSync, this.runtime);
          const currentRecord = planned.entity === "record"
-             ? snapshot.records.find(({ record }) => record.record_id === identity)?.record
-@@ -299,6 +304,15 @@ export class DirectoryMirror {
+@@ -299,6 +309,15 @@ export class DirectoryMirror {
              : fileStateMatches(planned.remote, currentFile);
          if (!remoteMatches)
              throw staleConflict();
@@ -105,7 +137,25 @@ index a9018ff..39a316a 100644
          if (resolution === "remote") {
              if (planned.entity === "record") {
                  await this.installRemoteRecord(state, identity, currentRecord);
-@@ -314,14 +328,12 @@ export class DirectoryMirror {
+@@ -307,6 +326,17 @@ export class DirectoryMirror {
+                 await this.installRemoteFile(state, identity, currentFile);
+             }
+         }
++        if (mergedDocument !== undefined) {
++            const path = planned.local.object.path;
++            const expected = await this.fileSystem.read(path);
++            if (expected === null || runtimeDocumentRevision(expected, this.runtime) !== planned.local.object.payload_revision) {
++                throw staleConflict();
++            }
++            // Persist both halves in the merged file before clearing the durable
++            // conflict. A crash or failed write must never authorize an upload
++            // of the original, unmerged local document over the hosted edit.
++            await this.fileSystem.write(path, mergedDocument, expected);
++        }
+         delete state.planned_conflicts?.[identity];
+         if (resolution === "remote")
+             delete state.local_bindings?.[identity];
+@@ -314,14 +344,12 @@ export class DirectoryMirror {
      }
      async installRemoteRecord(state, identity, current) {
          if (current) {

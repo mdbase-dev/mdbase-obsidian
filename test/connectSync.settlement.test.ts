@@ -5,7 +5,7 @@ import type { CollectionFileDescriptor } from "@mdbase-dev/connect-protocol";
 import { test } from "node:test";
 import type { TFile } from "obsidian";
 import { MemoryAuthority, type SyncTransport } from "@mdbase-dev/connect-sync";
-import { MemoryMirrorBlobStore, MemoryMirrorStateStore, WritableDirectoryMirror } from "@mdbase-dev/connect-sync/mirror";
+import { MemoryMirrorBlobStore, MemoryMirrorStateStore, WritableDirectoryMirror, type MirrorState } from "@mdbase-dev/connect-sync/mirror";
 import { ConnectSyncController, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
 
@@ -108,13 +108,46 @@ test("a merged write racing a user edit preserves the edit and the hosted half",
     await here.vault.modify(file, local + "user edit during merge\n");
     return process(file, transform);
   };
-  const [result] = await here.controller.autoResolveConflicts();
-  assert.equal(result?.outcome, "kept_both");
+  const results = await here.controller.autoResolveConflicts();
+  assert.deepEqual(results, [], "a stale atomic merge stays open for the next sync");
   assert.equal(here.vault.read("plan.md"), local + "user edit during merge\n");
-  assert.equal(here.vault.read(result!.copyPath!), remote);
+  assert.equal(here.remoteVault.read("plan.md"), remote);
+  assert.ok((await here.state.read())?.planned_conflicts?.plan);
+  assert.deepEqual(copies(here.vault), []);
 });
 
-test("failed merged write and failed hosted-copy save keep the conflict durable", async () => {
+test("restart at the merged-write boundary cannot upload unmerged local over hosted edits", async () => {
+  const base = "---\nstatus: open\npriority: low\n---\nBody\n";
+  const here = await pair(base);
+  const local = base.replace("status: open", "status: done");
+  const remote = base.replace("priority: low", "priority: high");
+  await here.conflict(local, remote);
+  let atWrite: MirrorState | null = null;
+  const process = here.vault.process.bind(here.vault);
+  here.vault.process = async (file, transform) => {
+    atWrite = structuredClone(await here.state.read());
+    return process(file, transform);
+  };
+  await here.controller.autoResolveConflicts();
+  assert.ok(atWrite);
+  // Reconstruct only durable state and bytes available immediately before the
+  // merged write, as if Obsidian had crashed at that exact async boundary.
+  const recoveredState = new MemoryMirrorStateStore();
+  await recoveredState.write(atWrite);
+  const recoveredVault = new MemoryVault();
+  await recoveredVault.create("plan.md", local);
+  const replicaId = (atWrite as MirrorState).replica_id;
+  const restarted = new WritableDirectoryMirror(replicaId, here.hosted.transport(replicaId), {
+    fileSystem: new ObsidianMirrorFileSystem(recoveredVault as never), stateStore: recoveredState,
+    blobStore: new MemoryMirrorBlobStore(), selectiveSync: { file_classes: ["image"], excluded_folders: [] },
+  });
+  await restarted.sync();
+  await here.remoteMirror.sync();
+  assert.equal(here.remoteVault.read("plan.md"), remote, "a restart must leave the hosted half intact until the merge is durable");
+  assert.equal(recoveredVault.read("plan.md"), local);
+});
+
+test("failed merged write keeps the conflict durable without requiring a recovery-copy write", async () => {
   const base = "---\nstatus: open\npriority: low\n---\nBody\n";
   const here = await pair(base);
   const local = base.replace("status: open", "status: done");

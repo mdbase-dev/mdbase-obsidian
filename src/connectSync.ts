@@ -2008,30 +2008,10 @@ export class ConnectSyncController {
       if (base !== undefined && local !== null) {
         const merged = mergeDocuments(base, local, remote.document, validYamlMapping);
         if (merged.clean) {
-          await mirror.resolveConflict(id, decision, "local");
-          try {
-            await this.fileSystem.write(localPath, merged.text, local);
-          } catch (error) {
-            // The note changed between the check and the write. Keep the hosted
-            // text beside it so the merge's other half is never lost.
-            try {
-              const copy = await this.writeConflictCopy(localPath, remote.document, "hosted conflict copy");
-              return { path, outcome: "kept_both", copyPath: copy, reason: error instanceof Error ? error.message : String(error) };
-            } catch (copyError) {
-              // Clearing the conflict authorized a local upload. If neither the
-              // merge nor its hosted recovery copy can be saved (e.g. disk full),
-              // put the decision back before any later sync can overwrite the
-              // hosted half. Reuse the existing durable conflict representation.
-              const store = this.stateStoreFor(this.requireProfile());
-              const current = await store.read();
-              if (current) {
-                current.planned_conflicts ??= {};
-                current.planned_conflicts[id] = planned;
-                await store.write(current);
-              }
-              throw copyError;
-            }
-          }
+          // The SDK writes conditionally before clearing its durable decision;
+          // interrupted/failed merges remain conflicts instead of authorizing
+          // an unmerged local upload over the hosted half on the next run.
+          await mirror.resolveConflict(id, decision, "local", merged.text);
           return { path, outcome: "merged" };
         }
       }
@@ -2057,11 +2037,6 @@ export class ConnectSyncController {
       page = found.size === ids.size ? undefined : snapshot.next_page;
     } while (page);
     return found;
-  }
-
-  private async writeConflictCopy(pathInput: string, document: string, label: string): Promise<string> {
-    const path = safeMirrorPath(this.app.vault, pathInput);
-    return this.createConflictCopy(path, new TextEncoder().encode(document).buffer, label);
   }
 
   private async createConflictCopy(path: string, document: ArrayBuffer, label: string): Promise<string> {
