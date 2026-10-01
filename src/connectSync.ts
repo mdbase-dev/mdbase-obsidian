@@ -1248,7 +1248,8 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
 
   private open(): Promise<IDBDatabase> {
     if (typeof indexedDB === "undefined") throw new SyncError("storage_unavailable", "IndexedDB is required for binary file sync.");
-    this.database ??= new Promise((resolve, reject) => {
+    if (this.database) return this.database;
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(BLOB_DATABASE, 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(BLOB_MANIFEST_STORE)) request.result.createObjectStore(BLOB_MANIFEST_STORE);
@@ -1257,7 +1258,11 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
       request.onerror = () => reject(indexedDbError(request.error, "binary store open"));
       request.onsuccess = () => resolve(request.result);
     });
-    return this.database;
+    this.database = opening;
+    void opening.catch(() => {
+      if (this.database === opening) this.database = null;
+    });
+    return opening;
   }
 }
 
@@ -1306,7 +1311,8 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
     if (typeof indexedDB === "undefined") {
       throw new SyncError("storage_unavailable", "IndexedDB is required for persistent mirror state.");
     }
-    this.database ??= new Promise((resolve, reject) => {
+    if (this.database) return this.database;
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(STATE_DATABASE, 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(STATE_STORE)) {
@@ -1316,7 +1322,11 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
       request.onerror = () => reject(indexedDbError(request.error, "mirror state store open"));
       request.onsuccess = () => resolve(request.result);
     });
-    return this.database;
+    this.database = opening;
+    void opening.catch(() => {
+      if (this.database === opening) this.database = null;
+    });
+    return opening;
   }
 }
 
