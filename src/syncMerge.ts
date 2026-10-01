@@ -127,7 +127,7 @@ function mergeFrontmatter(base: string[], local: string[], remote: string[]): st
     return ancestor.order.filter((key) => common.has(key)).join("\n")
       !== changed.order.filter((key) => common.has(key)).join("\n");
   };
-  if (!b || !l || !r || reordered(b, l) || reordered(b, r)) {
+  if (!b || !l || !r || reordered(b, l) || reordered(b, r) || reordered(l, r)) {
     return mergeLines(base.join("\n"), local.join("\n"), remote.join("\n"))?.split("\n") ?? null;
   }
   const merged = new Map<string, string>();
