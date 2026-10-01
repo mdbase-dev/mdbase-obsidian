@@ -114,6 +114,29 @@ test("a merged write racing a user edit preserves the edit and the hosted half",
   assert.equal(here.vault.read(result!.copyPath!), remote);
 });
 
+test("failed merged write and failed hosted-copy save keep the conflict durable", async () => {
+  const base = "---\nstatus: open\npriority: low\n---\nBody\n";
+  const here = await pair(base);
+  const local = base.replace("status: open", "status: done");
+  const remote = base.replace("priority: low", "priority: high");
+  await here.conflict(local, remote);
+  const process = here.vault.process.bind(here.vault);
+  const createBinary = here.vault.createBinary.bind(here.vault);
+  here.vault.process = async () => { throw new Error("disk full on merged write"); };
+  here.vault.createBinary = async () => { throw new Error("disk full on recovery copy"); };
+  const [result] = await here.controller.autoResolveConflicts();
+  assert.equal(result?.outcome, "unresolved");
+  assert.equal(here.vault.read("plan.md"), local);
+  assert.ok((await here.state.read())?.planned_conflicts?.plan, "failed recovery must not authorize a later upload over hosted edits");
+  here.vault.process = process;
+  here.vault.createBinary = createBinary;
+  await here.sync();
+  await here.controller.autoResolveConflicts();
+  await here.sync();
+  await here.remoteMirror.sync();
+  assert.match(here.remoteVault.read("plan.md")!, /status: done[\s\S]*priority: high/);
+});
+
 test("taking hosted after keeping a copy cannot overwrite a newer local edit during snapshot loading", async () => {
   const here = await pair();
   await here.conflict();

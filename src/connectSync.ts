@@ -2014,8 +2014,23 @@ export class ConnectSyncController {
           } catch (error) {
             // The note changed between the check and the write. Keep the hosted
             // text beside it so the merge's other half is never lost.
-            const copy = await this.writeConflictCopy(localPath, remote.document, "hosted conflict copy");
-            return { path, outcome: "kept_both", copyPath: copy, reason: error instanceof Error ? error.message : String(error) };
+            try {
+              const copy = await this.writeConflictCopy(localPath, remote.document, "hosted conflict copy");
+              return { path, outcome: "kept_both", copyPath: copy, reason: error instanceof Error ? error.message : String(error) };
+            } catch (copyError) {
+              // Clearing the conflict authorized a local upload. If neither the
+              // merge nor its hosted recovery copy can be saved (e.g. disk full),
+              // put the decision back before any later sync can overwrite the
+              // hosted half. Reuse the existing durable conflict representation.
+              const store = this.stateStoreFor(this.requireProfile());
+              const current = await store.read();
+              if (current) {
+                current.planned_conflicts ??= {};
+                current.planned_conflicts[id] = planned;
+                await store.write(current);
+              }
+              throw copyError;
+            }
           }
           return { path, outcome: "merged" };
         }
