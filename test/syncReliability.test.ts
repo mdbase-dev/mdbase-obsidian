@@ -255,13 +255,13 @@ test("the same line edited on two devices keeps both versions and loses nothing"
 
   const [resolution] = await here.controller.autoResolveConflicts();
   assert.equal(resolution?.outcome, "kept_both");
-  assert.equal(resolution?.copyPath, "plan (local conflict copy).md");
+  assert.match(resolution!.copyPath!, /^plan \(local conflict copy [a-zA-Z0-9%_-]+\)\.md$/);
   assert.equal(here.vault.read("plan.md"), "remote line\n");
-  assert.equal(here.vault.read("plan (local conflict copy).md"), "local line\n");
+  assert.equal(here.vault.read(resolution!.copyPath!), "local line\n");
 
   await here.syncOnce();
   await there.mirror.sync();
-  assert.equal(there.vault.read("plan (local conflict copy).md"), "local line\n", "the kept copy reaches every device");
+  assert.equal(there.vault.read(resolution!.copyPath!), "local line\n", "the kept copy reaches every device");
 });
 
 test("an edit beats a deletion in either direction", async () => {
