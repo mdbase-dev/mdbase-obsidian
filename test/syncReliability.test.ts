@@ -618,6 +618,80 @@ test("reauthorization cannot migrate credentials and checkpoint during another w
   here.controller.dispose(); other.controller.dispose();
 });
 
+test("a renewal in another window cannot restore credentials after the vault disconnected", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const here = await device(hosted, id);
+  const entered = deferred();
+  const gate = deferred();
+  const other = sameVaultController(hosted, here, { enrollmentClient: { renew: async (enrollment) => {
+    entered.release(); await gate.promise;
+    return { ...enrollment, accessToken: "late-token" };
+  } } });
+  const renewing = other.controller.reconnect();
+  const completed = Promise.allSettled([renewing]);
+  await entered.promise;
+  await here.controller.disconnect(false);
+  gate.release();
+  const [result] = await completed;
+  assert.equal(result!.status, "rejected");
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "", "shared credentials stay retired even though the other window cached its old profile");
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("a retired replica's late renewal cannot undo another window's new approval", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const approved = hosted.registerReplica({ name: "Reapproved", mode: "read_write" });
+  const here = await device(hosted, id, { enrollmentClient: { enroll: async () => ({
+    controlUrl: "https://connect.example", syncUrl: `https://sync.example/v1/authorities/${id}/sync`,
+    collectionId: id, replicaId: approved, mode: "read_write", name: "Reapproved",
+    enrollmentId: "22222222-2222-4222-8222-222222222222", accessToken: "approved-access",
+    refreshCredential: "approved-refresh", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+  }) } });
+  const entered = deferred();
+  const gate = deferred();
+  const other = sameVaultController(hosted, here, { enrollmentClient: { renew: async (enrollment) => {
+    entered.release(); await gate.promise; return { ...enrollment, accessToken: "late-token" };
+  } } });
+  const renewing = other.controller.reconnect();
+  const completed = Promise.allSettled([renewing]);
+  await entered.promise;
+  await here.controller.reauthorize({ onVerification: () => undefined });
+  gate.release();
+  const [result] = await completed;
+  assert.equal(result!.status, "rejected");
+  assert.equal(here.profile()?.replicaId, approved);
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "");
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("token renewal inside an SDK operation can commit under the lease it already owns", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  let here!: Awaited<ReturnType<typeof device>>;
+  let renewals = 0;
+  let renewed = false;
+  here = await device(hosted, id, {
+    enrollmentClient: { renew: async (enrollment) => {
+      renewals++; return { ...enrollment, accessToken: "fresh-token" };
+    } },
+    wrapTransport: (transport) => ({ ...transport, snapshot: async (snapshotId, page) => {
+      if (!renewed) {
+        renewed = true;
+        // This is the same credentials callback used after an HTTP 401.
+        const source = (here.controller as unknown as { transportCredentials(profile: MirrorProfile): { renew(token: string): Promise<string> } }).transportCredentials(here.profile()!);
+        assert.equal(await source.renew("access"), "fresh-token");
+      }
+      return transport.snapshot(snapshotId, page);
+    } }),
+  });
+  await here.controller.inspect();
+  assert.equal(renewals, 1);
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "fresh-token");
+  here.controller.dispose();
+});
+
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
   const hosted = new MemoryAuthority();
   hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "a\n", types: [] }]);

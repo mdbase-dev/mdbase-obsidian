@@ -1451,6 +1451,8 @@ export class ConnectSyncController {
   private syncAbort: AbortController | null = null;
   private statusRequest: Promise<MirrorStatus | null> | null = null;
   private mirrorOperationTail: Promise<void> = Promise.resolve();
+  /** A transport renewing during an SDK call already owns the directory lease. */
+  private engineLeaseHeld = false;
   private readonly fileSystem: MirrorFileSystem;
   private readonly enrollmentClient: MirrorEnrollmentClient;
   private readonly adoptionClient: AuthorityAdoptionClient;
@@ -2717,7 +2719,12 @@ export class ConnectSyncController {
       fileSystem: this.fileSystem,
       blobStore: this.blobStoreFor(profile),
       selectiveSync: normalizeSelectiveSync(profile.selectiveSync),
-      lease: this.leaseFor(profile),
+      lease: {
+        runExclusive: <Value>(operation: () => Promise<Value>) => this.leaseFor(profile).runExclusive(async () => {
+          this.engineLeaseHeld = true;
+          try { return await operation(); } finally { this.engineLeaseHeld = false; }
+        }),
+      },
       onProgress,
     };
     return profile.mode === "read_write"
@@ -2919,15 +2926,22 @@ export class ConnectSyncController {
       refreshCredential,
       accessTokenExpiresAt: profile.accessTokenExpiresAt,
     }, { signal: this.lifetime.signal });
-    // Renewal may overlap a disconnect or a fresh browser enrollment. Never
-    // recreate the retired connection (or replace the new one's credentials).
-    const current = this.requireProfile();
-    if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
-      || current.enrollmentId !== profile.enrollmentId) {
-      throw new SyncError("mirror_identity_conflict", "The connection changed while credentials were renewing. Retry with the current connection.");
-    }
-    // Settings can change independently while the request is in flight.
-    await this.persistEnrollment(renewed, current.selectiveSync);
+    const commit = async () => {
+      // Another window may have retired this enrollment while the request ran.
+      // Its cached profile is not proof that the shared connection still exists.
+      await this.assertMirror(profile.collectionId);
+      const current = this.requireProfile();
+      const storedRefresh = this.app.secretStorage.getSecret(this.secretIds("refresh", profile).current);
+      if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
+        || current.enrollmentId !== profile.enrollmentId || storedRefresh !== refreshCredential) {
+        throw new SyncError("mirror_identity_conflict", "The connection changed while credentials were renewing. Retry with the current connection.");
+      }
+      await this.persistEnrollment(renewed, current.selectiveSync);
+    };
+    // A 401 callback inside the engine is already fenced. Standalone renewal
+    // commits must acquire the same lease as disconnect and reauthorization.
+    if (this.engineLeaseHeld) await commit();
+    else await this.leaseFor(profile).runExclusive(commit);
     return renewed.accessToken;
   }
 
