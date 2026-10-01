@@ -122,6 +122,7 @@ export default class MdbasePlugin extends Plugin {
   private validationAbort: AbortController | null = null;
   private sortedIssuesCache: MdbaseIssue[] | null = null;
   private statusBarEl: HTMLElement | undefined;
+  private ribbonEl: HTMLElement | undefined;
   private noteStatusEl: HTMLElement;
   private noteStatusVersion = 0;
   sync: SyncSession;
@@ -211,7 +212,9 @@ export default class MdbasePlugin extends Plugin {
 
     this.registerView(MDBASE_WORKSPACE_VIEW, (leaf) => new MdbaseWorkspaceView(leaf, this));
     this.addSettingTab(new MdbaseSettingTab(this.app, this));
-    this.addRibbonIcon(MDBASE_ICON_ID, "Open mdbase", () => void this.openWorkspace());
+    this.ribbonEl = this.addRibbonIcon(MDBASE_ICON_ID, "Open mdbase", () => void this.onRibbonClick());
+    this.ribbonEl.addClass("mdbase-ribbon");
+    this.updateStatusBar();
 
     registerCommands(this);
 
@@ -691,16 +694,31 @@ export default class MdbasePlugin extends Plugin {
     }
   }
 
+  private async onRibbonClick(): Promise<void> {
+    const indicator = this.syncIndicator(this.getIssues().length);
+    // Mobile has no status bar. Its ribbon is the direct way to inspect pending
+    // sync; a settled/local collection keeps Types as the primary destination.
+    if (Platform.isMobile && !["local", "synced"].includes(indicator.state)) await this.openStatusDestination();
+    else await this.openWorkspace();
+  }
+
   private updateStatusBar(): void {
-    // The sync session can report before onload has created the status bar.
-    if (!this.statusBarEl) return;
-    const issues = this.getIssues();
-    const indicator = this.syncIndicator(issues.length);
-    this.statusBarEl.setText(indicator.label);
-    this.statusBarEl.setAttr("aria-label", `${indicator.detail}. Open mdbase ${indicator.destination}.`);
-    this.statusBarEl.setAttr("title", indicator.detail);
-    this.statusBarEl.setAttr("data-state", indicator.state);
-    void this.updateNoteStatus();
+    // The sync session can report before onload has created either indicator.
+    if (!this.statusBarEl && !this.ribbonEl) return;
+    const indicator = this.syncIndicator(this.getIssues().length);
+    if (this.statusBarEl) {
+      this.statusBarEl.setText(indicator.label);
+      this.statusBarEl.setAttr("aria-label", `${indicator.detail}. Open mdbase ${indicator.destination}.`);
+      this.statusBarEl.setAttr("title", indicator.detail);
+      this.statusBarEl.setAttr("data-state", indicator.state);
+    }
+    if (this.ribbonEl) {
+      const destination = Platform.isMobile && !["local", "synced"].includes(indicator.state) ? indicator.destination : "types";
+      this.ribbonEl.setAttr("aria-label", `${indicator.label}. Open mdbase ${destination}.`);
+      this.ribbonEl.setAttr("title", indicator.detail);
+      this.ribbonEl.setAttr("data-state", indicator.state);
+    }
+    if (this.noteStatusEl) void this.updateNoteStatus();
   }
 
   /** Type and issue count for the active note, beside the collection status. */
@@ -805,6 +823,7 @@ export default class MdbasePlugin extends Plugin {
       problem: state.problem,
       validationIssues,
       localChangeObserved: state.localChangeObserved,
+      paused: state.paused,
       reviewChanges: safety && !safety.safe ? state.preview?.plan.actions.length ?? 0 : 0,
     });
   }
@@ -827,12 +846,9 @@ export default class MdbasePlugin extends Plugin {
       return view;
     }
     const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({ type: MDBASE_WORKSPACE_VIEW, active: true });
+    await leaf.setViewState({ type: MDBASE_WORKSPACE_VIEW, active: true, state: { destination } });
     await this.app.workspace.revealLeaf(leaf);
-    const view = leaf.view as MdbaseWorkspaceView;
-    await view.refresh();
-    view.showDestination(destination);
-    return view;
+    return leaf.view as MdbaseWorkspaceView;
   }
 
   private refreshWorkspaceViews(forceReload = false): void {

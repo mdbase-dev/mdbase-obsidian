@@ -1,0 +1,24 @@
+{
+  "notes": 20000,
+  "state_bytes": 43275829,
+  "summary_bytes": 55,
+  "baseline": {
+    "calls": 10,
+    "total_ms": 596.6,
+    "mean_ms": 59.66,
+    "max_call_ms": 82,
+    "max_frame_gap_ms": 79.1,
+    "ticks": 14,
+    "full_reads": 10
+  },
+  "optimized": {
+    "calls": 100,
+    "total_ms": 8.9,
+    "mean_ms": 0.089,
+    "max_call_ms": 0.7,
+    "max_frame_gap_ms": 16.1,
+    "ticks": 1,
+    "full_reads": 0,
+    "summary_reads": 100
+  }
+}
