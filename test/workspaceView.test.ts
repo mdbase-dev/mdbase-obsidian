@@ -1054,6 +1054,31 @@ test("pending record updates can be compared before syncing", async () => {
   f.dom.window.close();
 });
 
+test("comparison loading returns keyboard focus without stealing it from another control", async () => {
+  for (const conflict of [false, true]) for (const moveFocus of [false, true]) {
+    const f = fixture(true);
+    let finish: (value: unknown) => void = () => assert.fail("Comparison not requested");
+    const request = () => new Promise(resolve => { finish = resolve; });
+    if (conflict) {
+      f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{ entity: "record", object_id: "record", decision_id: "decision", path: "note.md" }] };
+      Object.assign(f.host.connectSync, { conflictComparison: request });
+    } else {
+      f.state.mirrorPreview = { phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } }, entries: [{ kind: "document", path: "note.md", direction: "download", action: "update", detail: "Download change", recordId: "record" }], collisions: [], local_issues: [] };
+      (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+      Object.assign(f.host.connectSync, { recordComparison: request });
+    }
+    f.state.render();
+    const opener = button(f.root, conflict ? "Resolve…" : "Compare");
+    opener.focus();
+    opener.click();
+    if (moveFocus) f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!.focus();
+    finish({ entity: "record", objectId: "record", decisionId: "decision", local: { state: "exact", document: "Local edit" }, remote: { state: "exact", document: "Hosted edit" } });
+    await settle();
+    assert.equal(f.dom.window.document.activeElement, moveFocus ? f.root.querySelector("[data-focus-key='destination-sync']") : button(f.root, "Hide"));
+    f.dom.window.close();
+  }
+});
+
 test("pending comparisons cannot replace a newer plan's versions or loading state", async () => {
   for (const concurrent of [false, true]) for (const rejectOld of [false, true]) {
     const f = fixture(true);

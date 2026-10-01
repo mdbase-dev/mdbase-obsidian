@@ -1047,8 +1047,19 @@ export class SyncPane {
     }
   }
 
+  /** Loading disables its opener. Return focus only if the person hasn't moved it. */
+  private comparisonFocus(key: string): () => void {
+    const document = this.ctx.containerEl.ownerDocument;
+    const wasFocused = document.activeElement?.getAttribute("data-focus-key") === key;
+    return () => {
+      if (wasFocused && this.ctx.destination === "sync" && this.ctx.containerEl.ownerDocument === document
+        && document.activeElement === document.body) this.ctx.pendingFocusKey = key;
+    };
+  }
+
   private async loadPreviewComparison(key: string, recordId: string, path: string, preview: MdbaseSyncPreview): Promise<void> {
     if (this.session.state.preview !== preview) return;
+    const returnFocus = this.comparisonFocus(`preview-compare-${key}`);
     this.loadingPreviewComparisons.add(key);
     this.ctx.render();
     try {
@@ -1058,7 +1069,10 @@ export class SyncPane {
       if (this.session.state.preview === preview) this.ctx.message = syncProblem(error).message;
     } finally {
       // An old request must not clear a newer plan's loading indicator for this path.
-      if (this.session.state.preview === preview) this.loadingPreviewComparisons.delete(key);
+      if (this.session.state.preview === preview) {
+        this.loadingPreviewComparisons.delete(key);
+        returnFocus();
+      }
       this.ctx.render();
     }
   }
@@ -1067,6 +1081,7 @@ export class SyncPane {
     conflict: MirrorStatus["conflicts"][number],
     comparisonKey: string,
   ): Promise<void> {
+    const returnFocus = this.comparisonFocus(`compare-${comparisonKey}`);
     this.loadingConflictComparisons.add(comparisonKey);
     this.ctx.render();
     try {
@@ -1076,6 +1091,7 @@ export class SyncPane {
       if (problem.code === "conflict_decision_stale") await this.session.refreshStatus();
     } finally {
       this.loadingConflictComparisons.delete(comparisonKey);
+      returnFocus();
       this.ctx.render();
     }
   }
