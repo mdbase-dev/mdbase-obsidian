@@ -29,6 +29,17 @@ Changes (published distribution files; no protocol or persisted-state format cha
   checkpoint or install partial bytes. Resumption fetches/verifies missing blobs.
 - `sync-executor.js`: persist `cancelled`, not a generic blocked failure, when the
   apply signal aborts during a transfer.
+- `sync-planner.js`: scoped inspection issues isolate only the affected objects
+  and connected path transitions. Independent uploads, downloads and conflicts
+  remain in the fingerprinted plan. Unscoped failures still stop planning.
+  Path ownership is indexed so many blocked files do not cause a quadratic scan.
+  Partial completion retains the old cursor, ensuring skipped remote changes are
+  revisited; completed effects retain their normal receipts and managed bases.
+- `sync-executor.js`: the special receive-only malformed-frontmatter repair
+  allowance applies only to that explicitly identified target, never every
+  download in a partial plan. Conditional writes remain enforced.
+- `directory-mirror.js`: partial completion reports attention, not failure or
+  falsely complete synchronization, while preserving its unresolved diagnostics.
 - `directory-mirror.js`: release stale batches at the SDK's existing safe journal
   boundary (earlier effects have receipts) so the next explicit review can show a
   competing edit rather than repeatedly executing the old plan.
@@ -36,4 +47,6 @@ Changes (published distribution files; no protocol or persisted-state format cha
 Regression coverage is in `test/v3-foundations.test.ts`: the real SDK planner,
 executor, journal, and Obsidian adapter run against MemoryAuthority, with controlled
 interleavings. Tests cover competing writes, conflict recovery, path obstructions,
-metadata-only status/review, cancelled transfers/restart, and corrupt-blob recovery.
+metadata-only status/review, cancelled transfers/restart, corrupt-blob recovery,
+partial uploads/downloads, unreadable managed files without accidental deletes,
+related rename isolation, cursor retention and retry after repairs.

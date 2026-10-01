@@ -958,7 +958,7 @@ test("device lease rejects concurrent mirror ownership and releases after failur
   await lease.runExclusive(async () => undefined);
 });
 
-test("fences invalid UTF-8 or unreadable local Markdown and every valid sibling until repair", async () => {
+test("isolates invalid UTF-8 or unreadable Markdown while valid siblings sync",  async () => {
   const invalidCases: Array<[string, Uint8Array]> = [
     ["bytes.md", Uint8Array.of(0x62, 0x61, 0x64, 0xff)],
     ["truncated.md", Uint8Array.of(0xe2, 0x82)],
@@ -975,14 +975,16 @@ test("fences invalid UTF-8 or unreadable local Markdown and every valid sibling 
     });
 
     const blocked = await mirror.inspect();
-    assert.deepEqual(blocked.actions, []);
+    assert.ok(blocked.actions.some(action => action.command === "put_remote" && action.target.path === "valid.md"));
+    assert.equal((await mirror.apply(blocked)).status, "attention");
     assert.ok(blocked.issues.some((issue) =>
       issue.code === "invalid_frontmatter" && issue.path === path && issue.blocking));
     assert.deepEqual((await mirror.status()).local_issues.map((issue) => [issue.code, issue.path]), [
       ["invalid_frontmatter", path],
     ]);
     let snapshot = await hosted.transport(replica).snapshot((await hosted.transport(replica).openSession()).snapshot_id);
-    assert.deepEqual(snapshot.records, []);
+    assert.deepEqual(snapshot.records.map(record => record.path), ["valid.md"]);
+    assert.deepEqual(new Uint8Array(await vault.adapter.readBinary(path)), invalid);
 
     const invalidFile = vault.getAbstractFileByPath(path);
     assert.ok(invalidFile instanceof TFile);
@@ -1006,7 +1008,8 @@ test("fences invalid UTF-8 or unreadable local Markdown and every valid sibling 
     stateStore: new MemoryMirrorStateStore(),
   });
   const blocked = await mirror.inspect();
-  assert.deepEqual(blocked.actions, []);
+  assert.ok(blocked.actions.some(action => action.command === "put_remote" && action.target.path === "valid.md"));
+  assert.equal((await mirror.apply(blocked)).status, "attention");
   assert.ok(blocked.issues.some((issue) =>
     issue.code === "file_read_failed" && issue.path === "unreadable.md" && issue.blocking));
   assert.deepEqual((await mirror.status()).local_issues.map((issue) => [issue.code, issue.path]), [
@@ -1631,7 +1634,7 @@ test("conflict copy uses a collision-safe sibling without changing the original"
   assert.equal(vault.read("notes/conflict.md"), "local version\n");
 });
 
-test("writable mirror uploads local edits and collision preflight makes no writes", async () => {
+test("writable mirror uploads local edits and collisions only isolate affected files",  async () => {
   const hosted = new MemoryAuthority();
   hosted.seed([{
     record_id: "one",
@@ -1679,7 +1682,8 @@ test("writable mirror uploads local edits and collision preflight makes no write
     ["local_collision", "notes/one.md", true],
   ]);
   assert.equal(collisionVault.read("notes/one.md"), "unmanaged bytes");
-  assert.equal(await collisionState.read(), null);
+  assert.equal((await collisionState.read())?.cursor, 0);
+  assert.equal(collisionVault.read("Canvas Bases/Start Here.md"), "# Start here\n\nNo metadata required.\n");
 });
 
 test("interrupted mirror write resumes its IndexedDB checkpoint after adapter recreation", async () => {
@@ -1725,6 +1729,84 @@ test("interrupted mirror write resumes its IndexedDB checkpoint after adapter re
   assert.equal(applied.status, "applied", JSON.stringify(applied));
   assert.equal((await restarted.status()).state, "up_to_date");
   assert.equal(vault.getMarkdownFiles().length, 2);
+});
+
+test("partial sync downloads and uploads independent files, pins the cursor, and retries repaired files", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "remote", path: "remote.md", frontmatter: {}, body: "Hosted", types: [] }]);
+  const replica = hosted.registerReplica({ name: "Partial writer", mode: "read_write" });
+  const vault = new MemoryVault();
+  const malformed = "---\ntitle: [broken\n---\nKeep these bytes";
+  await vault.create("broken.md", malformed);
+  await vault.create("upload.md", "# Independent local note");
+  const store = new MemoryMirrorStateStore();
+  const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new ObsidianMirrorFileSystem(vault as never), stateStore: store,
+  });
+  const plan = await mirror.inspect();
+  assert.ok(plan.issues.some(issue => issue.path === "broken.md" && issue.blocking));
+  assert.equal(plan.summary.downloads, 1); assert.equal(plan.summary.uploads, 1);
+  const result = await mirror.apply(plan);
+  assert.equal(result.status, "attention");
+  assert.equal(vault.read("broken.md"), malformed);
+  assert.match(vault.read("remote.md") ?? "", /Hosted/);
+  assert.equal((await store.read())?.cursor, plan.base_cursor ?? 0);
+  assert.equal((await store.read())?.batch, undefined);
+  const snapshot = async () => hosted.transport(replica).snapshot((await hosted.transport(replica).openSession()).snapshot_id);
+  assert.deepEqual((await snapshot()).records.map(record => record.path).sort(), ["remote.md", "upload.md"]);
+  const receipts = hosted.serialize().receipts.length;
+  await mirror.sync();
+  assert.equal(hosted.serialize().receipts.length, receipts, "retry must not repeat completed uploads");
+  assert.equal(vault.read("broken.md"), malformed);
+  await vault.modify(vault.getAbstractFileByPath("broken.md") as TFile, "# Repaired note");
+  await mirror.sync(); await mirror.sync();
+  assert.deepEqual((await snapshot()).records.map(record => record.path).sort(), ["broken.md", "remote.md", "upload.md"]);
+  assert.equal((await mirror.status()).state, "up_to_date");
+});
+
+test("unreadable managed files are not treated as deletions during partial sync", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed(["unreadable", "good"].map(id => ({ record_id: id, path: `${id}.md`, frontmatter: {}, body: "Baseline", types: [] })));
+  const replica = hosted.registerReplica({ name: "Partial managed writer", mode: "read_write" });
+  const vault = new MemoryVault();
+  const store = new MemoryMirrorStateStore();
+  const mirror = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: new ObsidianMirrorFileSystem(vault as never), stateStore: store,
+  });
+  await mirror.sync();
+  const cursor = (await store.read())!.cursor;
+  vault.failReadPath = "unreadable.md";
+  await vault.modify(vault.getAbstractFileByPath("good.md") as TFile, "# Changed good file");
+  const plan = await mirror.inspect();
+  assert.ok(plan.actions.some(action => action.command === "put_remote" && action.target.path === "good.md"));
+  assert.ok(!plan.actions.some(action => action.command === "delete_remote"));
+  assert.equal((await mirror.apply(plan)).status, "attention");
+  const snapshot = await hosted.transport(replica).snapshot((await hosted.transport(replica).openSession()).snapshot_id);
+  assert.equal(snapshot.records.length, 2);
+  assert.equal(snapshot.records.find(record => record.path === "good.md")?.body, "# Changed good file");
+  assert.equal((await store.read())!.cursor, cursor);
+  vault.failReadPath = null;
+  await mirror.sync();
+  assert.equal((await mirror.status()).state, "up_to_date");
+});
+
+test("partial planning isolates connected rename paths and still rejects unscoped failures", async () => {
+  const { planReconciliation } = await import(new URL("./sync-planner.js", import.meta.resolve("@mdbase-dev/connect-sync/mirror")).href);
+  const ref = (identity: string, path: string, revision: string) => ({ state: "exact", object: { entity: "record", identity, path, revision, payload_revision: revision } });
+  const object = (identity: string, before: string, after: string) => ({ entity: "record", identity,
+    base: ref(identity, before, "v1"), local: ref(identity, after, "v2"), remote: ref(identity, before, "v1"),
+    local_target_owner: { state: "absent" }, remote_target_owner: { state: "absent" } });
+  const inspection = { kind: "incremental", mode: "read_write", selective_sync: { file_classes: [], excluded_folders: [] },
+    boundary: { replica_id: "partial", scope_epoch: 1, authority_cursor: 10, checkpoint: { cursor: 3, generation: 1 } },
+    objects: [object("blocked", "a.md", "b.md"), object("related", "b.md", "c.md"), object("safe", "safe.md", "safe.md")],
+    issues: [{ code: "file_read_failed", path: "a.md", message: "Unreadable", blocking: true }] };
+  const plan = planReconciliation(inspection, (text: string) => createHash("sha256").update(text).digest("hex"));
+  assert.ok(plan.actions.some((action: { command: string; target?: { identity: string } }) => action.command === "put_remote" && action.target?.identity === "safe"));
+  assert.ok(plan.actions.filter((action: { command: string }) => action.command !== "advance_checkpoint").every((action: { target: { identity: string } }) => action.target.identity === "safe"));
+  assert.ok(plan.issues.some((issue: { path: string; message: string }) => issue.path === "b.md" && /related path/.test(issue.message)));
+  assert.deepEqual(plan.actions.at(-1).next, inspection.boundary.checkpoint);
+  const global = planReconciliation({ ...inspection, issues: [{ code: "sync_inspection_failed", message: "Unknown scope", blocking: true }] }, (text: string) => text);
+  assert.deepEqual(global.actions, []);
 });
 
 test("portable mirror processes a 2,000-document mobile-shaped collection within the regression budget", async () => {

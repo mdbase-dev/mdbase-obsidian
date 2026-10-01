@@ -2516,3 +2516,57 @@ button.mdbase-transfer-open:hover code {
   align-items: center;
   gap: 2px;
 }
+
+.mdbase-create-note .mdbase-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.mdbase-create-note .mdbase-form-row > * {
+  grid-column: 1;
+  grid-row: auto;
+}
+
+.mdbase-create-note .mdbase-inline-error:empty {
+  display: none;
+}
+
+.mdbase-editor-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.mdbase-editor-heading .mdbase-editor-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdbase-create-note input,
+.mdbase-create-note textarea,
+.mdbase-create-note select {
+  width: 100%;
+}
+
+.mdbase-create-note textarea {
+  min-height: 80px;
+}
+
+.mdbase-folder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mdbase-folder-chips button {
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.is-mobile .mdbase-create-note button,
+.is-mobile .mdbase-folder-chips button {
+  min-height: 44px;
+}

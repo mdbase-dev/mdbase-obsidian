@@ -7,10 +7,12 @@ const gzipBytes = gzipSync(bundle).byteLength;
 // The type-workbench baseline adds record impact previews, constraint editing,
 // the YAML source editor (CodeMirror itself is supplied by Obsidian, not bundled),
 // rule-grouped issues, and adoption recovery on top of the sync-polish work.
-// Keep a narrow margin over that reviewed production bundle so unintentional
-// dependency growth is visible.
-const rawBudget = 730 * 1024;
-const gzipBudget = 209 * 1024;
+// The UX acceptance baseline also includes digest-verified contract installation,
+// draft recovery, typed creation, validation freshness and complete transfer browsing.
+// Reviewed growth: about 27 KiB raw / 8 KiB gzip; no new runtime dependencies.
+// Keep a narrow margin so unintentional dependency growth remains visible.
+const rawBudget = 760 * 1024;
+const gzipBudget = 220 * 1024;
 const forbidden = [
   /require\((["'])node:(?:fs|path|crypto|os|worker_threads|child_process)\1\)/,
   /require\((["'])(?:fs|path|crypto|os|worker_threads|child_process)\1\)/,

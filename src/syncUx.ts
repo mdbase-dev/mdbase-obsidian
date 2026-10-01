@@ -54,7 +54,7 @@ export function syncReviewPresentation(
       message: "Review local and hosted changes before syncing.",
     };
   }
-  if (plan.summary.blocking_issues > 0) {
+  if (plan.summary.blocking_issues > 0 && !plan.actions.some(action => action.command !== "advance_checkpoint")) {
     return {
       actionLabel: "Resolve issues",
       actionDisabled: true,
@@ -66,12 +66,14 @@ export function syncReviewPresentation(
   const frontmatterWarning = plan.issues.some((issue) => issue.code === "invalid_frontmatter" && !issue.blocking);
   return {
     actionLabel: outcomes
-      ? `Sync ${outcomes} ${outcomes === 1 ? "change" : "changes"}`
+      ? `Sync ${outcomes}${plan.summary.blocking_issues ? " available" : ""} ${outcomes === 1 ? "change" : "changes"}`
       : hasCheckpoint
         ? "Confirm sync"
         : "Up to date",
     actionDisabled: busy || plan.actions.length === 0,
-    message: frontmatterWarning
+    message: plan.summary.blocking_issues > 0
+      ? "Sync available changes. Unresolved items are isolated and remain for the next review; they do not stop independent transfers."
+      : frontmatterWarning
       ? "Frontmatter warnings do not block this sync. Document bytes are preserved; synchronization does not repair YAML."
       : entryCount
         ? "Review each transfer below, then sync when ready."

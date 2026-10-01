@@ -62,8 +62,24 @@ class ItemView {
     this.containerEl = leaf.containerEl;
   }
   registerDomEvent(element, type, listener) { element.addEventListener(type, listener); }
+  async setState() {}
 }
-class Modal {}
+class Modal {
+  constructor(app) {
+    this.app = app;
+    this.containerEl = document.createElement('div');
+    this.containerEl.className = 'modal-container';
+    this.titleEl = this.containerEl.createDiv({ cls: 'modal-title' });
+    this.contentEl = this.containerEl.createDiv({ cls: 'modal-content' });
+  }
+  open() {
+    if (!this.containerEl.parentNode) {
+      document.body.appendChild(this.containerEl);
+      this.onOpen?.();
+    }
+  }
+  close() { this.onClose?.(); this.containerEl.remove(); }
+}
 class Notice {}
 // Records the most recently shown menu so tests can invoke its items.
 class Menu {

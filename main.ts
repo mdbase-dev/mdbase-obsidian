@@ -1,9 +1,11 @@
+import { ContractCatalogModal, recoverPackInstall } from "./src/contractCatalog";
+import { ValidationState } from "./src/validationState";
+import { CreateTypedNoteModal } from "./src/createTypedNoteModal";
 import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
   App,
   addIcon,
   MarkdownView,
-  Modal,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -21,13 +23,9 @@ import {
   MdbaseIssue,
   MdbaseTypeDef,
   type CollectionRecord,
-  buildInitialFrontmatter,
-  buildUniqueNotePath,
-  coerceFieldInput,
-  createNoteFromType,
+
   ensureCollectionInitialized,
   formatMarkdown,
-  getPromptFields,
   getTopLevelFieldFromIssuePath,
   getTypesForFile,
   isExcluded,
@@ -83,6 +81,7 @@ interface MdbasePluginSettings {
   interopEnabled: boolean;
   mirrorProfile: MirrorProfile | null;
   typeDrafts: Record<string, StoredTypeDraft>;
+  archivedTypeDrafts: StoredTypeDraft[];
   syncActivity: SyncActivityEntry[];
 }
 
@@ -93,6 +92,7 @@ const DEFAULT_SETTINGS: MdbasePluginSettings = {
   interopEnabled: false,
   mirrorProfile: null,
   typeDrafts: {},
+  archivedTypeDrafts: [],
   syncActivity: [],
 };
 
@@ -116,89 +116,6 @@ function isMirrorProfile(value: unknown): value is MirrorProfile {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-interface TextPromptOptions {
-  title: string;
-  label: string;
-  description?: string;
-  placeholder?: string;
-  value?: string;
-  submitLabel: string;
-  required?: boolean;
-}
-
-class TextPromptModal extends Modal {
-  private resolvePromise: ((value: string | null) => void) | null = null;
-  private settled = false;
-
-  constructor(app: App, private readonly options: TextPromptOptions) {
-    super(app);
-  }
-
-  openAndGetValue(): Promise<string | null> {
-    return new Promise((resolve) => {
-      this.settled = false;
-      this.resolvePromise = resolve;
-      this.open();
-    });
-  }
-
-  onOpen(): void {
-    const { contentEl, options } = this;
-    contentEl.empty();
-    this.titleEl.setText(options.title);
-    const field = contentEl.createDiv({ cls: "mdbase-prompt-field" });
-    const label = field.createEl("label", { text: options.label });
-    const input = field.createEl("input", { type: "text" });
-    label.htmlFor = input.id = "mdbase-prompt-input";
-    input.placeholder = options.placeholder ?? "";
-    input.value = options.value ?? "";
-    input.addClass("prompt-input");
-    if (options.description) field.createDiv({ cls: "setting-item-description", text: options.description });
-
-    const actions = contentEl.createDiv({ cls: "modal-button-container" });
-    const cancelButton = actions.createEl("button", { text: "Cancel" });
-    const submitButton = actions.createEl("button", { text: options.submitLabel, cls: "mod-cta" });
-    // A required value keeps the prompt open instead of failing after it closes.
-    const sync = () => { submitButton.disabled = options.required === true && !input.value.trim(); };
-    sync();
-    input.addEventListener("input", sync);
-    const submit = () => {
-      if (submitButton.disabled) return;
-      this.finish(input.value.trim());
-      this.close();
-    };
-
-    cancelButton.onclick = () => {
-      this.finish(null);
-      this.close();
-    };
-    submitButton.onclick = submit;
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        submit();
-      }
-    });
-
-    window.setTimeout(() => {
-      input.focus();
-      input.select();
-    }, 0);
-  }
-
-  onClose(): void {
-    if (!this.settled) this.finish(null);
-    this.contentEl.empty();
-  }
-
-  private finish(value: string | null): void {
-    if (this.settled) return;
-    this.settled = true;
-    this.resolvePromise?.(value);
-    this.resolvePromise = null;
-  }
 }
 
 type TypePickerResult =
@@ -363,6 +280,8 @@ export default class MdbasePlugin extends Plugin {
   readonly connectSync: ConnectSyncController;
   settings: MdbasePluginSettings;
   private issueMap = new Map<string, MdbaseIssue[]>();
+  private readonly validation = new ValidationState();
+  private validationAbort: AbortController | null = null;
   private sortedIssuesCache: MdbaseIssue[] | null = null;
   private statusBarEl: HTMLElement;
   private noteStatusEl: HTMLElement;
@@ -643,6 +562,7 @@ export default class MdbasePlugin extends Plugin {
       }),
     );
 
+    try { await recoverPackInstall(this.app); } catch (error) { new Notice(`Contract pack recovery needs attention: ${String(error)}`, 0); }
     const active = this.app.workspace.getActiveFile();
     if (active && this.settings.validateOnOpen) {
       void this.validateFileAndStore(active, "open");
@@ -654,6 +574,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   onunload(): void {
+    this.validationAbort?.abort();
     this.connectSync.dispose();
     void this.interopBridge.dispose().catch((error: unknown) => {
       console.error("mdbase: failed to dispose the interoperability bridge", error);
@@ -678,6 +599,7 @@ export default class MdbasePlugin extends Plugin {
     if (!this.settings.typeDrafts || typeof this.settings.typeDrafts !== "object" || Array.isArray(this.settings.typeDrafts)) {
       this.settings.typeDrafts = {};
     }
+    this.settings.archivedTypeDrafts = Array.isArray(this.settings.archivedTypeDrafts) ? this.settings.archivedTypeDrafts : [];
     this.settings.syncActivity = normalizeActivity(this.settings.syncActivity);
   }
 
@@ -820,7 +742,19 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async saveTypeDraft(draft: StoredTypeDraft): Promise<void> {
+    const prior = this.loadTypeDraft(draft.path);
+    if (prior && prior.sourceRevision !== draft.sourceRevision) this.settings.archivedTypeDrafts.push(prior);
     this.settings.typeDrafts[draft.path ?? "__new__"] = JSON.parse(JSON.stringify(draft)) as StoredTypeDraft;
+    await this.saveSettings();
+  }
+
+  getArchivedTypeDrafts(path: string): StoredTypeDraft[] {
+    return this.settings.archivedTypeDrafts.filter(draft => draft.path === path);
+  }
+
+  async discardArchivedTypeDraft(draft: StoredTypeDraft): Promise<void> {
+    this.settings.archivedTypeDrafts = this.settings.archivedTypeDrafts.filter(candidate =>
+      candidate.path !== draft.path || candidate.updatedAt !== draft.updatedAt || candidate.sourceRevision !== draft.sourceRevision);
     await this.saveSettings();
   }
 
@@ -859,6 +793,29 @@ export default class MdbasePlugin extends Plugin {
     );
     this.refreshWorkspaceViews(true);
     return saved;
+  }
+
+  async openContractCatalog(): Promise<void> {
+    if (this.getMirrorProfile()) throw new Error("Install packs at the hosted collection authority using mdbase editor.");
+    const loaded = await this.getConfigAndTypes();
+    if (!loaded || !loaded.config.spec_version.startsWith("0.3.")) throw new Error("Initialize or migrate this collection first.");
+    if (loaded.config.settings.types_folder !== "_types" || (loaded.config.settings.contracts_folder ?? "_contracts") !== "_contracts") throw new Error("Catalog packs require the standard _types and _contracts folders. Use mdbase editor for custom target mappings.");
+    new ContractCatalogModal(this.app, () => {
+      this.connectSync.assertLocalAuthorityWritable();
+      if (this.getMirrorProfile()) throw new Error("The vault role changed. Install at the collection authority instead.");
+    }, async primary => {
+      this.invalidateSchemaCache();
+      const view = await this.openWorkspace("types");
+      await view.refresh(true);
+      const schema = await this.getConfigAndTypes();
+      const type = primary ? schema?.types.get(primary) : null;
+      if (type) await view.editType(type.filePath);
+      new Notice("Installed contract pack. Edit its type or create a note to try it.");
+    }).open();
+  }
+
+  async createNoteFromType(typeName?: string): Promise<void> {
+    await this.createNoteFromTypeCommand(typeName);
   }
 
   async initializeCollection(): Promise<void> {
@@ -1027,9 +984,10 @@ export default class MdbasePlugin extends Plugin {
     }
     const issues = this.issueMap.get(file.path) ?? [];
     const errors = issues.filter((issue) => issue.severity === "error").length;
-    const issueText = issues.length ? ` · ${issues.length} ${issues.length === 1 ? "issue" : "issues"}` : "";
+    const checked = this.validation.isChecked(file.path);
+    const issueText = !checked ? " · not checked" : issues.length ? ` · ${issues.length} ${issues.length === 1 ? "issue" : "issues"}` : " · checked";
     this.noteStatusEl.setText(`${types.join(", ")}${issueText}`);
-    this.noteStatusEl.setAttr("data-state", errors ? "error" : issues.length ? "warning" : "valid");
+    this.noteStatusEl.setAttr("data-state", !checked ? "unchecked" : errors ? "error" : issues.length ? "warning" : "valid");
     this.noteStatusEl.setAttr("data-path", file.path);
     const detail = issues.length
       ? `${file.basename}: ${issues.length} ${issues.length === 1 ? "issue" : "issues"}. Open issues for this note.`
@@ -1058,6 +1016,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private markRecordChanged(path: string): void {
+    this.validation.changed(path);
     if (!this.recordCache) return;
     this.dirtyRecordPaths.add(normalizePath(path));
     this.recordList = null;
@@ -1218,6 +1177,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private invalidateSchemaCache(): void {
+    this.validation.changed();
     this.schemaCache = null;
     this.schemaLoadPromise = null;
   }
@@ -1338,8 +1298,10 @@ export default class MdbasePlugin extends Plugin {
       return [];
     }
 
+    const revision = this.validation.revision;
     const issues = await validateFile(this.app.vault, file, loaded.config, loaded.types);
-    if (!isCurrent()) return issues;
+    if (!isCurrent() || revision !== this.validation.revision) return issues;
+    this.validation.markChecked(file.path);
     this.setFileIssues(file.path, issues);
 
     if (reason === "save" && this.settings.showNoticeOnSave && issues.length > 0) {
@@ -1355,7 +1317,7 @@ export default class MdbasePlugin extends Plugin {
       new Notice("This vault is configured as a mirror. Sync it instead of initializing a local collection.");
       return;
     }
-    const { created } = await ensureCollectionInitialized(this.app.vault);
+    const { created } = await ensureCollectionInitialized(this.app.vault, { seedNoteType: false });
     this.invalidateSchemaCache();
 
     if (created.length === 0) {
@@ -1438,7 +1400,7 @@ export default class MdbasePlugin extends Plugin {
     await view.editType(chosen.filePath);
   }
 
-  private async createNoteFromTypeCommand(): Promise<void> {
+  private async createNoteFromTypeCommand(typeName?: string): Promise<void> {
     this.connectSync.assertLocalAuthorityWritable();
     const loaded = await this.requireConfigAndTypes();
     if (!loaded) return;
@@ -1448,70 +1410,18 @@ export default class MdbasePlugin extends Plugin {
       return;
     }
 
-    const chosenType = await pickType(this.app, Array.from(loaded.types.values()));
+    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
+    const chosenType = typeName ? loaded.types.get(typeName) : await pickType(this.app, Array.from(loaded.types.values()));
     if (!chosenType) return;
 
-    const frontmatter = buildInitialFrontmatter(chosenType, loaded.config);
-    const promptFields = getPromptFields(chosenType, frontmatter);
-
-    const title = `New ${chosenType.name}`;
-    for (const [fieldName, fieldDef] of promptFields) {
-      const value = await new TextPromptModal(this.app, {
-        title,
-        label: fieldName,
-        description: fieldDef.description ?? `Required · ${fieldDef.type ?? "string"}`,
-        placeholder: fieldDef.type === "date" ? "YYYY-MM-DD" : undefined,
-        submitLabel: "Next",
-        required: true,
-      }).openAndGetValue();
-      if (value == null) return;
-
-      try {
-        frontmatter[fieldName] = coerceFieldInput(value, fieldDef);
-      } catch (error) {
-        new Notice(`Invalid value for ${fieldName}: ${error instanceof Error ? error.message : String(error)}`);
-        return;
-      }
-    }
-
-    const displayKey = chosenType.display_name_key ?? "title";
-    if (frontmatter[displayKey] == null) {
-      const displayValue = await new TextPromptModal(this.app, {
-        title,
-        label: displayKey,
-        description: "Optional. Used for the file name.",
-        submitLabel: "Next",
-      }).openAndGetValue();
-      if (displayValue == null) return;
-      if (displayValue && displayValue.trim().length > 0) {
-        frontmatter[displayKey] = displayValue.trim();
-      }
-    }
-
-    const suggestedPath = await buildUniqueNotePath(this.app.vault, chosenType, frontmatter);
-    const chosenPathInput = await new TextPromptModal(this.app, {
-      title,
-      label: "Location",
-      description: "Path in this vault.",
-      value: suggestedPath,
-      submitLabel: "Create note",
-    }).openAndGetValue();
-
-    if (chosenPathInput == null) return;
-
-    let finalPath = normalizePath(chosenPathInput.trim().length > 0 ? chosenPathInput.trim() : suggestedPath);
-    if (!finalPath.endsWith(".md")) {
-      finalPath = `${finalPath}.md`;
-    }
-
-    try {
-      const file = await createNoteFromType(this.app.vault, finalPath, frontmatter);
+    new CreateTypedNoteModal(this.app, chosenType, loaded.config, loaded.types, async (path, frontmatter) => {
+      this.connectSync.assertLocalAuthorityWritable();
+      if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
+      const { createNoteFromType } = await import("./src/mdbaseCore");
+      const file = await createNoteFromType(this.app.vault, path, frontmatter);
       await this.app.workspace.getLeaf(true).openFile(file);
-      new Notice(`Created note: ${file.path}`);
       await this.validateFileAndStore(file, "manual");
-    } catch (error) {
-      new Notice(error instanceof Error ? error.message : String(error));
-    }
+    }).open();
   }
 
   private async validateCurrentNoteCommand(): Promise<void> {
@@ -1530,31 +1440,73 @@ export default class MdbasePlugin extends Plugin {
     }
   }
 
+  getValidationSummary(): string {
+    const config = this.schemaCache?.config;
+    const paths = this.app.vault.getMarkdownFiles().filter(file => !config || !isExcluded(file.path, config)).map(file => file.path);
+    return this.validation.summary(paths);
+  }
+
+  isValidating(): boolean { return this.validationAbort !== null; }
+  cancelValidation(): void { this.validationAbort?.abort(); }
+
   async runCollectionValidation(showSummary: boolean): Promise<void> {
+    if (this.validationAbort) return;
     const loaded = await this.requireConfigAndTypes({ background: false });
-    if (!loaded) return;
-
-    const issues = await validateCollection(this.app.vault, loaded.config, loaded.types);
+    if (!loaded || this.validationAbort) return;
+    const abort = new AbortController();
+    this.validationAbort = abort;
+    this.validation.cancelled = false;
+    const revision = this.validation.revision;
     const nextMap = new Map<string, MdbaseIssue[]>();
-    for (const issue of issues) {
-      const list = nextMap.get(issue.path) ?? [];
-      list.push(issue);
-      nextMap.set(issue.path, list);
-    }
-
-    this.issueMap = nextMap;
-    this.sortedIssuesCache = null;
-    this.refreshIssueViews();
-
-    if (showSummary) {
-      if (issues.length === 0) {
-        new Notice("Collection validation passed with no issues.");
-      } else {
-        const errors = issues.filter((issue) => issue.severity === "error").length;
-        const warnings = issues.length - errors;
-        new Notice(`Collection validation: ${errors} error(s), ${warnings} warning(s)`);
-        await this.openIssuesView();
+    try {
+      const issues = await validateCollection(this.app.vault, loaded.config, loaded.types, {
+        signal: abort.signal,
+        onProgress: (progress) => {
+          this.validation.progress = progress;
+          if (progress.completed === 0) {
+            // Do not wait for the type workbench's record scan before exposing Stop.
+            for (const leaf of this.app.workspace.getLeavesOfType(MDBASE_WORKSPACE_VIEW)) (leaf.view as MdbaseWorkspaceView).refreshValidationControls();
+          }
+          else if (progress.completed % 25 === 0 || progress.phase === "uniqueness") {
+            for (const leaf of this.app.workspace.getLeavesOfType(MDBASE_WORKSPACE_VIEW)) (leaf.view as MdbaseWorkspaceView).updateValidationProgress();
+          }
+        },
+        onFile: (file, fileIssues) => {
+          if (revision !== this.validation.revision) return;
+          this.validation.markChecked(file.path);
+          nextMap.set(file.path, fileIssues);
+          if (fileIssues.length) this.issueMap.set(file.path, fileIssues);
+          else this.issueMap.delete(file.path);
+          this.sortedIssuesCache = null;
+        },
+      });
+      if (revision !== this.validation.revision) {
+        new Notice("Files changed during validation. Validate again for a complete result.");
+        return;
       }
+      nextMap.clear();
+      for (const issue of issues) nextMap.set(issue.path, [...(nextMap.get(issue.path) ?? []), issue]);
+      this.issueMap = nextMap;
+      this.validation.lastCompletedAt = new Date().toISOString();
+      this.validation.completedRevision = revision;
+      if (showSummary) {
+        new Notice(issues.length ? `Collection validation: ${issues.length} issues` : "Collection validation passed with no issues.");
+        if (issues.length) await this.openIssuesView();
+      }
+    } catch (error) {
+      this.validation.cancelled = true;
+      // A stopped scan must not erase unchecked files' existing diagnostics.
+      if (revision === this.validation.revision) for (const [path, issues] of nextMap) {
+        if (issues.length) this.issueMap.set(path, issues);
+        else this.issueMap.delete(path);
+      }
+      new Notice(abort.signal.aborted ? "Validation stopped. Results are incomplete." : `Validation could not finish: ${String(error)}. Results are incomplete.`);
+    } finally {
+      this.validation.progress = null;
+      this.validationAbort = null;
+      this.sortedIssuesCache = null;
+      for (const leaf of this.app.workspace.getLeavesOfType(MDBASE_WORKSPACE_VIEW)) (leaf.view as MdbaseWorkspaceView).refreshValidationControls();
+      this.refreshIssueViews();
     }
   }
 
