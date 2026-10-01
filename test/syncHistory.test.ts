@@ -103,6 +103,26 @@ test("a resumed batch does not re-report receipts from the interrupted run", asy
   assert.deepEqual(seen, ["b"]);
 });
 
+test("receipt lookup indexes a large plan once instead of scanning it per action", async () => {
+  const actions = Array.from({ length: 20_000 }, (_, index) => write(String(index), `${index}.md`));
+  let inspectedActions = 0;
+  for (const action of actions) {
+    const id = action.action_id;
+    Object.defineProperty(action, "action_id", { get: () => { inspectedActions++; return id; } });
+  }
+  const state = batchState(actions, 0);
+  const seen: string[] = [];
+  const store = new ReceiptObservingStateStore(new RecordingStore(), (action) => seen.push(action.action_id));
+  await store.write(state);
+  for (let index = 0; index < actions.length; index++) {
+    state.batch!.receipts.push({ action_id: String(index), status: "completed" });
+    await store.write(state);
+  }
+  assert.equal(seen.length, actions.length);
+  assert.ok(inspectedActions <= actions.length * 2,
+    `Expected one index and one callback read per action, got ${inspectedActions} reads`);
+});
+
 test("history rows describe direction, verb, rename source and failures", () => {
   const created = historyFileFromReceipt(write("a", "notes/a.md"), { action_id: "a", status: "completed" }, "t");
   assert.deepEqual(created, { path: "notes/a.md", kind: "document", direction: "download", action: "create", status: "completed", at: "t" });
