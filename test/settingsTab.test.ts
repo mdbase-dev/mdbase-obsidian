@@ -21,6 +21,8 @@ function fixture() {
     },
     createDiv(this: HTMLElement, options = {}) { return this.createEl("div", options); },
     setAttr(this: HTMLElement, name: string, value: string) { this.setAttribute(name, value); },
+    setText(this: HTMLElement, value: string) { this.textContent = value; },
+    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
     empty(this: HTMLElement) { this.replaceChildren(); },
   });
   const notices = (Notice as unknown as { messages: string[] }).messages;
@@ -106,6 +108,42 @@ test("applying exclusions waits for persistence and prevents duplicate requests"
   await settle();
   assert.deepEqual(f.notices, ["Excluded folders updated. The next sync applies them."]);
   assert.equal(apply.disabled, false);
+  f.dom.window.close();
+});
+
+test("disconnect stays disabled through its decision and completion, without duplicate requests", async () => {
+  const f = fixture();
+  let disconnected = 0;
+  let finish: () => void = () => assert.fail("Disconnect not started");
+  Object.assign(f.plugin.sync, {
+    state: { message: "Disconnected. Local files kept." },
+    disconnect: async () => { disconnected++; await new Promise<void>(resolve => { finish = resolve; }); },
+  });
+  const disconnect = button(f.root, "Disconnect…");
+  disconnect.click();
+  assert.equal(disconnect.disabled, true, "only one disconnect decision at a time");
+  button(f.dom.window.document.body, "Keep files").click();
+  await settle();
+  assert.equal(disconnect.disabled, true, "do not offer another disconnect while cleanup is running");
+  assert.equal(disconnect.textContent, "Disconnecting…");
+  disconnect.click();
+  assert.equal(disconnected, 1);
+  finish();
+  await settle();
+  assert.deepEqual(f.notices, ["Disconnected. Local files kept."]);
+  assert.equal(button(f.root, "Disconnect…").disabled, false);
+  f.dom.window.close();
+});
+
+test("cancelling disconnect restores its original action without rerendering settings", async () => {
+  const f = fixture();
+  const disconnect = button(f.root, "Disconnect…");
+  disconnect.click();
+  button(f.dom.window.document.body, "Cancel").click();
+  await settle();
+  assert.equal(button(f.root, "Disconnect…"), disconnect, "native focus can return to the same button");
+  assert.equal(disconnect.disabled, false);
+  assert.deepEqual(f.notices, []);
   f.dom.window.close();
 });
 

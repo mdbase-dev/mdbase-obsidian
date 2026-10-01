@@ -162,13 +162,17 @@ export class MdbaseSettingTab extends PluginSettingTab {
         .setWarning()
         .setDisabled(plugin.sync.isSyncing())
         .onClick(async () => {
-          const choice = await new DisconnectMirrorModal(this.app).choose(profile.name);
-          if (!choice) return;
+          button.setDisabled(true);
           try {
+            const choice = await new DisconnectMirrorModal(this.app).choose(profile.name);
+            if (!choice) return;
+            button.setButtonText("Disconnecting…");
             await plugin.sync.disconnect(profile, choice === "remove");
             new Notice(plugin.sync.state.message);
           } catch (error) {
             new Notice(error instanceof Error ? error.message : String(error));
+          } finally {
+            button.setDisabled(false);
           }
           this.display();
         }));
