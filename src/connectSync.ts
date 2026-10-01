@@ -1485,9 +1485,9 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
 }
 
 export class DeviceMirrorLease implements MirrorLease {
-  private static readonly active = new Set<string>();
+  private static readonly waiting = new Map<string, Promise<void>>();
 
-  constructor(private readonly key: string) {}
+  constructor(private readonly key: string, private readonly waitForOwner = false) {}
 
   async runExclusive<Value>(operation: () => Promise<Value>): Promise<Value> {
     // Static fields only protect one plugin/renderer instance. Web Locks share
@@ -1495,20 +1495,23 @@ export class DeviceMirrorLease implements MirrorLease {
     // independently evaluated plugin bundles.
     const locks = typeof navigator === "undefined" ? null : navigator.locks;
     if (locks) {
-      return locks.request(`mdbase-mirror:${this.key}`, { ifAvailable: true }, async (lock) => {
+      const options = this.waitForOwner ? {} : { ifAvailable: true };
+      return locks.request(`mdbase-mirror:${this.key}`, options, async (lock) => {
         if (!lock) throw new SyncError("mirror_busy", "Another window is synchronizing this vault.");
         return operation();
       });
     }
-    if (DeviceMirrorLease.active.has(this.key)) {
+    const previous = DeviceMirrorLease.waiting.get(this.key);
+    if (previous && !this.waitForOwner) {
       throw new SyncError("mirror_busy", "A mirror operation is already running for this vault.");
     }
-    DeviceMirrorLease.active.add(this.key);
-    try {
-      return await operation();
-    } finally {
-      DeviceMirrorLease.active.delete(this.key);
-    }
+    const result = (previous ?? Promise.resolve()).then(operation);
+    const released = result.finally(() => {
+      if (DeviceMirrorLease.waiting.get(this.key) === tail) DeviceMirrorLease.waiting.delete(this.key);
+    });
+    const tail = released.then(() => undefined, () => undefined);
+    DeviceMirrorLease.waiting.set(this.key, tail);
+    return released;
   }
 }
 
@@ -3028,6 +3031,15 @@ export class ConnectSyncController {
   }
 
   private async renewAccessTokenOnce(profile: MirrorProfile): Promise<string> {
+    // Rotation invalidates the previous token before the HTTP response arrives.
+    // Serialize requests, not just commits, so reversed responses cannot store
+    // a revoked token. This is separate from the directory lease: disconnect
+    // must remain available while authentication is waiting on the network.
+    const lease = new DeviceMirrorLease(`credentials:${profile.collectionId}:${profile.replicaId}`, true);
+    return lease.runExclusive(() => this.renewAccessTokenUnderLease(profile));
+  }
+
+  private async renewAccessTokenUnderLease(profile: MirrorProfile): Promise<string> {
     const refreshCredential = this.readSecret("refresh", profile);
     if (!refreshCredential) {
       throw new SyncError("mirror_credentials_missing", "The mirror refresh credential is missing. Approve this vault again.");

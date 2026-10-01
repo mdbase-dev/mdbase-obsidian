@@ -532,18 +532,24 @@ test("a hosted deletion conflict decision cannot discard an edit made just befor
 });
 
 test("independently loaded plugin windows share a browser mirror lease", async () => {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-  const held = new Set<string>();
-  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: {
-    request: async (name: string, _options: unknown, callback: (lock: object | null) => Promise<unknown>) => {
-      if (held.has(name)) return callback(null);
-      held.add(name);
-      try { return await callback({ name }); } finally { held.delete(name); }
-    },
-  } } });
   const moduleUrl = new URL("../src/connectSync.js", import.meta.url);
   moduleUrl.search = "?second-window";
   const other = await import(moduleUrl.href) as typeof import("../src/connectSync");
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const held = new Set<string>();
+  const available = new Map<string, Promise<void>>();
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: {
+    request: async (name: string, options: { ifAvailable?: boolean }, callback: (lock: object | null) => Promise<unknown>) => {
+      if (held.has(name) && options.ifAvailable) return callback(null);
+      while (held.has(name)) await available.get(name);
+      const gate = deferred();
+      available.set(name, gate.promise);
+      held.add(name);
+      try { return await callback({ name }); } finally {
+        held.delete(name); available.delete(name); gate.release();
+      }
+    },
+  } } });
   const key = crypto.randomUUID();
   const first = new DeviceMirrorLease(key);
   const second = new other.DeviceMirrorLease(key);
@@ -718,6 +724,53 @@ test("token renewal inside an SDK operation can commit under the lease it alread
   assert.equal(renewals, 1);
   assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "fresh-token");
   here.controller.dispose();
+});
+
+test("cross-window renewal response order cannot leave a revoked token in shared storage", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const gate = deferred();
+  let rotations = 0;
+  let serverToken = "access";
+  // The real pairing renewal rotates hosted_replicas.token_hash before replying.
+  // Delay the first response, not its server-side rotation.
+  const enrollmentClient: Partial<MirrorEnrollmentClient> = { renew: async (enrollment) => {
+    const token = `token-${++rotations}`;
+    serverToken = token;
+    if (rotations === 1) { entered.release(); await gate.promise; }
+    return { ...enrollment, accessToken: token };
+  } };
+  const here = await device(hosted, id, { enrollmentClient });
+  const other = sameVaultController(hosted, here, { enrollmentClient });
+  const source = (controller: ConnectSyncController, profile: MirrorProfile) =>
+    (controller as unknown as { transportCredentials(profile: MirrorProfile): { renew(token: string): Promise<string> } }).transportCredentials(profile);
+  const first = source(here.controller, here.profile()!).renew("access");
+  await entered.promise;
+  const second = source(other.controller, other.profile()!).renew("access");
+  const completed = Promise.allSettled([first, second]);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  gate.release();
+  const results = await completed;
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 2);
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), serverToken, "persisted token must be the server's latest rotation, not the last HTTP response");
+  here.controller.dispose(); other.controller.dispose();
+});
+
+test("queued leases release failed owners and do not poison the next credential rotation", async () => {
+  const key = crypto.randomUUID();
+  const first = new DeviceMirrorLease(key);
+  const second = new DeviceMirrorLease(key, true);
+  const gate = deferred();
+  const owner = first.runExclusive(async () => { await gate.promise; throw new Error("fixture failure"); });
+  const ownerFailed = assert.rejects(owner, /fixture failure/);
+  let entered = false;
+  const next = second.runExclusive(async () => { entered = true; return "recovered"; });
+  assert.equal(entered, false);
+  gate.release();
+  await ownerFailed;
+  assert.equal(await next, "recovered");
+  assert.equal(await first.runExclusive(async () => "released"), "released");
 });
 
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
