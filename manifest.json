@@ -1,7 +1,7 @@
 {
   "id": "mdbase-obsidian",
   "name": "mdbase",
-	"version": "0.3.2",
+	"version": "0.4.0",
   "minAppVersion": "1.11.4",
   "description": "Edit mdbase types and mirror hosted collections through mdbase Connect.",
   "author": "calluma",
