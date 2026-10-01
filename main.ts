@@ -129,6 +129,7 @@ export default class MdbasePlugin extends Plugin {
   private syncScheduler: SyncScheduler | null = null;
   private recordCache: Map<string, CollectionRecord> | null = null;
   private recordCacheSettings = "";
+  private recordCacheEpoch = 0;
   private recordList: CollectionRecord[] | null = null;
   private recordLoadPromise: Promise<CollectionRecord[]> | null = null;
   private readonly dirtyRecordPaths = new Set<string>();
@@ -770,7 +771,9 @@ export default class MdbasePlugin extends Plugin {
 
   private markRecordChanged(path: string): void {
     this.validation.changed(path);
-    if (!this.recordCache) return;
+    // A yielded initial scan can already have read this path. Keep its change
+    // even before the completed cache is installed, then reconcile it below.
+    if (!this.recordCache && !this.recordLoadPromise) return;
     this.dirtyRecordPaths.add(normalizePath(path));
     this.recordList = null;
   }
@@ -787,28 +790,33 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private async readRecords(): Promise<CollectionRecord[]> {
+    const epoch = this.recordCacheEpoch;
     const loaded = await this.getConfigAndTypes();
     if (!loaded) return [];
     const settingsKey = JSON.stringify(loaded.config.settings);
     if (!this.recordCache || settingsKey !== this.recordCacheSettings) {
       this.dirtyRecordPaths.clear();
       const records = await readCollectionRecords(this.app.vault, loaded.config);
+      if (epoch !== this.recordCacheEpoch) return this.readRecords();
       this.recordCache = new Map(records.map((record) => [record.path, record]));
       this.recordCacheSettings = settingsKey;
       this.recordList = null;
-    } else if (this.dirtyRecordPaths.size) {
+    }
+    const cache = this.recordCache;
+    if (this.dirtyRecordPaths.size) {
       const paths = [...this.dirtyRecordPaths];
       this.dirtyRecordPaths.clear();
       for (const path of paths) {
-        this.recordCache.delete(path);
+        cache.delete(path);
         const file = this.app.vault.getAbstractFileByPath(path);
         if (!(file instanceof TFile) || file.extension !== "md" || isExcluded(path, loaded.config)) continue;
         const parsed = parseFrontmatter(await this.app.vault.cachedRead(file));
-        if (!parsed.error) this.recordCache.set(path, { path, frontmatter: parsed.frontmatter });
+        if (!parsed.error) cache.set(path, { path, frontmatter: parsed.frontmatter });
       }
       this.recordList = null;
     }
-    this.recordList ??= [...this.recordCache.values()].sort((a, b) => a.path.localeCompare(b.path));
+    if (epoch !== this.recordCacheEpoch) return this.readRecords();
+    this.recordList ??= [...cache.values()].sort((a, b) => a.path.localeCompare(b.path));
     return this.recordList;
   }
 
@@ -948,20 +956,30 @@ export default class MdbasePlugin extends Plugin {
     if (this.schemaCache) return this.schemaCache;
     if (this.schemaLoadPromise) return this.schemaLoadPromise;
 
-    this.schemaLoadPromise = (async () => {
-      const config = await loadMdbaseConfig(this.app.vault);
-      if (!config) return null;
-      const types = await loadTypeDefinitions(this.app.vault, config);
-      const contracts = await loadContractDefinitions(this.app.vault, config);
-      return { config, types, contracts };
-    })();
+    // Store the fenced promise itself: all coalesced callers must reject a
+    // result invalidated while its asynchronous config/type reads were running.
+    const loading: Promise<LoadedSchema | null> = Promise.resolve().then(async () => {
+      try {
+        const config = await loadMdbaseConfig(this.app.vault);
+        const loaded = config ? {
+          config,
+          types: await loadTypeDefinitions(this.app.vault, config),
+          contracts: await loadContractDefinitions(this.app.vault, config),
+        } : null;
+        if (this.schemaLoadPromise !== loading) return this.getConfigAndTypes();
+        if (loaded) this.schemaCache = loaded;
+        return loaded;
+      } catch (error) {
+        if (this.schemaLoadPromise !== loading) return this.getConfigAndTypes();
+        throw error;
+      }
+    });
+    this.schemaLoadPromise = loading;
 
     try {
-      const loaded = await this.schemaLoadPromise;
-      if (loaded) this.schemaCache = loaded;
-      return loaded;
+      return await loading;
     } finally {
-      this.schemaLoadPromise = null;
+      if (this.schemaLoadPromise === loading) this.schemaLoadPromise = null;
     }
   }
 
@@ -1003,6 +1021,8 @@ export default class MdbasePlugin extends Plugin {
     for (const path of paths) this.observeLocalMirrorChange(path);
     // A folder event need not be accompanied by child-file events. The old
     // descendant paths are no longer a valid incremental record/schema cache.
+    // An older in-flight read must not reinstall those invalidated paths.
+    this.recordCacheEpoch++;
     this.recordCache = null;
     this.recordList = null;
     this.dirtyRecordPaths.clear();
