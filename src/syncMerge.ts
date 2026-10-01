@@ -27,7 +27,7 @@ export function mergeDocuments(
   if (parts.every((part) => part === null)) {
     const merged = mergeLines(base, local, remote);
     return merged === null
-      ? { clean: false, reason: "Both versions changed the same lines." }
+      ? { clean: false, reason: "The line edits could not be merged safely." }
       : { clean: true, text: merged };
   }
   const [b, l, r] = parts;
@@ -39,7 +39,7 @@ export function mergeDocuments(
   const frontmatter = mergeFrontmatter(b.frontmatter, l.frontmatter, r.frontmatter);
   if (frontmatter === null) return { clean: false, reason: "Both versions changed the same field." };
   const body = mergeLines(b.body, l.body, r.body);
-  if (body === null) return { clean: false, reason: "Both versions changed the same lines." };
+  if (body === null) return { clean: false, reason: "The line edits could not be merged safely." };
   if (frontmatter.length && !validFrontmatter(frontmatter.join("\n") + "\n")) {
     return { clean: false, reason: "The combined frontmatter would not be valid YAML." };
   }
@@ -70,11 +70,22 @@ function splitDocument(document: string): DocumentParts | null {
 }
 
 function mergeLines(base: string, local: string, remote: string): string | null {
-  const regions = diff3Merge(local.split("\n"), base.split("\n"), remote.split("\n"), { excludeFalseConflicts: true });
+  if (local === remote || remote === base) return local;
+  if (local === base) return remote;
+  const b = base.split("\n");
+  const l = local.split("\n");
+  const r = remote.split("\n");
+  // node-diff3's LCS is quadratic in the worst case (especially repeated
+  // lines). Never freeze Obsidian's UI trying to merge a pathological note:
+  // the caller keeps both exact documents instead. Ordinary field/body edits
+  // above avoid diffing an unchanged body regardless of its size.
+  const work = b.length * (l.length + r.length);
+  if (work > 4_000_000) return null;
+  const regions = diff3Merge(l, b, r, { excludeFalseConflicts: true });
   const merged: string[] = [];
   for (const region of regions) {
     if (region.conflict) return null;
-    merged.push(...(region.ok ?? []));
+    for (const line of region.ok ?? []) merged.push(line);
   }
   return merged.join("\n");
 }
