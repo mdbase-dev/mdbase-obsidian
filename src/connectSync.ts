@@ -1776,21 +1776,34 @@ export class ConnectSyncController {
     if (enrollment.collectionId !== profile.collectionId) {
       throw new SyncError("mirror_identity_conflict", "Connect approved a different collection. The existing mirror was not changed.");
     }
-    const nextProfile = profileFromEnrollment(enrollment, profile.selectiveSync);
-    if (oldState && enrollment.replicaId !== profile.replicaId) {
-      await this.stateStoreFor(nextProfile).write({
-        ...oldState,
-        replica_id: enrollment.replicaId,
-      });
-    }
-    await this.persistEnrollment(enrollment, profile.selectiveSync);
-    if (!copied && enrollment.replicaId !== profile.replicaId) {
-      this.clearCredentials(profile);
-      if ("clear" in oldStore && typeof oldStore.clear === "function") await oldStore.clear();
-    }
-    const status = await this.status();
-    if (!status) throw new SyncError("mirror_not_configured", "The reauthorized mirror profile could not be loaded.");
-    return status;
+    return this.withMirrorOperation(async () => {
+      // Browser approval can stay open while background sync advances or a
+      // disconnect retires this connection. Only migrate its latest checkpoint,
+      // under the same queue that protects all other mirror state operations.
+      const current = this.requireProfile();
+      if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
+        || current.enrollmentId !== profile.enrollmentId) {
+        throw new SyncError("mirror_identity_conflict", "The connection changed during approval. The current mirror was not changed.");
+      }
+      const latestState = copied ? null : await oldStore.read();
+      if (latestState?.batch) {
+        throw new SyncError("mirror_recovery_required", "Resume the durable synchronization checkpoint before approving this vault again.");
+      }
+      const nextProfile = profileFromEnrollment(enrollment, current.selectiveSync);
+      if (latestState && enrollment.replicaId !== profile.replicaId) {
+        await this.stateStoreFor(nextProfile).write({
+          ...latestState,
+          replica_id: enrollment.replicaId,
+        });
+      }
+      await this.persistEnrollment(enrollment, current.selectiveSync);
+      if (!copied && enrollment.replicaId !== profile.replicaId) {
+        this.clearCredentials(profile);
+        if ("clear" in oldStore && typeof oldStore.clear === "function") await oldStore.clear();
+      }
+      const mirror = await this.createMirror();
+      return mirror.status();
+    });
   }
 
   async conflictComparison(
