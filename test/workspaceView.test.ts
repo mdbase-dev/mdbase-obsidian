@@ -84,7 +84,7 @@ function fixture(connected = false) {
     } as Record<string, unknown>,
     sync: null as unknown as SyncSession,
   };
-  host.sync = new SyncSession(host.connectSync as never, () => profile as never, history);
+  host.sync = new SyncSession(host.connectSync as never, () => host.getMirrorProfile() as never, history);
   const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null, getAllLoadedFiles: () => [], createFolder: async () => undefined, create: async () => ({ path: "export.txt" }) } } } as never, host as never);
   const views = view as unknown as {
     types: { dirty: boolean; model: TypeModel; originalModel: TypeModel; selectedPath: string };
@@ -282,6 +282,40 @@ test("enrollment can be cancelled before verification and never retains a failed
   assert.equal(button(f.root, "Connect").disabled, false);
   assert.match(f.text(), /Approval expired/);
   f.dom.window.close();
+});
+
+test("connecting starts a download-only first sync but stops before uploading local notes", async () => {
+  for (const command of ["write_local", "put_remote"]) {
+    const f = fixture();
+    let applied = 0;
+    const status = { state: "up_to_date", conflicts: [], local_issues: [] };
+    const firstPreview = {
+      phase: "initial", plan: { kind: "initial", actions: [{ command }], issues: [], summary: { blocking_issues: 0 } },
+      entries: [{ path: "Note.md", direction: command === "write_local" ? "download" : "upload", action: "create", detail: "Transfer note" }], collisions: [], local_issues: [],
+    };
+    Object.assign(f.host.connectSync, {
+      enroll: async () => {
+        f.host.getMirrorProfile = () => ({ name: "Project notes", collectionId: "connected", mode: "read_write", controlUrl: "https://connect.example", selectiveSync: { file_classes: [], excluded_folders: [] } });
+      },
+      inspect: async () => ({ status, preview: applied ? {
+        ...firstPreview, phase: "incremental", entries: [], plan: { ...firstPreview.plan, kind: "incremental", actions: [] },
+      } : firstPreview }),
+      sync: async () => { applied++; return { status: "applied", applied: 1, pending: 0 }; },
+    });
+    f.state.render();
+    button(f.root, "Connect").click();
+    await settle();
+    if (command === "write_local") {
+      assert.equal(applied, 1, "copying from Connect already consents to ordinary downloads");
+      assert.match(f.text(), /Sync complete/);
+      assert.doesNotMatch(f.text(), /Review .* before syncing|Waiting for approval/);
+    } else {
+      assert.equal(applied, 0, "existing local notes must wait for the first-sync review");
+      assert.match(f.text(), /Connected.*Review 1 item.*before syncing/);
+      assert.ok(button(f.root, "Sync 1 change"));
+    }
+    f.dom.window.close();
+  }
 });
 
 test("type editing has one save location, optional sections, and an expandable review", () => {

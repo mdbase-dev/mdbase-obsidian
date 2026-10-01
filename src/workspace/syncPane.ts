@@ -586,12 +586,19 @@ export class SyncPane {
           },
         });
         this.enrollmentVerification = "";
-        // The first sync always stops for review; show it straight away.
-        const preview = await this.session.review();
-        const bytes = preview?.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0) ?? 0;
-        const items = preview?.entries.length ?? 0;
-        this.ctx.message = `Connected. Review ${items} ${items === 1 ? "item" : "items"}${bytes ? ` · ${formatBytes(bytes)}` : ""} before syncing.`;
-        this.ctx.render();
+        if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
+        // Copying from Connect consents to downloads, not uploading existing notes.
+        const result = await this.session.syncNow();
+        const preview = this.session.state.preview;
+        if (result === "needs_review" && preview) {
+          const bytes = preview.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0);
+          const items = preview.entries.length;
+          this.ctx.message = `Connected. Review ${items} ${items === 1 ? "item" : "items"}${bytes ? ` · ${formatBytes(bytes)}` : ""} before syncing.`;
+          this.ctx.pendingFocusKey = "sync-apply";
+        } else {
+          this.ctx.message = "";
+          this.ctx.pendingFocusKey = this.session.state.problem ? "sync-recovery" : result === "busy" ? "sync-stop" : "sync-now";
+        }
       } catch (error) {
         this.ctx.pendingFocusKey = "enrollment-connect";
         if (!isAbortError(error)) throw error;
