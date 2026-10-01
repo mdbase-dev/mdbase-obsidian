@@ -133,6 +133,42 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   return result;
 }
 
+test("transfer notifications coalesce renders, keep completion immediate, and cancel on close", async () => {
+  const f = fixture(true);
+  await f.view.onOpen();
+  let renders = 0;
+  let badgeRenders = 0;
+  f.view.render = () => { renders++; };
+  (f.view as unknown as { renderTopbarOnly(): void }).renderTopbarOnly = () => { badgeRenders++; };
+  const timers = new Map<number, () => void>();
+  let next = 0;
+  f.dom.window.setTimeout = ((callback: () => void) => {
+    timers.set(++next, callback);
+    return next;
+  }) as typeof window.setTimeout;
+  f.dom.window.clearTimeout = (id: number) => { timers.delete(id); };
+  for (let completed = 0; completed < 1_000; completed++) {
+    f.host.sync.update({ progress: { phase: "downloading", completed, total: 1_000, done: false } });
+  }
+  assert.equal(renders, 0, "a fast transfer must not rebuild the pane once per file");
+  assert.equal(timers.size, 1);
+  const [id, callback] = [...timers][0];
+  timers.delete(id);
+  callback();
+  assert.equal(renders, 1);
+  f.host.sync.update({ progress: null, message: "Sync complete." });
+  assert.equal(renders, 2, "completion is visible immediately");
+  f.state.destination = "types";
+  f.host.sync.update({ progress: { phase: "downloading", completed: 0, total: 10, done: false } });
+  assert.equal(badgeRenders, 0, "transfer-only changes cannot affect tab badges");
+  f.state.destination = "sync";
+  f.host.sync.update({ progress: { phase: "downloading", completed: 1, total: 10, done: false } });
+  assert.equal(timers.size, 1);
+  await f.view.onClose();
+  assert.equal(timers.size, 0, "closing the view must cancel a queued render");
+  f.dom.window.close();
+});
+
 test("connected Sync is one status and one primary action; settings live in the settings tab", () => {
   const f = fixture(true);
   f.state.render();

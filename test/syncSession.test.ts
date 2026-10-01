@@ -117,6 +117,31 @@ function harness(initial: MdbaseSyncPreview, options: HarnessOptions = {}) {
   return { session, controller, applied, runs, resolveCalls: () => resolveCalls, setNext: (preview: MdbaseSyncPreview) => { next = preview; } };
 }
 
+test("progress and unrelated updates do not rescan a large plan's consent policy", () => {
+  const preview = previewFromPlan(plan(Array.from({ length: 20_000 }, (_, index) => write(`${index}.md`))));
+  const { session } = harness(preview);
+  let reads = 0;
+  for (const action of preview.plan.actions) {
+    const command = action.command;
+    Object.defineProperty(action, "command", { get: () => { reads++; return command; } });
+  }
+  session.update({ preview });
+  const safety = session.safety();
+  const baselineReads = reads;
+  for (let index = 0; index < 100; index++) {
+    session.update({ progress: { phase: "downloading", completed: index, total: 20_000, done: false } });
+    assert.deepEqual(session.safety(), safety);
+  }
+  assert.equal(reads, baselineReads, "the immutable preview's safety should be reused during transfers");
+  const deletionPreview = previewFromPlan(plan(Array.from({ length: 21 }, (_, index) => ({
+    ...remove(`${index}.md`), command: "delete_remote", expected_remote: { state: "absent" },
+  } as MirrorSyncPlan["actions"][number]))));
+  session.update({ preview: deletionPreview });
+  assert.equal(session.safety()?.safe, false, "a replacement preview must recompute consent");
+  session.update({ preview: null });
+  assert.equal(session.safety(), null);
+});
+
 test("Sync now applies a routine plan in one step and records the outcome", async () => {
   const { session, applied, runs } = harness(previewFromPlan(plan([write("a.md"), write("b.md")])));
   assert.equal(await session.syncNow(), "applied");
