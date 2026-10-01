@@ -146,7 +146,9 @@ export function syncIndicator(input: {
     };
   }
   if (input.busy) {
-    return { state: "syncing", label: "mdbase: Checking…", detail: "Checking sync", destination: "sync" };
+    return input.paused
+      ? { state: "syncing", label: "mdbase: Stopping…", detail: "Stopping synchronization", destination: "sync" }
+      : { state: "syncing", label: "mdbase: Checking…", detail: "Checking sync", destination: "sync" };
   }
   if (input.paused && !problem) {
     return { state: "paused", label: "mdbase: Paused", detail: "Changes wait until you resume sync", destination: "sync" };

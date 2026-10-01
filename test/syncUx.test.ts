@@ -117,6 +117,7 @@ test("checking a new sync plan does not claim the old healthy checkpoint is alre
   assert.equal(indicator.state, "syncing");
   assert.equal(indicator.label, "mdbase: Checking…");
   assert.match(indicator.detail, /Checking/);
+  assert.equal(syncIndicator({ ...base, paused: true }).label, "mdbase: Stopping…", "honour a pause requested while checking finishes");
   assert.match(syncIndicator({ ...base, fileProgress: { direction: "upload", path: "a.md", transferredBytes: 1, totalBytes: 2 } as const }).label, /Uploading/);
 });
 
