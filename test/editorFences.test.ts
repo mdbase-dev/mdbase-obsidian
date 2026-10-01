@@ -25,6 +25,25 @@ function fence(leaves: ReturnType<typeof editor>[]) {
 
 const stale = (error: unknown) => (error as { code?: string }).code === "sync_plan_stale";
 
+test("an idempotent native transform neither reloads a dirty buffer nor reserves a phantom echo", async () => {
+  class NativeNoopVault extends MemoryVault {
+    override async process(file: TFile, transform: (current: string) => string): Promise<string> {
+      const current = this.read(file.path)!;
+      const next = transform(current);
+      if (next !== current) await this.modify(file, next);
+      return next;
+    }
+  }
+  const vault = new NativeNoopVault();
+  await vault.create("a.md", "base\n");
+  const leaf = editor("a.md", "base\n", "unsaved user edit\n");
+  let echoes = 0;
+  const fs = new ObsidianMirrorFileSystem(vault as never, undefined, undefined, () => { echoes++; }, fence([leaf]));
+  await fs.write("a.md", "base\n", "base\n");
+  assert.equal(echoes, 0);
+  assert.equal(leaf.view.value, "unsaved user edit\n");
+});
+
 test("a download cannot overwrite an unsaved editor buffer that is not in Vault.process's disk snapshot", async () => {
   const vault = new MemoryVault();
   await vault.create("a.md", "base\n");

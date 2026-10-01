@@ -1108,6 +1108,9 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
         this.assertActive();
         if (existing.path !== spelling || this.vault.getAbstractFileByPath(spelling) !== existing) throw stale();
         if (current !== before && current !== value) throw stale();
+        // Vault.process does not emit a modification when the transform is a
+        // no-op. Do not reserve an echo that would consume the next user save.
+        if (current === value) return current;
         this.prepareEditorChange(spelling, current, value);
         this.observeWrite(path);
         this.observeWrite(spelling);
