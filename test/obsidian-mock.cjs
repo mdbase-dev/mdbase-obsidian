@@ -57,6 +57,15 @@ class TFolder {
 }
 
 class Vault {}
+class Plugin {
+  constructor(app, manifest) { this.app = app; this.manifest = manifest; }
+  registerEvent() {}
+  registerDomEvent() {}
+}
+class FileSystemAdapter {}
+class MarkdownView {}
+const apiVersion = "1.12.0";
+function addIcon() {}
 
 class ItemView {
   constructor(leaf) {
@@ -149,6 +158,7 @@ async function requestUrl() {
   throw new Error("requestUrl is not configured in this unit test.");
 }
 
+
 module.exports = {
   normalizePath,
   getFrontMatterInfo,
@@ -157,6 +167,11 @@ module.exports = {
   TFile,
   TFolder,
   Vault,
+  Plugin,
+  FileSystemAdapter,
+  MarkdownView,
+  apiVersion,
+  addIcon,
   ItemView,
   Menu,
   Modal,

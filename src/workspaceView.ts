@@ -105,7 +105,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       if (this.destination === "sync") this.render();
       else this.renderTopbarOnly();
     });
-    await this.refresh(true);
+    // Obsidian calls setState after onOpen. Load there, once the restored or
+    // requested destination is known, rather than scanning Types before Sync.
   }
 
   async onClose(): Promise<void> {

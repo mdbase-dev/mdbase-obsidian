@@ -12,6 +12,7 @@ import {
   Platform,
   Plugin,
   TFile,
+  TFolder,
   normalizePath,
 } from "obsidian";
 import { ObsidianInteropBridge, type MdbaseObsidianInteropApi } from "./src/interopBridge";
@@ -121,6 +122,7 @@ export default class MdbasePlugin extends Plugin {
   private validationAbort: AbortController | null = null;
   private sortedIssuesCache: MdbaseIssue[] | null = null;
   private statusBarEl: HTMLElement | undefined;
+  private ribbonEl: HTMLElement | undefined;
   private noteStatusEl: HTMLElement;
   private noteStatusVersion = 0;
   sync: SyncSession;
@@ -210,37 +212,13 @@ export default class MdbasePlugin extends Plugin {
 
     this.registerView(MDBASE_WORKSPACE_VIEW, (leaf) => new MdbaseWorkspaceView(leaf, this));
     this.addSettingTab(new MdbaseSettingTab(this.app, this));
-    this.addRibbonIcon(MDBASE_ICON_ID, "Open mdbase", () => void this.openWorkspace());
+    this.ribbonEl = this.addRibbonIcon(MDBASE_ICON_ID, "Open mdbase", () => void this.onRibbonClick());
+    this.ribbonEl.addClass("mdbase-ribbon");
+    this.updateStatusBar();
 
     registerCommands(this);
 
-    this.registerEvent(
-      this.app.vault.on("modify", (file) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultModify(file);
-      }),
-    );
-
-    this.registerEvent(
-      this.app.vault.on("rename", (file, oldPath) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultRename(file, oldPath);
-      }),
-    );
-
-    this.registerEvent(
-      this.app.vault.on("delete", (file) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultDelete(file);
-      }),
-    );
-
-    this.registerEvent(
-      this.app.vault.on("create", (file) => {
-        if (!(file instanceof TFile)) return;
-        this.onVaultCreate(file);
-      }),
-    );
+    this.registerVaultEvents();
 
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
@@ -284,7 +262,7 @@ export default class MdbasePlugin extends Plugin {
     this.syncScheduler = new SyncScheduler({
       connected: () => this.getMirrorProfile() !== null,
       automatic: () => this.settings.autoSync,
-      problemKind: () => this.sync.state.problem?.kind ?? (this.sync.state.paused ? "paused" : null),
+      problemKind: () => this.sync.state.paused ? "paused" : this.sync.state.problem?.kind ?? null,
       autoSync: () => this.sync.autoSync(),
       refreshStatus: () => this.sync.refreshStatus(),
       remoteChangesWaiting: () => this.connectSync.remoteChangesWaiting(),
@@ -334,10 +312,12 @@ export default class MdbasePlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
     // Before version 2 automatic sync was off by default and stopped for most
     // plans, so a stored `false` is almost always the old default, not a choice.
-    if (stored && (stored.syncSettingsVersion ?? 1) < 2) {
-      this.settings.autoSync = true;
-      this.settings.syncSettingsVersion = 2;
-    }
+    const version = typeof stored?.syncSettingsVersion === "number"
+      && Number.isSafeInteger(stored.syncSettingsVersion) && stored.syncSettingsVersion >= 1
+      ? stored.syncSettingsVersion : 1;
+    this.settings.syncSettingsVersion = Math.max(2, version);
+    this.settings.autoSync = version < 2 || typeof stored?.autoSync !== "boolean"
+      ? DEFAULT_SETTINGS.autoSync : stored.autoSync;
     this.settings.mirrorProfile = normalizeMirrorProfile(this.settings.mirrorProfile);
     if (!this.settings.typeDrafts || typeof this.settings.typeDrafts !== "object" || Array.isArray(this.settings.typeDrafts)) {
       this.settings.typeDrafts = {};
@@ -714,16 +694,31 @@ export default class MdbasePlugin extends Plugin {
     }
   }
 
+  private async onRibbonClick(): Promise<void> {
+    const indicator = this.syncIndicator(this.getIssues().length);
+    // Mobile has no status bar. Its ribbon is the direct way to inspect pending
+    // sync; a settled/local collection keeps Types as the primary destination.
+    if (Platform.isMobile && !["local", "synced"].includes(indicator.state)) await this.openStatusDestination();
+    else await this.openWorkspace();
+  }
+
   private updateStatusBar(): void {
-    // The sync session can report before onload has created the status bar.
-    if (!this.statusBarEl) return;
-    const issues = this.getIssues();
-    const indicator = this.syncIndicator(issues.length);
-    this.statusBarEl.setText(indicator.label);
-    this.statusBarEl.setAttr("aria-label", `${indicator.detail}. Open mdbase ${indicator.destination}.`);
-    this.statusBarEl.setAttr("title", indicator.detail);
-    this.statusBarEl.setAttr("data-state", indicator.state);
-    void this.updateNoteStatus();
+    // The sync session can report before onload has created either indicator.
+    if (!this.statusBarEl && !this.ribbonEl) return;
+    const indicator = this.syncIndicator(this.getIssues().length);
+    if (this.statusBarEl) {
+      this.statusBarEl.setText(indicator.label);
+      this.statusBarEl.setAttr("aria-label", `${indicator.detail}. Open mdbase ${indicator.destination}.`);
+      this.statusBarEl.setAttr("title", indicator.detail);
+      this.statusBarEl.setAttr("data-state", indicator.state);
+    }
+    if (this.ribbonEl) {
+      const destination = Platform.isMobile && !["local", "synced"].includes(indicator.state) ? indicator.destination : "types";
+      this.ribbonEl.setAttr("aria-label", `${indicator.label}. Open mdbase ${destination}.`);
+      this.ribbonEl.setAttr("title", indicator.detail);
+      this.ribbonEl.setAttr("data-state", indicator.state);
+    }
+    if (this.noteStatusEl) void this.updateNoteStatus();
   }
 
   /** Type and issue count for the active note, beside the collection status. */
@@ -852,12 +847,9 @@ export default class MdbasePlugin extends Plugin {
       return view;
     }
     const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({ type: MDBASE_WORKSPACE_VIEW, active: true });
+    await leaf.setViewState({ type: MDBASE_WORKSPACE_VIEW, active: true, state: { destination } });
     await this.app.workspace.revealLeaf(leaf);
-    const view = leaf.view as MdbaseWorkspaceView;
-    await view.refresh();
-    view.showDestination(destination);
-    return view;
+    return leaf.view as MdbaseWorkspaceView;
   }
 
   private refreshWorkspaceViews(forceReload = false): void {
@@ -988,6 +980,33 @@ export default class MdbasePlugin extends Plugin {
     }
 
     return loaded;
+  }
+
+  private registerVaultEvents(): void {
+    this.registerEvent(this.app.vault.on("modify", (file) => {
+      if (file instanceof TFile) this.onVaultModify(file);
+    }));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (file instanceof TFile) this.onVaultRename(file, oldPath);
+      else if (file instanceof TFolder) this.onVaultFolderChange(oldPath, file.path);
+    }));
+    this.registerEvent(this.app.vault.on("delete", (file) => {
+      if (file instanceof TFile) this.onVaultDelete(file);
+      else if (file instanceof TFolder) this.onVaultFolderChange(file.path);
+    }));
+    this.registerEvent(this.app.vault.on("create", (file) => {
+      if (file instanceof TFile) this.onVaultCreate(file);
+    }));
+  }
+
+  private onVaultFolderChange(...paths: string[]): void {
+    for (const path of paths) this.observeLocalMirrorChange(path);
+    // A folder event need not be accompanied by child-file events. The old
+    // descendant paths are no longer a valid incremental record/schema cache.
+    this.recordCache = null;
+    this.recordList = null;
+    this.dirtyRecordPaths.clear();
+    this.refreshSchemaNow();
   }
 
   private onVaultModify(file: TFile): void {

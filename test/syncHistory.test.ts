@@ -191,6 +191,27 @@ class MemoryAdapter implements HistoryAdapter {
   }
 }
 
+test("loading intact large history does not stringify every transfer again", async () => {
+  const adapter = new MemoryAdapter();
+  const recent = new Date().toISOString();
+  const large = run("initial-download", recent, Array.from({ length: 50_000 }, (_, index) => `${index}.md`));
+  adapter.files.set("history.jsonl", `${JSON.stringify(large)}\n`);
+  const store = new SyncHistoryStore(adapter, "history.jsonl");
+  const stringify = JSON.stringify;
+  let serializations = 0;
+  JSON.stringify = ((...args: Parameters<typeof JSON.stringify>) => {
+    serializations++;
+    return stringify(...args);
+  }) as typeof JSON.stringify;
+  try {
+    await store.load();
+  } finally {
+    JSON.stringify = stringify;
+  }
+  assert.equal(store.list()[0].files.length, 50_000);
+  assert.equal(serializations, 0, "valid unpruned history only needs parsing, not a second full serialization");
+});
+
 test("the store appends one line per run, filters by collection and survives a reload", async () => {
   const adapter = new MemoryAdapter();
   const recent = new Date().toISOString();
