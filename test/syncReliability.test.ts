@@ -320,6 +320,33 @@ test("a stale conditional text write does not reserve an echo for a user's edit"
   assert.deepEqual(writes, [], "an abandoned write must not hide the real modify event");
 });
 
+test("receive-only UTF-8 repair cannot overwrite an edit queued before the Vault write", async () => {
+  const vault = new MemoryVault();
+  await vault.createBinary("note.md", Uint8Array.of(0x80).buffer);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const modify = vault.modify.bind(vault);
+  const process = vault.process.bind(vault);
+  vault.modify = async (file, value) => {
+    await modify(file, "user repaired the note\n");
+    await modify(file, value);
+  };
+  vault.process = async (file, transform) => {
+    await modify(file, "user repaired the note\n");
+    return process(file, transform);
+  };
+  await assert.rejects(fs.write("note.md", "hosted version\n"), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.equal(await fs.read("note.md"), "user repaired the note\n");
+});
+
+test("receive-only UTF-8 repair still writes when the invalid text is unchanged", async () => {
+  const vault = new MemoryVault();
+  await vault.createBinary("note.md", Uint8Array.of(0x80).buffer);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  await fs.write("note.md", "hosted version\n");
+  assert.equal(await fs.read("note.md"), "hosted version\n");
+});
+
 test("binary edits made while a download stream is consumed are not overwritten", async () => {
   const vault = new MemoryVault();
   const original = new Uint8Array([1, 2, 3]).buffer;

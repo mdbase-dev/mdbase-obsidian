@@ -955,14 +955,20 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const path = safeMirrorPath(this.vault, input);
     // The SDK supplies its inspected text. Standalone callers still get a
     // conditional write rather than a read/modify race inside this adapter.
-    // `undefined` after reading means the bytes are not text (a receive-only
-    // repair replacing invalid UTF-8): there is no text to compare against.
-    let before: string | null | undefined = expected;
+    const stale = () => new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
+    let before = expected;
     if (before === undefined) {
       const observed = await this.readText(path);
-      before = typeof observed === "string" || observed === null ? observed : undefined;
+      if (typeof observed === "string" || observed === null) before = observed;
+      else {
+        // Receive-only repair can replace invalid UTF-8, but still uses the
+        // atomic text transform. Compare the same decoded view Vault.process
+        // will see, after proving these are still the inspected invalid bytes.
+        const bytes = await this.vault.adapter.readBinary(path);
+        if ((await binaryInfo(bytes)).content_digest !== observed.revision) throw stale();
+        before = new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
+      }
     }
-    const stale = () => new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
     const existing = this.vault.getAbstractFileByPath(path);
@@ -970,10 +976,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     }
     this.assertActive();
-    if (existing instanceof TFile && before === undefined) {
-      this.observeWrite(path);
-      await this.vault.modify(existing, value);
-    } else if (existing instanceof TFile) {
+    if (existing instanceof TFile) {
       await this.vault.process(existing, (current) => {
         this.assertActive();
         if (existing.path !== path || this.vault.getAbstractFileByPath(path) !== existing) throw stale();
