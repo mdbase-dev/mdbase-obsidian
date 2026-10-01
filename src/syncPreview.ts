@@ -126,14 +126,17 @@ export function actionEntry(action: MirrorPlanAction): SyncPreviewEntry {
       : creates
         ? "create"
         : "update";
-  const operation = action.command.split("_")[0];
-  const movement = action.command.startsWith("move_") ? ` from ${object.path}` : "";
+  const detail = verb === "delete"
+    ? localCommand ? "Move this device's copy to trash." : "Delete from Connect."
+    : verb === "rename"
+      ? `Rename ${localCommand ? "on this device" : "in Connect"} from ${object.path}.`
+      : localCommand ? "Download from Connect." : "Upload to Connect.";
   return {
     kind: object.entity === "file" ? "file" : "document",
     path,
     direction: localCommand ? "download" : "upload",
     action: verb,
-    detail: `${localCommand ? "Hosted" : "Local"} ${object.entity} will ${operation}${movement}.`,
+    detail,
     ...(object.entity === "file" && object.size !== undefined ? { estimatedBytes: object.size } : {}),
     ...(object.entity === "record" ? { recordId: object.identity } : {}),
     ...(object.entity === "file" ? { fileId: object.identity } : {}),

@@ -111,6 +111,29 @@ export interface MirrorProfile {
   deviceId?: string;
 }
 
+/** Validate stored connection identity, then fail closed on a corrupt sync policy. */
+export function normalizeMirrorProfile(value: unknown): MirrorProfile | null {
+  if (!isRecord(value)) return null;
+  const profile = value as unknown as MirrorProfile;
+  if (!(profile.version === 1
+    && typeof profile.syncUrl === "string"
+    && typeof profile.controlUrl === "string"
+    && typeof profile.collectionId === "string"
+    && typeof profile.replicaId === "string"
+    && (profile.mode === "read_only" || profile.mode === "read_write")
+    && typeof profile.name === "string"
+    && typeof profile.enrollmentId === "string"
+    && typeof profile.accessTokenExpiresAt === "string"
+    && (profile.deviceId === undefined || typeof profile.deviceId === "string"))) return null;
+  let selectiveSync: SelectiveSyncPolicy;
+  try {
+    selectiveSync = normalizeSelectiveSync(profile.selectiveSync);
+  } catch {
+    selectiveSync = normalizeSelectiveSync();
+  }
+  return { ...profile, selectiveSync };
+}
+
 export interface EnrollMirrorInput {
   controlUrl: string;
   mirrorName: string;
@@ -955,14 +978,20 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const path = safeMirrorPath(this.vault, input);
     // The SDK supplies its inspected text. Standalone callers still get a
     // conditional write rather than a read/modify race inside this adapter.
-    // `undefined` after reading means the bytes are not text (a receive-only
-    // repair replacing invalid UTF-8): there is no text to compare against.
-    let before: string | null | undefined = expected;
+    const stale = () => new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
+    let before = expected;
     if (before === undefined) {
       const observed = await this.readText(path);
-      before = typeof observed === "string" || observed === null ? observed : undefined;
+      if (typeof observed === "string" || observed === null) before = observed;
+      else {
+        // Receive-only repair can replace invalid UTF-8, but still uses the
+        // atomic text transform. Compare the same decoded view Vault.process
+        // will see, after proving these are still the inspected invalid bytes.
+        const bytes = await this.vault.adapter.readBinary(path);
+        if ((await binaryInfo(bytes)).content_digest !== observed.revision) throw stale();
+        before = new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
+      }
     }
-    const stale = () => new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
     const existing = this.vault.getAbstractFileByPath(path);
@@ -970,19 +999,19 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     }
     this.assertActive();
-    this.observeWrite(path);
-    if (existing instanceof TFile && before === undefined) {
-      await this.vault.modify(existing, value);
-    } else if (existing instanceof TFile) {
+    if (existing instanceof TFile) {
       await this.vault.process(existing, (current) => {
         this.assertActive();
+        if (existing.path !== path || this.vault.getAbstractFileByPath(path) !== existing) throw stale();
         if (current !== before && current !== value) throw stale();
+        this.observeWrite(path);
         return value;
       });
     } else {
       if (before !== null) throw stale();
       // Vault.create refuses an occupied destination, including one created
       // after the existence check. Never fall back to overwriting it.
+      this.observeWrite(path);
       await this.vault.create(path, value);
     }
   }
@@ -1248,7 +1277,8 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
 
   private open(): Promise<IDBDatabase> {
     if (typeof indexedDB === "undefined") throw new SyncError("storage_unavailable", "IndexedDB is required for binary file sync.");
-    this.database ??= new Promise((resolve, reject) => {
+    if (this.database) return this.database;
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(BLOB_DATABASE, 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(BLOB_MANIFEST_STORE)) request.result.createObjectStore(BLOB_MANIFEST_STORE);
@@ -1257,7 +1287,11 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
       request.onerror = () => reject(indexedDbError(request.error, "binary store open"));
       request.onsuccess = () => resolve(request.result);
     });
-    return this.database;
+    this.database = opening;
+    void opening.catch(() => {
+      if (this.database === opening) this.database = null;
+    });
+    return opening;
   }
 }
 
@@ -1306,7 +1340,8 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
     if (typeof indexedDB === "undefined") {
       throw new SyncError("storage_unavailable", "IndexedDB is required for persistent mirror state.");
     }
-    this.database ??= new Promise((resolve, reject) => {
+    if (this.database) return this.database;
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(STATE_DATABASE, 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(STATE_STORE)) {
@@ -1316,7 +1351,11 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
       request.onerror = () => reject(indexedDbError(request.error, "mirror state store open"));
       request.onsuccess = () => resolve(request.result);
     });
-    return this.database;
+    this.database = opening;
+    void opening.catch(() => {
+      if (this.database === opening) this.database = null;
+    });
+    return opening;
   }
 }
 
@@ -1937,7 +1976,15 @@ export class ConnectSyncController {
    * conflict that changes again while this runs is left for the next sync.
    */
   async autoResolveConflicts(): Promise<AutoResolution[]> {
-    const status = await this.status();
+    // The decision, copy and merged write form one controller operation. Sync
+    // must not run between clearing a conflict and installing its merged text.
+    return this.withMirrorOperation(() => this.autoResolveConflictsActive());
+  }
+
+  private async autoResolveConflictsActive(): Promise<AutoResolution[]> {
+    if (!this.settingsHost.getMirrorProfile()) return [];
+    const mirror = await this.createMirror();
+    const status = await mirror.status();
     if (!status?.conflicts.length || status.recovery_required) return [];
     const profile = this.requireProfile();
     const state = await this.stateStoreFor(profile).read();
@@ -1951,7 +1998,7 @@ export class ConnectSyncController {
       const planned = state.planned_conflicts?.[conflict.object_id];
       if (!planned) continue;
       try {
-        resolutions.push(await this.autoResolve(conflict, planned, remoteRecords.get(conflict.object_id)));
+        resolutions.push(await this.autoResolve(mirror, conflict, planned, remoteRecords.get(conflict.object_id)));
       } catch (error) {
         if (error instanceof SyncError && ["conflict_decision_stale", "sync_plan_stale"].includes(error.code)) continue;
         resolutions.push({
@@ -1965,6 +2012,7 @@ export class ConnectSyncController {
   }
 
   private async autoResolve(
+    mirror: DirectoryMirror<JsonObject>,
     conflict: MirrorStatus["conflicts"][number],
     planned: NonNullable<MirrorState["planned_conflicts"]>[string],
     remote: RemoteRecord | undefined,
@@ -1977,11 +2025,11 @@ export class ConnectSyncController {
     // it under another name would only be refused again; a person must decide.
     if (planned.conflict_kind === "rejected") return { path, outcome: "unresolved", reason: conflict.message };
     if (localPath === null) {
-      await this.resolveConflict(id, decision, "remote");
+      await mirror.resolveConflict(id, decision, "remote");
       return { path, outcome: remotePath ? "restored" : "took_hosted" };
     }
     if (remotePath === null) {
-      await this.resolveConflict(id, decision, "local");
+      await mirror.resolveConflict(id, decision, "local");
       return { path, outcome: "kept_local" };
     }
     if (
@@ -1999,21 +2047,16 @@ export class ConnectSyncController {
       if (base !== undefined && local !== null) {
         const merged = mergeDocuments(base, local, remote.document, validYamlMapping);
         if (merged.clean) {
-          await this.resolveConflict(id, decision, "local");
-          try {
-            await this.fileSystem.write(localPath, merged.text, local);
-          } catch (error) {
-            // The note changed between the check and the write. Keep the hosted
-            // text beside it so the merge's other half is never lost.
-            const copy = await this.writeConflictCopy(localPath, remote.document, "hosted conflict copy");
-            return { path, outcome: "kept_both", copyPath: copy, reason: error instanceof Error ? error.message : String(error) };
-          }
+          // The SDK writes conditionally before clearing its durable decision;
+          // interrupted/failed merges remain conflicts instead of authorizing
+          // an unmerged local upload over the hosted half on the next run.
+          await mirror.resolveConflict(id, decision, "local", merged.text);
           return { path, outcome: "merged" };
         }
       }
     }
     const copyPath = await this.preserveConflictCopy(localPath);
-    await this.resolveConflict(id, decision, "remote");
+    await mirror.resolveConflict(id, decision, "remote");
     return { path, outcome: "kept_both", copyPath };
   }
 
@@ -2033,11 +2076,6 @@ export class ConnectSyncController {
       page = found.size === ids.size ? undefined : snapshot.next_page;
     } while (page);
     return found;
-  }
-
-  private async writeConflictCopy(pathInput: string, document: string, label: string): Promise<string> {
-    const path = safeMirrorPath(this.app.vault, pathInput);
-    return this.createConflictCopy(path, new TextEncoder().encode(document).buffer, label);
   }
 
   private async createConflictCopy(path: string, document: ArrayBuffer, label: string): Promise<string> {
@@ -2172,9 +2210,13 @@ export class ConnectSyncController {
     this.engineWrites.set(normalizePath(path), now);
   }
 
-  isEngineWrite(path: string): boolean {
-    const at = this.engineWrites.get(normalizePath(path));
-    return at !== undefined && Date.now() - at <= ENGINE_WRITE_ECHO_MS;
+  /** Suppress one echo, not every user edit arriving soon after that write. */
+  consumeEngineWrite(path: string): boolean {
+    const key = normalizePath(path);
+    const at = this.engineWrites.get(key);
+    this.engineWrites.delete(key);
+    const elapsed = at === undefined ? -1 : Date.now() - at;
+    return elapsed >= 0 && elapsed <= ENGINE_WRITE_ECHO_MS;
   }
 
   isSyncing(): boolean {

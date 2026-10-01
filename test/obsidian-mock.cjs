@@ -79,7 +79,48 @@ class Modal {
 }
 
 class SuggestModal extends Modal {}
-class Notice {}
+class Notice {
+  static messages = [];
+  constructor(message) { Notice.messages.push(message); }
+}
+class PluginSettingTab {
+  constructor(app, plugin) {
+    this.app = app;
+    this.plugin = plugin;
+    this.containerEl = document.createElement("div");
+  }
+}
+class Setting {
+  constructor(container) {
+    this.settingEl = container.createDiv({ cls: "setting-item" });
+    this.nameEl = this.settingEl.createDiv();
+    this.descEl = this.settingEl.createDiv();
+    this.controlEl = this.settingEl.createDiv();
+  }
+  setName(name) { this.nameEl.textContent = name; return this; }
+  setDesc(desc) { this.descEl.textContent = desc; return this; }
+  setHeading() { return this; }
+  addButton(build) {
+    const el = this.controlEl.createEl("button");
+    const api = {
+      setButtonText(text) { el.textContent = text; return api; },
+      setDisabled(value) { el.disabled = value; return api; },
+      setWarning() { el.classList.add("mod-warning"); return api; },
+      onClick(handler) { el.onclick = handler; return api; },
+    };
+    build(api);
+    return this;
+  }
+  addToggle(build) {
+    const el = this.controlEl.createEl("input", { type: "checkbox" });
+    const api = {
+      setValue(value) { el.checked = value; return api; },
+      onChange(handler) { el.onchange = () => handler(el.checked); return api; },
+    };
+    build(api);
+    return this;
+  }
+}
 // Records the most recently shown menu so tests can invoke its items.
 class Menu {
   constructor() { this.items = []; }
@@ -121,6 +162,8 @@ module.exports = {
   Modal,
   SuggestModal,
   Notice,
+  PluginSettingTab,
+  Setting,
   Platform,
   setIcon,
   requestUrl,

@@ -121,12 +121,18 @@ export class SyncPane {
       action: "resume",
       actionLabel: "Resume recovery",
     } : null);
-    const label = syncing ? "Syncing" : state.busy ? "Checking…"
+    const authorizing = Boolean(this.enrollmentAbort);
+    const preview = state.preview;
+    const safety = this.session.safety();
+    const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
+    const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? "Checking…"
       : recoveryProblem?.kind === "paused" ? "Paused"
       : recoveryProblem?.kind === "offline" ? "Offline"
       : recoveryProblem?.kind === "auth" ? "Approval needed"
       : recoveryProblem?.kind === "device" ? "Set up this device"
-      : recoveryProblem ? "Needs attention" : syncStateLabel(state.status);
+      : recoveryProblem ? "Needs attention"
+      : reviewing && safety && !safety.safe ? "Review needed"
+      : preview?.plan.actions.length ? "Changes waiting" : syncStateLabel(state.status);
 
     const status = document.createEl("section", { cls: "mdbase-sync-status" });
     status.setAttr("data-state", state.status?.state ?? "checking");
@@ -153,6 +159,7 @@ export class SyncPane {
       const total = state.fileProgress?.totalBytes ?? state.progress?.total ?? null;
       const completed = state.fileProgress?.transferredBytes ?? state.progress?.completed ?? 0;
       const progress = progressArea.createEl("progress");
+      progress.setAttr("aria-label", "Sync progress");
       progress.max = total ?? 1;
       progress.value = total == null ? 0 : completed;
       if (total == null) progress.removeAttribute("value");
@@ -167,6 +174,7 @@ export class SyncPane {
               : "Applying changes"} · ${completed}${total == null ? "" : ` of ${total}`}`,
       });
       const cancel = progressArea.createEl("button", { text: "Stop" });
+      cancel.setAttr("data-focus-key", "sync-stop");
       cancel.onclick = () => this.session.cancel();
     }
 
@@ -178,25 +186,27 @@ export class SyncPane {
       });
     }
 
-    if (recoveryProblem) this.renderRecoveryCard(status, recoveryProblem);
+    if (authorizing) this.renderApproval(status, false);
+    else if (recoveryProblem) this.renderRecoveryCard(status, recoveryProblem);
 
     const busy = this.ctx.busy || state.busy || syncing;
-    const preview = state.preview;
     // Comparisons belong to the plan they were opened from.
     if (preview !== this.comparedPreview) {
       this.previewComparisons.clear();
       this.comparedPreview = preview;
       this.transferPages.clear();
     }
-    const safety = this.session.safety();
-    const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
-    if (!syncing && !recoveryProblem) {
+    if (reviewing && safety && !safety.safe && preview?.plan.actions.length) {
+      status.createDiv({ cls: "mdbase-muted mdbase-review-reasons", text: `${safety.reasons.join(", ")}.` });
+    }
+    if (!syncing && !recoveryProblem && !authorizing) {
       const actions = status.createDiv({ cls: "mdbase-sync-actions" });
       if (reviewing && preview) {
         // The plan needs consent: apply exactly what is listed below.
         const presentation = syncReviewPresentation(preview.plan, preview.entries.length, busy);
         if (preview.plan.actions.length && !presentation.actionDisabled) {
           const sync = actions.createEl("button", { text: presentation.actionLabel, cls: "mod-cta" });
+          sync.setAttr("data-focus-key", "sync-apply");
           sync.disabled = presentation.actionDisabled;
           sync.onclick = () => void this.session.apply();
         }
@@ -206,12 +216,10 @@ export class SyncPane {
       } else {
         // One action: routine changes apply at once; anything risky stops for review.
         const sync = actions.createEl("button", { text: state.busy ? "Checking…" : "Sync now", cls: "mod-cta" });
+        sync.setAttr("data-focus-key", "sync-now");
         sync.disabled = busy;
         sync.onclick = () => void this.session.syncNow();
       }
-    }
-    if (reviewing && safety && !safety.safe && preview?.plan.actions.length) {
-      status.createDiv({ cls: "mdbase-muted mdbase-review-reasons", text: `Review needed: ${safety.reasons.join(", ").toLowerCase()}.` });
     }
 
     if (preview && reviewing) this.renderMirrorPreview(document, preview);
@@ -250,6 +258,7 @@ export class SyncPane {
     }
     const buttons = card.createDiv({ cls: "mdbase-recovery-actions" });
     const action = buttons.createEl("button", { text: problem.actionLabel, cls: "mod-cta" });
+    action.setAttr("data-focus-key", "sync-recovery");
     action.disabled = this.ctx.busy || this.session.state.busy;
     action.onclick = () => {
       if (problem.kind === "auth") void this.reconnectCollection();
@@ -259,34 +268,62 @@ export class SyncPane {
     };
     if (problem.kind === "internal" || problem.kind === "recovery") {
       const copy = buttons.createEl("button", { text: "Copy diagnostics" });
+      copy.setAttr("data-focus-key", "sync-diagnostics");
       copy.onclick = () => void this.ctx.host.copySyncDiagnostics();
     }
+  }
+
+  /** The same approval wait, whether enrolling or restoring an existing connection. */
+  private renderApproval(container: HTMLElement, showStatus = true): void {
+    const approval = container.createDiv({ cls: "mdbase-approval-link" });
+    if (showStatus) approval.createSpan({ text: this.enrollmentVerification ? "Waiting for approval · " : "Connecting… " }).setAttr("role", "status");
+    if (this.enrollmentVerification) {
+      const link = approval.createEl("a", { text: "Open Connect", href: this.enrollmentVerification });
+      link.setAttr("target", "_blank");
+      link.setAttr("rel", "noopener noreferrer");
+      link.setAttr("data-focus-key", "approval-link");
+    }
+    const stop = approval.createEl("button", { text: "Stop waiting" });
+    stop.setAttr("data-focus-key", "stop-approval");
+    stop.onclick = () => {
+      this.enrollmentAbort?.abort();
+      this.enrollmentVerification = "";
+      this.ctx.render();
+    };
   }
 
   private async reauthorizeCollection(): Promise<void> {
     this.enrollmentAbort?.abort();
     const abort = new AbortController();
     this.enrollmentAbort = abort;
+    this.ctx.pendingFocusKey = "stop-approval";
+    this.ctx.render();
     try {
       await this.session.reauthorize({
         signal: abort.signal,
         onVerification: (verification) => {
           this.enrollmentVerification = verification.verificationUri;
-          this.ctx.message = "Approve this vault again in Connect. Its local files and checkpoint remain unchanged.";
+          this.ctx.message = "";
           window.open(verification.verificationUri, "_blank", "noopener,noreferrer");
           this.ctx.render();
         },
         onStatus: (status) => {
           this.ctx.message = status.state === "waiting_for_approval"
-            ? "Waiting for approval in Connect…"
+            ? ""
             : `Connect is retrying approval (attempt ${status.attempt}).`;
           this.ctx.render();
         },
       });
-      this.enrollmentVerification = "";
       this.ctx.message = "";
+    } catch (error) {
+      if (!isAbortError(error)) throw error;
+      this.ctx.message = "Cancelled. Your files and connection are unchanged.";
+      this.ctx.pendingFocusKey = "sync-recovery";
     } finally {
-      if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
+      if (this.enrollmentAbort === abort) {
+        this.enrollmentAbort = null;
+        this.enrollmentVerification = "";
+      }
     }
   }
 
@@ -297,7 +334,12 @@ export class SyncPane {
     const section = this.ctx.disclosure(container, "sync-activity", "History", pinned.length > 0);
     section.addClass("mdbase-activity");
     section.id = "mdbase-sync-activity";
+    const disclosure = section.parentElement as HTMLDetailsElement;
+    this.renderHistoryOnToggle(disclosure);
+    if (!disclosure.open) return;
     for (const run of [...pinned].reverse()) this.renderEventRow(section, run);
+    const completed = runs.filter((run) => !run.needsAcknowledgement);
+    if (!completed.length) return;
 
     const header = section.createDiv({ cls: "mdbase-section-header mdbase-history-controls" });
     const query = header.createEl("input", { type: "search" });
@@ -312,12 +354,16 @@ export class SyncPane {
     };
     if (runs.length > pinned.length) {
       const clear = header.createEl("button", { text: "Clear history" });
+      clear.setAttr("data-focus-key", "history-clear");
       clear.disabled = this.ctx.busy;
-      clear.onclick = () => void this.session.clearHistory();
+      clear.onclick = () => void this.ctx.perform(async () => {
+        await this.session.clearHistory();
+        this.ctx.pendingFocusKey = this.session.historyRuns().length ? "disclosure-sync-activity" : "destination-sync";
+      });
     }
 
     const needle = this.historyQuery.trim().toLowerCase();
-    const timeline = filterRuns(runs.filter((run) => !run.needsAcknowledgement), needle)
+    const timeline = filterRuns(completed, needle)
       .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt));
     if (!timeline.length) {
       section.createDiv({ cls: "mdbase-muted", text: needle ? "No synced files match." : "No completed syncs." });
@@ -335,6 +381,14 @@ export class SyncPane {
         this.ctx.render();
       };
     }
+  }
+
+  /** Hidden history can contain thousands of rows; construct it only when opened. */
+  private renderHistoryOnToggle(details: HTMLDetailsElement): void {
+    const renderedOpen = details.open;
+    details.addEventListener("toggle", () => {
+      if (this.ctx.containerEl.contains(details) && details.open !== renderedOpen) this.ctx.render();
+    });
   }
 
   private renderHistoryRun(container: HTMLElement, run: SyncHistoryRun, filtered: boolean): void {
@@ -360,6 +414,8 @@ export class SyncPane {
     });
     if (run.message && run.outcome !== "applied") body.createDiv({ text: run.message });
     setIcon(summary.createSpan({ cls: "mdbase-history-chevron" }), "chevron-right");
+    this.renderHistoryOnToggle(details);
+    if (!details.open) return;
 
     const ledger = details.createDiv({ cls: "mdbase-transfer-ledger mdbase-history-files" });
     for (const file of run.files.slice(0, 250)) {
@@ -378,6 +434,7 @@ export class SyncPane {
         const open = pathLine.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open" });
         open.createEl("code", { text: file.path });
         open.setAttr("title", `Open ${file.path}`);
+        open.setAttr("data-focus-key", `history-open-${run.id}-${file.path}`);
         open.onclick = () => void this.ctx.host.openFileByPath(file.path);
       } else pathLine.createEl("code", { text: file.path });
       if (file.fromPath) direction.createDiv({ cls: "mdbase-muted", text: `From ${file.fromPath}` });
@@ -400,14 +457,29 @@ export class SyncPane {
     const summary = run.summary ?? "";
     if (run.message && run.message !== summary) {
       const details = body.createEl("details");
-      details.createEl("summary", { text: summary });
+      const key = `history-event-${run.id}`;
+      details.dataset.disclosure = key;
+      details.open = this.ctx.disclosures.get(key) ?? Boolean(run.needsAcknowledgement);
+      details.createEl("summary", { text: summary }).setAttr("data-focus-key", `disclosure-${key}`);
       details.createDiv({ text: run.message });
     } else body.createEl("strong", { text: summary });
     body.createSpan({ cls: "mdbase-muted", text: formatHistoryTime(run.finishedAt) });
+    if (run.path && this.ctx.app.vault.getAbstractFileByPath(run.path)) {
+      const path = run.path;
+      const open = body.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open", text: path });
+      open.setAttr("title", `Open ${path}`);
+      open.setAttr("data-focus-key", `event-open-${run.id}`);
+      open.onclick = () => void this.ctx.host.openFileByPath(path);
+    }
     if (run.needsAcknowledgement) {
       const dismiss = row.createEl("button", { text: "Dismiss" });
+      dismiss.setAttr("data-focus-key", `event-dismiss-${run.id}`);
       dismiss.disabled = this.ctx.busy;
-      dismiss.onclick = () => void this.session.dismissEvent(run.id);
+      dismiss.onclick = () => void this.ctx.perform(async () => {
+        await this.session.dismissEvent(run.id);
+        this.ctx.pendingFocusKey = run.message && run.message !== summary
+          ? `disclosure-history-event-${run.id}` : "disclosure-sync-activity";
+      });
     }
   }
 
@@ -472,19 +544,8 @@ export class SyncPane {
     const section = container.createEl("section", { cls: "mdbase-editor-section mdbase-enrollment" });
     section.createEl("h3", { text: "Copy a collection from Connect" });
     section.createEl("p", { cls: "mdbase-muted", text: "Connect holds the collection; this vault syncs a copy. Choose a collection in Connect, then review the first sync." });
-    if (this.enrollmentVerification) {
-      const approval = section.createDiv({ cls: "mdbase-approval-link" });
-      approval.createSpan({ text: "Waiting for approval · " });
-      const link = approval.createEl("a", {
-        text: "Open Connect",
-        href: this.enrollmentVerification,
-      });
-      link.setAttr("target", "_blank");
-      link.setAttr("rel", "noopener noreferrer");
-    }
-    if (this.enrollmentAbort && this.enrollmentVerification) {
-      const stop = section.createEl("button", { text: "Stop waiting" });
-      stop.onclick = () => this.enrollmentAbort?.abort();
+    if (this.enrollmentAbort) {
+      this.renderApproval(section);
       return;
     }
     inputRow(section, "Device name", this.enrollmentMirrorName, (value) => {
@@ -494,6 +555,7 @@ export class SyncPane {
     const accessLabel = access.createEl("label", { text: "Access" });
     const select = access.createEl("select");
     accessLabel.htmlFor = select.id = "mdbase-enrollment-access";
+    select.setAttr("data-focus-key", "enrollment-access");
     select.createEl("option", { value: "read_write", text: "Read and write" });
     select.createEl("option", { value: "read_only", text: "Read only" });
     select.value = this.enrollmentMode;
@@ -526,14 +588,17 @@ export class SyncPane {
     }, { placeholder: "Choose during approval" });
     this.renderFilePolicyControls(advanced);
     const enrollmentActions = section.createDiv({ cls: "mdbase-actions mdbase-enrollment-actions" });
-    const button = enrollmentActions.createEl("button", { text: this.enrollmentAbort ? "Waiting for approval…" : "Connect" });
+    const button = enrollmentActions.createEl("button", { text: "Connect" });
     button.setAttr("title", "Opens Connect in your browser to choose a collection");
+    button.setAttr("data-focus-key", "enrollment-connect");
     button.addClass("mod-cta");
     button.disabled = this.ctx.busy;
     button.onclick = () => void this.ctx.perform(async () => {
       this.enrollmentAbort?.abort();
       const abort = new AbortController();
       this.enrollmentAbort = abort;
+      this.ctx.pendingFocusKey = "stop-approval";
+      this.ctx.render();
       try {
         await this.ctx.host.connectSync.enroll({
           controlUrl: this.enrollmentControlUrl,
@@ -551,35 +616,37 @@ export class SyncPane {
           },
           onStatus: (status) => {
             this.ctx.message = status.state === "waiting_for_approval"
-              ? "Waiting for approval in Connect…"
+              ? ""
               : `Connect is retrying enrollment (attempt ${status.attempt}).`;
             this.ctx.render();
           },
         });
         this.enrollmentVerification = "";
-        // The first sync always stops for review; show it straight away.
-        const preview = await this.session.review();
-        const bytes = preview?.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0) ?? 0;
-        const items = preview?.entries.length ?? 0;
-        this.ctx.message = `Connected. Review ${items} ${items === 1 ? "item" : "items"}${bytes ? ` · ${formatBytes(bytes)}` : ""} before syncing.`;
-        this.ctx.render();
+        if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
+        // Copying from Connect consents to downloads, not uploading existing notes.
+        const result = await this.session.syncNow();
+        const preview = this.session.state.preview;
+        if (result === "needs_review" && preview) {
+          const bytes = preview.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0);
+          const items = preview.entries.length;
+          this.ctx.message = `Connected. Review ${items} ${items === 1 ? "item" : "items"}${bytes ? ` · ${formatBytes(bytes)}` : ""} before syncing.`;
+          this.ctx.pendingFocusKey = "sync-apply";
+        } else {
+          this.ctx.message = "";
+          this.ctx.pendingFocusKey = this.session.state.problem ? "sync-recovery" : result === "busy" ? "sync-stop" : "sync-now";
+        }
       } catch (error) {
+        this.ctx.pendingFocusKey = "enrollment-connect";
         if (!isAbortError(error)) throw error;
         this.enrollmentVerification = "";
         this.ctx.message = "Cancelled. No files synced.";
       } finally {
-        if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
+        if (this.enrollmentAbort === abort) {
+          this.enrollmentAbort = null;
+          this.enrollmentVerification = "";
+        }
       }
     });
-    if (this.enrollmentAbort) {
-      const cancel = enrollmentActions.createEl("button", { text: "Stop waiting" });
-      cancel.onclick = () => {
-        this.enrollmentAbort?.abort();
-        this.enrollmentVerification = "";
-        this.ctx.message = "Cancelled. No files synced.";
-        this.ctx.render();
-      };
-    }
   }
 
   private renderLocalAdoption(container: HTMLElement): void {
@@ -826,6 +893,7 @@ export class SyncPane {
     query.oninput = () => { this.transferQuery = query.value; this.transferPages.clear(); this.ctx.render(); };
     const filter = controls.createEl("select");
     filter.setAttr("aria-label", "Filter transfers");
+    filter.setAttr("data-focus-key", "transfer-filter");
     for (const [value, label] of [["all", "All changes"], ["delete", "Deletes"], ["replace", "Replacements"], ["upload", "Uploads"], ["download", "Downloads"], ["attention", "Needs attention"]]) {
       filter.createEl("option", { value, text: label });
     }
@@ -865,6 +933,7 @@ export class SyncPane {
           const open = pathLine.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open" });
           open.createEl("code", { text: entry.path });
           open.setAttr("title", `Open ${entry.path}`);
+          open.setAttr("data-focus-key", `preview-open-${entry.path}`);
           open.onclick = () => void this.ctx.host.openFileByPath(localPath);
         } else pathLine.createEl("code", { text: entry.path });
         if (entry.estimatedBytes !== undefined) {

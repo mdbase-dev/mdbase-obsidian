@@ -55,7 +55,10 @@ function fixture(connected = false) {
   const history = {
     list: () => historyRuns,
     append: async (run: SyncHistoryRun) => { historyRuns.push(run); },
-    remove: async (id: string) => { historyRuns.splice(historyRuns.findIndex((run) => run.id === id), 1); },
+    acknowledge: async (id: string) => {
+      const run = historyRuns.find((run) => run.id === id);
+      if (run) run.needsAcknowledgement = false;
+    },
     clear: async () => { historyRuns.length = 0; },
   };
   let settingsOpened = 0;
@@ -84,7 +87,7 @@ function fixture(connected = false) {
     } as Record<string, unknown>,
     sync: null as unknown as SyncSession,
   };
-  host.sync = new SyncSession(host.connectSync as never, () => profile as never, history);
+  host.sync = new SyncSession(host.connectSync as never, () => host.getMirrorProfile() as never, history);
   const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null, getAllLoadedFiles: () => [], createFolder: async () => undefined, create: async () => ({ path: "export.txt" }) } } } as never, host as never);
   const views = view as unknown as {
     types: { dirty: boolean; model: TypeModel; originalModel: TypeModel; selectedPath: string };
@@ -132,6 +135,29 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   assert.ok(result, `Missing button: ${label}`);
   return result;
 }
+
+test("Sync and Issues refreshes do not parse all records or run type impact scans", async () => {
+  const f = fixture(true);
+  let recordLoads = 0;
+  Object.assign(f.host, {
+    loadWorkspaceSchema: async () => ({ config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() }),
+    loadCollectionRecords: async () => { recordLoads++; return []; },
+  });
+  await f.view.refresh();
+  assert.equal(recordLoads, 0, "Sync does not consume collection records");
+  f.state.destination = "issues";
+  await f.view.refresh();
+  assert.equal(recordLoads, 0, "Issues does not consume collection records either");
+  let pending: Promise<void> | null = null;
+  const refresh = f.view.refresh.bind(f.view);
+  f.view.refresh = (...args) => (pending = refresh(...args));
+  f.view.showDestination("types");
+  assert.ok(pending, "switching to Types must load its record statistics");
+  await pending;
+  assert.equal(recordLoads, 1);
+  await f.view.onClose();
+  f.dom.window.close();
+});
 
 test("transfer notifications coalesce renders, keep completion immediate, and cancel on close", async () => {
   const f = fixture(true);
@@ -232,6 +258,92 @@ test("enrollment exposes only essential controls but retains the upload warning 
   f.dom.window.close();
 });
 
+test("signing in again exposes approval and cancellation, then clears the used link", async () => {
+  const f = fixture(true);
+  f.dom.window.open = () => null;
+  Object.assign(f.host.connectSync, {
+    reconnect: async () => { throw Object.assign(new Error("Approval needed"), { code: "mirror_credentials_missing" }); },
+    reauthorize: async (callbacks: { signal: AbortSignal; onVerification(value: { verificationUri: string }): void; onStatus(value: { state: string }): void }) => {
+      callbacks.onVerification({ verificationUri: "https://connect.example/approve/temporary" });
+      callbacks.onStatus({ state: "waiting_for_approval" });
+      await new Promise<void>((_resolve, reject) => callbacks.signal.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError"))));
+    },
+  });
+  const pending = f.view.reconnectCollection();
+  await settle();
+  const link = f.root.querySelector<HTMLAnchorElement>(".mdbase-approval-link a");
+  assert.equal(link?.href, "https://connect.example/approve/temporary");
+  assert.equal(link?.rel, "noopener noreferrer");
+  assert.ok(button(f.root, "Stop waiting"));
+  assert.doesNotMatch(f.text(), /Sign in again|Sync now/);
+  button(f.root, "Stop waiting").click();
+  await pending;
+  assert.equal(f.root.querySelector(".mdbase-approval-link"), null);
+  assert.match(f.text(), /Cancelled/);
+  assert.ok(button(f.root, "Sign in again"));
+  f.dom.window.close();
+});
+
+test("enrollment can be cancelled before verification and never retains a failed approval link", async () => {
+  const f = fixture();
+  f.dom.window.open = () => null;
+  let callbacks: { onVerification(value: { verificationUri: string }): void } | null = null;
+  let rejectEnrollment: (error: Error) => void = () => assert.fail("Enrollment not started");
+  Object.assign(f.host.connectSync, {
+    enroll: async (_input: unknown, cb: NonNullable<typeof callbacks>) => {
+      callbacks = cb;
+      await new Promise<void>((_resolve, reject) => { rejectEnrollment = reject; });
+    },
+  });
+  f.state.render();
+  button(f.root, "Connect").click();
+  assert.ok(button(f.root, "Stop waiting"), "initial request can be stopped too");
+  assert.equal(f.root.querySelector("input[data-focus-key='form-device-name']"), null, "no editable setup while waiting");
+  assert.ok(callbacks);
+  (callbacks as { onVerification(value: { verificationUri: string }): void }).onVerification({ verificationUri: "https://connect.example/approve/expired" });
+  assert.ok(f.root.querySelector(".mdbase-approval-link a"));
+  rejectEnrollment(new Error("Approval expired"));
+  await settle();
+  assert.equal(f.root.querySelector(".mdbase-approval-link"), null);
+  assert.equal(button(f.root, "Connect").disabled, false);
+  assert.match(f.text(), /Approval expired/);
+  f.dom.window.close();
+});
+
+test("connecting starts a download-only first sync but stops before uploading local notes", async () => {
+  for (const command of ["write_local", "put_remote"]) {
+    const f = fixture();
+    let applied = 0;
+    const status = { state: "up_to_date", conflicts: [], local_issues: [] };
+    const firstPreview = {
+      phase: "initial", plan: { kind: "initial", actions: [{ command }], issues: [], summary: { blocking_issues: 0 } },
+      entries: [{ path: "Note.md", direction: command === "write_local" ? "download" : "upload", action: "create", detail: "Transfer note" }], collisions: [], local_issues: [],
+    };
+    Object.assign(f.host.connectSync, {
+      enroll: async () => {
+        f.host.getMirrorProfile = () => ({ name: "Project notes", collectionId: "connected", mode: "read_write", controlUrl: "https://connect.example", selectiveSync: { file_classes: [], excluded_folders: [] } });
+      },
+      inspect: async () => ({ status, preview: applied ? {
+        ...firstPreview, phase: "incremental", entries: [], plan: { ...firstPreview.plan, kind: "incremental", actions: [] },
+      } : firstPreview }),
+      sync: async () => { applied++; return { status: "applied", applied: 1, pending: 0 }; },
+    });
+    f.state.render();
+    button(f.root, "Connect").click();
+    await settle();
+    if (command === "write_local") {
+      assert.equal(applied, 1, "copying from Connect already consents to ordinary downloads");
+      assert.match(f.text(), /Sync complete/);
+      assert.doesNotMatch(f.text(), /Review .* before syncing|Waiting for approval/);
+    } else {
+      assert.equal(applied, 0, "existing local notes must wait for the first-sync review");
+      assert.match(f.text(), /Connected.*Review 1 item.*before syncing/);
+      assert.ok(button(f.root, "Sync 1 change"));
+    }
+    f.dom.window.close();
+  }
+});
+
 test("type editing has one save location, optional sections, and an expandable review", () => {
   const f = fixture();
   f.state.destination = "types";
@@ -291,6 +403,44 @@ test("restoring an empty YAML draft preserves the unsaved empty text", async () 
   const editor = f.root.querySelector<HTMLElement>(".mdbase-yaml-editor.cm-editor");
   assert.ok(editor, "YAML mode uses the CodeMirror editor");
   assert.equal(editor.querySelector(".cm-content")!.textContent, "");
+  f.dom.window.close();
+});
+
+test("destination tabs expose a labelled panel and native roving keyboard navigation", async () => {
+  const f = fixture(true);
+  f.state.destination = "issues";
+  f.state.render();
+  const selected = () => f.root.querySelector<HTMLButtonElement>("[role='tab'][aria-selected='true']")!;
+  assert.equal(f.root.querySelectorAll("[role='tab'][tabindex='0']").length, 1);
+  assert.equal(f.root.querySelectorAll("[role='tab'][tabindex='-1']").length, 2);
+  const panel = f.root.querySelector("[role='tabpanel']")!;
+  assert.ok(panel);
+  assert.equal(panel.getAttribute("aria-labelledby"), selected().id);
+  assert.equal(selected().getAttribute("aria-controls"), panel.id);
+  selected().focus();
+  for (const [key, destination] of [["ArrowRight", "types"], ["ArrowLeft", "issues"], ["Home", "types"], ["End", "issues"], ["ArrowLeft", "sync"]]) {
+    const event = new f.dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    selected().dispatchEvent(event);
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(f.state.destination, destination);
+    assert.equal(f.dom.window.document.activeElement, selected());
+    assert.equal(selected().tabIndex, 0);
+  }
+  await settle();
+  f.dom.window.close();
+});
+
+test("background sync badge updates preserve keyboard focus on the destination tabs", async () => {
+  const f = fixture(true);
+  f.state.destination = "issues";
+  Object.assign(f.host, { loadWorkspaceSchema: async () => null });
+  await f.view.onOpen();
+  const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-issues']")!;
+  tab.focus();
+  f.host.sync.update({ status: { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] } as never });
+  assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "destination-issues");
+  assert.notEqual(f.dom.window.document.activeElement, tab, "focus follows the replacement tab");
+  await f.view.onClose();
   f.dom.window.close();
 });
 
@@ -659,6 +809,47 @@ test("Issues grouped by rule offer one bulk fix and jump to the rule's field", a
   f.dom.window.close();
 });
 
+test("sync actions and filters preserve focus across progress and review renders", () => {
+  const f = fixture(true);
+  f.state.render();
+  button(f.root, "Sync now").focus();
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Sync now"));
+  f.host.sync.update({ progress: { phase: "uploading", completed: 1, total: 10 } as never });
+  f.state.render();
+  button(f.root, "Stop").focus();
+  f.host.sync.update({ progress: { phase: "uploading", completed: 2, total: 10 } as never });
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Stop"));
+  assert.equal(f.root.querySelector("progress")?.getAttribute("aria-label"), "Sync progress");
+  f.host.sync.update({ progress: null });
+  f.state.mirrorPreview = {
+    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
+    entries: [{ path: "Plan.md", direction: "download", action: "update", detail: "Download change" }], collisions: [], local_issues: [],
+  };
+  f.state.render();
+  const filter = f.root.querySelector<HTMLSelectElement>("[aria-label='Filter transfers']")!;
+  filter.focus();
+  filter.value = "download";
+  filter.dispatchEvent(new f.dom.window.Event("change"));
+  assert.equal(f.dom.window.document.activeElement?.getAttribute("aria-label"), "Filter transfers");
+  f.dom.window.close();
+});
+
+test("quoted transfer paths cannot break focus restoration while comparing changes", () => {
+  const f = fixture(true);
+  (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+  f.state.mirrorPreview = {
+    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
+    entries: [{ kind: "document", path: 'Notes/Review "draft".md', direction: "download", action: "update", detail: "Download change", recordId: "r1" }], collisions: [], local_issues: [],
+  };
+  f.state.render();
+  button(f.root, "Compare").focus();
+  assert.doesNotThrow(() => f.state.render());
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Compare"));
+  f.dom.window.close();
+});
+
 test("pending record updates can be compared before syncing", async () => {
   const f = fixture(true);
   Object.assign(f.state, { mirrorStatus: { state: "changes_waiting", conflicts: [], local_issues: [] } });
@@ -677,6 +868,29 @@ test("pending record updates can be compared before syncing", async () => {
   await settle();
   assert.match(f.text(), /Local line.*Hosted line/);
   assert.ok(button(f.root, "Hide"));
+  f.dom.window.close();
+});
+
+test("collapsed history does not construct hidden transfer ledgers", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push(...Array.from({ length: 20 }, (_, index) => ({
+    id: `large-${index}`, collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "applied",
+    files: Array.from({ length: 250 }, (_, file) => ({ path: `${index}/${file}.md`, kind: "document" as const,
+      direction: "download" as const, action: "create" as const, status: "completed" as const, at })),
+  })));
+  f.state.render();
+  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 0, "closed History needs only its heading");
+  const history = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!;
+  history.open = true;
+  history.dispatchEvent(new f.dom.window.Event("toggle"));
+  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 10);
+  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 0,
+    "closed runs need only summaries, not 2,500 hidden rows");
+  const run = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-run-large-0']")!;
+  run.open = true;
+  run.dispatchEvent(new f.dom.window.Event("toggle"));
+  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 250);
   f.dom.window.close();
 });
 
@@ -709,6 +923,93 @@ test("sync history lists runs, expands to their files and filters by path", () =
   search.value = "missing";
   search.dispatchEvent(new f.dom.window.Event("input"));
   assert.match(f.text(), /No synced files match/);
+  f.dom.window.close();
+});
+
+test("pinned conflict events expose their retained copy without empty history controls", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "conflict-event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Kept both versions of Plan.md", path: "Tasks/Plan.md", needsAcknowledgement: true,
+    message: "This device's version was saved as Tasks/Plan (local conflict copy).md.", tone: "attention",
+  });
+  const opened: string[] = [];
+  Object.assign(f.host, { openFileByPath: async (path: string) => { opened.push(path); } });
+  (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+  f.state.render();
+  assert.match(f.text(), /local conflict copy/);
+  assert.equal(f.root.querySelector("[data-focus-key='history-search']"), null);
+  assert.doesNotMatch(f.text(), /No completed syncs|Clear history/);
+  button(f.root, "Tasks/Plan.md").click();
+  assert.deepEqual(opened, ["Tasks/Plan.md"]);
+  const details = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-conflict-event']")!;
+  assert.ok(details.open);
+  details.open = false;
+  f.state.render();
+  assert.doesNotMatch(f.text(), /local conflict copy/);
+  assert.equal(f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-conflict-event']")?.open, false);
+  f.dom.window.close();
+});
+
+test("dismissing a conflict event unpins it without erasing its history", async () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "conflict-event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Kept both versions of Plan.md", path: "Tasks/Plan.md", needsAcknowledgement: true,
+    message: "This device's version was saved as Tasks/Plan (local conflict copy).md.", tone: "attention",
+  });
+  f.state.render();
+  button(f.root, "Dismiss").focus();
+  button(f.root, "Dismiss").click();
+  await settle();
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "disclosure-history-event-conflict-event");
+  assert.equal(f.historyRuns.length, 1, "dismiss acknowledges a notice, not deletion of the audit trail");
+  assert.equal(f.historyRuns[0].needsAcknowledgement, false);
+  assert.match(f.text(), /Kept both versions of Plan.md/);
+  assert.doesNotMatch(f.text(), /Dismiss/);
+  assert.ok(button(f.root, "Clear history"), "explicit Clear can remove acknowledged history");
+  f.dom.window.close();
+});
+
+test("history write failures are visible rather than unhandled UI rejections", async () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Collection reconnected", tone: "success",
+  });
+  f.host.sync.clearHistory = async () => { throw new Error("History could not be saved"); };
+  f.state.render();
+  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
+  f.state.render();
+  button(f.root, "Clear history").click();
+  await settle();
+  assert.match(f.text(), /History could not be saved/);
+  assert.equal(button(f.root, "Clear history").disabled, false);
+  f.dom.window.close();
+});
+
+test("ordinary history event details retain disclosure and keyboard focus on redraw", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "reconnect", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Collection reconnected", message: "Credentials were renewed and the checkpoint was preserved.", tone: "success",
+  });
+  f.state.render();
+  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
+  f.state.render();
+  const details = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-reconnect']")!;
+  assert.ok(details);
+  assert.equal(details.open, false);
+  details.open = true;
+  details.querySelector<HTMLElement>("summary")!.focus();
+  f.state.render();
+  assert.match(f.text(), /Credentials were renewed/);
+  assert.equal(f.dom.window.document.activeElement?.textContent, "Collection reconnected");
   f.dom.window.close();
 });
 
@@ -761,7 +1062,9 @@ test("a plan held for review says why, offers to apply it, and badges the Sync t
     collisions: [], local_issues: [],
   };
   f.state.render();
-  assert.match(f.text(), /Review needed: mirror rebuild/);
+  assert.match(f.root.querySelector(".mdbase-sync-heading")!.textContent!, /Review needed/);
+  assert.doesNotMatch(f.root.querySelector(".mdbase-sync-heading")!.textContent!, /Up to date/);
+  assert.equal(f.root.querySelector(".mdbase-review-reasons")?.textContent, "Mirror rebuild.");
   assert.ok(button(f.root, "Sync 1 change").classList.contains("mod-cta"));
   assert.equal(f.root.querySelector(".mdbase-nav-button.is-active .mdbase-count")?.textContent, "1");
   f.dom.window.close();

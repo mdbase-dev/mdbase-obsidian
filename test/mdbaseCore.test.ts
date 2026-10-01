@@ -16,11 +16,40 @@ import {
   loadTypeDefinitions,
   normalizeSafeRelativePath,
   parseFrontmatter,
+  readCollectionRecords,
   schemaFromV03Fields,
   validateCollection,
   validateFile,
   isExcluded,
 } from "../src/mdbaseCore";
+
+test("record scans yield to UI timers even when every vault read is cached", async () => {
+  const vault = new MockVault();
+  for (let index = 0; index < 100; index++) await vault.create(`${index}.md`, `---\ntitle: ${index}\n---\nBody`);
+  const config: MdbaseConfig = {
+    spec_version: "0.3.0",
+    settings: { types_folder: "_types", exclude: [], explicit_type_keys: ["type", "types"] },
+  };
+  const cachedRead = vault.cachedRead.bind(vault);
+  let reads = 0;
+  vault.cachedRead = async (file) => {
+    reads++;
+    // Model cached frontmatter parsing without an I/O macrotask boundary.
+    const start = performance.now();
+    while (performance.now() - start < 0.5) { /* simulated CPU work */ }
+    return cachedRead(file);
+  };
+  let readsWhenTimerRan = -1;
+  const timer = setTimeout(() => { readsWhenTimerRan = reads; }, 0);
+  try {
+    const records = await readCollectionRecords(vault as never, config);
+    assert.equal(records.length, 100);
+    assert.ok(readsWhenTimerRan >= 0 && readsWhenTimerRan < 100,
+      `A UI timer must run before the scan finishes, not at read ${readsWhenTimerRan}`);
+  } finally {
+    clearTimeout(timer);
+  }
+});
 
 interface StoredFile {
   file: TFile;
