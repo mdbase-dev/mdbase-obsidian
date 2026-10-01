@@ -9,7 +9,7 @@ The plugin supports two collection roles:
 - A local collection, initialized by writing a canonical mdbase v0.3 `mdbase.yaml`.
 - A hosted mirror, enrolled through mdbase Connect and synchronized into the vault through the portable directory-mirror engine.
 
-The local vault remains useful while offline. Synchronization is explicit, observable, resumable, and conservative in the face of conflicts or ambiguous state.
+The local vault remains useful while offline. Synchronization is observable, resumable, and conservative in the face of conflicts or ambiguous state. Routine changes apply in one step; deletions, conflicts, attachment uploads, first syncs and large transfers always stop for review.
 
 ## Primary users
 
@@ -39,7 +39,7 @@ The local vault remains useful while offline. Synchronization is explicit, obser
 
 - Enroll using a Connect enrollment code.
 - Store credentials in Obsidian SecretStorage, not plugin data or collection files.
-- Preview and run mirror synchronization.
+- Sync routine changes in one step, optionally in the background, and review plans that cross a consent boundary.
 - Keep record validation separate from exact-document replication; never silently repair records during sync.
 - Show progress, last successful checkpoint, failures, and conflicts in plain language.
 - Refuse unsafe role changes or resource overwrites.

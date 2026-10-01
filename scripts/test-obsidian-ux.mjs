@@ -143,37 +143,37 @@ await check("stale drafts can be compared and exported and survive source change
   evaluate("await uxView.editType('_types/'+uxFixtureId+'.md');");
   const descriptionSelector = ".mdbase-type-editor-pane textarea[data-focus-key='form-description']";
   input(descriptionSelector, "My unsaved recovery work");
-  evaluate("await uxView.flushTypeDraft();await app.vault.process(app.vault.getAbstractFileByPath('_types/'+uxFixtureId+'.md'),s=>s.replace('Live UX acceptance fixture','External source change'));await uxView.refresh(true);");
+  evaluate("await uxView.types.flushTypeDraft();await app.vault.process(app.vault.getAbstractFileByPath('_types/'+uxFixtureId+'.md'),s=>s.replace('Live UX acceptance fixture','External source change'));await uxView.refresh(true);");
   assert.ok(evaluate("return [...uxView.containerEl.querySelectorAll('button')].some(b=>b.textContent==='Compare draft')"));
   click("Compare draft", "uxView.containerEl");
   assert.match(evaluate("return activeDocument.querySelector('.modal-content').innerText"), /My unsaved recovery work/);
   screenshot("draft-recovery"); evaluate("activeDocument.querySelector('.modal-header-button').click();");
   click("Export draft", "uxView.containerEl"); await wait("!uxView.busy", "export recovery");
   assert.ok(evaluate("return app.vault.getFiles().some(f=>f.path.startsWith('mdbase-draft-recovery/'))"));
-  input(descriptionSelector, "Fresh draft after external change"); evaluate("await uxView.flushTypeDraft();");
+  input(descriptionSelector, "Fresh draft after external change"); evaluate("await uxView.types.flushTypeDraft();");
   assert.ok(evaluate("return uxPlugin.getArchivedTypeDrafts('_types/'+uxFixtureId+'.md').length>0"));
 });
 
 await check("workspace state restores navigation but never transfer approval", async () => {
-  evaluate("uxView.showDestination('issues');uxView.issueQuery=uxFixtureFolder;uxView.render();window.uxSavedState=uxView.getState();const leaf=app.workspace.getLeaf(true);await leaf.setViewState({type:'mdbase-workspace-view',state:uxSavedState});window.uxRestored=leaf.view;");
+  evaluate("uxView.showDestination('issues');uxView.issues.issueQuery=uxFixtureFolder;uxView.render();window.uxSavedState=uxView.getState();const leaf=app.workspace.getLeaf(true);await leaf.setViewState({type:'mdbase-workspace-view',state:uxSavedState});window.uxRestored=leaf.view;");
   assert.equal(evaluate("return uxRestored.getState().issueQuery"), `UX acceptance/${id}`);
   assert.equal(evaluate("return uxRestored.getState().destination"), "issues");
-  assert.equal(evaluate("return uxRestored.model.name"), id);
+  assert.equal(evaluate("return uxRestored.types.model.name"), id);
   assert.equal(evaluate("return 'mirrorPreview' in uxRestored.getState()"), false);
   evaluate("uxRestored.leaf.detach();await app.workspace.revealLeaf(uxView.leaf);uxView.showDestination('types');");
 });
 
 await check("attachment scope supports folders with commas and explains size and retention", async () => {
-  evaluate("window.uxPolicySurface=uxView.containerEl.createDiv();uxView.renderFilePolicyControls(uxPolicySurface,{connected:false});");
+  evaluate("window.uxPolicySurface=uxView.containerEl.createDiv();uxView.sync.renderFilePolicyControls(uxPolicySurface,{connected:false});");
   assert.match(evaluate("return uxPolicySurface.innerText"), /32 MiB/);
   assert.match(evaluate("return uxPolicySurface.innerText"), /does not delete hosted/);
   input("#mdbase-excluded-folder", "Private, exports"); click("Exclude folder", "uxPolicySurface");
-  assert.ok(evaluate("return uxView.filePolicyDraft.excluded_folders.includes('Private, exports')"));
+  assert.ok(evaluate("return uxView.sync.filePolicyDraft.excluded_folders.includes('Private, exports')"));
 });
 
 await check("large live transfer ledger is completely browsable; filters never narrow approval", async () => {
   // UI fixture only: no synthetic plan is ever submitted to a Connect server.
-  evaluate("window.uxOriginalProfile=uxPlugin.getMirrorProfile.bind(uxPlugin);uxPlugin.getMirrorProfile=()=>({name:'UX ledger fixture',collectionId:'ux-ui-only',mode:'read_write',controlUrl:'https://connect.mdbase.dev'});uxView.destination='sync';uxView.mirrorStatus={state:'up_to_date',conflicts:[],local_issues:[]};const entries=Array.from({length:601},(_,i)=>({path:'Ledger/'+i+'.md',direction:'download',action:i===600?'delete':'update',detail:'UI fixture only'}));uxView.mirrorPreview={phase:'incremental',entries,collisions:[],local_issues:[],plan:{actions:entries,issues:[],summary:{blocking_issues:0}}};uxView.render();");
+  evaluate("window.uxOriginalProfile=uxPlugin.getMirrorProfile.bind(uxPlugin);uxPlugin.getMirrorProfile=()=>({name:'UX ledger fixture',collectionId:'ux-ui-only',mode:'read_write',controlUrl:'https://connect.mdbase.dev'});uxView.destination='sync';uxPlugin.sync.state.status={state:'up_to_date',conflicts:[],local_issues:[]};const entries=Array.from({length:601},(_,i)=>({path:'Ledger/'+i+'.md',direction:'download',action:i===600?'delete':'update',detail:'UI fixture only'}));uxPlugin.sync.state.preview={phase:'incremental',entries,collisions:[],local_issues:[],plan:{actions:entries,issues:[],summary:{blocking_issues:0}}};uxView.render();");
   try {
     assert.equal(evaluate("return uxView.containerEl.querySelectorAll('.mdbase-transfer-row').length"), 250);
     click("Next downloads", "uxView.containerEl");
@@ -182,14 +182,14 @@ await check("large live transfer ledger is completely browsable; filters never n
     assert.equal(evaluate("return uxView.containerEl.querySelectorAll('.mdbase-transfer-row').length"), 101);
     input("select[aria-label='Filter transfers']", "delete");
     assert.equal(evaluate("return uxView.containerEl.querySelectorAll('.mdbase-transfer-row').length"), 1);
-    assert.equal(evaluate("return uxView.mirrorPreview.plan.actions.length"), 601);
+    assert.equal(evaluate("return uxPlugin.sync.state.preview.plan.actions.length"), 601);
     screenshot("large-ledger-filtered");
-    evaluate("uxView.transferQuery='';uxView.transferFilter='all';uxView.mirrorPreview.entries=[{path:'safe.md',direction:'upload',action:'create',detail:'UI fixture only'},{path:'broken.md',direction:'attention',action:'review',detail:'Cannot read this file'}];uxView.mirrorPreview.local_issues=[{path:'broken.md',code:'file_read_failed',message:'Cannot read this file'}];uxView.mirrorPreview.plan={actions:[{command:'put_remote'}],issues:[{path:'broken.md',code:'file_read_failed',blocking:true,message:'Cannot read this file'}],summary:{blocking_issues:1}};uxView.render();");
+    evaluate("uxView.sync.transferQuery='';uxView.sync.transferFilter='all';uxPlugin.sync.state.preview.entries=[{path:'safe.md',direction:'upload',action:'create',detail:'UI fixture only'},{path:'broken.md',direction:'attention',action:'review',detail:'Cannot read this file'}];uxPlugin.sync.state.preview.local_issues=[{path:'broken.md',code:'file_read_failed',message:'Cannot read this file'}];uxPlugin.sync.state.preview.plan={kind:'incremental',actions:[{command:'put_remote',target:{entity:'record'}}],issues:[{path:'broken.md',code:'file_read_failed',blocking:true,message:'Cannot read this file'}],summary:{blocking_issues:1}};uxView.render();");
     assert.ok(evaluate("return [...uxView.containerEl.querySelectorAll('button')].some(b=>b.textContent==='Sync 1 available change' && !b.disabled)"));
     assert.match(evaluate("return uxView.containerEl.innerText"), /isolated.*do not stop independent/);
     screenshot("partial-sync-review");
     // Never click Apply: this is an isolated UI fixture, not a remote sync plan.
-  } finally { evaluate("uxPlugin.getMirrorProfile=uxOriginalProfile;uxView.mirrorPreview=null;uxView.mirrorStatus=null;uxView.showDestination('types');"); }
+  } finally { evaluate("uxPlugin.getMirrorProfile=uxOriginalProfile;uxPlugin.sync.state.preview=null;uxPlugin.sync.state.status=null;uxView.showDestination('types');"); }
 });
 
 await check("mobile essentials and draft recovery survive real app reloads", async () => {
@@ -199,7 +199,7 @@ await check("mobile essentials and draft recovery survive real app reloads", asy
     cli("dev:debug", "on");
     evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-obsidian'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(`_types/${id}.md`)});`);
     assert.ok(evaluate("return [...uxView.containerEl.querySelectorAll('button')].some(b=>b.textContent==='New note')"));
-    assert.match(evaluate("return uxView.model.description"), /Fresh draft after external change/);
+    assert.match(evaluate("return uxView.types.model.description"), /Fresh draft after external change/);
     cli("dev:cdp", "method=Emulation.setDeviceMetricsOverride", 'params={"width":390,"height":844,"deviceScaleFactor":1,"mobile":true}');
     screenshot("mobile-type");
     click("New note", "uxView.containerEl");
@@ -223,7 +223,7 @@ await check("draft recovery survives a real plugin reload", async () => {
   cli("plugin:reload", "id=mdbase-obsidian");
   evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-obsidian'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(typePath)});`);
   assert.equal(evaluate(`return uxPlugin.getArchivedTypeDrafts(${JSON.stringify(typePath)}).length`), archived);
-  assert.match(evaluate("return uxView.model.description"), /Fresh draft after external change/);
+  assert.match(evaluate("return uxView.types.model.description"), /Fresh draft after external change/);
 });
 
 console.log(`Evidence: ${evidence}`);

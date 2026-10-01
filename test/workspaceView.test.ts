@@ -7,6 +7,9 @@ import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
 import { Menu } from "obsidian";
 import type { SyncHistoryRun } from "../src/syncHistory";
+import { SyncSession } from "../src/syncSession";
+
+type TypeModel = ReturnType<typeof createDefaultTypeModel>;
 
 // Exercise the actual renderer with Obsidian's DOM convenience methods, not
 // source-string assertions. Browser screenshots separately cover real styles.
@@ -48,40 +51,69 @@ function fixture(connected = false) {
   const root = window.document.getElementById("view") as HTMLElement;
   const profile = connected ? { name: "Project notes", collectionId: "hidden-collection-id", mode: "read_write",
     controlUrl: "https://connect.example", selectiveSync: { file_classes: [], excluded_folders: [] } } : null;
+  const historyRuns: SyncHistoryRun[] = [];
+  const history = {
+    list: () => historyRuns,
+    append: async (run: SyncHistoryRun) => { historyRuns.push(run); },
+    remove: async (id: string) => { historyRuns.splice(historyRuns.findIndex((run) => run.id === id), 1); },
+    clear: async () => { historyRuns.length = 0; },
+  };
+  let settingsOpened = 0;
   const host = {
     getMirrorProfile: () => profile,
     getIssues: () => [] as Array<{ path: string; severity: string; code: string; message: string }>,
-    getCurrentSyncProblem: () => null,
-    getSyncActivity: () => [],
-    getSyncHistory: () => [] as SyncHistoryRun[],
     saveTypeDraft: async () => undefined,
     loadTypeDraft: () => null,
     clearTypeDraft: async () => undefined,
-    getArchivedTypeDrafts: () => [],
+    getArchivedTypeDrafts: () => [] as import("../src/typeEditorTypes").StoredTypeDraft[],
+    discardArchivedTypeDraft: async () => undefined,
+    createNoteFromType: async () => undefined,
+    openContractCatalog: async () => undefined,
     getValidationSummary: () => "Not checked yet",
     isValidating: () => false,
     cancelValidation: () => undefined,
-    createNoteFromType: async () => undefined,
-    openContractCatalog: async () => undefined,
     loadCollectionRecords: async () => [] as Array<{ path: string; frontmatter: Record<string, unknown> }>,
     getQuickFixLabel: () => null as string | null,
+    openSettings: () => { settingsOpened++; },
     connectSync: {
       getAdoptionMarker: () => null,
       getSelectiveSync: () => ({ file_classes: [] as string[], excluded_folders: [] as string[] }),
       isSyncing: () => false,
-    },
+    } as Record<string, unknown>,
+    sync: null as unknown as SyncSession,
   };
-  const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null, getAllLoadedFiles: () => [], getFiles: () => [] } } } as never, host as never);
+  host.sync = new SyncSession(host.connectSync as never, () => profile as never, history);
+  const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null, getAllLoadedFiles: () => [], createFolder: async () => undefined, create: async () => ({ path: "export.txt" }) } } } as never, host as never);
+  const views = view as unknown as {
+    types: { dirty: boolean; model: TypeModel; originalModel: TypeModel; selectedPath: string };
+    sync: Record<string, unknown>;
+    destination: string; message: string; schema: unknown; render(): void;
+  };
   // Test-only access to view state: all rendering and DOM handlers are real.
-  const state = view as unknown as {
-    destination: string; render(): void; dirty: boolean; transientMessage: string;
-    model: ReturnType<typeof createDefaultTypeModel>; originalModel: ReturnType<typeof createDefaultTypeModel>;
-    schema: unknown; selectedPath: string; mirrorStatus: unknown; mirrorPreview: unknown;
+  const state = {
+    render: () => views.render(),
+    get destination() { return views.destination; },
+    set destination(value: string) { views.destination = value; },
+    get transientMessage() { return views.message; },
+    set transientMessage(value: string) { views.message = value; },
+    get schema() { return views.schema; },
+    set schema(value: unknown) { views.schema = value; },
+    get dirty() { return views.types.dirty; },
+    set dirty(value: boolean) { views.types.dirty = value; },
+    get model() { return views.types.model; },
+    set model(value: TypeModel) { views.types.model = value; },
+    get originalModel() { return views.types.originalModel; },
+    set originalModel(value: TypeModel) { views.types.originalModel = value; },
+    get selectedPath() { return views.types.selectedPath; },
+    set selectedPath(value: string) { views.types.selectedPath = value; },
+    set mirrorStatus(value: unknown) { host.sync.update({ status: value as never }); },
+    set mirrorPreview(value: unknown) { host.sync.update({ preview: value as never }); },
+    set adoptionPreview(value: unknown) { views.sync.adoptionPreview = value; },
   };
   state.destination = "sync";
   state.mirrorStatus = { state: "up_to_date", last_synced_at: new Date().toISOString(), conflicts: [], local_issues: [] };
   const text = () => visibleText(root);
-  return { dom, root, host, state, text, view };
+  return { dom, root, host, state, text, view, historyRuns, settingsOpened: () => settingsOpened };
 }
 
 function visibleText(node: Node): string {
@@ -99,19 +131,16 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   return result;
 }
 
-test("connected Sync is one status and one primary action; settings stay collapsed and retain their open state", () => {
+test("connected Sync is one status and one primary action; settings live in the settings tab", () => {
   const f = fixture(true);
   f.state.render();
-  assert.match(f.text(), /Project notes.*Up to date.*Read and write · Whole vault.*Check for changes/);
+  assert.match(f.text(), /Project notes.*Up to date.*Read and write · Whole vault.*Settings.*Sync now/);
   assert.ok(f.text().split(" ").length < 30, f.text());
   assert.doesNotMatch(f.text(), /hidden-collection-id|Attachments|Disconnect|Hosted authority|checkpoint/);
   assert.equal(f.root.querySelectorAll(".mdbase-sync-actions button").length, 1);
-  assert.equal(f.root.querySelector(".mdbase-sync-hero"), null);
-  const settings = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-settings']")!;
-  settings.open = true;
-  f.state.render();
-  assert.ok(f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-settings']")!.open);
-  assert.match(f.text(), /Attachments.*Disconnect/);
+  assert.equal(f.root.querySelector("[data-disclosure='sync-settings']"), null);
+  button(f.root, "Open sync settings").click();
+  assert.equal(f.settingsOpened(), 1);
   f.dom.window.close();
 });
 
@@ -169,7 +198,7 @@ test("restoring an incomplete design draft opens it without serializing invalid 
   });
   f.state.destination = "types";
   f.state.schema = { config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() };
-  await (f.view as unknown as { selectType(path: string): Promise<void> }).selectType("_types/task.md");
+  await (f.view as unknown as { types: { selectType(path: string): Promise<void> } }).types.selectType("_types/task.md");
   assert.equal(f.state.dirty, true);
   assert.equal(f.state.model.fields.at(-1)?.name, "");
   assert.match(f.text(), /Recovered unsaved changes/);
@@ -188,7 +217,7 @@ test("restoring an empty YAML draft preserves the unsaved empty text", async () 
   });
   f.state.destination = "types";
   f.state.schema = { config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() };
-  await (f.view as unknown as { selectType(path: string): Promise<void> }).selectType("_types/task.md");
+  await (f.view as unknown as { types: { selectType(path: string): Promise<void> } }).types.selectType("_types/task.md");
   assert.equal(f.state.dirty, true);
   const editor = f.root.querySelector<HTMLElement>(".mdbase-yaml-editor.cm-editor");
   assert.ok(editor, "YAML mode uses the CodeMirror editor");
@@ -280,7 +309,7 @@ test("missing adoption authorization offers recovery instead of dead Resume/Canc
     });
     f.state.render();
     assert.ok(button(f.root, recovery.canReset ? "Reset setup" : recovery.canReconnect ? "Reconnect collection" : "Check again"));
-    assert.doesNotMatch(f.text(), /Resume move|Cancel move|Move paused/);
+    assert.doesNotMatch(f.text(), /Resume upload|Cancel upload|Upload paused/);
     assert.equal(f.root.querySelector(".mdbase-approval-link"), null, "do not send users to the stale approval link");
     if (!recovery.canReset && !recovery.canReconnect) {
       recovery.canReset = true;
@@ -310,13 +339,13 @@ test("approved moves expose upload progress and keep failures distinct from an i
   });
   f.state.render();
   assert.equal(f.root.querySelector(".mdbase-approval-link"), null, "approval already succeeded");
-  button(f.root, "Resume move").click();
+  button(f.root, "Resume upload").click();
   await new Promise<void>(resolve => setImmediate(resolve));
   assert.equal(uploading, true);
   assert.match(f.text(), /Approval received. Upload stopped/);
-  assert.doesNotMatch(f.text(), /Move paused/);
+  assert.doesNotMatch(f.text(), /Upload paused/);
   assert.match(f.text(), /A.md.*a.md/);
-  assert.equal(button(f.root, "Resume move").disabled, true);
+  assert.equal(button(f.root, "Resume upload").disabled, true);
   assert.equal(button(f.root, "Check files").disabled, false);
   f.dom.window.close();
 });
@@ -353,7 +382,7 @@ test("collision renames require a review and explicit confirmation, and never au
   await new Promise<void>(resolve => setImmediate(resolve));
   assert.equal(applied, 1);
   assert.match(f.text(), /Renamed 1 file/);
-  assert.equal(button(f.root, "Resume move").disabled, false);
+  assert.equal(button(f.root, "Resume upload").disabled, false);
   f.dom.window.close();
 });
 
@@ -366,7 +395,7 @@ test("new live-file collisions do not block reconciling an already frozen snapsh
   Object.assign(f.state, { adoptionPreview: { records: 2, files: 0, conflicts: [["A.md", "a.md"]] } });
   f.state.render();
   assert.match(f.text(), /Activation outcome is pending/);
-  assert.equal(button(f.root, "Resume move").disabled, false);
+  assert.equal(button(f.root, "Resume upload").disabled, false);
   assert.doesNotMatch(f.text(), /Review renames/);
   f.dom.window.close();
 });
@@ -431,13 +460,18 @@ function typesFixture() {
     ]),
     contracts: new Map(),
   };
-  const view = f.view as unknown as {
-    selectType(path: string): Promise<void>;
+  const inner = f.view as unknown as {
+    types: { selectType(path: string): Promise<void> };
     openTypeField(path: string, field?: string): Promise<void>;
     onClose(): Promise<void>;
     records: unknown;
   };
-  view.records = records;
+  inner.records = records;
+  const view = {
+    selectType: (path: string) => inner.types.selectType(path),
+    openTypeField: (path: string, field?: string) => inner.openTypeField(path, field),
+    onClose: () => inner.onClose(),
+  };
   return { ...f, drafts, records, view };
 }
 
@@ -580,14 +614,14 @@ test("pending record updates can be compared before syncing", async () => {
 test("sync history lists runs, expands to their files and filters by path", () => {
   const f = fixture(true);
   const at = new Date().toISOString();
-  f.host.getSyncHistory = () => [{
+  f.historyRuns.push({
     id: "run-1", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "applied",
     files: [
       { path: "Tasks/Plan.md", kind: "document", direction: "download", action: "update", status: "completed", at },
       { path: "Archive/Review.md", fromPath: "Tasks/Review.md", kind: "document", direction: "download", action: "rename", status: "completed", at },
       { path: "Notes/Ideas.md", kind: "document", direction: "upload", action: "create", status: "completed", at },
     ],
-  }];
+  });
   f.state.render();
   assert.match(f.text(), /History/);
   assert.doesNotMatch(f.text(), /2 downloaded/, "history starts collapsed");
@@ -636,6 +670,34 @@ test("enrollment names the device after the vault so Connect can tell devices ap
   f.dom.window.close();
 });
 
+test("first run asks one question: start a collection here, or copy one from Connect", () => {
+  const f = fixture();
+  f.state.destination = "types";
+  f.state.render();
+  assert.match(f.text(), /Set up mdbase.*Start a collection.*This vault holds the collection.*Copy from Connect.*Connect holds the collection/);
+  assert.ok(button(f.root, "Start a collection").classList.contains("mod-cta"));
+  button(f.root, "Copy from Connect").click();
+  assert.equal(f.state.destination, "sync");
+  assert.match(f.text(), /Copy a collection from Connect/);
+  f.dom.window.close();
+});
+
+test("a plan held for review says why, offers to apply it, and badges the Sync tab", () => {
+  const f = fixture(true);
+  const target = { entity: "record", identity: "r1", path: "Old.md", revision: "x", payload_revision: "x" };
+  f.state.mirrorPreview = {
+    phase: "incremental",
+    plan: { kind: "incremental", actions: [{ command: "delete_local", target }], issues: [], summary: { blocking_issues: 0 } },
+    entries: [{ kind: "document", path: "Old.md", direction: "download", action: "delete", detail: "Hosted record will delete." }],
+    collisions: [], local_issues: [],
+  };
+  f.state.render();
+  assert.match(f.text(), /Review needed: deletions/);
+  assert.ok(button(f.root, "Sync 1 change").classList.contains("mod-cta"));
+  assert.equal(f.root.querySelector(".mdbase-nav-button.is-active .mdbase-count")?.textContent, "1");
+  f.dom.window.close();
+});
+
 test("the transfer ledger exposes all reviewed items and filters never change approval scope", () => {
   const f = fixture(true);
   const entries = Array.from({ length: 601 }, (_, index) => ({ path: `Notes/${index}.md`, direction: "download", action: index === 600 ? "delete" : "update", detail: "Reviewed exact bytes" }));
@@ -668,10 +730,10 @@ test("an untouched stale draft survives leaving the type, and is offered recover
   Object.assign(f.host, { loadTypeModel: async () => source, loadTypeDraft: () => old, clearTypeDraft: async () => { cleared = true; } });
   f.state.destination = "types";
   f.state.schema = { config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() };
-  await (f.view as unknown as { selectType(path: string): Promise<void> }).selectType("_types/task.md");
+  await (f.view.types as unknown as { selectType(path: string): Promise<void> }).selectType("_types/task.md");
   assert.equal(f.state.dirty, false);
   assert.ok(button(f.root, "Compare draft")); assert.ok(button(f.root, "Export draft")); assert.ok(button(f.root, "Discard old draft"));
-  await (f.view as unknown as { flushTypeDraft(): Promise<void> }).flushTypeDraft();
+  await (f.view.types as unknown as { flushTypeDraft(): Promise<void> }).flushTypeDraft();
   assert.equal(cleared, false);
   f.dom.window.close();
 });

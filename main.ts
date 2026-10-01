@@ -1,6 +1,6 @@
 import { ContractCatalogModal, recoverPackInstall } from "./src/contractCatalog";
 import { ValidationState } from "./src/validationState";
-import { CreateTypedNoteModal } from "./src/createTypedNoteModal";
+import { createNoteFromTypeCommand } from "./src/commands";
 import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
   App,
@@ -8,22 +8,15 @@ import {
   MarkdownView,
   Notice,
   Plugin,
-  PluginSettingTab,
-  Setting,
-  SuggestModal,
   TFile,
   normalizePath,
 } from "obsidian";
-import {
-  ObsidianInteropBridge,
-  type MdbaseObsidianInteropApi,
-} from "./src/interopBridge";
+import { ObsidianInteropBridge, type MdbaseObsidianInteropApi } from "./src/interopBridge";
 import {
   MdbaseConfig,
   MdbaseIssue,
   MdbaseTypeDef,
   type CollectionRecord,
-
   ensureCollectionInitialized,
   formatMarkdown,
   getTopLevelFieldFromIssuePath,
@@ -43,16 +36,12 @@ import {
   normalizeSelectiveSync,
   type MirrorProfile,
 } from "./src/connectSync";
-import type { MirrorProgress, MirrorStatus } from "@mdbase-dev/connect-sync/mirror";
 import {
   analyzeV02Migration,
   applyV02Migration,
   type V02MigrationPlan,
 } from "./src/migration";
-import {
-  frontmatterFromTypeModel,
-  typeModelFromDocument,
-} from "./src/typeModel";
+import { frontmatterFromTypeModel, typeModelFromDocument } from "./src/typeModel";
 import { sourceRevision } from "./src/typeDraft";
 import {
   MDBASE_WORKSPACE_VIEW,
@@ -61,18 +50,12 @@ import {
 } from "./src/workspaceView";
 import { MDBASE_ICON_ID, MDBASE_ICON_SVG } from "./src/mdbaseIcon";
 import { KeyedTrailingDebouncer } from "./src/trailingDebouncer";
-import { SyncHistoryStore, type SyncHistoryRun } from "./src/syncHistory";
+import { historyEvent, SyncHistoryStore } from "./src/syncHistory";
 import { NoteSyncHistoryModal } from "./src/syncHistoryModal";
-import {
-  activityEntry,
-  appendActivity,
-  normalizeActivity,
-  syncIndicator,
-  syncProblem,
-  type FileTransferProgress,
-  type SyncActivityEntry,
-  type SyncProblem,
-} from "./src/syncUx";
+import { registerCommands } from "./src/commands";
+import { MdbaseSettingTab } from "./src/settingsTab";
+import { SyncSession } from "./src/syncSession";
+import { normalizeActivity, syncIndicator, type SyncActivityEntry } from "./src/syncUx";
 
 interface MdbasePluginSettings {
   validateOnSave: boolean;
@@ -82,7 +65,10 @@ interface MdbasePluginSettings {
   mirrorProfile: MirrorProfile | null;
   typeDrafts: Record<string, StoredTypeDraft>;
   archivedTypeDrafts: StoredTypeDraft[];
-  syncActivity: SyncActivityEntry[];
+  /** Apply routine sync plans in the background; risky plans still wait for review. */
+  autoSync: boolean;
+  /** Pre-0.4 activity log, migrated into sync history on load. */
+  syncActivity?: SyncActivityEntry[];
 }
 
 const DEFAULT_SETTINGS: MdbasePluginSettings = {
@@ -93,7 +79,7 @@ const DEFAULT_SETTINGS: MdbasePluginSettings = {
   mirrorProfile: null,
   typeDrafts: {},
   archivedTypeDrafts: [],
-  syncActivity: [],
+  autoSync: false,
 };
 
 function isMirrorProfile(value: unknown): value is MirrorProfile {
@@ -116,148 +102,6 @@ function isMirrorProfile(value: unknown): value is MirrorProfile {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-type TypePickerResult =
-  | { type: "selected"; typeDef: MdbaseTypeDef }
-  | { type: "cancelled" };
-
-class TypeSuggestModal extends SuggestModal<MdbaseTypeDef> {
-  private readonly typeDefs: MdbaseTypeDef[];
-  private readonly onResult: (result: TypePickerResult) => void;
-  private resultHandled = false;
-
-  constructor(app: App, typeDefs: MdbaseTypeDef[], onResult: (result: TypePickerResult) => void) {
-    super(app);
-    this.typeDefs = [...typeDefs].sort((a, b) => a.name.localeCompare(b.name));
-    this.onResult = onResult;
-    this.setPlaceholder("Type to search...");
-    this.setInstructions([
-      { command: "↑↓", purpose: "navigate" },
-      { command: "↵", purpose: "select" },
-      { command: "esc", purpose: "cancel" },
-    ]);
-    this.containerEl.addClass("mdbase-type-picker-modal");
-    this.titleEl.setText("Select type definition");
-  }
-
-  getSuggestions(query: string): MdbaseTypeDef[] {
-    const lowered = query.trim().toLowerCase();
-    if (!lowered) return this.typeDefs.slice(0, 100);
-
-    return this.typeDefs
-      .filter((typeDef) => {
-        const desc = typeDef.match?.path_glob ?? "";
-        const haystack = `${typeDef.name} ${typeDef.display_name_key ?? ""} ${typeDef.filePath} ${desc}`.toLowerCase();
-        return haystack.includes(lowered);
-      })
-      .slice(0, 100);
-  }
-
-  renderSuggestion(typeDef: MdbaseTypeDef, el: HTMLElement): void {
-    const wrap = el.createDiv({ cls: "mdbase-type-picker-suggestion" });
-
-    wrap.createDiv({
-      cls: "mdbase-type-picker-name",
-      text: typeDef.name,
-    });
-
-    const meta = wrap.createDiv({ cls: "mdbase-type-picker-meta" });
-    meta.createSpan({
-      cls: "mdbase-type-picker-path",
-      text: typeDef.filePath,
-    });
-    meta.createSpan({
-      cls: "mdbase-type-picker-count",
-      text: `${Object.keys(typeDef.fields ?? {}).length} fields`,
-    });
-
-    if (typeDef.match?.path_glob) {
-      wrap.createDiv({
-        cls: "mdbase-type-picker-match",
-        text: `match: ${typeDef.match.path_glob}`,
-      });
-    }
-  }
-
-  onChooseSuggestion(typeDef: MdbaseTypeDef): void {
-    this.resultHandled = true;
-    this.onResult({ type: "selected", typeDef });
-  }
-
-  onClose(): void {
-    window.setTimeout(() => {
-      if (!this.resultHandled) {
-        this.onResult({ type: "cancelled" });
-      }
-    }, 0);
-    super.onClose();
-  }
-}
-
-function pickType(app: App, typeDefs: MdbaseTypeDef[]): Promise<MdbaseTypeDef | null> {
-  return new Promise((resolve) => {
-    const modal = new TypeSuggestModal(app, typeDefs, (result) => {
-      if (result.type === "selected") {
-        resolve(result.typeDef);
-        return;
-      }
-      resolve(null);
-    });
-    modal.open();
-  });
-}
-
-class MdbaseSettingTab extends PluginSettingTab {
-  plugin: MdbasePlugin;
-
-  constructor(app: App, plugin: MdbasePlugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-
-    new Setting(containerEl)
-      .setName("Validate on save")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.validateOnSave).onChange(async (value) => {
-          this.plugin.settings.validateOnSave = value;
-          await this.plugin.saveSettings();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Validate on open")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.validateOnOpen).onChange(async (value) => {
-          this.plugin.settings.validateOnOpen = value;
-          await this.plugin.saveSettings();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Show validation notices")
-      .setDesc("Notify when saving a note with issues.")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.showNoticeOnSave).onChange(async (value) => {
-          this.plugin.settings.showNoticeOnSave = value;
-          await this.plugin.saveSettings();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Allow plugin integrations")
-      .setDesc("Let other installed plugins exchange mdbase events and actions in this vault.")
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.interopEnabled).onChange(async (value) => {
-          this.plugin.settings.interopEnabled = value;
-          await this.plugin.saveSettings();
-        }),
-      );
-  }
 }
 
 interface LoadedSchema {
@@ -283,20 +127,15 @@ export default class MdbasePlugin extends Plugin {
   private readonly validation = new ValidationState();
   private validationAbort: AbortController | null = null;
   private sortedIssuesCache: MdbaseIssue[] | null = null;
-  private statusBarEl: HTMLElement;
+  private statusBarEl: HTMLElement | undefined;
   private noteStatusEl: HTMLElement;
   private noteStatusVersion = 0;
-  private syncHistory: SyncHistoryStore | null = null;
+  sync: SyncSession;
   private recordCache: Map<string, CollectionRecord> | null = null;
   private recordCacheSettings = "";
   private recordList: CollectionRecord[] | null = null;
   private recordLoadPromise: Promise<CollectionRecord[]> | null = null;
   private readonly dirtyRecordPaths = new Set<string>();
-  private mirrorStatus: MirrorStatus | null = null;
-  private mirrorProgress: MirrorProgress | null = null;
-  private fileProgress: FileTransferProgress | null = null;
-  private currentSyncProblem: SyncProblem | null = null;
-  private localChangeObserved = false;
   private schemaCache: LoadedSchema | null = null;
   private schemaLoadPromise: Promise<LoadedSchema | null> | null = null;
   // Obsidian commonly persists the final editor buffer about 1.3 seconds after
@@ -330,14 +169,8 @@ export default class MdbasePlugin extends Plugin {
       saveMirrorProfile: async (profile) => {
         this.settings.mirrorProfile = profile;
         await this.saveSettings();
-        if (!profile) {
-          this.mirrorStatus = null;
-          this.currentSyncProblem = null;
-          this.localChangeObserved = false;
-          this.updateStatusBar();
-        } else {
-          void this.refreshSyncStatus();
-        }
+        if (!profile) this.sync?.reset();
+        else void this.sync?.refreshStatus();
       },
     });
     this.interopBridge = new ObsidianInteropBridge(app, () => this.settings?.interopEnabled === true);
@@ -354,7 +187,7 @@ export default class MdbasePlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
     await this.connectSync.initialize();
-    await this.loadSyncHistory();
+    await this.createSyncSession();
     addIcon(MDBASE_ICON_ID, MDBASE_ICON_SVG);
 
     this.statusBarEl = this.addStatusBarItem();
@@ -384,129 +217,7 @@ export default class MdbasePlugin extends Plugin {
     this.addSettingTab(new MdbaseSettingTab(this.app, this));
     this.addRibbonIcon(MDBASE_ICON_ID, "Open mdbase", () => void this.openWorkspace());
 
-    this.addCommand({
-      id: "mdbase-open",
-      name: "Open workspace",
-      callback: () => void this.openWorkspace(),
-    });
-
-    this.addCommand({
-      id: "mdbase-initialize-collection",
-      name: "Initialize collection",
-      callback: () => void this.initializeCollectionCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-create-type",
-      name: "Create type definition",
-      callback: () => void this.createTypeDefinitionCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-edit-type",
-      name: "Edit type definition",
-      callback: () => void this.editTypeDefinitionCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-edit-current-type",
-      name: "Edit current type definition",
-      callback: () => void this.editCurrentTypeDefinitionCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-create-note-from-type",
-      name: "Create note from type",
-      callback: () => void this.createNoteFromTypeCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-validate-current-note",
-      name: "Validate current note",
-      callback: () => void this.validateCurrentNoteCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-validate-collection",
-      name: "Validate collection",
-      callback: () => void this.runCollectionValidation(true),
-    });
-
-    this.addCommand({
-      id: "mdbase-open-issues-view",
-      name: "Open issues view",
-      callback: () => void this.openWorkspace("issues"),
-    });
-
-    this.addCommand({
-      id: "mdbase-sync",
-      name: "Review sync changes",
-      callback: () => void this.reviewSyncCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-open-sync",
-      name: "Open sync",
-      callback: () => void this.openWorkspace("sync"),
-    });
-
-    this.addCommand({
-      id: "mdbase-sync-now",
-      name: "Sync now",
-      callback: () => void this.syncNowCommand(),
-    });
-
-    this.addCommand({
-      id: "mdbase-cancel-sync",
-      name: "Cancel current sync",
-      checkCallback: (checking) => {
-        if (!this.connectSync.isSyncing()) return false;
-        if (!checking) {
-          this.connectSync.cancelSync();
-          this.setSyncProblem(syncProblem(new DOMException("Synchronization stopped.", "AbortError")));
-        }
-        return true;
-      },
-    });
-
-    this.addCommand({
-      id: "mdbase-open-activity",
-      name: "Open sync history",
-      callback: () => void this.openSyncSection("activity"),
-    });
-
-    this.addCommand({
-      id: "mdbase-note-sync-history",
-      name: "Show sync history for current note",
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file || !this.getMirrorProfile()) return false;
-        if (!checking) this.openNoteSyncHistory(file.path);
-        return true;
-      },
-    });
-
-    this.registerEvent(
-      this.app.workspace.on("file-menu", (menu, file) => {
-        if (!(file instanceof TFile) || !this.getMirrorProfile()) return;
-        menu.addItem((item) => item
-          .setTitle("Sync history")
-          .setIcon("history")
-          .onClick(() => this.openNoteSyncHistory(file.path)));
-      }),
-    );
-
-    this.addCommand({
-      id: "mdbase-resolve-conflicts",
-      name: "Resolve sync conflicts",
-      callback: () => void this.openSyncSection("conflicts"),
-    });
-
-    this.addCommand({
-      id: "mdbase-reconnect",
-      name: "Reconnect collection",
-      callback: () => void this.reconnectCommand(),
-    });
+    registerCommands(this);
 
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
@@ -567,14 +278,27 @@ export default class MdbasePlugin extends Plugin {
     if (active && this.settings.validateOnOpen) {
       void this.validateFileAndStore(active, "open");
     }
-    if (this.getMirrorProfile()) void this.refreshSyncStatus();
-    this.registerInterval(window.setInterval(() => {
-      if (this.getMirrorProfile() && !this.connectSync.isSyncing()) void this.refreshSyncStatus();
-    }, 60_000));
+    if (this.getMirrorProfile()) void this.checkSync();
+    this.registerInterval(window.setInterval(() => void this.checkSync(), 60_000));
+  }
+
+  /**
+   * Refresh mirror status and, with automatic sync on, apply routine changes.
+   * Plans that need consent are left for review and shown in the status bar.
+   */
+  private async checkSync(): Promise<void> {
+    if (!this.getMirrorProfile() || this.sync.isSyncing() || this.sync.state.busy) return;
+    const status = await this.sync.refreshStatus();
+    if (!this.settings.autoSync || !status) return;
+    const waiting = status.pending > 0
+      || ["changes_waiting", "planned", "cancelled"].includes(status.state)
+      || this.sync.state.localChangeObserved;
+    if (waiting) await this.sync.autoSync();
   }
 
   onunload(): void {
     this.validationAbort?.abort();
+    if (this.autoSyncTimer !== null) window.clearTimeout(this.autoSyncTimer);
     this.connectSync.dispose();
     void this.interopBridge.dispose().catch((error: unknown) => {
       console.error("mdbase: failed to dispose the interoperability bridge", error);
@@ -600,7 +324,6 @@ export default class MdbasePlugin extends Plugin {
       this.settings.typeDrafts = {};
     }
     this.settings.archivedTypeDrafts = Array.isArray(this.settings.archivedTypeDrafts) ? this.settings.archivedTypeDrafts : [];
-    this.settings.syncActivity = normalizeActivity(this.settings.syncActivity);
   }
 
   async saveSettings(): Promise<void> {
@@ -620,102 +343,50 @@ export default class MdbasePlugin extends Plugin {
       : null;
   }
 
-  getSyncActivity(): SyncActivityEntry[] {
-    return this.settings.syncActivity.map((entry) => ({ ...entry }));
+  openNoteSyncHistory(path: string): void {
+    new NoteSyncHistoryModal(this.app, path, this.sync.historyRuns()).open();
   }
 
-  getCurrentSyncProblem(): SyncProblem | null {
-    return this.currentSyncProblem ? { ...this.currentSyncProblem } : null;
+  openSettings(): void {
+    // Obsidian exposes the settings modal on app but not in its public typings.
+    const setting = (this.app as unknown as { setting?: { open(): void; openTabById(id: string): void } }).setting;
+    setting?.open();
+    setting?.openTabById(this.manifest.id);
   }
 
-  setSyncStatus(status: MirrorStatus | null, options: { clearLocalChanges?: boolean } = {}): void {
-    this.mirrorStatus = status ? JSON.parse(JSON.stringify(status)) as MirrorStatus : null;
-    if (options.clearLocalChanges) this.localChangeObserved = false;
-    this.currentSyncProblem = null;
-    this.updateStatusBar();
-  }
-
-  setSyncProgress(progress: MirrorProgress | null, fileProgress: FileTransferProgress | null = null): void {
-    this.mirrorProgress = progress ? { ...progress } : null;
-    this.fileProgress = fileProgress ? { ...fileProgress } : null;
-    this.updateStatusBar();
-  }
-
-  setSyncProblem(problem: SyncProblem | null): void {
-    this.currentSyncProblem = problem ? { ...problem } : null;
-    this.updateStatusBar();
-  }
-
-  async recordSyncActivity(input: Omit<SyncActivityEntry, "id" | "occurredAt">): Promise<void> {
-    this.settings.syncActivity = appendActivity(this.settings.syncActivity, activityEntry(input));
-    await this.saveSettings();
-    this.refreshWorkspaceViews();
-  }
-
-  getSyncHistory(): SyncHistoryRun[] {
-    const collectionId = this.settings.mirrorProfile?.collectionId;
-    return collectionId ? this.syncHistory?.list(collectionId) ?? [] : [];
-  }
-
-  async recordSyncHistory(run: SyncHistoryRun): Promise<void> {
-    if (!this.syncHistory) return;
-    try {
-      await this.syncHistory.append(run);
-    } catch (error) {
-      console.error("mdbase: could not save sync history", error);
-    }
-    this.refreshWorkspaceViews();
-  }
-
-  async clearSyncHistory(): Promise<void> {
-    await this.syncHistory?.clear();
-    this.refreshWorkspaceViews();
-  }
-
-  private openNoteSyncHistory(path: string): void {
-    new NoteSyncHistoryModal(this.app, path, this.getSyncHistory(), this.getSyncActivity()).open();
-  }
-
-  private async loadSyncHistory(): Promise<void> {
+  /** Sync state lives in one session; the status bar and views subscribe to it. */
+  private async createSyncSession(): Promise<void> {
     const folder = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-    const store = new SyncHistoryStore(this.app.vault.adapter, normalizePath(`${folder}/sync-history.jsonl`));
+    const history = new SyncHistoryStore(this.app.vault.adapter, normalizePath(`${folder}/sync-history.jsonl`));
     try {
-      await store.load();
+      await history.load();
+      await this.migrateSyncActivity(history);
     } catch (error) {
       // History is a convenience; an unreadable log must not block sync.
       console.error("mdbase: could not load sync history", error);
     }
-    this.syncHistory = store;
+    this.sync = new SyncSession(this.connectSync, () => this.getMirrorProfile(), history);
+    this.register(this.sync.subscribe(() => this.updateStatusBar()));
   }
 
-  async dismissSyncActivity(id: string): Promise<void> {
-    this.settings.syncActivity = this.settings.syncActivity.filter((entry) => entry.id !== id);
-    await this.saveSettings();
-    this.refreshWorkspaceViews();
-  }
-
-  async clearCompletedSyncActivity(): Promise<void> {
-    this.settings.syncActivity = this.settings.syncActivity.filter((entry) => entry.requiresAcknowledgement);
-    await this.saveSettings();
-    this.refreshWorkspaceViews();
-  }
-
-  async refreshSyncStatus(): Promise<MirrorStatus | null> {
-    const profile = this.getMirrorProfile();
-    if (!profile) {
-      this.setSyncStatus(null);
-      return null;
+  /** Before 0.4 events were kept in plugin data; they now share the history log. */
+  private async migrateSyncActivity(history: SyncHistoryStore): Promise<void> {
+    const legacy = normalizeActivity(this.settings.syncActivity);
+    const collectionId = this.settings.mirrorProfile?.collectionId;
+    if (collectionId) {
+      for (const entry of legacy) {
+        await history.append(historyEvent(collectionId, {
+          summary: entry.summary,
+          tone: entry.tone,
+          ...(entry.detail ? { message: entry.detail } : {}),
+          ...(entry.path ? { path: entry.path } : {}),
+          ...(entry.requiresAcknowledgement ? { needsAcknowledgement: true } : {}),
+        }, entry.occurredAt));
+      }
     }
-    if (this.connectSync.isSyncing()) return this.mirrorStatus;
-    try {
-      const status = await this.connectSync.status();
-      if (profile !== this.getMirrorProfile()) return null;
-      this.setSyncStatus(status);
-      return status;
-    } catch (error) {
-      if (profile !== this.getMirrorProfile()) return null;
-      this.setSyncProblem(syncProblem(error));
-      return null;
+    if (this.settings.syncActivity !== undefined) {
+      delete this.settings.syncActivity;
+      await this.saveSettings();
     }
   }
 
@@ -795,6 +466,16 @@ export default class MdbasePlugin extends Plugin {
     return saved;
   }
 
+  getValidationSummary(): string {
+    const config = this.schemaCache?.config;
+    const paths = this.app.vault.getMarkdownFiles().filter(file => !config || !isExcluded(file.path, config)).map(file => file.path);
+    return this.validation.summary(paths);
+  }
+
+  isValidating(): boolean { return this.validationAbort !== null; }
+
+  cancelValidation(): void { this.validationAbort?.abort(); }
+
   async openContractCatalog(): Promise<void> {
     if (this.getMirrorProfile()) throw new Error("Install packs at the hosted collection authority using mdbase editor.");
     const loaded = await this.getConfigAndTypes();
@@ -815,12 +496,14 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async createNoteFromType(typeName?: string): Promise<void> {
-    await this.createNoteFromTypeCommand(typeName);
+    await createNoteFromTypeCommand(this, typeName);
   }
 
   async initializeCollection(): Promise<void> {
     this.connectSync.assertLocalAuthorityWritable();
-    await this.initializeCollectionCommand();
+    const { created } = await ensureCollectionInitialized(this.app.vault, { seedNoteType: false });
+    this.invalidateSchemaCache();
+    new Notice(created.length ? `Initialized mdbase collection: ${created.join(", ")}` : "mdbase collection already initialized.");
     this.refreshWorkspaceViews(true);
   }
 
@@ -951,16 +634,10 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private updateStatusBar(): void {
+    // The sync session can report before onload has created the status bar.
+    if (!this.statusBarEl) return;
     const issues = this.getIssues();
-    const indicator = syncIndicator({
-      connected: this.getMirrorProfile() !== null,
-      status: this.mirrorStatus,
-      progress: this.mirrorProgress,
-      fileProgress: this.fileProgress,
-      problem: this.currentSyncProblem,
-      validationIssues: issues.length,
-      localChangeObserved: this.localChangeObserved,
-    });
+    const indicator = this.syncIndicator(issues.length);
     this.statusBarEl.setText(indicator.label);
     this.statusBarEl.setAttr("aria-label", `${indicator.detail}. Open mdbase ${indicator.destination}.`);
     this.statusBarEl.setAttr("title", indicator.detail);
@@ -1059,20 +736,26 @@ export default class MdbasePlugin extends Plugin {
     return this.recordList;
   }
 
-  private async openStatusDestination(): Promise<void> {
-    const indicator = syncIndicator({
+  private syncIndicator(validationIssues: number) {
+    const state = this.sync.state;
+    const safety = this.sync.safety();
+    return syncIndicator({
       connected: this.getMirrorProfile() !== null,
-      status: this.mirrorStatus,
-      progress: this.mirrorProgress,
-      fileProgress: this.fileProgress,
-      problem: this.currentSyncProblem,
-      validationIssues: this.getIssues().length,
-      localChangeObserved: this.localChangeObserved,
+      status: state.status,
+      progress: state.progress,
+      fileProgress: state.fileProgress,
+      problem: state.problem,
+      validationIssues,
+      localChangeObserved: state.localChangeObserved,
+      reviewChanges: safety && !safety.safe ? state.preview?.plan.actions.length ?? 0 : 0,
     });
-    await this.openWorkspace(indicator.destination);
   }
 
-  private async openIssuesView(): Promise<void> {
+  private async openStatusDestination(): Promise<void> {
+    await this.openWorkspace(this.syncIndicator(this.getIssues().length).destination);
+  }
+
+  async openIssuesView(): Promise<void> {
     await this.openWorkspace("issues");
   }
 
@@ -1176,7 +859,7 @@ export default class MdbasePlugin extends Plugin {
     return false;
   }
 
-  private invalidateSchemaCache(): void {
+  invalidateSchemaCache(): void {
     this.validation.changed();
     this.schemaCache = null;
     this.schemaLoadPromise = null;
@@ -1207,7 +890,7 @@ export default class MdbasePlugin extends Plugin {
     }
   }
 
-  private async requireConfigAndTypes(options: { background?: boolean; forceReload?: boolean } = {}): Promise<LoadedSchema | null> {
+  async requireConfigAndTypes(options: { background?: boolean; forceReload?: boolean } = {}): Promise<LoadedSchema | null> {
     const background = options.background ?? false;
     const loaded = await this.getConfigAndTypes(options.forceReload ?? false);
     if (!loaded) {
@@ -1280,11 +963,22 @@ export default class MdbasePlugin extends Plugin {
     const normalized = normalizePath(path);
     const reservedFolders = [this.app.vault.configDir, ".mdbase", ".trash", ".git"];
     if (reservedFolders.some((folder) => normalized === folder || normalized.startsWith(`${folder}/`))) return;
-    this.localChangeObserved = true;
-    this.updateStatusBar();
+    this.sync.observeLocalChange();
+    if (this.settings.autoSync) this.scheduleAutoSync();
   }
 
-  private async validateFileAndStore(
+  private autoSyncTimer: number | null = null;
+
+  /** Edits arrive in bursts; sync once they settle. */
+  private scheduleAutoSync(): void {
+    if (this.autoSyncTimer !== null) window.clearTimeout(this.autoSyncTimer);
+    this.autoSyncTimer = window.setTimeout(() => {
+      this.autoSyncTimer = null;
+      void this.checkSync();
+    }, 20_000);
+  }
+
+  async validateFileAndStore(
     file: TFile,
     reason: "save" | "open" | "manual",
     isCurrent: () => boolean = () => true,
@@ -1310,144 +1004,6 @@ export default class MdbasePlugin extends Plugin {
 
     return issues;
   }
-
-  private async initializeCollectionCommand(): Promise<void> {
-    this.connectSync.assertLocalAuthorityWritable();
-    if (this.getMirrorProfile()) {
-      new Notice("This vault is configured as a mirror. Sync it instead of initializing a local collection.");
-      return;
-    }
-    const { created } = await ensureCollectionInitialized(this.app.vault, { seedNoteType: false });
-    this.invalidateSchemaCache();
-
-    if (created.length === 0) {
-      new Notice("mdbase collection already initialized.");
-      return;
-    }
-
-    new Notice(`Initialized mdbase collection: ${created.join(", ")}`);
-  }
-
-  private async reviewSyncCommand(): Promise<void> {
-    const view = await this.openWorkspace("sync");
-    if (this.getMirrorProfile()) await view.reviewSyncChanges();
-  }
-
-  private async syncNowCommand(): Promise<void> {
-    const view = await this.openWorkspace("sync");
-    if (this.getMirrorProfile()) await view.syncNow();
-  }
-
-  private async openSyncSection(section: "activity" | "conflicts"): Promise<void> {
-    const view = await this.openWorkspace("sync");
-    view.focusSyncSection(section);
-  }
-
-  private async reconnectCommand(): Promise<void> {
-    const view = await this.openWorkspace("sync");
-    if (this.getMirrorProfile()) await view.reconnectCollection();
-  }
-
-  private async createTypeDefinitionCommand(): Promise<void> {
-    const view = await this.openWorkspace("types");
-    view.createNewType();
-  }
-
-  private async editTypeDefinitionCommand(): Promise<void> {
-    const loaded = await this.requireConfigAndTypes();
-    if (!loaded || loaded.types.size === 0) {
-      new Notice("No type definitions found.");
-      return;
-    }
-    const chosen = await pickType(this.app, [...loaded.types.values()]);
-    if (!chosen) return;
-    const view = await this.openWorkspace("types");
-    await view.editType(chosen.filePath);
-  }
-
-  private async editCurrentTypeDefinitionCommand(): Promise<void> {
-    const file = this.app.workspace.getActiveFile();
-    if (!(file instanceof TFile) || file.extension !== "md") {
-      new Notice("Open a typed Markdown note or type definition first.");
-      return;
-    }
-    const loaded = await this.requireConfigAndTypes();
-    if (!loaded) return;
-    const definition = [...loaded.types.values()].find((type) => type.filePath === file.path);
-    let chosen = definition ?? null;
-    if (!chosen) {
-      const parsed = parseFrontmatter(await this.app.vault.cachedRead(file));
-      if (parsed.error) {
-        new Notice(`Cannot identify this note's type: ${parsed.error}`);
-        return;
-      }
-      const names = getTypesForFile(file.path, parsed.frontmatter, loaded.config, loaded.types);
-      const candidates = names.flatMap((name) => {
-        const type = loaded.types.get(name);
-        return type ? [type] : [];
-      });
-      if (candidates.length === 0) {
-        new Notice("The current note does not match a known type definition.");
-        return;
-      }
-      chosen = candidates.length === 1 ? candidates[0] : await pickType(this.app, candidates);
-    }
-    if (!chosen) {
-      new Notice("The current note does not match a known type definition.");
-      return;
-    }
-    const view = await this.openWorkspace("types");
-    await view.editType(chosen.filePath);
-  }
-
-  private async createNoteFromTypeCommand(typeName?: string): Promise<void> {
-    this.connectSync.assertLocalAuthorityWritable();
-    const loaded = await this.requireConfigAndTypes();
-    if (!loaded) return;
-
-    if (loaded.types.size === 0) {
-      new Notice("No type definitions found.");
-      return;
-    }
-
-    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
-    const chosenType = typeName ? loaded.types.get(typeName) : await pickType(this.app, Array.from(loaded.types.values()));
-    if (!chosenType) return;
-
-    new CreateTypedNoteModal(this.app, chosenType, loaded.config, loaded.types, async (path, frontmatter) => {
-      this.connectSync.assertLocalAuthorityWritable();
-      if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
-      const { createNoteFromType } = await import("./src/mdbaseCore");
-      const file = await createNoteFromType(this.app.vault, path, frontmatter);
-      await this.app.workspace.getLeaf(true).openFile(file);
-      await this.validateFileAndStore(file, "manual");
-    }).open();
-  }
-
-  private async validateCurrentNoteCommand(): Promise<void> {
-    const activeFile = this.app.workspace.getActiveFile();
-    if (!(activeFile instanceof TFile) || activeFile.extension !== "md") {
-      new Notice("Open a Markdown note first.");
-      return;
-    }
-
-    const issues = await this.validateFileAndStore(activeFile, "manual");
-    if (issues.length === 0) {
-      new Notice("No issues in current note.");
-    } else {
-      new Notice(`Found ${issues.length} issue${issues.length === 1 ? "" : "s"} in current note.`);
-      await this.openIssuesView();
-    }
-  }
-
-  getValidationSummary(): string {
-    const config = this.schemaCache?.config;
-    const paths = this.app.vault.getMarkdownFiles().filter(file => !config || !isExcluded(file.path, config)).map(file => file.path);
-    return this.validation.summary(paths);
-  }
-
-  isValidating(): boolean { return this.validationAbort !== null; }
-  cancelValidation(): void { this.validationAbort?.abort(); }
 
   async runCollectionValidation(showSummary: boolean): Promise<void> {
     if (this.validationAbort) return;

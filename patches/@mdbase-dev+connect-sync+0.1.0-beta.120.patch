@@ -32,7 +32,7 @@ index a9018ff..86b552c 100644
      }
      inspectDetailed(state) {
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
-index ee463f1..0efcc89 100644
+index 6936f79..171bab7 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 @@ -28,12 +28,10 @@ export class MirrorMaterializer {
@@ -50,16 +50,16 @@ index ee463f1..0efcc89 100644
              const destinationBelongsToRecord = prior !== undefined
                  && prior.path === record.path
                  && existingHash === prior.hash;
-@@ -49,7 +47,7 @@ export class MirrorMaterializer {
-         const acceptedLocalHash = acceptedHash === authoritativeHash
-             && existingHash === authoritativeHash;
-         if (!acceptedLocalHash) {
+@@ -51,7 +49,7 @@ export class MirrorMaterializer {
+         // an accepted hash is authorization to replace differing local bytes, not a
+         // prerequisite for leaving already-correct bytes alone.
+         if (existing !== document) {
 -            await this.fileSystem.write(record.path, document);
 +            await this.fileSystem.write(record.path, document, existing);
          }
          state.records[record.record_id] = {
              path: record.path,
-@@ -143,7 +141,7 @@ export class MirrorMaterializer {
+@@ -145,7 +143,7 @@ export class MirrorMaterializer {
              && (!prior || this.runtime.digest(existing) !== prior.hash)) {
              throw new MirrorDivergenceError(`resource:${resource.path}`, resource.path);
          }
@@ -69,12 +69,12 @@ index ee463f1..0efcc89 100644
          state.resources[resource.path] = {
              path: resource.path,
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
-index 80375d5..87f9e58 100644
+index 7c7372e..cfa82f6 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
-@@ -131,7 +131,10 @@ export interface MirrorFileSystem {
+@@ -132,7 +132,10 @@ export interface MirrorFileSystem {
      read(path: string): Promise<string | null>;
-     /** Classified byte-aware read; expected I/O failures reject as `SyncError("file_read_failed")`. */
+     /** Exact UTF-8 read, preserving a leading BOM; expected I/O failures reject as `SyncError("file_read_failed")`. */
      readText(path: string): Promise<MirrorTextReadResult>;
 -    write(path: string, value: string): Promise<void>;
 +    /** If provided, reject changed contents at the atomic write boundary. Null means absent. */
@@ -136,7 +136,7 @@ index 599bcb8..c307048 100644
          this.installPathOwner(action.target);
          return { action_id: action.action_id, status: "completed" };
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
-index 925a593..8f7e87a 100644
+index 19ee11d..01e31ea 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
 @@ -1,6 +1,6 @@

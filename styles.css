@@ -213,6 +213,36 @@
   justify-content: center;
 }
 
+/* First run: one choice per row, each with what it means */
+
+.mdbase-setup-choices {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  border-top: 1px solid var(--background-modifier-border);
+  text-align: start;
+}
+
+.mdbase-setup-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 24px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mdbase-setup-choice .mdbase-muted {
+  margin-top: 2px;
+  font-size: var(--font-ui-small);
+}
+
+@media (width <= 480px) {
+  .mdbase-setup-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .mdbase-legacy-banner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1974,7 +2004,16 @@ button.mdbase-match-row:hover {
 /* Sync scope, enrollment target and review rows */
 
 .mdbase-sync-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
   margin-top: 2px;
+}
+
+.mdbase-review-reasons {
+  margin-top: 6px;
+  font-size: var(--font-ui-small);
 }
 
 .mdbase-sync-target-value {
@@ -2552,6 +2591,16 @@ button.mdbase-transfer-open:hover code {
 
 .mdbase-create-note textarea {
   min-height: 80px;
+}
+
+.mdbase-folder-exclusions {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.mdbase-folder-exclusions .mdbase-inline-error:empty {
+  display: none;
 }
 
 .mdbase-folder-chips {

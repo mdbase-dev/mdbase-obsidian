@@ -19,7 +19,7 @@ npm run build
 npm run check:mobile
 ```
 
-Final verification including resilient partial sync: **188 tests passed, 0 failed**; TypeScript/CSS lint and build passed. All nine live stages passed, with no captured Obsidian developer errors. The deployed vault bundle's SHA-256 matched the final built artifact.
+Final verification including resilient partial sync: **204 tests passed, 0 failed**; TypeScript/CSS lint and build passed. All nine live stages passed, with no captured Obsidian developer errors. The deployed vault bundle's SHA-256 matched the final built artifact.
 
 The mobile bundle has no Node-only runtime imports. The reviewed UX implementation adds about 29 KiB raw / 8 KiB gzip over the previous production bundle, without adding runtime dependencies; the size budgets retain a narrow margin over that new baseline.
 
@@ -31,7 +31,7 @@ Harness: `scripts/test-obsidian-ux.mjs`. It requires both an explicit vault name
 XDG_RUNTIME_DIR=/tmp/tn2360/runtime \
 OBSIDIAN_UX_VAULT=mdbase-ux-e2e \
 OBSIDIAN_UX_VAULT_PATH=/home/calluma/testvault/mdbase-ux-e2e \
-OBSIDIAN_UX_EVIDENCE=/tmp/mdbase-partial-live-evidence \
+OBSIDIAN_UX_EVIDENCE=/tmp/mdbase-pr-live-evidence \
 node scripts/test-obsidian-ux.mjs
 ```
 
@@ -51,9 +51,11 @@ Verified in native Obsidian 1.13.7:
 
 Evidence contains `results.json`, desktop/mobile screenshots, console output and developer errors. The transfer ledger is synthetic and is **never submitted to a server**. This acceptance run does not claim physical-phone or live hosted-transfer testing.
 
-Read-only performance profiling against the disposable vault (1,213 Markdown files, 5 types) passed existing budgets: schema 5 ms, validation 356.3 ms, issue rendering 10.6 ms, 16 rendered issue rows. These are one-run measurements, not a large-vault benchmark.
+Earlier UX-baseline read-only performance profiling against the disposable vault (1,213 Markdown files, 5 types) passed existing budgets: schema 5 ms, validation 356.3 ms, issue rendering 10.6 ms, 16 rendered issue rows. These are one-run measurements, not a large-vault benchmark.
 
 ### Resilient partial sync
+
+Integration with current main preserves the modular workspace panes, shared SyncSession and beta.120 SDK. Routine partial transfers also remain eligible for opt-in automatic sync; deletions, conflicts, attachment uploads, initial syncs and rebuilds still require review. Beta.120's opaque malformed-YAML synchronization remains supported.
 
 The pinned SDK patch now plans independent transfers despite scoped inspection issues. Blocked objects and connected rename paths are isolated, with review diagnostics retained. Unreadable managed files are not interpreted as deletions. Partial runs keep the cursor at the previous boundary so skipped remote changes remain discoverable; completed effects are journaled normally and are not re-uploaded on retry. Fixing a file makes it eligible on the next explicit review. Unscoped inspection failures still block the entire plan, and conditional-write, stale-plan, integrity and recovery checks remain in place.
 

@@ -67,19 +67,16 @@ class ItemView {
 class Modal {
   constructor(app) {
     this.app = app;
-    this.containerEl = document.createElement('div');
-    this.containerEl.className = 'modal-container';
-    this.titleEl = this.containerEl.createDiv({ cls: 'modal-title' });
-    this.contentEl = this.containerEl.createDiv({ cls: 'modal-content' });
+    this.containerEl = document.createElement("div");
+    this.titleEl = document.createElement("h2");
+    this.contentEl = document.createElement("div");
+    this.containerEl.append(this.titleEl, this.contentEl);
   }
-  open() {
-    if (!this.containerEl.parentNode) {
-      document.body.appendChild(this.containerEl);
-      this.onOpen?.();
-    }
-  }
+  open() { document.body.append(this.containerEl); this.onOpen?.(); }
   close() { this.onClose?.(); this.containerEl.remove(); }
 }
+
+class SuggestModal extends Modal {}
 class Notice {}
 // Records the most recently shown menu so tests can invoke its items.
 class Menu {
@@ -120,6 +117,7 @@ module.exports = {
   ItemView,
   Menu,
   Modal,
+  SuggestModal,
   Notice,
   Platform,
   setIcon,

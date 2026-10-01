@@ -139,3 +139,40 @@ export function actionEntry(action: MirrorPlanAction): SyncPreviewEntry {
     ...(object.entity === "file" ? { fileId: object.identity } : {}),
   };
 }
+
+/** Plans above these sizes are shown for review even when every action is benign. */
+export const AUTO_APPLY_LIMITS = { maxActions: 200, maxBytes: 25 * 1024 * 1024 };
+
+export interface SyncPlanSafety {
+  /** True when the plan can be applied without a person reviewing it first. */
+  safe: boolean;
+  /** Why the plan needs review; empty when it is safe. */
+  reasons: string[];
+}
+
+/**
+ * Separates routine plans from ones that need informed consent. Deletions,
+ * conflicts, attachment uploads, the first sync, rebuilds, blocking issues and
+ * very large transfers always stop for review; everything else is ordinary
+ * create/update/rename traffic that the review would only rubber-stamp.
+ */
+export function syncPlanSafety(preview: MdbaseSyncPreview, limits = AUTO_APPLY_LIMITS): SyncPlanSafety {
+  const { plan } = preview;
+  const reasons: string[] = [];
+  if (plan.kind !== "incremental") reasons.push(plan.kind === "initial" ? "First sync" : "Mirror rebuild");
+  if (plan.summary.blocking_issues > 0 && !plan.actions.some(action => action.command !== "advance_checkpoint")) reasons.push("Blocking issues");
+  const actions = plan.actions.filter((action) => action.command !== "advance_checkpoint");
+  if (actions.some((action) => action.command === "record_conflict")) reasons.push("Conflicts");
+  if (actions.some((action) => action.command === "delete_local" || action.command === "delete_remote")) {
+    reasons.push("Deletions");
+  }
+  if (actions.some((action) =>
+    (action.command === "put_remote" && action.target.entity === "file")
+    || (action.command === "move_remote" && action.source.entity === "file"))) {
+    reasons.push("Attachment uploads");
+  }
+  if (actions.length > limits.maxActions) reasons.push(`More than ${limits.maxActions} changes`);
+  const bytes = preview.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0);
+  if (bytes > limits.maxBytes) reasons.push("Large transfer");
+  return { safe: reasons.length === 0, reasons };
+}
