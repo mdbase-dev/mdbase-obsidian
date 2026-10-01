@@ -140,6 +140,23 @@ test("offline failures retry with growing backoff and reset when the network ret
   assert.equal(h.retryAt(), null);
 });
 
+test("offline backoff is not shortened by the ordinary probe timer", async () => {
+  const h = harness();
+  h.setResult("failed");
+  h.setProblem("offline");
+  h.scheduler.start();
+  await h.clock.advance(0);
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    const due = h.retryAt()!;
+    const before = h.calls.autoSync;
+    await h.clock.advance(due - h.clock.now() - 1);
+    assert.equal(h.calls.autoSync, before, `attempt ${attempt} waits for its advertised retry`);
+    await h.clock.advance(1);
+    assert.equal(h.calls.autoSync, before + 1);
+  }
+  assert.equal(h.retryAt()! - h.clock.now(), SYNC_TIMING.retryMaxMs);
+});
+
 test("an unreachable probe counts as offline and is retried with backoff", async () => {
   const h = harness({
     remoteChangesWaiting: async () => {

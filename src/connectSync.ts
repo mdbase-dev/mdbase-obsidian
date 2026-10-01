@@ -1037,11 +1037,18 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     return binaryInfo(bytes);
   }
 
-  async writeBinary(input: string, source: AsyncIterable<Uint8Array>): Promise<void> {
+  async writeBinary(input: string, source: AsyncIterable<Uint8Array>, expected?: MirrorBinaryInfo | null): Promise<void> {
     const path = assertVisibleBinaryPath(input);
+    // A stream can take seconds to consume. Remember its destination before
+    // reading any bytes, then recheck it after staging and folder creation.
+    const before = expected === undefined ? await this.inspectBinary(path) : expected;
     const bytes = await collectBinary(source);
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
+    const current = await this.inspectBinary(path);
+    if (current?.content_digest !== before?.content_digest || current?.size !== before?.size) {
+      throw new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
+    }
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing instanceof TFolder) throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     this.assertActive();
@@ -1769,21 +1776,34 @@ export class ConnectSyncController {
     if (enrollment.collectionId !== profile.collectionId) {
       throw new SyncError("mirror_identity_conflict", "Connect approved a different collection. The existing mirror was not changed.");
     }
-    const nextProfile = profileFromEnrollment(enrollment, profile.selectiveSync);
-    if (oldState && enrollment.replicaId !== profile.replicaId) {
-      await this.stateStoreFor(nextProfile).write({
-        ...oldState,
-        replica_id: enrollment.replicaId,
-      });
-    }
-    await this.persistEnrollment(enrollment, profile.selectiveSync);
-    if (!copied && enrollment.replicaId !== profile.replicaId) {
-      this.clearCredentials(profile);
-      if ("clear" in oldStore && typeof oldStore.clear === "function") await oldStore.clear();
-    }
-    const status = await this.status();
-    if (!status) throw new SyncError("mirror_not_configured", "The reauthorized mirror profile could not be loaded.");
-    return status;
+    return this.withMirrorOperation(async () => {
+      // Browser approval can stay open while background sync advances or a
+      // disconnect retires this connection. Only migrate its latest checkpoint,
+      // under the same queue that protects all other mirror state operations.
+      const current = this.requireProfile();
+      if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
+        || current.enrollmentId !== profile.enrollmentId) {
+        throw new SyncError("mirror_identity_conflict", "The connection changed during approval. The current mirror was not changed.");
+      }
+      const latestState = copied ? null : await oldStore.read();
+      if (latestState?.batch) {
+        throw new SyncError("mirror_recovery_required", "Resume the durable synchronization checkpoint before approving this vault again.");
+      }
+      const nextProfile = profileFromEnrollment(enrollment, current.selectiveSync);
+      if (latestState && enrollment.replicaId !== profile.replicaId) {
+        await this.stateStoreFor(nextProfile).write({
+          ...latestState,
+          replica_id: enrollment.replicaId,
+        });
+      }
+      await this.persistEnrollment(enrollment, current.selectiveSync);
+      if (!copied && enrollment.replicaId !== profile.replicaId) {
+        this.clearCredentials(profile);
+        if ("clear" in oldStore && typeof oldStore.clear === "function") await oldStore.clear();
+      }
+      const mirror = await this.createMirror();
+      return mirror.status();
+    });
   }
 
   async conflictComparison(
@@ -2802,8 +2822,16 @@ export class ConnectSyncController {
       accessToken: this.readSecret("access", profile) ?? "",
       refreshCredential,
       accessTokenExpiresAt: profile.accessTokenExpiresAt,
-    });
-    await this.persistEnrollment(renewed, profile.selectiveSync);
+    }, { signal: this.lifetime.signal });
+    // Renewal may overlap a disconnect or a fresh browser enrollment. Never
+    // recreate the retired connection (or replace the new one's credentials).
+    const current = this.requireProfile();
+    if (current.collectionId !== profile.collectionId || current.replicaId !== profile.replicaId
+      || current.enrollmentId !== profile.enrollmentId) {
+      throw new SyncError("mirror_identity_conflict", "The connection changed while credentials were renewing. Retry with the current connection.");
+    }
+    // Settings can change independently while the request is in flight.
+    await this.persistEnrollment(renewed, current.selectiveSync);
     return renewed.accessToken;
   }
 

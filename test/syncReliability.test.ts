@@ -46,6 +46,7 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
   await vault.createFolder(".mdbase");
   await vault.create(".mdbase/connect-role.json", `${JSON.stringify({ version: 1, role: "mirror", collection_id: collectionId })}\n`);
   const state = options.state ?? new MemoryMirrorStateStore();
+  const states = new Map([[replicaId, state]]);
   const secrets = options.secrets ?? new MemorySecrets();
   let profile: MirrorProfile | null = {
     version: 1,
@@ -68,17 +69,24 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
     },
     deviceId: () => options.deviceId ?? "this-device",
   }, {
-    stateStoreFactory: () => state,
+    stateStoreFactory: (current) => {
+      let store = states.get(current.replicaId);
+      if (!store) {
+        store = new MemoryMirrorStateStore();
+        states.set(current.replicaId, store);
+      }
+      return store;
+    },
     blobStoreFactory: () => new MemoryMirrorBlobStore(),
     fileSystem: new ObsidianMirrorFileSystem(vault as never),
-    transportFactory: () => options.wrapTransport?.(hosted.transport(replicaId)) ?? hosted.transport(replicaId),
+    transportFactory: (current) => options.wrapTransport?.(hosted.transport(current.replicaId)) ?? hosted.transport(current.replicaId),
     ...(options.enrollmentClient ? { enrollmentClient: options.enrollmentClient as MirrorEnrollmentClient } : {}),
   });
   const syncOnce = async () => {
     const { preview } = await controller.inspect();
     return controller.sync(preview);
   };
-  return { vault, controller, state, secrets, replicaId, profile: () => profile, syncOnce };
+  return { vault, controller, state, states, secrets, replicaId, profile: () => profile, syncOnce };
 }
 
 /** A second device that edits through the bare SDK engine. */
@@ -99,6 +107,12 @@ async function edit(vault: MemoryVault, path: string, content: string): Promise<
 async function collectionId(hosted: MemoryAuthority): Promise<string> {
   const probe = hosted.registerReplica({ name: "Probe", mode: "read_only" });
   return (await hosted.transport(probe).openSession()).collection_id;
+}
+
+function deferred() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => { release = resolve; });
+  return { promise, release };
 }
 
 const note = (status: string, priority: string, body = "Body\n") => `---\nstatus: ${status}\npriority: ${priority}\n---\n${body}`;
@@ -268,6 +282,34 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   assert.equal(controller.isEngineWrite("notes/other.md"), false);
 });
 
+test("binary edits made while a download stream is consumed are not overwritten", async () => {
+  const vault = new MemoryVault();
+  const original = new Uint8Array([1, 2, 3]).buffer;
+  const edited = new Uint8Array([7, 8, 9]).buffer;
+  const file = await vault.createBinary("photo.png", original);
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const source = (async function* () {
+    yield new Uint8Array([4]);
+    await vault.modifyBinary(file, edited);
+    yield new Uint8Array([5, 6]);
+  })();
+  await assert.rejects(fs.writeBinary("photo.png", source), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(vault.readBytes("photo.png"), new Uint8Array(edited));
+});
+
+test("a binary file created during a download is not silently overwritten", async () => {
+  const vault = new MemoryVault();
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const source = (async function* () {
+    await vault.createBinary("photo.png", new Uint8Array([7, 8, 9]).buffer);
+    yield new Uint8Array([4, 5, 6]);
+  })();
+  await assert.rejects(fs.writeBinary("photo.png", source), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(vault.readBytes("photo.png"), new Uint8Array([7, 8, 9]));
+});
+
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
   const hosted = new MemoryAuthority();
   hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "a\n", types: [] }]);
@@ -325,6 +367,135 @@ test("credentials stored under the old collection-only key are found and carried
   assert.deepEqual(renewals, ["legacy-refresh"]);
   assert.equal(secrets.getSecret(`mdbase-connect-refresh-${here.replicaId}`), "legacy-refresh");
   assert.equal(secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "renewed");
+});
+
+test("a token renewal finishing after disconnect cannot recreate the connection", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const finish = deferred();
+  const here = await device(hosted, id, {
+    enrollmentClient: {
+      renew: async (enrollment) => {
+        entered.release();
+        await finish.promise;
+        return { ...enrollment, accessToken: "renewed", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z" };
+      },
+    },
+  });
+  const renewal = here.controller.reconnect();
+  // Install the rejection handler before releasing either operation.
+  const completed = Promise.allSettled([renewal]);
+  await entered.promise;
+  await here.controller.disconnect(false);
+  assert.equal(here.profile(), null);
+  finish.release();
+  await completed;
+  assert.equal(here.profile(), null, "a late response must not resurrect a disconnected profile");
+  assert.equal(here.secrets.getSecret(`mdbase-connect-access-${here.replicaId}`), "");
+});
+
+test("token renewal preserves selective-sync settings changed while it was in flight", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const entered = deferred();
+  const finish = deferred();
+  const here = await device(hosted, id, {
+    enrollmentClient: {
+      renew: async (enrollment) => {
+        entered.release();
+        await finish.promise;
+        return { ...enrollment, accessToken: "renewed", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z" };
+      },
+    },
+  });
+  await here.controller.configureSelectiveSync({ file_classes: [], excluded_folders: [] });
+  const renewal = here.controller.reconnect();
+  await entered.promise;
+  const policy = { file_classes: ["image" as const], excluded_folders: ["private"] };
+  await here.controller.configureSelectiveSync(policy);
+  finish.release();
+  await renewal;
+  assert.deepEqual(here.profile()?.selectiveSync, policy);
+});
+
+test("reauthorization migrates the latest checkpoint, not the checkpoint from before browser approval", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "original\n", types: [] }]);
+  const id = await collectionId(hosted);
+  const approvedReplica = hosted.registerReplica({ name: "Reapproved", mode: "read_write" });
+  const entered = deferred();
+  const finish = deferred();
+  const here = await device(hosted, id, {
+    enrollmentClient: {
+      enroll: async () => {
+        entered.release();
+        await finish.promise;
+        return {
+          controlUrl: "https://connect.example", syncUrl: `https://sync.example/v1/authorities/${id}/sync`,
+          collectionId: id, replicaId: approvedReplica, mode: "read_write", name: "Reapproved",
+          enrollmentId: "22222222-2222-4222-8222-222222222222", accessToken: "approved-access",
+          refreshCredential: "approved-refresh", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+        };
+      },
+    },
+  });
+  await here.syncOnce();
+  const approval = here.controller.reauthorize({ onVerification: () => undefined });
+  await entered.promise;
+  await edit(here.vault, "a.md", "edited while approval was open\n");
+  await here.syncOnce();
+  await here.syncOnce();
+  const latest = await here.state.read();
+  finish.release();
+  await approval;
+  const migrated = await here.states.get(approvedReplica)!.read();
+  assert.equal(migrated?.cursor, latest?.cursor, "approval must not roll back the checkpoint");
+  assert.deepEqual(migrated?.records, latest?.records);
+  assert.equal(here.vault.read("a.md"), "edited while approval was open\n");
+});
+
+test("reauthorization refuses to discard a batch prepared while browser approval was open", async () => {
+  const hosted = new MemoryAuthority();
+  hosted.seed([{ record_id: "a", path: "a.md", frontmatter: {}, body: "original\n", types: [] }]);
+  const id = await collectionId(hosted);
+  const approvedReplica = hosted.registerReplica({ name: "Reapproved", mode: "read_write" });
+  const entered = deferred();
+  const finish = deferred();
+  const here = await device(hosted, id, {
+    enrollmentClient: {
+      enroll: async () => {
+        entered.release();
+        await finish.promise;
+        return {
+          controlUrl: "https://connect.example", syncUrl: `https://sync.example/v1/authorities/${id}/sync`,
+          collectionId: id, replicaId: approvedReplica, mode: "read_write", name: "Reapproved",
+          enrollmentId: "22222222-2222-4222-8222-222222222222", accessToken: "approved-access",
+          refreshCredential: "approved-refresh", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+        };
+      },
+    },
+  });
+  await here.syncOnce();
+  const approval = here.controller.reauthorize({ onVerification: () => undefined });
+  const refused = assert.rejects(approval, (error: unknown) =>
+    (error as { code?: string }).code === "mirror_recovery_required");
+  await entered.promise;
+  const there = otherDevice(hosted);
+  await there.mirror.sync();
+  await there.vault.create("b.md", "new note\n");
+  await there.mirror.sync();
+  here.vault.failCreatePath = "b.md";
+  assert.equal((await here.syncOnce()).status, "failed");
+  const latest = structuredClone(await here.state.read());
+  assert.ok(latest?.batch, "the failed write leaves its approved batch durable");
+  finish.release();
+  await refused;
+  assert.equal(here.profile()?.replicaId, here.replicaId);
+  assert.deepEqual(await here.state.read(), latest);
+  here.vault.failCreatePath = null;
+  assert.equal((await here.syncOnce()).status, "applied", "the original checkpoint can still resume");
+  assert.equal(here.vault.read("b.md"), "new note\n");
 });
 
 test("overlapping operations share one token renewal instead of revoking each other's token", async () => {
