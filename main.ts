@@ -955,20 +955,30 @@ export default class MdbasePlugin extends Plugin {
     if (this.schemaCache) return this.schemaCache;
     if (this.schemaLoadPromise) return this.schemaLoadPromise;
 
-    this.schemaLoadPromise = (async () => {
-      const config = await loadMdbaseConfig(this.app.vault);
-      if (!config) return null;
-      const types = await loadTypeDefinitions(this.app.vault, config);
-      const contracts = await loadContractDefinitions(this.app.vault, config);
-      return { config, types, contracts };
-    })();
+    // Store the fenced promise itself: all coalesced callers must reject a
+    // result invalidated while its asynchronous config/type reads were running.
+    const loading: Promise<LoadedSchema | null> = Promise.resolve().then(async () => {
+      try {
+        const config = await loadMdbaseConfig(this.app.vault);
+        const loaded = config ? {
+          config,
+          types: await loadTypeDefinitions(this.app.vault, config),
+          contracts: await loadContractDefinitions(this.app.vault, config),
+        } : null;
+        if (this.schemaLoadPromise !== loading) return this.getConfigAndTypes();
+        if (loaded) this.schemaCache = loaded;
+        return loaded;
+      } catch (error) {
+        if (this.schemaLoadPromise !== loading) return this.getConfigAndTypes();
+        throw error;
+      }
+    });
+    this.schemaLoadPromise = loading;
 
     try {
-      const loaded = await this.schemaLoadPromise;
-      if (loaded) this.schemaCache = loaded;
-      return loaded;
+      return await loading;
     } finally {
-      this.schemaLoadPromise = null;
+      if (this.schemaLoadPromise === loading) this.schemaLoadPromise = null;
     }
   }
 
