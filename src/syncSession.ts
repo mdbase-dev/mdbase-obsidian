@@ -208,10 +208,16 @@ export class SyncSession {
     const result = await this.exclusive(async (): Promise<SyncNowResult> => {
       let applied = false;
       for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
+        if (this.current.paused) return "paused";
         const preview = await this.loadPreview();
+        // Inspection is not a transfer and cannot be cancelled by cancelSync().
+        // Honour Stop before starting any writes once that inspection returns.
+        if (this.current.paused) return "paused";
         if (!preview) return "failed";
         if (!preview.plan.actions.length) {
-          if (await this.settleConflicts()) continue;
+          const settled = await this.settleConflicts();
+          if (this.current.paused) return "paused";
+          if (settled) continue;
           if (!applied && !options.quiet) this.update({ message: "Already up to date." });
           return applied ? "applied" : "up_to_date";
         }
@@ -224,7 +230,10 @@ export class SyncSession {
         if (outcome === "cancelled") return "paused";
         if (outcome === "failed") return "failed";
         applied = true;
-        if (await this.settleConflicts()) continue;
+        if (this.current.paused) return "paused";
+        const settled = await this.settleConflicts();
+        if (this.current.paused) return "paused";
+        if (settled) continue;
         if (!this.current.preview) return "applied";
       }
       return applied ? "applied" : "up_to_date";
