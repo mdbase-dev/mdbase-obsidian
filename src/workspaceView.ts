@@ -206,7 +206,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     this.restoreRenderSnapshot(root, snapshot);
     this.app.workspace?.requestSaveLayout();
     if (this.pendingFocusKey) {
-      root.querySelector<HTMLElement>(`[data-focus-key="${this.pendingFocusKey}"]`)?.focus();
+      this.focusTarget(root, this.pendingFocusKey)?.focus();
       this.pendingFocusKey = null;
     }
     if (this.destination === "types") this.types.afterRender(root);
@@ -265,13 +265,19 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       element.scrollLeft = position.left;
     }
     if (!snapshot.focusKey) return;
-    const active = root.querySelector<HTMLElement>(`[data-focus-key="${snapshot.focusKey}"]`);
+    const active = this.focusTarget(root, snapshot.focusKey);
     active?.focus({ preventScroll: true });
     if (
       (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
       && snapshot.selectionStart !== null
       && snapshot.selectionEnd !== null
     ) active.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+  }
+
+  /** Paths and field names are opaque keys, not CSS selector fragments. */
+  private focusTarget(root: HTMLElement, key: string): HTMLElement | undefined {
+    return Array.from(root.querySelectorAll<HTMLElement>("[data-focus-key]"))
+      .find((element) => element.getAttr("data-focus-key") === key);
   }
 
   iconButton(container: HTMLElement, icon: string, label: string): HTMLButtonElement {

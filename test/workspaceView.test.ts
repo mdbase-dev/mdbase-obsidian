@@ -749,6 +749,47 @@ test("Issues grouped by rule offer one bulk fix and jump to the rule's field", a
   f.dom.window.close();
 });
 
+test("sync actions and filters preserve focus across progress and review renders", () => {
+  const f = fixture(true);
+  f.state.render();
+  button(f.root, "Sync now").focus();
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Sync now"));
+  f.host.sync.update({ progress: { phase: "uploading", completed: 1, total: 10 } as never });
+  f.state.render();
+  button(f.root, "Stop").focus();
+  f.host.sync.update({ progress: { phase: "uploading", completed: 2, total: 10 } as never });
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Stop"));
+  assert.equal(f.root.querySelector("progress")?.getAttribute("aria-label"), "Sync progress");
+  f.host.sync.update({ progress: null });
+  f.state.mirrorPreview = {
+    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
+    entries: [{ path: "Plan.md", direction: "download", action: "update", detail: "Download change" }], collisions: [], local_issues: [],
+  };
+  f.state.render();
+  const filter = f.root.querySelector<HTMLSelectElement>("[aria-label='Filter transfers']")!;
+  filter.focus();
+  filter.value = "download";
+  filter.dispatchEvent(new f.dom.window.Event("change"));
+  assert.equal(f.dom.window.document.activeElement?.getAttribute("aria-label"), "Filter transfers");
+  f.dom.window.close();
+});
+
+test("quoted transfer paths cannot break focus restoration while comparing changes", () => {
+  const f = fixture(true);
+  (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+  f.state.mirrorPreview = {
+    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
+    entries: [{ kind: "document", path: 'Notes/Review "draft".md', direction: "download", action: "update", detail: "Download change", recordId: "r1" }], collisions: [], local_issues: [],
+  };
+  f.state.render();
+  button(f.root, "Compare").focus();
+  assert.doesNotThrow(() => f.state.render());
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Compare"));
+  f.dom.window.close();
+});
+
 test("pending record updates can be compared before syncing", async () => {
   const f = fixture(true);
   Object.assign(f.state, { mirrorStatus: { state: "changes_waiting", conflicts: [], local_issues: [] } });

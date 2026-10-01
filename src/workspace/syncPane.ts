@@ -154,6 +154,7 @@ export class SyncPane {
       const total = state.fileProgress?.totalBytes ?? state.progress?.total ?? null;
       const completed = state.fileProgress?.transferredBytes ?? state.progress?.completed ?? 0;
       const progress = progressArea.createEl("progress");
+      progress.setAttr("aria-label", "Sync progress");
       progress.max = total ?? 1;
       progress.value = total == null ? 0 : completed;
       if (total == null) progress.removeAttribute("value");
@@ -168,6 +169,7 @@ export class SyncPane {
               : "Applying changes"} · ${completed}${total == null ? "" : ` of ${total}`}`,
       });
       const cancel = progressArea.createEl("button", { text: "Stop" });
+      cancel.setAttr("data-focus-key", "sync-stop");
       cancel.onclick = () => this.session.cancel();
     }
 
@@ -199,6 +201,7 @@ export class SyncPane {
         const presentation = syncReviewPresentation(preview.plan, preview.entries.length, busy);
         if (preview.plan.actions.length && !presentation.actionDisabled) {
           const sync = actions.createEl("button", { text: presentation.actionLabel, cls: "mod-cta" });
+          sync.setAttr("data-focus-key", "sync-apply");
           sync.disabled = presentation.actionDisabled;
           sync.onclick = () => void this.session.apply();
         }
@@ -208,6 +211,7 @@ export class SyncPane {
       } else {
         // One action: routine changes apply at once; anything risky stops for review.
         const sync = actions.createEl("button", { text: state.busy ? "Checking…" : "Sync now", cls: "mod-cta" });
+        sync.setAttr("data-focus-key", "sync-now");
         sync.disabled = busy;
         sync.onclick = () => void this.session.syncNow();
       }
@@ -252,6 +256,7 @@ export class SyncPane {
     }
     const buttons = card.createDiv({ cls: "mdbase-recovery-actions" });
     const action = buttons.createEl("button", { text: problem.actionLabel, cls: "mod-cta" });
+    action.setAttr("data-focus-key", "sync-recovery");
     action.disabled = this.ctx.busy || this.session.state.busy;
     action.onclick = () => {
       if (problem.kind === "auth") void this.reconnectCollection();
@@ -261,6 +266,7 @@ export class SyncPane {
     };
     if (problem.kind === "internal" || problem.kind === "recovery") {
       const copy = buttons.createEl("button", { text: "Copy diagnostics" });
+      copy.setAttr("data-focus-key", "sync-diagnostics");
       copy.onclick = () => void this.ctx.host.copySyncDiagnostics();
     }
   }
@@ -288,6 +294,7 @@ export class SyncPane {
     this.enrollmentAbort?.abort();
     const abort = new AbortController();
     this.enrollmentAbort = abort;
+    this.ctx.pendingFocusKey = "stop-approval";
     this.ctx.render();
     try {
       await this.session.reauthorize({
@@ -309,6 +316,7 @@ export class SyncPane {
     } catch (error) {
       if (!isAbortError(error)) throw error;
       this.ctx.message = "Cancelled. Your files and connection are unchanged.";
+      this.ctx.pendingFocusKey = "sync-recovery";
     } finally {
       if (this.enrollmentAbort === abort) {
         this.enrollmentAbort = null;
@@ -405,6 +413,7 @@ export class SyncPane {
         const open = pathLine.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open" });
         open.createEl("code", { text: file.path });
         open.setAttr("title", `Open ${file.path}`);
+        open.setAttr("data-focus-key", `history-open-${run.id}-${file.path}`);
         open.onclick = () => void this.ctx.host.openFileByPath(file.path);
       } else pathLine.createEl("code", { text: file.path });
       if (file.fromPath) direction.createDiv({ cls: "mdbase-muted", text: `From ${file.fromPath}` });
@@ -510,6 +519,7 @@ export class SyncPane {
     const accessLabel = access.createEl("label", { text: "Access" });
     const select = access.createEl("select");
     accessLabel.htmlFor = select.id = "mdbase-enrollment-access";
+    select.setAttr("data-focus-key", "enrollment-access");
     select.createEl("option", { value: "read_write", text: "Read and write" });
     select.createEl("option", { value: "read_only", text: "Read only" });
     select.value = this.enrollmentMode;
@@ -544,12 +554,14 @@ export class SyncPane {
     const enrollmentActions = section.createDiv({ cls: "mdbase-actions mdbase-enrollment-actions" });
     const button = enrollmentActions.createEl("button", { text: "Connect" });
     button.setAttr("title", "Opens Connect in your browser to choose a collection");
+    button.setAttr("data-focus-key", "enrollment-connect");
     button.addClass("mod-cta");
     button.disabled = this.ctx.busy;
     button.onclick = () => void this.ctx.perform(async () => {
       this.enrollmentAbort?.abort();
       const abort = new AbortController();
       this.enrollmentAbort = abort;
+      this.ctx.pendingFocusKey = "stop-approval";
       this.ctx.render();
       try {
         await this.ctx.host.connectSync.enroll({
@@ -581,6 +593,7 @@ export class SyncPane {
         this.ctx.message = `Connected. Review ${items} ${items === 1 ? "item" : "items"}${bytes ? ` · ${formatBytes(bytes)}` : ""} before syncing.`;
         this.ctx.render();
       } catch (error) {
+        this.ctx.pendingFocusKey = "enrollment-connect";
         if (!isAbortError(error)) throw error;
         this.enrollmentVerification = "";
         this.ctx.message = "Cancelled. No files synced.";
@@ -837,6 +850,7 @@ export class SyncPane {
     query.oninput = () => { this.transferQuery = query.value; this.transferPages.clear(); this.ctx.render(); };
     const filter = controls.createEl("select");
     filter.setAttr("aria-label", "Filter transfers");
+    filter.setAttr("data-focus-key", "transfer-filter");
     for (const [value, label] of [["all", "All changes"], ["delete", "Deletes"], ["replace", "Replacements"], ["upload", "Uploads"], ["download", "Downloads"], ["attention", "Needs attention"]]) {
       filter.createEl("option", { value, text: label });
     }
@@ -876,6 +890,7 @@ export class SyncPane {
           const open = pathLine.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open" });
           open.createEl("code", { text: entry.path });
           open.setAttr("title", `Open ${entry.path}`);
+          open.setAttr("data-focus-key", `preview-open-${entry.path}`);
           open.onclick = () => void this.ctx.host.openFileByPath(localPath);
         } else pathLine.createEl("code", { text: entry.path });
         if (entry.estimatedBytes !== undefined) {
