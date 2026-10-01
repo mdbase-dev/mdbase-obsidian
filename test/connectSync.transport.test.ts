@@ -119,6 +119,38 @@ test("a mobile request that never answers is abandoned at its deadline", async (
   );
 });
 
+test("a mobile response queued during suspension cannot bypass its expired deadline", async () => {
+  const now = Date.now;
+  let time = 0;
+  Date.now = () => time;
+  let finish!: (value: ReturnType<typeof response>) => void;
+  const native = new Promise<ReturnType<typeof response>>((resolve) => { finish = resolve; });
+  try {
+    const pending = requestUrlSend({ url: "https://connect.example/probe", timeoutMs: 30_000, throw: false }, () => native);
+    // Simulate an hour of JS suspension: wall time advances, but neither timeout
+    // callback nor response continuation has been allowed to run yet.
+    time += 60 * 60_000;
+    finish(response(200));
+    await assert.rejects(pending, (error: unknown) => error instanceof NetworkError && error.code === "network_timeout");
+  } finally {
+    Date.now = now;
+  }
+});
+
+test("fetch also checks elapsed deadline when a queued response beats the resumed timer", async () => {
+  const now = Date.now;
+  let time = 0;
+  Date.now = () => time;
+  try {
+    await assert.rejects(fetchSend({ url: "https://connect.example/probe", timeoutMs: 30_000 }, async () => {
+      time += 60 * 60_000;
+      return new Response("{}", { status: 200 });
+    }), (error: unknown) => error instanceof NetworkError && error.code === "network_timeout");
+  } finally {
+    Date.now = now;
+  }
+});
+
 test("cancelling sync aborts the request in flight, not after it", async () => {
   const abort = new AbortController();
   const hung = (_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
