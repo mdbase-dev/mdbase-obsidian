@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { forceCloseDatabase } from "fake-indexeddb";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { IndexedDbMirrorBlobStore, IndexedDbMirrorStateStore } from "../src/connectSync";
@@ -175,6 +176,37 @@ test("a transient IndexedDB open failure does not poison either adapter forever"
   }
 });
 
+test("a connection closed while the app was suspended is reopened without losing checkpoints or blobs", async () => {
+  const key = crypto.randomUUID();
+  const stateStore = new IndexedDbMirrorStateStore(key);
+  const blobStore = new IndexedDbMirrorBlobStore(key);
+  const state = { replica_id: key, generation: 7 } as MirrorState;
+  const connections = new Set<IDBDatabase>();
+  const transaction = IDBDatabase.prototype.transaction;
+  IDBDatabase.prototype.transaction = function (...args: Parameters<typeof transaction>) {
+    connections.add(this);
+    return transaction.apply(this, args);
+  };
+  try {
+    await stateStore.write(state);
+    await blobStore.write(digest, bytes());
+  } finally {
+    IDBDatabase.prototype.transaction = transaction;
+  }
+  // fake-indexeddb's declaration incorrectly names the constructor type here;
+  // the implementation accepts the live database instance.
+  await Promise.all([...connections].map((database) => new Promise<void>((resolve) => {
+    database.addEventListener("close", () => resolve(), { once: true });
+    forceCloseDatabase(database as unknown as Parameters<typeof forceCloseDatabase>[0]);
+  })));
+  assert.deepEqual(await stateStore.read(), state);
+  const result: number[] = [];
+  for await (const chunk of blobStore.read(digest)) result.push(...chunk);
+  assert.deepEqual(result, [0, 1, 255]);
+  stateStore.close();
+  blobStore.close();
+});
+
 test("old binary-stage cleanup failure cannot corrupt a published replacement", async () => {
   const store = new IndexedDbMirrorBlobStore(crypto.randomUUID());
   await store.write(digest, bytes());
@@ -207,6 +239,24 @@ test("IndexedDB checkpoint survives adapter recreation and isolates replicas", a
   assert.equal(await new IndexedDbMirrorStateStore(`${key}-other`).read(), null);
   await new IndexedDbMirrorStateStore(key).clear();
   assert.equal(await new IndexedDbMirrorStateStore(key).read(), null);
+});
+
+test("binary staging tolerates suspended sources without keeping an IndexedDB transaction alive", async () => {
+  const store = new IndexedDbMirrorBlobStore(crypto.randomUUID());
+  await store.write(digest, (async function* () {
+    yield Uint8Array.of(0, 1);
+    // IndexedDB auto-commits transactions across event-loop turns. A mobile
+    // source can take far longer; each chunk must use a fresh short transaction.
+    await new Promise((resolve) => setImmediate(resolve));
+    yield Uint8Array.of(255);
+  })());
+  const result: number[] = [];
+  for await (const chunk of store.read(digest)) {
+    result.push(...chunk);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(result, [0, 1, 255]);
+  store.close();
 });
 
 test("IndexedDB binary snapshot survives restart and an interrupted replacement", async () => {

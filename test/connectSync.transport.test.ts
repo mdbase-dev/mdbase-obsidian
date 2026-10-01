@@ -1,7 +1,8 @@
 import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import type { CollectionFileDescriptor } from "@mdbase-dev/connect-protocol";
+import type { CollectionFileDescriptor, SyncMutation } from "@mdbase-dev/connect-protocol";
+import { MemoryAuthority } from "@mdbase-dev/connect-sync";
 import { ObsidianSyncTransport } from "../src/connectSync";
 import {
   abortableSleep,
@@ -119,6 +120,38 @@ test("a mobile request that never answers is abandoned at its deadline", async (
   );
 });
 
+test("a mobile response queued during suspension cannot bypass its expired deadline", async () => {
+  const now = Date.now;
+  let time = 0;
+  Date.now = () => time;
+  let finish!: (value: ReturnType<typeof response>) => void;
+  const native = new Promise<ReturnType<typeof response>>((resolve) => { finish = resolve; });
+  try {
+    const pending = requestUrlSend({ url: "https://connect.example/probe", timeoutMs: 30_000, throw: false }, () => native);
+    // Simulate an hour of JS suspension: wall time advances, but neither timeout
+    // callback nor response continuation has been allowed to run yet.
+    time += 60 * 60_000;
+    finish(response(200));
+    await assert.rejects(pending, (error: unknown) => error instanceof NetworkError && error.code === "network_timeout");
+  } finally {
+    Date.now = now;
+  }
+});
+
+test("fetch also checks elapsed deadline when a queued response beats the resumed timer", async () => {
+  const now = Date.now;
+  let time = 0;
+  Date.now = () => time;
+  try {
+    await assert.rejects(fetchSend({ url: "https://connect.example/probe", timeoutMs: 30_000 }, async () => {
+      time += 60 * 60_000;
+      return new Response("{}", { status: 200 });
+    }), (error: unknown) => error instanceof NetworkError && error.code === "network_timeout");
+  } finally {
+    Date.now = now;
+  }
+});
+
 test("cancelling sync aborts the request in flight, not after it", async () => {
   const abort = new AbortController();
   const hung = (_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
@@ -127,6 +160,46 @@ test("cancelling sync aborts the request in flight, not after it", async () => {
   const pending = fetchSend({ url: "https://connect.example/probe", signal: abort.signal, throw: false }, hung as typeof fetch);
   abort.abort();
   await assert.rejects(pending, (error: unknown) => error instanceof DOMException && error.name === "AbortError");
+});
+
+test("an abandoned mobile mutation arriving after its retry has one authority effect", async () => {
+  const hosted = new MemoryAuthority({ id: authorityId });
+  const replicaId = hosted.registerReplica({ name: "Mobile simulation", mode: "read_write" });
+  const authority = hosted.transport(replicaId);
+  const bodies: string[] = [];
+  let deliverLate!: () => Promise<void>;
+  const native = async (request: { body?: string | ArrayBuffer }) => {
+    bodies.push(String(request.body));
+    const mutation = JSON.parse(String(request.body)) as SyncMutation;
+    if (bodies.length === 1) return new Promise<ReturnType<typeof response>>((resolve) => {
+      deliverLate = async () => { resolve(response(200, await authority.mutate(mutation))); };
+    });
+    return response(200, await authority.mutate(mutation));
+  };
+  const send = reliableSend((request) => requestUrlSend({ ...request, timeoutMs: bodies.length === 0 ? 5 : 30_000 }, native),
+    { ...noSleep, attempts: 2 });
+  const transport = new ObsidianSyncTransport(syncUrl, "test-token", send);
+  const receipt = await transport.mutate({ mutation_id: crypto.randomUUID(), replica_id: replicaId, scope_epoch: 1,
+    record_id: crypto.randomUUID(), created_at: "2026-10-01T00:00:00.000Z", operation: "put", path: "mobile.md", document: "exact mobile edit\n" });
+  assert.equal(receipt.status, "applied");
+  await deliverLate();
+  await Promise.resolve();
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0], bodies[1], "retry preserves the mutation ID and exact document");
+  assert.equal(hosted.serialize().head, 1, "late native request does not apply a second write");
+  assert.equal(hosted.serialize().records[0]?.document, "exact mobile edit\n");
+  assert.equal(receipt.status, "applied", "the late receipt cannot replace the accepted retry receipt");
+});
+
+test("an aborted mobile request ignores its eventual native response", async () => {
+  const abort = new AbortController();
+  let finish!: (value: ReturnType<typeof response>) => void;
+  const native = new Promise<ReturnType<typeof response>>((resolve) => { finish = resolve; });
+  const pending = requestUrlSend({ url: "https://connect.example/probe", signal: abort.signal }, () => native);
+  abort.abort();
+  await assert.rejects(pending, (error: unknown) => error instanceof DOMException && error.name === "AbortError");
+  finish(response(200));
+  await Promise.resolve();
 });
 
 test("transient failures retry with backoff; client errors do not", async () => {
@@ -255,6 +328,56 @@ test("Obsidian HTTP transport downloads bounded binary parts and cleans up the t
     { transferredBytes: 4, totalBytes: 6, path: "Media/download.png" },
     { transferredBytes: 6, totalBytes: 6, path: "Media/download.png" },
   ]);
+});
+
+test("multipart uploads do not repeatedly copy the whole unconsumed source tail", async () => {
+  const bytes = new Uint8Array(8 * 1024 * 1024).fill(7);
+  const file = descriptor("Media/large.png", bytes);
+  const transferId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const partSize = 512 * 1024;
+  let uploadedBytes = 0;
+  const send = async (request: { url: string; body?: string | ArrayBuffer }) => {
+    if (request.url.endsWith("/uploads")) return response(200, {
+      protocol_version: 1, type: "file_transfer", transfer_id: transferId,
+      direction: "upload", protection: "transport_tls", total_size: bytes.length,
+      strategy: { kind: "object_multipart", part_size: partSize }, received: [], uploaded_parts: [],
+    });
+    if (request.url.endsWith("/parts")) {
+      const part = JSON.parse(String(request.body)) as { part_number: number; content_length: number };
+      return response(200, { protocol_version: 1, type: "file_part", transfer_id: transferId,
+        part_index: part.part_number - 1, offset: (part.part_number - 1) * partSize,
+        content_length: part.content_length, method: "PUT", url: `https://objects.example/${part.part_number}`,
+        headers: {}, expires_at: "2099-01-01T00:00:00.000Z" });
+    }
+    if (request.url.startsWith("https://objects.example/")) {
+      const part = new Uint8Array(request.body as ArrayBuffer);
+      assert.equal(part.length, partSize);
+      assert.ok(part.every((byte) => byte === 7));
+      uploadedBytes += part.length;
+      return response(200, {}, new ArrayBuffer(0), { etag: `part-${uploadedBytes}` });
+    }
+    if (request.url.endsWith("/commit")) return response(200, {
+      protocol_version: 1, type: "file_upload_committed", transfer_id: transferId, file,
+    });
+    throw new Error("unexpected test request");
+  };
+  const transport = new ObsidianSyncTransport(syncUrl, "test-token", send as never);
+  const slice = Uint8Array.prototype.slice;
+  let slicedBytes = 0;
+  Uint8Array.prototype.slice = function (...args: Parameters<typeof slice>) {
+    const copy = slice.apply(this, args);
+    slicedBytes += copy.byteLength;
+    return copy;
+  };
+  try {
+    await transport.uploadFile({ protocol_version: 1, type: "open_file_upload", transfer_id: transferId,
+      path: file.path, size: file.size, content_digest: file.content_digest, media_type: file.media_type },
+    (async function* () { yield bytes; })());
+  } finally {
+    Uint8Array.prototype.slice = slice;
+  }
+  assert.equal(uploadedBytes, bytes.length);
+  assert.ok(slicedBytes <= bytes.length, `an 8 MB source caused ${slicedBytes / 1024 / 1024} MB of tail copies`);
 });
 
 test("multipart reads do not copy the entire remaining source chunk for every part", async () => {

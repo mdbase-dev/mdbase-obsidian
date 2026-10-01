@@ -87,7 +87,7 @@ export class SyncScheduler {
   /** The person edited, renamed or deleted something in the mirrored folder. */
   noteLocalChange(): void {
     const now = this.clock.now();
-    this.firstLocalChangeAt ??= now;
+    if (this.firstLocalChangeAt === null || now < this.firstLocalChangeAt) this.firstLocalChangeAt = now;
     this.changed = true;
     this.schedule(Math.min(now + this.timing.localQuietMs, this.firstLocalChangeAt + this.timing.localMaxWaitMs), true);
   }
@@ -163,7 +163,7 @@ export class SyncScheduler {
       if (local || await this.probe() === true) await this.host.refreshStatus();
       return null;
     }
-    let due = local || this.failures > 0 || now - this.lastSyncAt >= this.timing.safetyNetMs;
+    let due = local || this.failures > 0 || now < this.lastSyncAt || now - this.lastSyncAt >= this.timing.safetyNetMs;
     if (!due) {
       const remote = await this.probe();
       if (remote === null) return this.failed(true);

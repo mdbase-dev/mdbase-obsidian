@@ -58,6 +58,25 @@
 .mdbase-status-bar[data-state="paused"] { color: var(--text-warning); }
 .mdbase-status-bar[data-state="offline"] { color: var(--text-muted); }
 
+/* Mobile has no status bar: keep trouble discoverable on its existing ribbon. */
+.is-mobile .mdbase-ribbon { position: relative; }
+
+.is-mobile .mdbase-ribbon[data-state="attention"]::after,
+.is-mobile .mdbase-ribbon[data-state="paused"]::after,
+.is-mobile .mdbase-ribbon[data-state="offline"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-warning);
+  pointer-events: none;
+}
+
+.is-mobile .mdbase-ribbon[data-state="offline"]::after { background: var(--text-muted); }
+
 .mdbase-note-status {
   cursor: pointer;
   color: var(--text-muted);
@@ -170,6 +189,16 @@
   background: var(--background-modifier-border);
   font-size: var(--font-ui-smaller);
   line-height: 16px;
+}
+
+.mdbase-nav-status {
+  color: var(--text-warning);
+  white-space: nowrap;
+}
+
+.mdbase-nav-status[data-kind="offline"],
+.mdbase-nav-status[data-kind="paused"] {
+  color: var(--text-muted);
 }
 
 .mdbase-workspace-content {
@@ -2043,6 +2072,7 @@ button.mdbase-match-row:hover {
   align-items: baseline;
   gap: 4px 12px;
   margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
 .mdbase-review-reasons {
@@ -2056,6 +2086,7 @@ button.mdbase-match-row:hover {
   align-items: baseline;
   gap: 4px 12px;
   font-size: var(--font-ui-small);
+  overflow-wrap: anywhere;
 }
 
 .mdbase-enrollment-actions {
