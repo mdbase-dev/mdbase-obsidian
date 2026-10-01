@@ -375,6 +375,44 @@ test("failed/cancelled object PUTs close their source without corrupting retaine
   }
 });
 
+test("resumed multipart uploads do not allocate output buffers for already received parts", async () => {
+  const partSize = 256 * 1024;
+  const bytes = new Uint8Array(4 * partSize).fill(11);
+  const file = descriptor("Media/resume.png", bytes);
+  const transferId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const transport = new ObsidianSyncTransport(syncUrl, "test-token", async (request) => {
+    if (request.url.endsWith("/uploads")) return response(200, {
+      protocol_version: 1, type: "file_transfer", transfer_id: transferId, direction: "upload", protection: "transport_tls",
+      total_size: bytes.length, strategy: { kind: "object_multipart", part_size: partSize }, received: [0, 1, 2],
+      uploaded_parts: [1, 2, 3].map((part_number) => ({ part_number, etag: `part-${part_number}` })),
+    });
+    if (request.url.endsWith("/parts")) return response(200, {
+      protocol_version: 1, type: "file_part", transfer_id: transferId, part_index: 3, offset: 3 * partSize,
+      content_length: partSize, method: "PUT", url: "https://objects.example/last", headers: {}, expires_at: "2099-01-01T00:00:00.000Z",
+    });
+    if (request.url === "https://objects.example/last") {
+      assert.deepEqual(new Uint8Array(request.body as ArrayBuffer), bytes.subarray(3 * partSize));
+      return response(200, {}, new ArrayBuffer(0), { etag: "part-4" });
+    }
+    if (request.url.endsWith("/commit")) {
+      assert.deepEqual((JSON.parse(request.body as string) as { parts: unknown }).parts,
+        [1, 2, 3, 4].map((part_number) => ({ part_number, etag: `part-${part_number}` })));
+      return response(200, { protocol_version: 1, type: "file_upload_committed", transfer_id: transferId, file });
+    }
+    throw new Error("unexpected request");
+  });
+  const NativeArrayBuffer = globalThis.ArrayBuffer;
+  let allocated = 0;
+  globalThis.ArrayBuffer = class extends NativeArrayBuffer {
+    constructor(length = 0) { super(length); allocated += length; }
+  };
+  try {
+    await transport.uploadFile({ protocol_version: 1, type: "open_file_upload", transfer_id: transferId,
+      path: file.path, size: file.size, content_digest: file.content_digest }, (async function* () { yield bytes; })());
+  } finally { globalThis.ArrayBuffer = NativeArrayBuffer; }
+  assert.equal(allocated, partSize, "only the outstanding part needs an output buffer");
+});
+
 test("multipart uploads do not repeatedly copy the whole unconsumed source tail", async () => {
   const bytes = new Uint8Array(8 * 1024 * 1024).fill(7);
   const file = descriptor("Media/large.png", bytes);

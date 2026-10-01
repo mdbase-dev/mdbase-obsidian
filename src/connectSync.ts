@@ -641,8 +641,11 @@ implements SyncTransport<Frontmatter> {
     for (let index = 0; index < count; index += 1) {
       const offset = index * partSize;
       const length = Math.min(partSize, Math.max(0, request.size - offset));
+      if (received.has(index)) {
+        await reader.skip(length);
+        continue;
+      }
       const bytes = await reader.read(length);
-      if (received.has(index)) continue;
       const prepared = await this.fileRequest<PreparedFilePart>(
         "POST",
         `uploads/${encodeURIComponent(request.transfer_id)}/parts`,
@@ -796,6 +799,15 @@ class BinaryPartReader {
 
   async read(length: number): Promise<Uint8Array<ArrayBuffer>> {
     const output = new Uint8Array(new ArrayBuffer(length));
+    await this.consume(length, output);
+    return output;
+  }
+
+  async skip(length: number): Promise<void> {
+    await this.consume(length);
+  }
+
+  private async consume(length: number, output?: Uint8Array): Promise<void> {
     let offset = 0;
     while (offset < length) {
       if (!this.remainder.byteLength) {
@@ -807,14 +819,13 @@ class BinaryPartReader {
         if (!this.remainder.byteLength) continue;
       }
       const count = Math.min(length - offset, this.remainder.byteLength);
-      output.set(this.remainder.subarray(0, count), offset);
+      output?.set(this.remainder.subarray(0, count), offset);
       offset += count;
       // The source chunk was copied on receipt, so a view of its unread tail is
       // safe. Copying each tail makes small multipart uploads quadratic. Drop
       // the exhausted view to release its backing buffer during the last PUT.
       this.remainder = count === this.remainder.byteLength ? new Uint8Array() : this.remainder.subarray(count);
     }
-    return output;
   }
 
   async close(): Promise<void> {
