@@ -1032,6 +1032,38 @@ test("pending record updates can be compared before syncing", async () => {
   f.dom.window.close();
 });
 
+test("pending comparisons cannot replace a newer plan's versions or loading state", async () => {
+  for (const concurrent of [false, true]) for (const rejectOld of [false, true]) {
+    const f = fixture(true);
+    const requests: Array<{ resolve(value: unknown): void; reject(error: Error): void }> = [];
+    const preview = () => ({ phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } }, entries: [{ kind: "document", path: "note.md", direction: "download", action: "update", detail: "Download change", recordId: "record" }], collisions: [], local_issues: [] });
+    const comparison = (version: string) => ({ entity: "record", objectId: "record", decisionId: "", local: { state: "exact", document: `${version} local line` }, remote: { state: "exact", document: `${version} hosted line` } });
+    (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+    Object.assign(f.host.connectSync, { recordComparison: () => new Promise((resolve, reject) => requests.push({ resolve, reject })) });
+    f.state.mirrorPreview = preview();
+    f.state.render();
+    button(f.root, "Compare").click();
+    f.state.mirrorPreview = preview();
+    f.state.render();
+    if (concurrent) button(f.root, "Compare").click();
+    if (rejectOld) requests[0].reject(new Error("Outdated request failed"));
+    else requests[0].resolve(comparison("Outdated"));
+    await settle();
+    assert.doesNotMatch(f.text(), /Outdated local line|Outdated hosted line/, "old results must not appear under the new plan");
+    assert.equal(f.state.transientMessage, "", "obsolete errors must not interrupt the newer review");
+    if (concurrent) {
+      assert.equal(button(f.root, "Loading…").disabled, true, "old cleanup must not enable a newer pending request");
+    } else {
+      assert.equal(button(f.root, "Compare").disabled, false);
+      button(f.root, "Compare").click();
+    }
+    requests[1].resolve(comparison("Newest"));
+    await settle();
+    assert.match(f.text(), /Newest local line.*Newest hosted line/);
+    f.dom.window.close();
+  }
+});
+
 test("collapsed history does not construct hidden transfer ledgers", () => {
   const f = fixture(true);
   const at = new Date().toISOString();
