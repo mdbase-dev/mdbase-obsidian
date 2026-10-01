@@ -139,8 +139,10 @@ export class SyncPane {
     status.setAttr("data-state", state.status?.state ?? "checking");
     const heading = status.createDiv({ cls: "mdbase-sync-heading" });
     heading.createEl("h2", { text: profile.name });
-    heading.createDiv({ cls: "mdbase-muted", text:
-      `${label} · ${relativeTime(state.status?.last_synced_at)}`,
+    const settled = !authorizing && !syncing && !state.busy && !recoveryProblem && !reviewing
+      && state.status?.state === "up_to_date";
+    heading.createDiv({ cls: "mdbase-muted", text: settled && state.status?.last_synced_at
+      ? `${label} · ${relativeTime(state.status.last_synced_at)}` : label,
     });
     const scope = heading.createDiv({ cls: "mdbase-muted mdbase-sync-scope" });
     scope.createSpan({ text: this.syncScopeText(profile.mode) });

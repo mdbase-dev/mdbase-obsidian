@@ -258,6 +258,33 @@ test("a stale reviewed plan cannot be applied before refreshing the newest chang
   f.dom.window.close();
 });
 
+test("a prior sync timestamp does not pretend to date the current approval, recovery or review", () => {
+  const f = fixture(true);
+  const status = { state: "up_to_date", last_synced_at: "2001-01-01T00:00:00Z", conflicts: [], local_issues: [] };
+  const subtitle = () => f.root.querySelector(".mdbase-sync-heading > .mdbase-muted")?.textContent;
+  f.state.mirrorStatus = status;
+  f.state.render();
+  assert.match(subtitle()!, /Up to date ·/);
+  for (const scenario of [
+    { patch: { busy: true }, label: "Checking…" },
+    { patch: { paused: true }, label: "Paused" },
+    { patch: { problem: { kind: "offline", title: "Offline", message: "Changes stay here", action: "retry", actionLabel: "Retry now" } }, label: "Offline" },
+    { patch: { status: { ...status, recovery_required: true } }, label: "Needs attention" },
+    { patch: { preview: { phase: "initial", plan: { kind: "initial", actions: [{ command: "put_remote" }], issues: [], summary: { blocking_issues: 0 } }, entries: [{ direction: "upload", action: "create", kind: "document", path: "note.md" }], local_issues: [], collisions: [] } }, label: "Review needed" },
+  ]) {
+    f.host.sync.update({ busy: false, paused: false, problem: null, preview: null });
+    f.state.mirrorStatus = status;
+    f.host.sync.update(scenario.patch as never);
+    f.state.render();
+    assert.equal(subtitle(), scenario.label);
+  }
+  f.host.sync.update({ busy: false, paused: false, problem: null, preview: null });
+  (f.view as unknown as { sync: { enrollmentAbort: AbortController | null } }).sync.enrollmentAbort = new AbortController();
+  f.state.render();
+  assert.equal(subtitle(), "Waiting for approval");
+  f.dom.window.close();
+});
+
 test("an explicit idle pause supersedes an old offline retry without discarding its diagnostic cause", () => {
   const f = fixture(true);
   f.host.sync.reportProblem(Object.assign(new Error("Offline"), { code: "network_timeout" }));
