@@ -845,12 +845,9 @@ export default class MdbasePlugin extends Plugin {
       return view;
     }
     const leaf = this.app.workspace.getLeaf(true);
-    await leaf.setViewState({ type: MDBASE_WORKSPACE_VIEW, active: true });
+    await leaf.setViewState({ type: MDBASE_WORKSPACE_VIEW, active: true, state: { destination } });
     await this.app.workspace.revealLeaf(leaf);
-    const view = leaf.view as MdbaseWorkspaceView;
-    await view.refresh();
-    view.showDestination(destination);
-    return view;
+    return leaf.view as MdbaseWorkspaceView;
   }
 
   private refreshWorkspaceViews(forceReload = false): void {

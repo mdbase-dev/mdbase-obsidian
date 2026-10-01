@@ -10,53 +10,91 @@ export function portableGlobMatch(pattern: string, path: string): boolean {
   return matchComponents(path.split("/"), pattern.split("/"));
 }
 
+/** Retry only the most recent wildcard, not every possible suffix recursively. */
 function matchComponents(path: string[], pattern: string[]): boolean {
-  if (pattern.length === 0) return path.length === 0;
-  const [first, ...rest] = pattern;
-  if (first === "**") {
-    return matchComponents(path, rest) || (path.length > 0 && matchComponents(path.slice(1), pattern));
+  let text = 0;
+  let token = 0;
+  let star = -1;
+  let retry = 0;
+  while (text < path.length) {
+    if (pattern[token] === "**") {
+      star = token++;
+      retry = text;
+    } else if (token < pattern.length && matchSegment(path[text], pattern[token])) {
+      text++;
+      token++;
+    } else if (star >= 0) {
+      token = star + 1;
+      text = ++retry;
+    } else return false;
   }
-  if (path.length === 0) return false;
-  return matchSegment([...path[0]], [...first]) && matchComponents(path.slice(1), rest);
+  while (pattern[token] === "**") token++;
+  return token === pattern.length;
 }
 
-function matchSegment(text: string[], pattern: string[]): boolean {
-  if (pattern.length === 0) return text.length === 0;
-  const [head, ...rest] = pattern;
-  if (head === "*") {
-    return matchSegment(text, rest) || (text.length > 0 && matchSegment(text.slice(1), pattern));
+interface CharacterClass {
+  negated: boolean;
+  ranges: Array<[number, number]>;
+}
+type SegmentToken = string | CharacterClass;
+
+function matchSegment(value: string, pattern: string): boolean {
+  const text = [...value];
+  const tokens = segmentTokens([...pattern]);
+  let character = 0;
+  let token = 0;
+  let star = -1;
+  let retry = 0;
+  while (character < text.length) {
+    if (tokens[token] === "*") {
+      star = token++;
+      retry = character;
+    } else if (matchesCharacter(tokens[token], text[character])) {
+      character++;
+      token++;
+    } else if (star >= 0) {
+      token = star + 1;
+      character = ++retry;
+    } else return false;
   }
-  if (head === "?") return text.length > 0 && matchSegment(text.slice(1), rest);
-  if (head === "[") {
-    const parsed = parseClass(rest);
+  while (tokens[token] === "*") token++;
+  return token === tokens.length;
+}
+
+function matchesCharacter(token: SegmentToken | undefined, character: string): boolean {
+  if (token === undefined) return false;
+  if (typeof token === "string") return token === "?" || token === character;
+  const point = codePoint(character);
+  return token.ranges.some(([low, high]) => low <= point && point <= high) !== token.negated;
+}
+
+function segmentTokens(pattern: string[]): SegmentToken[] {
+  const tokens: SegmentToken[] = [];
+  for (let index = 0; index < pattern.length;) {
+    const parsed = pattern[index] === "[" ? parseClass(pattern, index + 1) : undefined;
     if (parsed) {
-      return text.length > 0 && parsed.matches(text[0]) && matchSegment(text.slice(1), parsed.after);
-    }
+      tokens.push(parsed.token);
+      index = parsed.after;
+    } else tokens.push(pattern[index++]);
   }
-  return text[0] === head && matchSegment(text.slice(1), rest);
+  return tokens;
 }
 
-/** Parse a class body after `[`, returning its matcher and the pattern after `]`. */
-function parseClass(body: string[]): { matches: (c: string) => boolean; after: string[] } | undefined {
-  const negated = body[0] === "!";
+/** Parse after `[`. An incomplete class remains literal, as the spec requires. */
+function parseClass(pattern: string[], start: number): { token: CharacterClass; after: number } | undefined {
+  const negated = pattern[start] === "!";
   const ranges: Array<[number, number]> = [];
-  let index = negated ? 1 : 0;
+  let index = start + (negated ? 1 : 0);
   let first = true;
-  while (index < body.length) {
-    const c = body[index];
-    if (c === "]" && !first) {
-      const matches = (candidate: string) => {
-        const point = codePoint(candidate);
-        return ranges.some(([low, high]) => low <= point && point <= high) !== negated;
-      };
-      return { matches, after: body.slice(index + 1) };
-    }
-    if (index + 2 < body.length && body[index + 1] === "-" && body[index + 2] !== "]") {
-      ranges.push([codePoint(c), codePoint(body[index + 2])]);
+  while (index < pattern.length) {
+    const c = pattern[index];
+    if (c === "]" && !first) return { token: { negated, ranges }, after: index + 1 };
+    if (index + 2 < pattern.length && pattern[index + 1] === "-" && pattern[index + 2] !== "]") {
+      ranges.push([codePoint(c), codePoint(pattern[index + 2])]);
       index += 3;
     } else {
       ranges.push([codePoint(c), codePoint(c)]);
-      index += 1;
+      index++;
     }
     first = false;
   }
