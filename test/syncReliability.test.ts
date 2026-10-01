@@ -610,9 +610,10 @@ test("every checkpoint-write boundary survives a quota error and a retry without
   }
 });
 
-test("offline edit bursts converge on both devices with every latest field edit intact", async () => {
+test("offline edit bursts converge despite intermittent quota errors, with every latest field edit intact", async () => {
   const seeds = Number(process.env.MDBASE_RELIABILITY_SEEDS ?? 3);
-  for (let seed = 1; seed <= seeds; seed++) {
+  const offset = Number(process.env.MDBASE_RELIABILITY_SEED_OFFSET ?? 0);
+  for (let seed = offset + 1; seed <= offset + seeds; seed++) {
     let randomState = seed;
     const randomIndex = (count: number) => {
       randomState = (Math.imul(randomState, 1664525) + 1013904223) >>> 0;
@@ -624,7 +625,8 @@ test("offline edit bursts converge on both devices with every latest field edit 
       record_id: `n${index}`, path: `notes/n${index}.md`, frontmatter: { left: 0, right: 0 }, body: "Body\n", types: [],
     })));
     const id = await collectionId(hosted);
-    const here = await device(hosted, id);
+    const state = new MemoryMirrorStateStore();
+    const here = await device(hosted, id, { state });
     const there = otherDevice(hosted);
     const session = new SyncSession(here.controller, here.profile, null);
     await here.syncOnce();
@@ -642,10 +644,20 @@ test("offline edit bursts converge on both devices with every latest field edit 
       await edit(there.vault, remotePath, there.vault.read(remotePath)!.replace(/right: \d+/, `right: ${editNumber}`));
     }
     await there.mirror.sync();
+    if (seed % 2 === 0) {
+      const quotaBoundary = randomIndex(12) + 1;
+      let writes = 0;
+      const write = state.write.bind(state);
+      state.write = async (next) => {
+        if (++writes === quotaBoundary) throw new DOMException("Intermittent quota error", "QuotaExceededError");
+        return write(next);
+      };
+    }
     for (let round = 0; round < 8; round++) {
       const result = await session.autoSync();
-      assert.ok(["applied", "up_to_date", "pending"].includes(result), `seed ${seed}: ${result}`);
-      if (result !== "pending") break;
+      assert.ok(["applied", "up_to_date", "pending", "failed", "needs_review"].includes(result), `seed ${seed}: ${result}`);
+      if (["applied", "up_to_date"].includes(result) && !session.state.status?.conflicts.length
+        && !session.state.preview?.plan.actions.length) break;
     }
     await there.mirror.sync();
     for (let index = 0; index < count; index++) {
