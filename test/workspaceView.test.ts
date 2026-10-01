@@ -133,6 +133,29 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   return result;
 }
 
+test("Sync and Issues refreshes do not parse all records or run type impact scans", async () => {
+  const f = fixture(true);
+  let recordLoads = 0;
+  Object.assign(f.host, {
+    loadWorkspaceSchema: async () => ({ config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() }),
+    loadCollectionRecords: async () => { recordLoads++; return []; },
+  });
+  await f.view.refresh();
+  assert.equal(recordLoads, 0, "Sync does not consume collection records");
+  f.state.destination = "issues";
+  await f.view.refresh();
+  assert.equal(recordLoads, 0, "Issues does not consume collection records either");
+  let pending: Promise<void> | null = null;
+  const refresh = f.view.refresh.bind(f.view);
+  f.view.refresh = (...args) => (pending = refresh(...args));
+  f.view.showDestination("types");
+  assert.ok(pending, "switching to Types must load its record statistics");
+  await pending;
+  assert.equal(recordLoads, 1);
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
 test("transfer notifications coalesce renders, keep completion immediate, and cancel on close", async () => {
   const f = fixture(true);
   await f.view.onOpen();
@@ -677,6 +700,29 @@ test("pending record updates can be compared before syncing", async () => {
   await settle();
   assert.match(f.text(), /Local line.*Hosted line/);
   assert.ok(button(f.root, "Hide"));
+  f.dom.window.close();
+});
+
+test("collapsed history does not construct hidden transfer ledgers", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push(...Array.from({ length: 20 }, (_, index) => ({
+    id: `large-${index}`, collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "applied",
+    files: Array.from({ length: 250 }, (_, file) => ({ path: `${index}/${file}.md`, kind: "document" as const,
+      direction: "download" as const, action: "create" as const, status: "completed" as const, at })),
+  })));
+  f.state.render();
+  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 0, "closed History needs only its heading");
+  const history = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!;
+  history.open = true;
+  history.dispatchEvent(new f.dom.window.Event("toggle"));
+  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 10);
+  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 0,
+    "closed runs need only summaries, not 2,500 hidden rows");
+  const run = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-run-large-0']")!;
+  run.open = true;
+  run.dispatchEvent(new f.dom.window.Event("toggle"));
+  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 250);
   f.dom.window.close();
 });
 

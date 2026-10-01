@@ -682,7 +682,15 @@ export interface CollectionRecord {
 /** Parsed frontmatter for every record the collection validates. Unparseable notes are skipped. */
 export async function readCollectionRecords(vault: Vault, config: MdbaseConfig): Promise<CollectionRecord[]> {
   const records: CollectionRecord[] = [];
+  let yieldedAt = performance.now();
   for (const file of vault.getMarkdownFiles()) {
+    // cachedRead can resolve in a microtask: awaiting it alone does not let the
+    // editor paint or process input. Yield by time, not once per tiny file.
+    if (performance.now() - yieldedAt >= 8) {
+      // eslint-disable-next-line obsidianmd/prefer-window-timers -- Host-independent cooperative yield, like collection validation below.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      yieldedAt = performance.now();
+    }
     if (isExcluded(file.path, config)) continue;
     const parsed = parseFrontmatter(await vault.cachedRead(file));
     if (parsed.error) continue;
