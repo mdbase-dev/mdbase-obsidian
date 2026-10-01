@@ -9,6 +9,7 @@ export interface FileTransferProgress {
 
 export type SyncActivityTone = "success" | "info" | "attention" | "error";
 
+/** The pre-0.4 activity log entry, kept only to migrate stored data. */
 export interface SyncActivityEntry {
   id: string;
   occurredAt: string;
@@ -94,8 +95,11 @@ export function syncIndicator(input: {
   problem: SyncProblem | null;
   validationIssues: number;
   localChangeObserved: boolean;
+  /** Changes in a plan that stopped for review instead of applying automatically. */
+  reviewChanges?: number;
 }): SyncIndicator {
   const { connected, status, progress, fileProgress, problem, validationIssues, localChangeObserved } = input;
+  const reviewChanges = input.reviewChanges ?? 0;
   if (!connected) {
     return validationIssues
       ? {
@@ -130,6 +134,14 @@ export function syncIndicator(input: {
       state: problem.action === "resume" ? "paused" : problem.action === "retry" ? "offline" : "attention",
       label: problem.action === "resume" ? "mdbase: Paused" : problem.action === "retry" ? "mdbase: Offline" : "mdbase: Needs attention",
       detail: problem.title,
+      destination: "sync",
+    };
+  }
+  if (reviewChanges > 0) {
+    return {
+      state: "attention",
+      label: `mdbase: Review ${reviewChanges} ${reviewChanges === 1 ? "change" : "changes"}`,
+      detail: "Some changes need review before syncing",
       destination: "sync",
     };
   }
@@ -210,24 +222,10 @@ export function syncProblem(error: unknown): SyncProblem {
   };
 }
 
+/** Reads the pre-0.4 activity log so it can be migrated into sync history. */
 export function normalizeActivity(value: unknown): SyncActivityEntry[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isActivityEntry).slice(-MAX_ACTIVITY);
-}
-
-export function appendActivity(
-  current: readonly SyncActivityEntry[],
-  entry: SyncActivityEntry,
-): SyncActivityEntry[] {
-  return [...current.filter((candidate) => candidate.id !== entry.id), entry].slice(-MAX_ACTIVITY);
-}
-
-export function activityEntry(input: Omit<SyncActivityEntry, "id" | "occurredAt">): SyncActivityEntry {
-  return {
-    ...input,
-    id: crypto.randomUUID(),
-    occurredAt: new Date().toISOString(),
-  };
 }
 
 function isActivityEntry(value: unknown): value is SyncActivityEntry {

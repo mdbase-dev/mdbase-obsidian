@@ -64,6 +64,8 @@ class ItemView {
   registerDomEvent(element, type, listener) { element.addEventListener(type, listener); }
 }
 class Modal {}
+
+class SuggestModal extends Modal {}
 class Notice {}
 // Records the most recently shown menu so tests can invoke its items.
 class Menu {
@@ -104,6 +106,7 @@ module.exports = {
   ItemView,
   Menu,
   Modal,
+  SuggestModal,
   Notice,
   Platform,
   setIcon,

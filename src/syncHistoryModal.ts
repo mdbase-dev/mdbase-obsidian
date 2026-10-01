@@ -1,6 +1,5 @@
 import { type App, Modal } from "obsidian";
 import { describeHistoryFile, formatHistoryTime, historyForPath, type SyncHistoryRun } from "./syncHistory";
-import type { SyncActivityEntry } from "./syncUx";
 
 /** Everything this device recorded about one path: transfers and conflict decisions. */
 export class NoteSyncHistoryModal extends Modal {
@@ -8,7 +7,6 @@ export class NoteSyncHistoryModal extends Modal {
     app: App,
     private readonly path: string,
     private readonly runs: readonly SyncHistoryRun[],
-    private readonly activity: readonly SyncActivityEntry[],
   ) {
     super(app);
   }
@@ -16,16 +14,11 @@ export class NoteSyncHistoryModal extends Modal {
   onOpen(): void {
     this.titleEl.setText(`Sync history · ${this.path.split("/").pop() ?? this.path}`);
     this.contentEl.addClass("mdbase-note-history");
-    const rows = [
-      ...historyForPath(this.runs, this.path).map(({ file }) => ({
-        at: file.at,
-        label: describeHistoryFile(file),
-        detail: file.fromPath ? `From ${file.fromPath}` : file.message,
-      })),
-      ...this.activity
-        .filter((entry) => entry.path === this.path)
-        .map((entry) => ({ at: entry.occurredAt, label: entry.summary, detail: undefined })),
-    ].sort((a, b) => b.at.localeCompare(a.at));
+    const rows = historyForPath(this.runs, this.path).map(({ run, file }) => ({
+      at: file.at,
+      label: run.summary ?? describeHistoryFile(file),
+      detail: run.summary === undefined && file.fromPath ? `From ${file.fromPath}` : file.message,
+    }));
     if (!rows.length) {
       this.contentEl.createEl("p", { cls: "mdbase-muted", text: "No syncs of this note are recorded on this device." });
       return;
