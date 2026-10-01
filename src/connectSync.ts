@@ -2017,32 +2017,55 @@ export class ConnectSyncController {
 
   private async writeConflictCopy(pathInput: string, document: string, label: string): Promise<string> {
     const path = safeMirrorPath(this.app.vault, pathInput);
-    const target = await this.conflictCopyPath(path, label);
-    await this.app.vault.create(target, document);
-    return target;
+    return this.createConflictCopy(path, new TextEncoder().encode(document).buffer, label);
   }
 
-  private async conflictCopyPath(path: string, label: string): Promise<string> {
+  private async createConflictCopy(path: string, document: ArrayBuffer, label: string): Promise<string> {
     const slash = path.lastIndexOf("/");
     const dot = path.lastIndexOf(".");
     const extension = dot > slash ? path.slice(dot) : "";
-    const base = extension ? path.slice(0, -extension.length) : path;
-    let target = `${base} (${label})${extension}`;
-    let suffix = 2;
-    while (this.app.vault.getAbstractFileByPath(target) || await this.app.vault.adapter.exists(target)) {
-      target = `${base} (${label} ${suffix})${extension}`;
-      suffix += 1;
+    const stem = extension ? path.slice(0, -extension.length) : path;
+    // A copy can itself conflict on another device. Keep the sibling names
+    // flat rather than producing copies of copies of copies.
+    const base = stem.replace(/(?: \((?:local|hosted) conflict copy(?: \d+)?\))+$/, "");
+    const bytes = new Uint8Array(document);
+    let suffix = 1;
+    while (true) {
+      const target = `${base} (${label}${suffix === 1 ? "" : ` ${suffix}`})${extension}`;
+      if (target === path) {
+        suffix += 1;
+        continue;
+      }
+      if (this.app.vault.getAbstractFileByPath(target) || await this.app.vault.adapter.exists(target)) {
+        // A stale decision may be retried after its copy was already saved.
+        // Reuse only byte-identical copies; never modify an older recovery file.
+        try {
+          const existing = new Uint8Array(await this.app.vault.adapter.readBinary(target));
+          if (existing.length === bytes.length && existing.every((byte, index) => byte === bytes[index])) return target;
+        } catch {
+          // Folders and unreadable copies still reserve their name.
+        }
+        suffix += 1;
+        continue;
+      }
+      try {
+        // Unlike adapter.copy, Vault.createBinary refuses an occupied target,
+        // including one that appears after the name check. Preserve exact bytes.
+        await this.app.vault.createBinary(target, document);
+        return target;
+      } catch (error) {
+        if (!await this.app.vault.adapter.exists(target)) throw error;
+        // A concurrent creator won this name. Inspect it before choosing again.
+      }
     }
-    return target;
   }
 
   async preserveConflictCopy(pathInput: string): Promise<string> {
     const path = safeMirrorPath(this.app.vault, pathInput);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (!(existing instanceof TFile)) throw new SyncError("mirror_conflict_copy_missing", `No local file exists at ${path}.`);
-    const target = await this.conflictCopyPath(path, "local conflict copy");
-    await this.app.vault.adapter.copy(path, target);
-    return target;
+    const document = await this.app.vault.adapter.readBinary(path);
+    return this.createConflictCopy(path, document, "local conflict copy");
   }
 
   async disconnect(removeSyncedFiles: boolean): Promise<DisconnectMirrorResult> {
