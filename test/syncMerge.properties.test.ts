@@ -62,6 +62,36 @@ for (const seed of [1, 0xC0FFEE, 0xDEADBEEF]) {
   });
 }
 
+test("seeded insert/delete/replace mutations preserve the exact union of disjoint edits", () => {
+  const next = random(0x51A7E);
+  for (let iteration = 0; iteration < 400; iteration++) {
+    const fields = Array.from({ length: 10 }, (_, index) => field(`field${index}`, `base-${index}`, Math.floor(next() * 6)));
+    const body = Array.from({ length: 16 }, (_, index) => `line-${index}-α🥒`);
+    const mutate = (lines: string[], slot: number, actor: string, yaml: boolean) => {
+      const mode = Math.floor(next() * 3);
+      const change = yaml ? field(`field${slot}`, `${actor}-${iteration}`, Math.floor(next() * 6)) : `${actor}-${iteration}-🌈`;
+      const extra = yaml ? field(`added_${actor}`, `${actor}-${iteration}`, Math.floor(next() * 6)) : `${actor}-${iteration}-inserted`;
+      return lines.map((line, index) => index === slot ? mode === 0 ? [change] : mode === 1 ? [] : [line, extra] : [line]);
+    };
+    const localFields = mutate(fields, 2, "local", true);
+    const remoteFields = mutate(fields, 7, "hosted", true);
+    const localBody = mutate(body, 2, "local", false);
+    const remoteBody = mutate(body, 12, "hosted", false);
+    const eol = next() < 0.5 ? "\n" : "\r\n";
+    const bom = next() < 0.5 ? "" : "\uFEFF";
+    const trailing = next() < 0.5 ? "" : "\n";
+    const render = (f: string[][], b: string[][]) => `${bom}---\n# header\n${f.flat().join("\n")}\n---\n${b.flat().join("\n")}${trailing}`.split("\n").join(eol);
+    const base = render(fields.map((line) => [line]), body.map((line) => [line]));
+    const local = render(localFields, body.map((line) => [line]));
+    const remote = render(remoteFields, body.map((line) => [line]));
+    const expected = render(localFields.map((lines, index) => index === 7 ? remoteFields[index]! : lines), localBody.map((lines, index) => index === 12 ? remoteBody[index]! : lines));
+    // Both devices also mutate well-separated body slots.
+    const l = local.replace(body.join(eol), localBody.flat().join(eol));
+    const r = remote.replace(body.join(eol), remoteBody.flat().join(eol));
+    assert.deepEqual(merge(base, l, r), { clean: true, text: expected }, `iteration ${iteration}`);
+  }
+});
+
 test("overlapping generated fields keep both, including block scalars and nested maps", () => {
   for (let style = 0; style < 6; style++) {
     const render = (value: string) => `---\n${field("value", value, style)}\n---\nBody`;
@@ -89,13 +119,13 @@ test("added or removed frontmatter with another body edit keeps both", () => {
 });
 
 // Isolate performance cases so a regression cannot hang the entire test runner.
-async function largeMerge(scenario: string): Promise<void> {
+async function largeMerge(scenario: string, mustMerge = false): Promise<void> {
   const moduleUrl = new URL("../src/syncMerge.js", import.meta.url).href;
   const worker = new Worker(`
     const { parentPort } = require("node:worker_threads");
     import(${JSON.stringify(moduleUrl)}).then(({ mergeDocuments }) => {
       const body = "a\\n".repeat(512 * 1024);
-      const base = "---\\nstatus: open\\n---\\n" + body;
+      let base = "---\\nstatus: open\\n---\\n" + body;
       ${scenario}
       parentPort.postMessage(mergeDocuments(base, local, remote, () => true));
     });
@@ -107,6 +137,7 @@ async function largeMerge(scenario: string): Promise<void> {
       worker.once("message", (result: { clean: boolean; text?: string }) => {
         clearTimeout(timer);
         try {
+          if (mustMerge) assert.equal(result.clean, true, "unchanged bulk must not prevent a small clean merge");
           // Keeping both is acceptable for pathological diffs; a clean merge
           // must retain both edits, not return a partial result.
           if (result.clean) {
@@ -125,6 +156,12 @@ async function largeMerge(scenario: string): Promise<void> {
 test("1 MB repeated-line body with independent frontmatter edit stays responsive", async () => {
   await largeMerge(`const local = base.replace("status: open", "status: local edit");
     const remote = base + "hosted edit\\n";`);
+});
+
+test("1 MB unchanged prefix does not force conflict copies for small disjoint edits", async () => {
+  await largeMerge(`base += "alpha\\n\\nbeta\\n\\ngamma\\n";
+    const local = base.replace("alpha", "local edit");
+    const remote = base.replace("gamma", "hosted edit");`, true);
 });
 
 test("1 MB repeated-line body edited on both sides stays responsive", async () => {

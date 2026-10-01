@@ -1976,7 +1976,15 @@ export class ConnectSyncController {
    * conflict that changes again while this runs is left for the next sync.
    */
   async autoResolveConflicts(): Promise<AutoResolution[]> {
-    const status = await this.status();
+    // The decision, copy and merged write form one controller operation. Sync
+    // must not run between clearing a conflict and installing its merged text.
+    return this.withMirrorOperation(() => this.autoResolveConflictsActive());
+  }
+
+  private async autoResolveConflictsActive(): Promise<AutoResolution[]> {
+    if (!this.settingsHost.getMirrorProfile()) return [];
+    const mirror = await this.createMirror();
+    const status = await mirror.status();
     if (!status?.conflicts.length || status.recovery_required) return [];
     const profile = this.requireProfile();
     const state = await this.stateStoreFor(profile).read();
@@ -1990,7 +1998,7 @@ export class ConnectSyncController {
       const planned = state.planned_conflicts?.[conflict.object_id];
       if (!planned) continue;
       try {
-        resolutions.push(await this.autoResolve(conflict, planned, remoteRecords.get(conflict.object_id)));
+        resolutions.push(await this.autoResolve(mirror, conflict, planned, remoteRecords.get(conflict.object_id)));
       } catch (error) {
         if (error instanceof SyncError && ["conflict_decision_stale", "sync_plan_stale"].includes(error.code)) continue;
         resolutions.push({
@@ -2004,6 +2012,7 @@ export class ConnectSyncController {
   }
 
   private async autoResolve(
+    mirror: DirectoryMirror<JsonObject>,
     conflict: MirrorStatus["conflicts"][number],
     planned: NonNullable<MirrorState["planned_conflicts"]>[string],
     remote: RemoteRecord | undefined,
@@ -2016,11 +2025,11 @@ export class ConnectSyncController {
     // it under another name would only be refused again; a person must decide.
     if (planned.conflict_kind === "rejected") return { path, outcome: "unresolved", reason: conflict.message };
     if (localPath === null) {
-      await this.resolveConflict(id, decision, "remote");
+      await mirror.resolveConflict(id, decision, "remote");
       return { path, outcome: remotePath ? "restored" : "took_hosted" };
     }
     if (remotePath === null) {
-      await this.resolveConflict(id, decision, "local");
+      await mirror.resolveConflict(id, decision, "local");
       return { path, outcome: "kept_local" };
     }
     if (
@@ -2038,21 +2047,16 @@ export class ConnectSyncController {
       if (base !== undefined && local !== null) {
         const merged = mergeDocuments(base, local, remote.document, validYamlMapping);
         if (merged.clean) {
-          await this.resolveConflict(id, decision, "local");
-          try {
-            await this.fileSystem.write(localPath, merged.text, local);
-          } catch (error) {
-            // The note changed between the check and the write. Keep the hosted
-            // text beside it so the merge's other half is never lost.
-            const copy = await this.writeConflictCopy(localPath, remote.document, "hosted conflict copy");
-            return { path, outcome: "kept_both", copyPath: copy, reason: error instanceof Error ? error.message : String(error) };
-          }
+          // The SDK writes conditionally before clearing its durable decision;
+          // interrupted/failed merges remain conflicts instead of authorizing
+          // an unmerged local upload over the hosted half on the next run.
+          await mirror.resolveConflict(id, decision, "local", merged.text);
           return { path, outcome: "merged" };
         }
       }
     }
     const copyPath = await this.preserveConflictCopy(localPath);
-    await this.resolveConflict(id, decision, "remote");
+    await mirror.resolveConflict(id, decision, "remote");
     return { path, outcome: "kept_both", copyPath };
   }
 
@@ -2072,11 +2076,6 @@ export class ConnectSyncController {
       page = found.size === ids.size ? undefined : snapshot.next_page;
     } while (page);
     return found;
-  }
-
-  private async writeConflictCopy(pathInput: string, document: string, label: string): Promise<string> {
-    const path = safeMirrorPath(this.app.vault, pathInput);
-    return this.createConflictCopy(path, new TextEncoder().encode(document).buffer, label);
   }
 
   private async createConflictCopy(path: string, document: ArrayBuffer, label: string): Promise<string> {
