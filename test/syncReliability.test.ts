@@ -282,6 +282,25 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   assert.equal(controller.isEngineWrite("notes/other.md"), false);
 });
 
+test("text downloads cannot follow a TFile renamed while Vault.process is queued", async () => {
+  const vault = new MemoryVault();
+  const file = await vault.create("note.md", "base\n");
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  const process = vault.process.bind(vault);
+  vault.process = async (target, transform) => {
+    // Real Obsidian renames the TFile object in place, unlike MemoryVault.rename.
+    const entry = vault.files.get(target.path)!;
+    vault.files.delete(target.path);
+    target.path = "moved.md";
+    vault.files.set(target.path, entry);
+    return process(target, transform);
+  };
+  await assert.rejects(fs.write("note.md", "hosted update\n", "base\n"), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.equal(file.path, "moved.md");
+  assert.equal(vault.read("moved.md"), "base\n", "the engine must not write through the moved object");
+});
+
 test("binary edits made while a download stream is consumed are not overwritten", async () => {
   const vault = new MemoryVault();
   const original = new Uint8Array([1, 2, 3]).buffer;

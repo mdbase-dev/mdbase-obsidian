@@ -976,6 +976,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     } else if (existing instanceof TFile) {
       await this.vault.process(existing, (current) => {
         this.assertActive();
+        if (existing.path !== path || this.vault.getAbstractFileByPath(path) !== existing) throw stale();
         if (current !== before && current !== value) throw stale();
         return value;
       });
