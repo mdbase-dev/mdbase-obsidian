@@ -36,7 +36,7 @@ import {
 import type { StoredTypeDraft, TypeEditorModel } from "./src/typeEditorTypes";
 import {
   ConnectSyncController,
-  normalizeSelectiveSync,
+  normalizeMirrorProfile,
   type MirrorProfile,
 } from "./src/connectSync";
 import {
@@ -92,24 +92,6 @@ const DEFAULT_SETTINGS: MdbasePluginSettings = {
 
 /** Vault-scoped device storage key; Obsidian keeps it out of the vault and out of plugin data. */
 const DEVICE_ID_KEY = "mdbase-sync-device-id";
-
-function isMirrorProfile(value: unknown): value is MirrorProfile {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const profile = value as Partial<MirrorProfile>;
-  return profile.version === 1
-    && typeof profile.syncUrl === "string"
-    && typeof profile.controlUrl === "string"
-    && typeof profile.collectionId === "string"
-    && typeof profile.replicaId === "string"
-    && (profile.mode === "read_only" || profile.mode === "read_write")
-    && typeof profile.name === "string"
-    && typeof profile.enrollmentId === "string"
-    && typeof profile.accessTokenExpiresAt === "string"
-    && (profile.selectiveSync === undefined || (
-      Array.isArray(profile.selectiveSync.file_classes)
-      && Array.isArray(profile.selectiveSync.excluded_folders)
-    ));
-}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -356,16 +338,7 @@ export default class MdbasePlugin extends Plugin {
       this.settings.autoSync = true;
       this.settings.syncSettingsVersion = 2;
     }
-    if (!isMirrorProfile(this.settings.mirrorProfile)) {
-      this.settings.mirrorProfile = null;
-    } else {
-      try {
-        this.settings.mirrorProfile.selectiveSync = normalizeSelectiveSync(this.settings.mirrorProfile.selectiveSync);
-      } catch {
-        // Fail closed for corrupted legacy data without discarding enrollment.
-        this.settings.mirrorProfile.selectiveSync = normalizeSelectiveSync();
-      }
-    }
+    this.settings.mirrorProfile = normalizeMirrorProfile(this.settings.mirrorProfile);
     if (!this.settings.typeDrafts || typeof this.settings.typeDrafts !== "object" || Array.isArray(this.settings.typeDrafts)) {
       this.settings.typeDrafts = {};
     }

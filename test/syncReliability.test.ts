@@ -10,7 +10,7 @@ import {
   WritableDirectoryMirror,
 } from "@mdbase-dev/connect-sync/mirror";
 import type { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
-import { ConnectSyncController, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
+import { ConnectSyncController, normalizeMirrorProfile, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
 import { SyncSession } from "../src/syncSession";
 
@@ -399,6 +399,18 @@ test("a vault copied to another device or folder refuses to sync until it is set
   assert.deepEqual(await original.state.read(), before, "the original's checkpoint survives the copy disconnecting");
   assert.ok(original.secrets.listSecrets().some((secretId) => original.secrets.getSecret(secretId) === "refresh"));
   assert.equal((await original.syncOnce()).status, "applied");
+});
+
+test("malformed stored selective-sync policies fail closed without losing the enrollment", async () => {
+  const hosted = new MemoryAuthority();
+  const id = await collectionId(hosted);
+  const here = await device(hosted, id);
+  for (const policy of [null, false, "bad", [], {}, { file_classes: "image", excluded_folders: [] }, { file_classes: [], excluded_folders: null }]) {
+    const normalized = normalizeMirrorProfile({ ...here.profile(), selectiveSync: policy });
+    assert.equal(normalized?.replicaId, here.replicaId, `policy ${JSON.stringify(policy)} retains credentials' identity`);
+    assert.deepEqual(normalized?.selectiveSync, { file_classes: [], excluded_folders: [] });
+  }
+  for (const input of [null, [], "bad", { ...here.profile(), collectionId: 12 }]) assert.equal(normalizeMirrorProfile(input), null);
 });
 
 test("profiles from before device ownership are claimed by the first device to open them", async () => {

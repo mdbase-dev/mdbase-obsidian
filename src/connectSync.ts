@@ -111,6 +111,29 @@ export interface MirrorProfile {
   deviceId?: string;
 }
 
+/** Validate stored connection identity, then fail closed on a corrupt sync policy. */
+export function normalizeMirrorProfile(value: unknown): MirrorProfile | null {
+  if (!isRecord(value)) return null;
+  const profile = value as unknown as MirrorProfile;
+  if (!(profile.version === 1
+    && typeof profile.syncUrl === "string"
+    && typeof profile.controlUrl === "string"
+    && typeof profile.collectionId === "string"
+    && typeof profile.replicaId === "string"
+    && (profile.mode === "read_only" || profile.mode === "read_write")
+    && typeof profile.name === "string"
+    && typeof profile.enrollmentId === "string"
+    && typeof profile.accessTokenExpiresAt === "string"
+    && (profile.deviceId === undefined || typeof profile.deviceId === "string"))) return null;
+  let selectiveSync: SelectiveSyncPolicy;
+  try {
+    selectiveSync = normalizeSelectiveSync(profile.selectiveSync);
+  } catch {
+    selectiveSync = normalizeSelectiveSync();
+  }
+  return { ...profile, selectiveSync };
+}
+
 export interface EnrollMirrorInput {
   controlUrl: string;
   mirrorName: string;
