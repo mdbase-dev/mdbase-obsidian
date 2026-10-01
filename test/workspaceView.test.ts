@@ -453,6 +453,7 @@ test("background sync badge updates preserve keyboard focus on the destination t
   f.state.destination = "issues";
   Object.assign(f.host, { loadWorkspaceSchema: async () => null });
   await f.view.onOpen();
+  await f.view.setState({ destination: "issues" }, {} as never);
   const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-issues']")!;
   tab.focus();
   f.host.sync.update({ status: { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] } as never });
