@@ -176,6 +176,46 @@ test("restart at the merged-write boundary cannot upload unmerged local over hos
   assert.equal(recoveredVault.read("plan.md"), local);
 });
 
+test("failed checkpoint after a merged write retains both edits through retry", async () => {
+  const base = "---\nstatus: open\npriority: low\n---\nBody\n";
+  const here = await pair(base);
+  await here.conflict(base.replace("status: open", "status: done"), base.replace("priority: low", "priority: high"));
+  const write = here.state.write.bind(here.state);
+  let failed = false;
+  here.state.write = async (next) => {
+    if (!failed && !next.planned_conflicts?.plan) {
+      failed = true;
+      throw new Error("checkpoint unavailable after merged file write");
+    }
+    await write(next);
+  };
+  const [result] = await here.controller.autoResolveConflicts();
+  assert.equal(result?.outcome, "unresolved");
+  assert.ok((await here.state.read())?.planned_conflicts?.plan);
+  assert.match(here.vault.read("plan.md")!, /status: done[\s\S]*priority: high/);
+  await here.sync();
+  await here.controller.autoResolveConflicts();
+  await here.sync();
+  await here.remoteMirror.sync();
+  assert.equal((await here.controller.status())?.conflicts.length, 0);
+  assert.match(here.remoteVault.read("plan.md")!, /status: done[\s\S]*priority: high/);
+  assert.deepEqual(copies(here.vault), []);
+});
+
+test("SDK refuses a merged document supplied to hosted-side resolution", async () => {
+  const here = await pair();
+  await here.conflict();
+  const state = (await here.state.read())!;
+  const mirror = new WritableDirectoryMirror(state.replica_id, here.hosted.transport(state.replica_id), {
+    fileSystem: new ObsidianMirrorFileSystem(here.vault as never), stateStore: here.state,
+    blobStore: new MemoryMirrorBlobStore(), selectiveSync: { file_classes: ["image"], excluded_folders: [] },
+  });
+  await assert.rejects(mirror.resolveConflict("plan", state.planned_conflicts!.plan!.decision_id!, "remote", "invalid merged text"),
+    (error: unknown) => (error as { code?: string }).code === "invalid_conflict_resolution");
+  assert.equal(here.vault.read("plan.md"), "local line\n");
+  assert.ok((await here.state.read())?.planned_conflicts?.plan);
+});
+
 test("failed merged write keeps the conflict durable without requiring a recovery-copy write", async () => {
   const base = "---\nstatus: open\npriority: low\n---\nBody\n";
   const here = await pair(base);
