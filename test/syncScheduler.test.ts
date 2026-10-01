@@ -8,11 +8,12 @@ import { NetworkError } from "../src/syncHttp";
 /** A clock whose timers fire only when the test advances time. */
 class FakeClock implements SchedulerClock {
   time = 0;
+  wallOffset = 0;
   private nextId = 1;
   private readonly timers = new Map<number, { at: number; callback: () => void }>();
 
   now(): number {
-    return this.time;
+    return this.time + this.wallOffset;
   }
 
   setTimeout(callback: () => void, ms: number): number {
@@ -155,6 +156,29 @@ test("offline backoff is not shortened by the ordinary probe timer", async () =>
     assert.equal(h.calls.autoSync, before + 1);
   }
   assert.equal(h.retryAt()! - h.clock.now(), SYNC_TIMING.retryMaxMs);
+});
+
+test("a backwards wall clock cannot extend the continuous-edit maximum wait", async () => {
+  const h = harness();
+  h.scheduler.start();
+  await h.clock.advance(0);
+  h.scheduler.noteLocalChange();
+  await h.clock.advance(1_000);
+  h.clock.wallOffset -= 60 * 60_000;
+  for (let i = 0; i < 21; i++) {
+    h.scheduler.noteLocalChange();
+    await h.clock.advance(1_000);
+  }
+  assert.ok(h.calls.autoSync >= 2, "sync must not wait an hour for the old edit timestamp to catch up");
+});
+
+test("a backwards wall clock cannot postpone the safety net until it catches up", async () => {
+  const h = harness();
+  h.scheduler.start();
+  await h.clock.advance(0);
+  h.clock.wallOffset -= 60 * 60_000;
+  await h.clock.advance(SYNC_TIMING.probeVisibleMs);
+  assert.equal(h.calls.autoSync, 2, "a backwards timestamp needs a new baseline, not a suppressed safety net");
 });
 
 test("an unreachable probe counts as offline and is retried with backoff", async () => {
