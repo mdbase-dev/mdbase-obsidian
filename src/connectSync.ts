@@ -1285,7 +1285,15 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
         if (!request.result.objectStoreNames.contains(BLOB_CHUNK_STORE)) request.result.createObjectStore(BLOB_CHUNK_STORE);
       };
       request.onerror = () => reject(indexedDbError(request.error, "binary store open"));
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const database = request.result;
+        const forget = () => { if (this.database === opening) this.database = null; };
+        // WebKit can close a connection while the app is suspended. Do not
+        // cache the dead handle forever; the scheduler's next retry reopens it.
+        database.onclose = forget;
+        database.onversionchange = () => { database.close(); forget(); };
+        resolve(database);
+      };
     });
     this.database = opening;
     void opening.catch(() => {
@@ -1349,7 +1357,13 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
         }
       };
       request.onerror = () => reject(indexedDbError(request.error, "mirror state store open"));
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const database = request.result;
+        const forget = () => { if (this.database === opening) this.database = null; };
+        database.onclose = forget;
+        database.onversionchange = () => { database.close(); forget(); };
+        resolve(database);
+      };
     });
     this.database = opening;
     void opening.catch(() => {

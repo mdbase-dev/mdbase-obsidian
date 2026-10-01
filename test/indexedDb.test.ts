@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { forceCloseDatabase } from "fake-indexeddb";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { IndexedDbMirrorBlobStore, IndexedDbMirrorStateStore } from "../src/connectSync";
@@ -48,6 +49,37 @@ test("a transient IndexedDB open failure does not poison either adapter forever"
       adapter.store.close();
     }
   }
+});
+
+test("a connection closed while the app was suspended is reopened without losing checkpoints or blobs", async () => {
+  const key = crypto.randomUUID();
+  const stateStore = new IndexedDbMirrorStateStore(key);
+  const blobStore = new IndexedDbMirrorBlobStore(key);
+  const state = { replica_id: key, generation: 7 } as MirrorState;
+  const connections = new Set<IDBDatabase>();
+  const transaction = IDBDatabase.prototype.transaction;
+  IDBDatabase.prototype.transaction = function (...args: Parameters<typeof transaction>) {
+    connections.add(this);
+    return transaction.apply(this, args);
+  };
+  try {
+    await stateStore.write(state);
+    await blobStore.write(digest, bytes());
+  } finally {
+    IDBDatabase.prototype.transaction = transaction;
+  }
+  // fake-indexeddb's declaration incorrectly names the constructor type here;
+  // the implementation accepts the live database instance.
+  await Promise.all([...connections].map((database) => new Promise<void>((resolve) => {
+    database.addEventListener("close", () => resolve(), { once: true });
+    forceCloseDatabase(database as unknown as Parameters<typeof forceCloseDatabase>[0]);
+  })));
+  assert.deepEqual(await stateStore.read(), state);
+  const result: number[] = [];
+  for await (const chunk of blobStore.read(digest)) result.push(...chunk);
+  assert.deepEqual(result, [0, 1, 255]);
+  stateStore.close();
+  blobStore.close();
 });
 
 test("old binary-stage cleanup failure cannot corrupt a published replacement", async () => {
