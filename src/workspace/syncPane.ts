@@ -121,7 +121,8 @@ export class SyncPane {
       action: "resume",
       actionLabel: "Resume recovery",
     } : null);
-    const label = syncing ? "Syncing" : state.busy ? "Checking…"
+    const authorizing = Boolean(this.enrollmentAbort);
+    const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? "Checking…"
       : recoveryProblem?.kind === "paused" ? "Paused"
       : recoveryProblem?.kind === "offline" ? "Offline"
       : recoveryProblem?.kind === "auth" ? "Approval needed"
@@ -178,7 +179,8 @@ export class SyncPane {
       });
     }
 
-    if (recoveryProblem) this.renderRecoveryCard(status, recoveryProblem);
+    if (authorizing) this.renderApproval(status, false);
+    else if (recoveryProblem) this.renderRecoveryCard(status, recoveryProblem);
 
     const busy = this.ctx.busy || state.busy || syncing;
     const preview = state.preview;
@@ -190,7 +192,7 @@ export class SyncPane {
     }
     const safety = this.session.safety();
     const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
-    if (!syncing && !recoveryProblem) {
+    if (!syncing && !recoveryProblem && !authorizing) {
       const actions = status.createDiv({ cls: "mdbase-sync-actions" });
       if (reviewing && preview) {
         // The plan needs consent: apply exactly what is listed below.
@@ -263,30 +265,55 @@ export class SyncPane {
     }
   }
 
+  /** The same approval wait, whether enrolling or restoring an existing connection. */
+  private renderApproval(container: HTMLElement, showStatus = true): void {
+    const approval = container.createDiv({ cls: "mdbase-approval-link" });
+    if (showStatus) approval.createSpan({ text: this.enrollmentVerification ? "Waiting for approval · " : "Connecting… " }).setAttr("role", "status");
+    if (this.enrollmentVerification) {
+      const link = approval.createEl("a", { text: "Open Connect", href: this.enrollmentVerification });
+      link.setAttr("target", "_blank");
+      link.setAttr("rel", "noopener noreferrer");
+      link.setAttr("data-focus-key", "approval-link");
+    }
+    const stop = approval.createEl("button", { text: "Stop waiting" });
+    stop.setAttr("data-focus-key", "stop-approval");
+    stop.onclick = () => {
+      this.enrollmentAbort?.abort();
+      this.enrollmentVerification = "";
+      this.ctx.render();
+    };
+  }
+
   private async reauthorizeCollection(): Promise<void> {
     this.enrollmentAbort?.abort();
     const abort = new AbortController();
     this.enrollmentAbort = abort;
+    this.ctx.render();
     try {
       await this.session.reauthorize({
         signal: abort.signal,
         onVerification: (verification) => {
           this.enrollmentVerification = verification.verificationUri;
-          this.ctx.message = "Approve this vault again in Connect. Its local files and checkpoint remain unchanged.";
+          this.ctx.message = "";
           window.open(verification.verificationUri, "_blank", "noopener,noreferrer");
           this.ctx.render();
         },
         onStatus: (status) => {
           this.ctx.message = status.state === "waiting_for_approval"
-            ? "Waiting for approval in Connect…"
+            ? ""
             : `Connect is retrying approval (attempt ${status.attempt}).`;
           this.ctx.render();
         },
       });
-      this.enrollmentVerification = "";
       this.ctx.message = "";
+    } catch (error) {
+      if (!isAbortError(error)) throw error;
+      this.ctx.message = "Cancelled. Your files and connection are unchanged.";
     } finally {
-      if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
+      if (this.enrollmentAbort === abort) {
+        this.enrollmentAbort = null;
+        this.enrollmentVerification = "";
+      }
     }
   }
 
@@ -472,19 +499,8 @@ export class SyncPane {
     const section = container.createEl("section", { cls: "mdbase-editor-section mdbase-enrollment" });
     section.createEl("h3", { text: "Copy a collection from Connect" });
     section.createEl("p", { cls: "mdbase-muted", text: "Connect holds the collection; this vault syncs a copy. Choose a collection in Connect, then review the first sync." });
-    if (this.enrollmentVerification) {
-      const approval = section.createDiv({ cls: "mdbase-approval-link" });
-      approval.createSpan({ text: "Waiting for approval · " });
-      const link = approval.createEl("a", {
-        text: "Open Connect",
-        href: this.enrollmentVerification,
-      });
-      link.setAttr("target", "_blank");
-      link.setAttr("rel", "noopener noreferrer");
-    }
-    if (this.enrollmentAbort && this.enrollmentVerification) {
-      const stop = section.createEl("button", { text: "Stop waiting" });
-      stop.onclick = () => this.enrollmentAbort?.abort();
+    if (this.enrollmentAbort) {
+      this.renderApproval(section);
       return;
     }
     inputRow(section, "Device name", this.enrollmentMirrorName, (value) => {
@@ -526,7 +542,7 @@ export class SyncPane {
     }, { placeholder: "Choose during approval" });
     this.renderFilePolicyControls(advanced);
     const enrollmentActions = section.createDiv({ cls: "mdbase-actions mdbase-enrollment-actions" });
-    const button = enrollmentActions.createEl("button", { text: this.enrollmentAbort ? "Waiting for approval…" : "Connect" });
+    const button = enrollmentActions.createEl("button", { text: "Connect" });
     button.setAttr("title", "Opens Connect in your browser to choose a collection");
     button.addClass("mod-cta");
     button.disabled = this.ctx.busy;
@@ -534,6 +550,7 @@ export class SyncPane {
       this.enrollmentAbort?.abort();
       const abort = new AbortController();
       this.enrollmentAbort = abort;
+      this.ctx.render();
       try {
         await this.ctx.host.connectSync.enroll({
           controlUrl: this.enrollmentControlUrl,
@@ -551,7 +568,7 @@ export class SyncPane {
           },
           onStatus: (status) => {
             this.ctx.message = status.state === "waiting_for_approval"
-              ? "Waiting for approval in Connect…"
+              ? ""
               : `Connect is retrying enrollment (attempt ${status.attempt}).`;
             this.ctx.render();
           },
@@ -568,18 +585,12 @@ export class SyncPane {
         this.enrollmentVerification = "";
         this.ctx.message = "Cancelled. No files synced.";
       } finally {
-        if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
+        if (this.enrollmentAbort === abort) {
+          this.enrollmentAbort = null;
+          this.enrollmentVerification = "";
+        }
       }
     });
-    if (this.enrollmentAbort) {
-      const cancel = enrollmentActions.createEl("button", { text: "Stop waiting" });
-      cancel.onclick = () => {
-        this.enrollmentAbort?.abort();
-        this.enrollmentVerification = "";
-        this.ctx.message = "Cancelled. No files synced.";
-        this.ctx.render();
-      };
-    }
   }
 
   private renderLocalAdoption(container: HTMLElement): void {

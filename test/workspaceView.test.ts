@@ -196,6 +196,58 @@ test("enrollment exposes only essential controls but retains the upload warning 
   f.dom.window.close();
 });
 
+test("signing in again exposes approval and cancellation, then clears the used link", async () => {
+  const f = fixture(true);
+  f.dom.window.open = () => null;
+  Object.assign(f.host.connectSync, {
+    reconnect: async () => { throw Object.assign(new Error("Approval needed"), { code: "mirror_credentials_missing" }); },
+    reauthorize: async (callbacks: { signal: AbortSignal; onVerification(value: { verificationUri: string }): void; onStatus(value: { state: string }): void }) => {
+      callbacks.onVerification({ verificationUri: "https://connect.example/approve/temporary" });
+      callbacks.onStatus({ state: "waiting_for_approval" });
+      await new Promise<void>((_resolve, reject) => callbacks.signal.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError"))));
+    },
+  });
+  const pending = f.view.reconnectCollection();
+  await settle();
+  const link = f.root.querySelector<HTMLAnchorElement>(".mdbase-approval-link a");
+  assert.equal(link?.href, "https://connect.example/approve/temporary");
+  assert.equal(link?.rel, "noopener noreferrer");
+  assert.ok(button(f.root, "Stop waiting"));
+  assert.doesNotMatch(f.text(), /Sign in again|Sync now/);
+  button(f.root, "Stop waiting").click();
+  await pending;
+  assert.equal(f.root.querySelector(".mdbase-approval-link"), null);
+  assert.match(f.text(), /Cancelled/);
+  assert.ok(button(f.root, "Sign in again"));
+  f.dom.window.close();
+});
+
+test("enrollment can be cancelled before verification and never retains a failed approval link", async () => {
+  const f = fixture();
+  f.dom.window.open = () => null;
+  let callbacks: { onVerification(value: { verificationUri: string }): void } | null = null;
+  let rejectEnrollment: (error: Error) => void = () => assert.fail("Enrollment not started");
+  Object.assign(f.host.connectSync, {
+    enroll: async (_input: unknown, cb: NonNullable<typeof callbacks>) => {
+      callbacks = cb;
+      await new Promise<void>((_resolve, reject) => { rejectEnrollment = reject; });
+    },
+  });
+  f.state.render();
+  button(f.root, "Connect").click();
+  assert.ok(button(f.root, "Stop waiting"), "initial request can be stopped too");
+  assert.equal(f.root.querySelector("input[data-focus-key='form-device-name']"), null, "no editable setup while waiting");
+  assert.ok(callbacks);
+  (callbacks as { onVerification(value: { verificationUri: string }): void }).onVerification({ verificationUri: "https://connect.example/approve/expired" });
+  assert.ok(f.root.querySelector(".mdbase-approval-link a"));
+  rejectEnrollment(new Error("Approval expired"));
+  await settle();
+  assert.equal(f.root.querySelector(".mdbase-approval-link"), null);
+  assert.equal(button(f.root, "Connect").disabled, false);
+  assert.match(f.text(), /Approval expired/);
+  f.dom.window.close();
+});
+
 test("type editing has one save location, optional sections, and an expandable review", () => {
   const f = fixture();
   f.state.destination = "types";

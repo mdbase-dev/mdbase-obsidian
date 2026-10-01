@@ -1137,8 +1137,17 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-approval-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   padding: 10px 0;
   color: var(--text-muted);
+}
+
+.mdbase-approval-link button {
+  min-height: 44px;
+  margin-left: auto;
 }
 
 .mdbase-sync-document progress {
@@ -1224,7 +1233,8 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-sync-status > .mdbase-sync-progress,
-.mdbase-sync-status > .mdbase-recovery-card {
+.mdbase-sync-status > .mdbase-recovery-card,
+.mdbase-sync-status > .mdbase-approval-link {
   grid-column: 1 / -1;
 }
 
