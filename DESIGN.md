@@ -24,7 +24,7 @@ On mobile, the list and editor become separate navigation states. Controls remai
 ## Information and copy
 
 - Types opens with name, description, and fields. Matching, options, application contracts, and detailed change review expand in place.
-- Sync opens with connection status and one primary action, **Sync now**. It applies routine plans directly and shows the review, with its reasons, only when a plan needs consent. Connection, attachment and disconnect settings live in the plugin settings tab; history is a secondary disclosure. Keep transfer paths, directions, destructive actions, conflicts, and blocking errors visible when relevant.
+- Sync opens with connection status and one primary action, **Sync now**. It applies routine plans directly and shows the review, with its reasons, only when a plan needs consent (a burst of deletions made on this device, a rebuild, or a first sync that changes Connect). Connection, attachment and disconnect settings live in the plugin settings tab; history is a secondary disclosure. Keep transfer paths, directions, destructive actions, conflicts, and blocking errors visible when relevant.
 - Issues has one count and one validation action. Do not show empty filters, repeated summaries, or a second empty-state panel.
 - Prefer labels to explanations. Remove sentences that merely describe the adjacent control or promise implementation details such as checkpoint precision.
 - Keep concise, explicit warnings at upload, authority-transfer, schema-change, and deletion boundaries. Fewer words must not mean less informed consent.
@@ -69,7 +69,9 @@ The Sync destination answers four questions in order:
 3. What happened last time?
 4. What action is available now?
 
-Progress is expressed with concise text and a standard progress indicator. Conflicts appear as a list of paths and reasons with explicit resolution actions. Error messages state what was left unchanged.
+Progress is expressed with concise text and a standard progress indicator. Conflicts are settled automatically: merged, restored, or kept as a `(local conflict copy)` beside the hosted version, each recorded in history. Only conflicts Connect refused, or that changed while being settled, remain as a list of paths with explicit resolution actions. Error messages state what was left unchanged.
+
+Problems read by who must act. Offline is calm (muted card, "Trying again in …", **Retry now**); Connect approval and a copied vault ask for **Sign in again** / **Set up this device**; a paused sync offers **Resume sync**; an unexpected failure offers **Try again** and **Copy diagnostics**. When another sync service (Obsidian Sync, LiveSync, Remotely Save, Git, or a cloud-drive folder) also manages the vault, a one-line warning says so.
 
 The first run asks one question in Types: start a collection here, or copy one from Connect. Enrollment is then an inline setup flow in the Sync destination; a local collection is offered **Upload to Connect** there instead. Enrollment codes and credentials are treated as secrets and disappear from the surface after use.
 

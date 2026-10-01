@@ -2,8 +2,6 @@ import {
   App,
   normalizePath,
   parseYaml,
-  requestUrl,
-  type RequestUrlParam,
   type RequestUrlResponse,
   stringifyYaml,
   TFile,
@@ -82,7 +80,16 @@ import {
   previewFromPlan,
 } from "./syncPreview";
 import type { FileTransferProgress } from "./syncUx";
+import {
+  HttpStatusError,
+  type HttpSend,
+  platformSend,
+  reliableSend,
+  retryAfterMilliseconds,
+  transferTimeoutMs,
+} from "./syncHttp";
 import { ReceiptObservingStateStore, type SyncActionReceipt } from "./syncHistory";
+import { mergeDocuments } from "./syncMerge";
 import { findAdoptionPathConflicts, portablePathKey, proposeAdoptionRenames, type AdoptionRenamePlan } from "./adoptionPaths";
 export { findAdoptionPathConflicts } from "./adoptionPaths";
 
@@ -97,6 +104,11 @@ export interface MirrorProfile {
   enrollmentId: string;
   accessTokenExpiresAt: string;
   selectiveSync?: SelectiveSyncPolicy;
+  /**
+   * The vault-on-this-device that owns this enrollment. Plugin data travels with
+   * the vault when another tool copies or syncs it; this tells the copy apart.
+   */
+  deviceId?: string;
 }
 
 export interface EnrollMirrorInput {
@@ -131,6 +143,34 @@ export interface MirrorConflictComparison {
   remote: MirrorConflictSide;
 }
 
+export interface AutoResolution {
+  path: string;
+  /**
+   * merged: both edits combined. kept_both: this device's version saved as
+   * copyPath, hosted version in place. restored: deleted here, edited
+   * elsewhere, so the edited file came back. kept_local: edited here, deleted
+   * elsewhere, so it was uploaded again. took_hosted: nothing local to keep.
+   */
+  outcome: "merged" | "kept_both" | "restored" | "kept_local" | "took_hosted" | "unresolved";
+  copyPath?: string;
+  reason?: string;
+}
+
+interface RemoteRecord {
+  path: string;
+  revision: string;
+  document: string;
+}
+
+function validYamlMapping(yaml: string): boolean {
+  try {
+    const value: unknown = parseYaml(yaml);
+    return value === null || (typeof value === "object" && !Array.isArray(value));
+  } catch {
+    return false;
+  }
+}
+
 export interface DisconnectMirrorResult {
   removed: string[];
   preserved: string[];
@@ -162,6 +202,8 @@ export interface AdoptLocalCollectionCallbacks {
 export interface ConnectSyncSettingsHost {
   getMirrorProfile(): MirrorProfile | null;
   saveMirrorProfile(profile: MirrorProfile | null): Promise<void>;
+  /** Stable for this vault on this device, and never copied with the vault's files. */
+  deviceId?(): string;
 }
 
 const ROLE_MARKER_PATH = ".mdbase/connect-role.json";
@@ -175,6 +217,8 @@ const BLOB_CHUNK_STORE = "chunks";
 const BLOB_CHUNK_BYTES = 1024 * 1024;
 // Vault APIs materialize whole files. Bound peak allocations on mobile as well as desktop.
 export const MAX_BINARY_FILE_BYTES = 32 * 1024 * 1024;
+/** How long after the mirror writes a path its vault event is still treated as an echo. */
+const ENGINE_WRITE_ECHO_MS = 2_000;
 
 function assertBinarySize(size: number): void {
   if (!Number.isSafeInteger(size) || size < 0 || size > MAX_BINARY_FILE_BYTES) {
@@ -330,107 +374,20 @@ function parseJsonResponse(text: string, parsed: unknown): unknown {
   }
 }
 
-function retryAfterMilliseconds(headers: Record<string, string>): number | undefined {
-  const raw = headers["retry-after"] ?? headers["Retry-After"];
-  if (!raw) return undefined;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
-  const date = Date.parse(raw);
-  if (Number.isFinite(date)) return Math.max(0, date - Date.now());
-  return undefined;
-}
-
-/**
- * Obsidian desktop 1.13.7 can either fail its request bridge with
- * net::ERR_FAILED or attach a browser Origin that correctly invalidates mirror
- * credentials. Electron's main-process network stack is the privileged desktop
- * transport; requestUrl remains the mobile transport and web fetch is its
- * last-resort fallback.
- */
-export async function resilientRequestUrl(
-  request: RequestUrlParam,
-  primary: (request: RequestUrlParam | string) => Promise<RequestUrlResponse> = (input) => requestUrl(input),
-  fallback: typeof window.fetch = (input, init) => window.fetch(input, init),
-  desktop: typeof window.fetch | null = privilegedDesktopFetch(),
-): Promise<RequestUrlResponse> {
-  if (desktop) {
-    try {
-      return await fetchRequestUrl(request, desktop);
-    } catch {
-      // Continue through Obsidian's cross-platform bridge below.
-    }
-  }
-  try {
-    return await primary(request);
-  } catch (primaryError) {
-    try {
-      return await fetchRequestUrl(request, fallback);
-    } catch {
-      throw primaryError;
-    }
-  }
-}
-
-function privilegedDesktopFetch(): typeof window.fetch | null {
-  try {
-    if (typeof require !== "function") return null;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron is desktop-only and a static import breaks Obsidian mobile.
-    const remoteNet = (require("electron") as {
-      remote?: { net?: { fetch?: typeof window.fetch } };
-    }).remote?.net;
-    return remoteNet?.fetch ? remoteNet.fetch.bind(remoteNet) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchRequestUrl(
-  request: RequestUrlParam,
-  send: typeof window.fetch,
-): Promise<RequestUrlResponse> {
-  const headers = new Headers(request.headers);
-  if (request.contentType && !headers.has("content-type")) headers.set("content-type", request.contentType);
-  const response = await send(request.url, {
-    method: request.method,
-    headers,
-    body: request.body,
-  });
-  const arrayBuffer = await response.arrayBuffer();
-  const text = new TextDecoder().decode(arrayBuffer);
-  let json: unknown = null;
-  if (text.trim()) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = null;
-    }
-  }
-  if (request.throw !== false && response.status >= 400) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-  const responseHeaders: Record<string, string> = {};
-  response.headers.forEach((value, name) => {
-    responseHeaders[name] = value;
-  });
-  return {
-    status: response.status,
-    headers: responseHeaders,
-    arrayBuffer,
-    json,
-    text,
-  };
-}
+/** Every Connect request goes through one platform stack with deadlines and transient retries. */
+const connectSend: HttpSend = reliableSend(platformSend());
 
 export function createObsidianEnrollmentRequester(): MirrorEnrollmentRequester {
   return async (request) => {
     if (request.signal?.aborted) throw new DOMException("Enrollment cancelled.", "AbortError");
-    const response = await resilientRequestUrl({
+    const response = await connectSend({
       url: request.url,
       method: request.method,
       headers: request.headers,
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
       contentType: request.body === undefined ? undefined : "application/json",
       throw: false,
+      signal: request.signal,
     });
     if (request.signal?.aborted) throw new DOMException("Enrollment cancelled.", "AbortError");
     return {
@@ -445,13 +402,14 @@ export function createObsidianAdoptionRequester(): AuthorityAdoptionRequester {
   return async (request) => {
     if (request.signal?.aborted) throw new DOMException("Collection adoption cancelled.", "AbortError");
     const body = await adoptionRequestBody(request.body, request.rawBody);
-    const response = await resilientRequestUrl({
+    const response = await connectSend({
       url: request.url,
       method: request.method,
       headers: request.headers,
       body,
       contentType: body === undefined || request.rawBody ? undefined : "application/json",
       throw: false,
+      signal: request.signal,
     });
     if (request.signal?.aborted) throw new DOMException("Collection adoption cancelled.", "AbortError");
     return {
@@ -464,7 +422,17 @@ export function createObsidianAdoptionRequester(): AuthorityAdoptionRequester {
 }
 
 /**
- * Sync transport backed by Obsidian's requestUrl. This keeps the portable SDK
+ * The access token for a transport. `renew` is called once when Connect answers
+ * 401 to a token that looked current (revoked early, or rotated by a renewal
+ * elsewhere); the request is then repeated with the renewed token.
+ */
+export interface TransportCredentials {
+  token(): Promise<string>;
+  renew?(rejected: string): Promise<string>;
+}
+
+/**
+ * Sync transport over the platform network stack. This keeps the portable SDK
  * usable on mobile and avoids browser CORS restrictions without importing the
  * SDK's Node entry point.
  */
@@ -472,13 +440,18 @@ export class ObsidianSyncTransport<Frontmatter extends JsonObject = JsonObject>
 implements SyncTransport<Frontmatter> {
   private readonly syncUrl: string;
   private readonly filesUrl: string;
+  private readonly credentials: TransportCredentials;
 
   constructor(
     syncUrl: string,
-    private readonly accessToken: string,
-    private readonly send: (request: RequestUrlParam) => Promise<RequestUrlResponse> = resilientRequestUrl,
+    credentials: TransportCredentials | string,
+    private readonly send: HttpSend = connectSend,
     private readonly onFileProgress?: (progress: FileTransferProgress) => void,
+    private readonly signal?: AbortSignal,
   ) {
+    this.credentials = typeof credentials === "string"
+      ? { token: () => Promise.resolve(credentials) }
+      : credentials;
     let endpoint: URL;
     try {
       endpoint = new URL(syncUrl);
@@ -550,11 +523,11 @@ implements SyncTransport<Frontmatter> {
       const partCount = Math.ceil(file.size / session.strategy.part_size);
       for (let partIndex = 0; partIndex < partCount; partIndex += 1) {
         const expected = Math.min(session.strategy.part_size, file.size - partIndex * session.strategy.part_size);
-        const response = await this.send({
+        const response = await this.authorized({
           url: `${this.filesUrl}/downloads/${encodeURIComponent(transferId)}/parts/${partIndex}`,
           method: "GET",
-          headers: { authorization: `Bearer ${this.accessToken}` },
           throw: false,
+          timeoutMs: transferTimeoutMs(expected),
         });
         if (response.status < 200 || response.status >= 300) throw this.responseError(response, "file_download_failed");
         const declared = headerValue(response.headers, "content-length");
@@ -640,9 +613,15 @@ implements SyncTransport<Frontmatter> {
         headers: safeObjectHeaders(prepared.headers),
         body: bytes.buffer,
         throw: false,
+        signal: this.signal,
+        timeoutMs: transferTimeoutMs(length),
       });
       if (response.status < 200 || response.status >= 300) {
-        throw new SyncError("file_upload_failed", `Object storage returned HTTP ${response.status}.`);
+        throw new HttpStatusError(
+          response.status === 429 || response.status >= 500 ? "authority_unavailable" : "file_upload_failed",
+          `Object storage returned HTTP ${response.status}.`,
+          response.status,
+        );
       }
       transferredBytes += length;
       this.onFileProgress?.({ direction: "upload", path: request.path, transferredBytes, totalBytes: request.size });
@@ -708,12 +687,9 @@ implements SyncTransport<Frontmatter> {
   }
 
   private async requestAt<Result>(baseUrl: string, method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<Result> {
-    const response = await this.send({
+    const response = await this.authorized({
       url: `${baseUrl}/${path}`,
       method,
-      headers: {
-        authorization: `Bearer ${this.accessToken}`,
-      },
       body: body === undefined ? undefined : JSON.stringify(body),
       contentType: body === undefined ? undefined : "application/json",
       throw: false,
@@ -725,15 +701,39 @@ implements SyncTransport<Frontmatter> {
     return value as Result;
   }
 
+  /** Sends with the current token, renewing once if Connect rejects it. */
+  private async authorized(
+    request: Omit<Parameters<HttpSend>[0], "headers" | "signal">,
+  ): Promise<RequestUrlResponse> {
+    const attempt = (token: string) => this.send({
+      ...request,
+      headers: { authorization: `Bearer ${token}` },
+      signal: this.signal,
+    });
+    const token = await this.credentials.token();
+    const response = await attempt(token);
+    if (response.status !== 401 || !this.credentials.renew) return response;
+    return attempt(await this.credentials.renew(token));
+  }
+
   private responseError(
-    response: { status: number; text: string; json: unknown },
+    response: { status: number; text: string; json: unknown; headers?: Record<string, string> },
     fallbackCode: string,
   ): SyncError {
     const value = parseJsonResponse(response.text, response.json);
     const error = isRecord(value) && isRecord(value.error) ? value.error : {};
-    return new SyncError(
-      typeof error.code === "string" ? error.code : fallbackCode,
+    const code = typeof error.code === "string"
+      ? error.code
+      : response.status === 401
+        ? "mirror_access_rejected"
+        : response.status === 429 || response.status >= 500
+          ? "authority_unavailable"
+          : fallbackCode;
+    return new HttpStatusError(
+      code,
       typeof error.message === "string" ? error.message : `Sync request failed (${response.status}).`,
+      response.status,
+      retryAfterMilliseconds(response.headers),
     );
   }
 }
@@ -901,6 +901,8 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file -- Tests and standalone adapters lack an App; production injects FileManager.trashFile below.
     private readonly trashFile: (file: TFile) => Promise<void> = (file) => vault.delete(file, true),
     private readonly assertActive: () => void = () => undefined,
+    /** Told about every path this adapter is about to change, so the host can tell its own writes from the user's. */
+    private readonly observeWrite: (path: string) => void = () => undefined,
   ) {}
 
   async exists(input: string): Promise<boolean> {
@@ -951,9 +953,15 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
 
   async write(input: string, value: string, expected?: string | null): Promise<void> {
     const path = safeMirrorPath(this.vault, input);
-    // The SDK supplies its inspected bytes. Standalone callers still get a
+    // The SDK supplies its inspected text. Standalone callers still get a
     // conditional write rather than a read/modify race inside this adapter.
-    const before = expected === undefined ? await this.read(path) : expected;
+    // `undefined` after reading means the bytes are not text (a receive-only
+    // repair replacing invalid UTF-8): there is no text to compare against.
+    let before: string | null | undefined = expected;
+    if (before === undefined) {
+      const observed = await this.readText(path);
+      before = typeof observed === "string" || observed === null ? observed : undefined;
+    }
     const stale = () => new SyncError("sync_plan_stale", `${path} changed before it could be written. Review sync again.`);
     const slash = path.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, path.slice(0, slash));
@@ -962,7 +970,10 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     }
     this.assertActive();
-    if (existing instanceof TFile) {
+    this.observeWrite(path);
+    if (existing instanceof TFile && before === undefined) {
+      await this.vault.modify(existing, value);
+    } else if (existing instanceof TFile) {
       await this.vault.process(existing, (current) => {
         this.assertActive();
         if (current !== before && current !== value) throw stale();
@@ -989,6 +1000,8 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const slash = target.lastIndexOf("/");
     if (slash >= 0) await ensureFolder(this.vault, target.slice(0, slash));
     this.assertActive();
+    this.observeWrite(source);
+    this.observeWrite(target);
     await this.vault.rename(file, target);
   }
 
@@ -1000,6 +1013,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       throw new SyncError("mirror_path_collision", `Expected a file at ${path}.`);
     }
     this.assertActive();
+    this.observeWrite(path);
     await this.trashFile(existing);
   }
 
@@ -1031,6 +1045,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing instanceof TFolder) throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     this.assertActive();
+    this.observeWrite(path);
     if (existing instanceof TFile) await this.vault.modifyBinary(existing, bytes);
     else await this.vault.createBinary(path, bytes);
   }
@@ -1395,6 +1410,7 @@ export class ConnectSyncController {
       app.vault,
       (file) => app.fileManager.trashFile(file),
       () => this.assertActive(),
+      (path) => this.noteEngineWrite(path),
     );
     this.enrollmentClient = options.enrollmentClient ?? new MirrorEnrollmentClient({
       request: createObsidianEnrollmentRequester(),
@@ -1647,6 +1663,17 @@ export class ConnectSyncController {
     return this.requireProfile();
   }
 
+  /** The plan and the status it implies, from a single inspection. */
+  async inspect(): Promise<{ preview: MdbaseSyncPreview; status: MirrorStatus }> {
+    return this.withMirrorOperation(async () => {
+      const profile = this.requireProfile();
+      await this.assertMirror(profile.collectionId);
+      const mirror = await this.createMirror();
+      const { plan, status } = await mirror.review();
+      return { preview: previewFromPlan(plan), status };
+    });
+  }
+
   async preview(): Promise<MdbaseSyncPreview> {
     return this.withMirrorOperation(async () => {
       const profile = this.requireProfile();
@@ -1677,25 +1704,40 @@ export class ConnectSyncController {
     });
   }
 
+  /**
+   * Whether Connect has changes past this device's checkpoint. One small page of
+   * the change feed, with no local scan, so it is cheap enough to poll often.
+   * Changes this device uploaded itself also count: the next sync moves the
+   * checkpoint past them.
+   */
+  async remoteChangesWaiting(): Promise<boolean> {
+    const profile = this.requireProfile();
+    const state = await this.stateStoreFor(profile).read();
+    if (!state || state.batch) return true;
+    const transport = await this.transportFor(profile);
+    const page = await transport.changes(state.cursor, 1);
+    return page.reset_required || page.scope_epoch !== state.scope_epoch || page.head > state.cursor;
+  }
+
+  /** The durable mirror checkpoint, for diagnostics. */
+  async checkpointSummary(): Promise<{ cursor: number; generation: number; batch: string | null; failure: string | null } | null> {
+    const profile = this.settingsHost.getMirrorProfile();
+    if (!profile) return null;
+    const state = await this.stateStoreFor(profile).read();
+    if (!state) return null;
+    return {
+      cursor: state.cursor,
+      generation: state.generation ?? 0,
+      batch: state.batch ? `${state.batch.phase} at action ${state.batch.next_action}/${state.batch.plan.actions.length}` : null,
+      failure: state.batch?.failure ? `${state.batch.failure.code}: ${state.batch.failure.message}` : null,
+    };
+  }
+
   async reconnect(): Promise<MirrorStatus> {
     const profile = this.requireProfile();
-    const refreshCredential = this.app.secretStorage.getSecret(this.refreshSecretId(profile.collectionId));
-    if (!refreshCredential) {
-      throw new SyncError("mirror_credentials_missing", "The mirror refresh credential is missing. Approve this vault again.");
-    }
-    const renewed = await this.enrollmentClient.renew({
-      controlUrl: profile.controlUrl,
-      syncUrl: profile.syncUrl,
-      collectionId: profile.collectionId,
-      replicaId: profile.replicaId,
-      mode: profile.mode,
-      name: profile.name,
-      enrollmentId: profile.enrollmentId,
-      accessToken: this.app.secretStorage.getSecret(this.accessSecretId(profile.collectionId)) ?? "",
-      refreshCredential,
-      accessTokenExpiresAt: profile.accessTokenExpiresAt,
-    });
-    await this.persistEnrollment(renewed, profile.selectiveSync);
+    // Renewing with a copied vault's credential would rotate the original vault's token.
+    this.assertThisDevice(profile);
+    await this.renewAccessToken(profile);
     const status = await this.status();
     if (!status) throw new SyncError("mirror_not_configured", "The renewed mirror profile could not be loaded.");
     return status;
@@ -1707,8 +1749,11 @@ export class ConnectSyncController {
 
   private async reauthorizeActive(callbacks: EnrollMirrorCallbacks): Promise<MirrorStatus> {
     const profile = this.requireProfile();
+    // A copy of a vault starts its own replica from scratch: the checkpoint and
+    // credentials on this device belong to the vault it was copied from.
+    const copied = this.isOtherDevice(profile);
     const oldStore = this.stateStoreFor(profile);
-    const oldState = await oldStore.read();
+    const oldState = copied ? null : await oldStore.read();
     if (oldState?.batch) {
       throw new SyncError(
         "mirror_recovery_required",
@@ -1732,8 +1777,9 @@ export class ConnectSyncController {
       });
     }
     await this.persistEnrollment(enrollment, profile.selectiveSync);
-    if (enrollment.replicaId !== profile.replicaId && "clear" in oldStore && typeof oldStore.clear === "function") {
-      await oldStore.clear();
+    if (!copied && enrollment.replicaId !== profile.replicaId) {
+      this.clearCredentials(profile);
+      if ("clear" in oldStore && typeof oldStore.clear === "function") await oldStore.clear();
     }
     const status = await this.status();
     if (!status) throw new SyncError("mirror_not_configured", "The reauthorized mirror profile could not be loaded.");
@@ -1863,18 +1909,138 @@ export class ConnectSyncController {
     return { entity: "record", objectId: recordId, decisionId: "", local, remote };
   }
 
+  /**
+   * Settles every open conflict the way a person almost always would, so sync
+   * never waits on one: edits beat deletions; text edits that touch different
+   * fields or lines are merged; anything else keeps both versions, with this
+   * device's version saved beside the hosted one. Nothing is discarded. A
+   * conflict that changes again while this runs is left for the next sync.
+   */
+  async autoResolveConflicts(): Promise<AutoResolution[]> {
+    const status = await this.status();
+    if (!status?.conflicts.length || status.recovery_required) return [];
+    const profile = this.requireProfile();
+    const state = await this.stateStoreFor(profile).read();
+    if (!state || state.batch) return [];
+    const recordIds = status.conflicts
+      .filter((conflict) => conflict.entity === "record" && state.planned_conflicts?.[conflict.object_id]?.conflict_kind === "both_changed")
+      .map((conflict) => conflict.object_id);
+    const remoteRecords = recordIds.length ? await this.remoteRecords(new Set(recordIds)) : new Map<string, RemoteRecord>();
+    const resolutions: AutoResolution[] = [];
+    for (const conflict of status.conflicts) {
+      const planned = state.planned_conflicts?.[conflict.object_id];
+      if (!planned) continue;
+      try {
+        resolutions.push(await this.autoResolve(conflict, planned, remoteRecords.get(conflict.object_id)));
+      } catch (error) {
+        if (error instanceof SyncError && ["conflict_decision_stale", "sync_plan_stale"].includes(error.code)) continue;
+        resolutions.push({
+          path: conflict.path ?? conflict.object_id,
+          outcome: "unresolved",
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return resolutions;
+  }
+
+  private async autoResolve(
+    conflict: MirrorStatus["conflicts"][number],
+    planned: NonNullable<MirrorState["planned_conflicts"]>[string],
+    remote: RemoteRecord | undefined,
+  ): Promise<AutoResolution> {
+    const { object_id: id, decision_id: decision } = conflict;
+    const localPath = planned.local.state === "exact" ? planned.local.object.path : null;
+    const remotePath = planned.remote.state === "exact" ? planned.remote.object.path : null;
+    const path = conflict.path ?? localPath ?? remotePath ?? id;
+    // Connect refused this change (permissions or collection rules). Retrying
+    // it under another name would only be refused again; a person must decide.
+    if (planned.conflict_kind === "rejected") return { path, outcome: "unresolved", reason: conflict.message };
+    if (localPath === null) {
+      await this.resolveConflict(id, decision, "remote");
+      return { path, outcome: remotePath ? "restored" : "took_hosted" };
+    }
+    if (remotePath === null) {
+      await this.resolveConflict(id, decision, "local");
+      return { path, outcome: "kept_local" };
+    }
+    if (
+      conflict.entity === "record"
+      && planned.conflict_kind === "both_changed"
+      && remote
+      && remote.path === localPath
+      && planned.remote.state === "exact"
+      && remote.revision === planned.remote.object.revision
+    ) {
+      // The engine rebases a recorded conflict onto the hosted version; the
+      // last common version is kept on the conflict itself.
+      const base = planned.ancestor_document;
+      const local = await this.fileSystem.read(localPath);
+      if (base !== undefined && local !== null) {
+        const merged = mergeDocuments(base, local, remote.document, validYamlMapping);
+        if (merged.clean) {
+          await this.resolveConflict(id, decision, "local");
+          try {
+            await this.fileSystem.write(localPath, merged.text, local);
+          } catch (error) {
+            // The note changed between the check and the write. Keep the hosted
+            // text beside it so the merge's other half is never lost.
+            const copy = await this.writeConflictCopy(localPath, remote.document, "hosted conflict copy");
+            return { path, outcome: "kept_both", copyPath: copy, reason: error instanceof Error ? error.message : String(error) };
+          }
+          return { path, outcome: "merged" };
+        }
+      }
+    }
+    const copyPath = await this.preserveConflictCopy(localPath);
+    await this.resolveConflict(id, decision, "remote");
+    return { path, outcome: "kept_both", copyPath };
+  }
+
+  /** Current hosted text for a set of records, from one snapshot pass. */
+  private async remoteRecords(ids: ReadonlySet<string>): Promise<Map<string, RemoteRecord>> {
+    const transport = await this.transportFor(this.requireProfile());
+    const session = await transport.openSession();
+    const found = new Map<string, RemoteRecord>();
+    let page: string | undefined;
+    do {
+      const snapshot = await transport.snapshot(session.snapshot_id, page);
+      for (const record of snapshot.records) {
+        if (ids.has(record.record_id)) {
+          found.set(record.record_id, { path: record.path, revision: record.revision, document: record.document });
+        }
+      }
+      page = found.size === ids.size ? undefined : snapshot.next_page;
+    } while (page);
+    return found;
+  }
+
+  private async writeConflictCopy(pathInput: string, document: string, label: string): Promise<string> {
+    const path = safeMirrorPath(this.app.vault, pathInput);
+    const target = await this.conflictCopyPath(path, label);
+    await this.app.vault.create(target, document);
+    return target;
+  }
+
+  private async conflictCopyPath(path: string, label: string): Promise<string> {
+    const slash = path.lastIndexOf("/");
+    const dot = path.lastIndexOf(".");
+    const extension = dot > slash ? path.slice(dot) : "";
+    const base = extension ? path.slice(0, -extension.length) : path;
+    let target = `${base} (${label})${extension}`;
+    let suffix = 2;
+    while (this.app.vault.getAbstractFileByPath(target) || await this.app.vault.adapter.exists(target)) {
+      target = `${base} (${label} ${suffix})${extension}`;
+      suffix += 1;
+    }
+    return target;
+  }
+
   async preserveConflictCopy(pathInput: string): Promise<string> {
     const path = safeMirrorPath(this.app.vault, pathInput);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (!(existing instanceof TFile)) throw new SyncError("mirror_conflict_copy_missing", `No local file exists at ${path}.`);
-    const extension = existing.extension ? `.${existing.extension}` : "";
-    const base = extension ? path.slice(0, -extension.length) : path;
-    let target = `${base} (local conflict copy)${extension}`;
-    let suffix = 2;
-    while (this.app.vault.getAbstractFileByPath(target) || await this.app.vault.adapter.exists(target)) {
-      target = `${base} (local conflict copy ${suffix})${extension}`;
-      suffix += 1;
-    }
+    const target = await this.conflictCopyPath(path, "local conflict copy");
     await this.app.vault.adapter.copy(path, target);
     return target;
   }
@@ -1901,10 +2067,13 @@ export class ConnectSyncController {
       if (marker) await this.markMirror(profile.collectionId);
       throw error;
     }
-    this.app.secretStorage.setSecret(this.accessSecretId(profile.collectionId), "");
-    this.app.secretStorage.setSecret(this.refreshSecretId(profile.collectionId), "");
-    if ("clear" in stateStore && typeof stateStore.clear === "function") await stateStore.clear();
-    await this.blobStoreFor(profile).prune(new Set());
+    // A copied vault shares IndexedDB and secret storage with the vault it was
+    // copied from; that state belongs to the original and must survive.
+    if (!this.isOtherDevice(profile)) {
+      this.clearCredentials(profile);
+      if ("clear" in stateStore && typeof stateStore.clear === "function") await stateStore.clear();
+      await this.blobStoreFor(profile).prune(new Set());
+    }
     // Destructive file removal starts only after the authority connection is
     // durably gone, so a settings failure can never leave a live mirror with a
     // partially deleted local collection.
@@ -1947,6 +2116,22 @@ export class ConnectSyncController {
 
   cancelSync(): void {
     this.syncAbort?.abort();
+  }
+
+  /** Vault events for these paths come from the mirror itself, not from the user. */
+  private readonly engineWrites = new Map<string, number>();
+
+  private noteEngineWrite(path: string): void {
+    const now = Date.now();
+    for (const [known, at] of this.engineWrites) {
+      if (now - at > ENGINE_WRITE_ECHO_MS) this.engineWrites.delete(known);
+    }
+    this.engineWrites.set(normalizePath(path), now);
+  }
+
+  isEngineWrite(path: string): boolean {
+    const at = this.engineWrites.get(normalizePath(path));
+    return at !== undefined && Date.now() - at <= ENGINE_WRITE_ECHO_MS;
   }
 
   isSyncing(): boolean {
@@ -2397,10 +2582,12 @@ export class ConnectSyncController {
     onFileProgress?: (progress: FileTransferProgress) => void,
   ): Promise<SyncTransport<JsonObject>> {
     this.assertActive();
+    this.assertThisDevice(profile);
+    await this.claimLegacyProfile(profile);
     const accessToken = await this.freshAccessToken(profile);
     this.assertActive();
     const transport = this.options.transportFactory?.(profile, accessToken)
-      ?? new ObsidianSyncTransport(profile.syncUrl, accessToken, resilientRequestUrl, onFileProgress);
+      ?? new ObsidianSyncTransport(profile.syncUrl, this.transportCredentials(profile), connectSend, onFileProgress, signal);
     return abortableSyncTransport(transport, signal);
   }
 
@@ -2435,12 +2622,66 @@ export class ConnectSyncController {
     return profile;
   }
 
-  private accessSecretId(collectionId: string): string {
-    return `${ACCESS_SECRET_PREFIX}${collectionId.toLowerCase()}`;
+  /**
+   * Credentials are keyed by replica: two vaults on one device (a copied vault
+   * set up again) must never overwrite each other's tokens. Replica IDs are
+   * globally unique, and prefix plus UUID stays within Obsidian's 64-character
+   * secret ID limit. Earlier versions keyed them by collection; those are read
+   * once and copied forward.
+   */
+  private secretIds(kind: "access" | "refresh", profile: Pick<MirrorProfile, "collectionId" | "replicaId">): { current: string; legacy: string } {
+    const prefix = kind === "access" ? ACCESS_SECRET_PREFIX : REFRESH_SECRET_PREFIX;
+    return { current: `${prefix}${profile.replicaId.toLowerCase()}`, legacy: `${prefix}${profile.collectionId.toLowerCase()}` };
   }
 
-  private refreshSecretId(collectionId: string): string {
-    return `${REFRESH_SECRET_PREFIX}${collectionId.toLowerCase()}`;
+  private readSecret(kind: "access" | "refresh", profile: Pick<MirrorProfile, "collectionId" | "replicaId">): string | null {
+    const ids = this.secretIds(kind, profile);
+    const current = this.app.secretStorage.getSecret(ids.current);
+    if (current) return current;
+    const legacy = this.app.secretStorage.getSecret(ids.legacy);
+    if (!legacy) return null;
+    try {
+      this.app.secretStorage.setSecret(ids.current, legacy);
+    } catch {
+      // Reading still works from the legacy entry; the copy is retried next time.
+    }
+    return legacy;
+  }
+
+  private clearCredentials(profile: Pick<MirrorProfile, "collectionId" | "replicaId">): void {
+    for (const kind of ["access", "refresh"] as const) {
+      const ids = this.secretIds(kind, profile);
+      const value = this.app.secretStorage.getSecret(ids.current);
+      // The legacy entry is this replica's only when it holds the same credential.
+      if (value && this.app.secretStorage.getSecret(ids.legacy) === value) this.app.secretStorage.setSecret(ids.legacy, "");
+      this.app.secretStorage.setSecret(ids.current, "");
+    }
+  }
+
+  private currentDeviceId(): string | undefined {
+    return this.settingsHost.deviceId?.();
+  }
+
+  /** True when this profile was enrolled by another device or another copy of the vault. */
+  isOtherDevice(profile: MirrorProfile | null = this.settingsHost.getMirrorProfile()): boolean {
+    const device = this.currentDeviceId();
+    return Boolean(profile?.deviceId && device && profile.deviceId !== device);
+  }
+
+  /** Profiles enrolled before device ownership was recorded belong to the first device that opens them. */
+  private async claimLegacyProfile(profile: MirrorProfile): Promise<void> {
+    const device = this.currentDeviceId();
+    if (profile.deviceId || !device) return;
+    await this.settingsHost.saveMirrorProfile({ ...profile, deviceId: device });
+  }
+
+  private assertThisDevice(profile: MirrorProfile): void {
+    if (this.isOtherDevice(profile)) {
+      throw new SyncError(
+        "mirror_other_device",
+        "This vault's sync settings were copied from another device or vault. Set up sync here to give this copy its own connection.",
+      );
+    }
   }
 
   private adoptionSecretId(adoptionId: string): string {
@@ -2460,8 +2701,8 @@ export class ConnectSyncController {
   private async persistEnrollment(enrollment: MirrorEnrollment, selectiveSync?: SelectiveSyncPolicy): Promise<void> {
     this.assertActive();
     try {
-      const accessId = this.accessSecretId(enrollment.collectionId);
-      const refreshId = this.refreshSecretId(enrollment.collectionId);
+      const accessId = this.secretIds("access", enrollment).current;
+      const refreshId = this.secretIds("refresh", enrollment).current;
       this.app.secretStorage.setSecret(accessId, enrollment.accessToken);
       this.app.secretStorage.setSecret(refreshId, enrollment.refreshCredential);
       if (this.app.secretStorage.getSecret(accessId) !== enrollment.accessToken
@@ -2472,6 +2713,7 @@ export class ConnectSyncController {
     await this.settingsHost.saveMirrorProfile(profileFromEnrollment(
       enrollment,
       selectiveSync ?? this.settingsHost.getMirrorProfile()?.selectiveSync,
+      this.currentDeviceId(),
     ));
   }
 
@@ -2521,15 +2763,33 @@ export class ConnectSyncController {
   }
 
   private async freshAccessToken(profile: MirrorProfile): Promise<string> {
-    const accessSecretId = this.accessSecretId(profile.collectionId);
-    const current = this.app.secretStorage.getSecret(accessSecretId);
+    if (this.renewal) return this.renewal;
+    const current = this.readSecret("access", profile);
     const expiresAt = Date.parse(profile.accessTokenExpiresAt);
     if (current && Number.isFinite(expiresAt) && expiresAt - Date.now() > TOKEN_RENEWAL_WINDOW_MS) {
       return current;
     }
-    const refreshCredential = this.app.secretStorage.getSecret(this.refreshSecretId(profile.collectionId));
+    return this.renewAccessToken(profile);
+  }
+
+  private renewal: Promise<string> | null = null;
+
+  /**
+   * Connect replaces the access token on every renewal, so two overlapping
+   * renewals would leave whichever finished first holding a revoked token.
+   * Status checks, syncs and Reconnect all share one renewal in flight.
+   */
+  private renewAccessToken(profile: MirrorProfile): Promise<string> {
+    this.renewal ??= this.renewAccessTokenOnce(profile).finally(() => {
+      this.renewal = null;
+    });
+    return this.renewal;
+  }
+
+  private async renewAccessTokenOnce(profile: MirrorProfile): Promise<string> {
+    const refreshCredential = this.readSecret("refresh", profile);
     if (!refreshCredential) {
-      throw new SyncError("mirror_credentials_missing", "The mirror refresh credential is missing. Re-enroll this vault.");
+      throw new SyncError("mirror_credentials_missing", "The mirror refresh credential is missing. Approve this vault again.");
     }
     const renewed = await this.enrollmentClient.renew({
       controlUrl: profile.controlUrl,
@@ -2539,12 +2799,24 @@ export class ConnectSyncController {
       mode: profile.mode,
       name: profile.name,
       enrollmentId: profile.enrollmentId,
-      accessToken: current ?? "",
+      accessToken: this.readSecret("access", profile) ?? "",
       refreshCredential,
       accessTokenExpiresAt: profile.accessTokenExpiresAt,
     });
     await this.persistEnrollment(renewed, profile.selectiveSync);
     return renewed.accessToken;
+  }
+
+  private transportCredentials(profile: MirrorProfile): TransportCredentials {
+    return {
+      token: () => this.freshAccessToken(this.requireProfile()),
+      renew: async (rejected) => {
+        const stored = this.readSecret("access", profile);
+        // Another operation already renewed; use its token instead of rotating again.
+        if (stored && stored !== rejected) return stored;
+        return this.renewAccessToken(this.requireProfile());
+      },
+    };
   }
 
   private async assertCanBecomeMirror(collectionId?: string): Promise<string | undefined> {
@@ -2872,6 +3144,7 @@ function validSelectiveSync(value: unknown): value is SelectiveSyncPolicy {
 function profileFromEnrollment(
   enrollment: MirrorEnrollment,
   selectiveSync?: SelectiveSyncPolicy,
+  deviceId?: string,
 ): MirrorProfile {
   return {
     version: 1,
@@ -2884,6 +3157,7 @@ function profileFromEnrollment(
     enrollmentId: enrollment.enrollmentId,
     accessTokenExpiresAt: enrollment.accessTokenExpiresAt,
     selectiveSync: normalizeSelectiveSync(selectiveSync),
+    ...(deviceId ? { deviceId } : {}),
   };
 }
 

@@ -9,7 +9,7 @@ The plugin supports two collection roles:
 - A local collection, initialized by writing a canonical mdbase v0.3 `mdbase.yaml`.
 - A hosted mirror, enrolled through mdbase Connect and synchronized into the vault through the portable directory-mirror engine.
 
-The local vault remains useful while offline. Synchronization is observable, resumable, and conservative in the face of conflicts or ambiguous state. Routine changes apply in one step; deletions, conflicts, attachment uploads, first syncs and large transfers always stop for review.
+The local vault remains useful while offline. Synchronization should feel like a mature desktop sync client: it runs by itself shortly after edits and as soon as Connect has changes, rides out network failures with automatic retries, and never loses an edit. Deleted files go to the trash. Conflicting edits are merged when they touch different fields or lines and otherwise kept as two files, so sync never waits on a conflict. Only a burst of deletions made on this device, a rebuild after a scope reset, and a first sync that would change Connect stop for review.
 
 ## Primary users
 
@@ -39,7 +39,10 @@ The local vault remains useful while offline. Synchronization is observable, res
 
 - Enroll using a Connect enrollment code.
 - Store credentials in Obsidian SecretStorage, not plugin data or collection files.
-- Sync routine changes in one step, optionally in the background, and review plans that cross a consent boundary.
+- Sync in the background by default; review only plans that cross a consent boundary.
+- Settle conflicts without losing either side, and say what was done in history.
+- Tell offline (retried automatically), needs-approval, paused and unexpected failures apart, and offer diagnostics for the last.
+- Detect a vault copied from another device or vault, and another sync service working on the same files.
 - Keep record validation separate from exact-document replication; never silently repair records during sync.
 - Show progress, last successful checkpoint, failures, and conflicts in plain language.
 - Refuse unsafe role changes or resource overwrites.
@@ -65,7 +68,7 @@ The local vault remains useful while offline. Synchronization is observable, res
 ## Out of scope
 
 - A general-purpose record editor or database dashboard.
-- Automatic background sync that cannot communicate failures to the user.
+- Automatic background sync that cannot communicate failures to the user. Background sync reports problems in the status bar and Sync destination and backs off rather than failing silently.
 - Simultaneous ownership of the same mirror directory by multiple sync engines.
 - Server administration, collection creation, billing, or access-policy management.
 - Silent or automatic v0.2 migration.

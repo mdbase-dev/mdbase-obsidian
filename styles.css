@@ -1315,6 +1315,26 @@ button.mdbase-yaml-problem:disabled {
   font-size: var(--font-ui-small);
 }
 
+/* Offline and paused clear up on their own or on resume; they are not alarms. */
+.mdbase-recovery-card[data-kind="offline"],
+.mdbase-recovery-card[data-kind="paused"] {
+  border-left-color: var(--text-muted);
+}
+
+.mdbase-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.mdbase-sync-status > .mdbase-sync-coexistence {
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  border-bottom: 0;
+  border-left: 3px solid var(--text-warning);
+}
+
 .mdbase-transfer-review {
   margin: 0 0 16px;
   border-top: 0;

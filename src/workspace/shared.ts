@@ -56,6 +56,9 @@ export interface MdbaseWorkspaceHost {
   readonly sync: SyncSession;
   /** Opens this plugin's settings, where sync and validation options live. */
   openSettings(): void;
+  /** Other tools detected syncing this vault's files. */
+  otherSyncServices(): string[];
+  copySyncDiagnostics(): Promise<void>;
 }
 
 export interface RenderSnapshot {

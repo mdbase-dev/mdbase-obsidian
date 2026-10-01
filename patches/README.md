@@ -11,12 +11,15 @@ fixes below; against unpatched beta.120, five tests in `test/v3-foundations.test
 fail. When upgrading again, run `npm ci --ignore-scripts && npm test` first to
 see which fixes the new release carries.
 
-These fixes belong in the upstream SDK. This patch keeps clean builds reproducible
-without requiring an unpublished package or modifying a separate Connect checkout.
+These fixes belong in the upstream SDK and are proposed there on the
+`feat/sync-just-works` branch of mdbase-connect (the same changes, in source, with
+SDK tests). This patch keeps clean builds reproducible without requiring an
+unpublished package or modifying a separate Connect checkout.
 When a released SDK includes them, upgrade both Connect packages, remove this patch
 and the patch-package tooling, and retain the integration regression tests.
 
-Changes (published distribution files; no protocol or persisted-state format change):
+Changes (published distribution files; no protocol change; the only persisted-state
+addition is the optional `ancestor_document` below):
 
 - `mirror-materializer.js` / `mirror-state.d.ts`: pass the last inspected text to
   `write(path, value, expected)`. Obsidian checks it inside `Vault.process`, rather
@@ -51,7 +54,19 @@ Changes (published distribution files; no protocol or persisted-state format cha
   boundary (earlier effects have receipts) so the next explicit review can show a
   competing edit rather than repeatedly executing the old plan.
 
-Regression coverage is in `test/v3-foundations.test.ts`: the real SDK planner,
+- `mirror-materializer.js`: a receive-only repair over bytes that are not valid
+  UTF-8 reads with `readText` and writes with no text expectation (`undefined`),
+  instead of throwing on the read. The plugin adapter then replaces the bytes.
+- `directory-mirror.js` / `.d.ts`: `review()` returns the plan and its status from
+  one inspection under one lease; `status()` uses it. The plugin used to inspect
+  the vault and authority two or three times per sync.
+- `sync-executor.js` / `mirror-state.js` / `.d.ts`: a recorded record conflict
+  keeps the last common version as optional `ancestor_document` (captured once,
+  before the base is rebased onto the remote; validated on load; not part of the
+  decision). The plugin uses it for its three-way merge; without it, a merge
+  would have to treat the hosted version as the ancestor and drop hosted edits.
+
+Regression coverage is in `test/v3-foundations.test.ts` and `test/syncReliability.test.ts`: the real SDK planner,
 executor, journal, and Obsidian adapter run against MemoryAuthority, with controlled
 interleavings. Tests cover competing writes, conflict recovery, path obstructions,
 metadata-only status/review, cancelled transfers/restart, corrupt-blob recovery,

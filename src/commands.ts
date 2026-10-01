@@ -104,8 +104,18 @@ export function registerCommands(plugin: MdbasePlugin): void {
     name: "Reconnect collection",
     checkCallback: (checking) => {
       const problem = plugin.sync.state.problem;
-      if (!connected() || !problem || !["retry", "reauthorize"].includes(problem.action)) return false;
+      if (!connected() || !problem || problem.action !== "reauthorize") return false;
       if (!checking) void plugin.openWorkspace("sync").then((view) => view.reconnectCollection());
+      return true;
+    },
+  });
+
+  plugin.addCommand({
+    id: "mdbase-copy-sync-diagnostics",
+    name: "Copy sync diagnostics",
+    checkCallback: (checking) => {
+      if (!connected()) return false;
+      if (!checking) void plugin.copySyncDiagnostics();
       return true;
     },
   });
@@ -142,6 +152,8 @@ export async function syncNow(plugin: MdbasePlugin): Promise<void> {
     await plugin.openWorkspace("sync");
   } else if (result === "busy") {
     new Notice("A sync is already running.");
+  } else if (result === "paused") {
+    new Notice("Sync is paused.");
   } else if (result === "failed") {
     new Notice(problem?.message ?? (message || "Sync failed."));
   } else if (message) {

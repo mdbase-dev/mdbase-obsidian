@@ -1,5 +1,21 @@
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts
+index dd5830c..e774a50 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts
++++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.d.ts
+@@ -34,6 +34,11 @@ export declare class DirectoryMirror<Frontmatter extends JsonObject = JsonObject
+      * into the durable base before the checkpoint action runs.
+      */
+     private initialUnchangedState;
++    /** One inspection under one lease: the plan to apply and the status it implies. */
++    review(): Promise<{
++        plan: MirrorSyncPlan;
++        status: MirrorStatus;
++    }>;
+     status(): Promise<MirrorStatus>;
+     checkpointStatus(): Promise<MirrorStatus>;
+     private checkpointStatusUnlocked;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
-index a9018ff..86b552c 100644
+index a9018ff..80cc6e3 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 @@ -68,7 +68,7 @@ export class DirectoryMirror {
@@ -31,26 +47,60 @@ index a9018ff..86b552c 100644
          return mirrorApplyResult(attention ? "attention" : "applied", plan, checkpoint, result.completed);
      }
      inspectDetailed(state) {
+@@ -196,13 +200,21 @@ export class DirectoryMirror {
+             planned_conflicts: {}
+         };
+     }
++    /** One inspection under one lease: the plan to apply and the status it implies. */
++    async review() {
++        return this.lease.runExclusive(async () => {
++            const state = await this.readState();
++            const checkpoint = checkpointMirrorStatus(state, this.mode);
++            const plan = state?.batch?.plan ?? (await this.inspectDetailed(state)).plan;
++            const status = checkpoint.state === "not_initialized"
++                && !plan.issues.some((issue) => issue.code === "invalid_frontmatter" || issue.code === "file_read_failed")
++                ? checkpoint
++                : mirrorStatusFromPlan(checkpoint, plan);
++            return { plan, status };
++        });
++    }
+     async status() {
+-        const checkpoint = await this.checkpointStatus();
+-        const plan = await this.inspect();
+-        if (checkpoint.state === "not_initialized"
+-            && !plan.issues.some((issue) => issue.code === "invalid_frontmatter" || issue.code === "file_read_failed"))
+-            return checkpoint;
+-        return mirrorStatusFromPlan(checkpoint, plan);
++        return (await this.review()).status;
+     }
+     async checkpointStatus() {
+         return this.lease.runExclusive(() => this.checkpointStatusUnlocked());
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
-index 6936f79..171bab7 100644
+index 6936f79..64b0670 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
-@@ -28,12 +28,10 @@ export class MirrorMaterializer {
+@@ -28,12 +28,16 @@ export class MirrorMaterializer {
              assertRecordPhysicalPathAvailable(record.path, record.record_id, Object.keys(state.resources ?? {}), Object.entries(state.records), Object.entries(state.files ?? {}));
          }
          const document = materialized?.document ?? recordMarkdownDocument(record);
 -        const existing = inspectionPreflighted === 1
 -            ? null
--            : await this.fileSystem.read(record.path);
-+        const existing = await this.fileSystem.read(record.path);
++        // The observed text is the expectation for the conditional write below,
++        // even when a read-only repair accepts the divergence. A repair may
++        // replace bytes that are not text at all; those have no text expectation.
++        const observed = inspectionPreflighted === 1
++            ? await this.fileSystem.readText(record.path)
+             : await this.fileSystem.read(record.path);
++        const existing = typeof observed === "string" || observed === null ? observed : undefined;
          const prior = managedState?.records[record.record_id];
-         const existingHash = existing === null ? null : this.runtime.digest(existing);
+-        const existingHash = existing === null ? null : this.runtime.digest(existing);
 -        if (existingHash !== null && existing !== document) {
++        const existingHash = existing === null || existing === undefined ? null : this.runtime.digest(existing);
 +        if (inspectionPreflighted !== 1 && existingHash !== null && existing !== document) {
              const destinationBelongsToRecord = prior !== undefined
                  && prior.path === record.path
                  && existingHash === prior.hash;
-@@ -51,7 +49,7 @@ export class MirrorMaterializer {
+@@ -51,7 +55,7 @@ export class MirrorMaterializer {
          // an accepted hash is authorization to replace differing local bytes, not a
          // prerequisite for leaving already-correct bytes alone.
          if (existing !== document) {
@@ -59,7 +109,7 @@ index 6936f79..171bab7 100644
          }
          state.records[record.record_id] = {
              path: record.path,
-@@ -145,7 +143,7 @@ export class MirrorMaterializer {
+@@ -145,7 +149,7 @@ export class MirrorMaterializer {
              && (!prior || this.runtime.digest(existing) !== prior.hash)) {
              throw new MirrorDivergenceError(`resource:${resource.path}`, resource.path);
          }
@@ -69,10 +119,19 @@ index 6936f79..171bab7 100644
          state.resources[resource.path] = {
              path: resource.path,
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
-index 7c7372e..cfa82f6 100644
+index 7c7372e..ae211aa 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.d.ts
-@@ -132,7 +132,10 @@ export interface MirrorFileSystem {
+@@ -85,6 +85,8 @@ export interface MirrorState {
+         local: import("./sync-model.js").ExpectedObjectState;
+         remote: import("./sync-model.js").ExpectedObjectState;
+         conflict_kind: "both_changed" | "delete_vs_change" | "path_occupied" | "rejected";
++        /** For records in writable mirrors: the exact document both sides last agreed on, so a host can offer a three-way merge. Not part of the decision. */
++        ancestor_document?: string;
+     }>;
+     /** Temporary stable-identity bindings when local paths differ from the base. */
+     local_bindings?: Record<string, {
+@@ -132,7 +134,10 @@ export interface MirrorFileSystem {
      read(path: string): Promise<string | null>;
      /** Exact UTF-8 read, preserving a leading BOM; expected I/O failures reject as `SyncError("file_read_failed")`. */
      readText(path: string): Promise<MirrorTextReadResult>;
@@ -84,8 +143,22 @@ index 7c7372e..cfa82f6 100644
      /** Atomically rename one managed path without changing its bytes. */
      move(source: string, target: string): Promise<void>;
      remove(path: string): Promise<void>;
+diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js
+index 5a3bad2..c4207b7 100644
+--- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js
++++ b/node_modules/@mdbase-dev/connect-sync/dist/mirror-state.js
+@@ -113,6 +113,9 @@ export function normalizeMirrorState(state, replicaId, mode) {
+     for (const [identity, conflict] of Object.entries(state.planned_conflicts)) {
+         if (identity === "" || (conflict.entity !== "record" && conflict.entity !== "file"))
+             throw new Error();
++        if (conflict.ancestor_document !== undefined
++            && (conflict.entity !== "record" || typeof conflict.ancestor_document !== "string"))
++            throw new Error();
+         if (conflict.local.state === "exact")
+             validatePortableMirrorPath(conflict.local.object.path);
+         if (conflict.remote.state === "exact")
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
-index 599bcb8..c307048 100644
+index 599bcb8..30c92d0 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/sync-executor.js
 @@ -1,7 +1,7 @@
@@ -114,7 +187,40 @@ index 599bcb8..c307048 100644
                      completed: batch.next_action,
                      failure
                  };
-@@ -151,7 +154,8 @@ export class PlanOnlySyncExecutor {
+@@ -76,14 +79,22 @@ export class PlanOnlySyncExecutor {
+                 return this.moveRemote(state, action);
+             case "delete_remote":
+                 return this.deleteRemote(state, action);
+-            case "record_conflict":
++            case "record_conflict": {
+                 state.planned_conflicts ??= {};
++                // Keep the last common version before the base is rebased onto
++                // the remote; a re-recorded frozen conflict keeps its original.
++                const ancestor = action.identity in state.planned_conflicts
++                    ? state.planned_conflicts[action.identity].ancestor_document
++                    : action.entity === "record"
++                        ? state.records[action.identity]?.record?.document
++                        : undefined;
+                 state.planned_conflicts[action.identity] = {
+                     decision_id: conflictDecisionId(action.entity, action.identity, action.local, action.remote, action.conflict_kind, this.ports.runtime.digest),
+                     entity: action.entity,
+                     local: action.local,
+                     remote: action.remote,
+-                    conflict_kind: action.conflict_kind
++                    conflict_kind: action.conflict_kind,
++                    ...(ancestor === undefined ? {} : { ancestor_document: ancestor })
+                 };
+                 state.local_bindings ??= {};
+                 if (action.local.state === "exact") {
+@@ -97,6 +108,7 @@ export class PlanOnlySyncExecutor {
+                 }
+                 this.rebaseConflict(state, action);
+                 return { action_id: action.action_id, status: "conflicted" };
++            }
+             case "clear_conflict":
+                 delete state.planned_conflicts?.[action.identity];
+                 delete state.local_bindings?.[action.identity];
+@@ -151,7 +163,8 @@ export class PlanOnlySyncExecutor {
                  throw missingPayload(action);
              assertExactDocument(record, this.ports.runtime, action.payload_revision);
              await this.materializer.put(state, record, {
@@ -124,7 +230,7 @@ index 599bcb8..c307048 100644
              });
              this.installPathOwner(action.target);
              return { action_id: action.action_id, status: "completed" };
-@@ -170,6 +174,10 @@ export class PlanOnlySyncExecutor {
+@@ -170,6 +183,10 @@ export class PlanOnlySyncExecutor {
          const file = payloads.files[action.action_id];
          if (!file || file.content_digest !== action.payload_revision)
              throw missingPayload(action);
@@ -135,6 +241,25 @@ index 599bcb8..c307048 100644
          await this.materializer.putFile(state, file, state);
          this.installPathOwner(action.target);
          return { action_id: action.action_id, status: "completed" };
+@@ -372,12 +389,17 @@ export class PlanOnlySyncExecutor {
+                 : action.expected_remote;
+         state.planned_conflicts ??= {};
+         const conflictKind = receipt.status === "rejected" ? "rejected" : "both_changed";
++        // Captured before the base is rebased onto the authority's current record below.
++        const ancestor = identity in state.planned_conflicts
++            ? state.planned_conflicts[identity].ancestor_document
++            : state.records[identity]?.record?.document;
+         state.planned_conflicts[identity] = {
+             decision_id: conflictDecisionId("record", identity, action.expected_local, remote, conflictKind, this.ports.runtime.digest),
+             entity: "record",
+             local: action.expected_local,
+             remote,
+-            conflict_kind: conflictKind
++            conflict_kind: conflictKind,
++            ...(ancestor === undefined ? {} : { ancestor_document: ancestor })
+         };
+         state.local_bindings ??= {};
+         if (action.expected_local.state === "exact") {
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js b/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js
 index 19ee11d..01e31ea 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/sync-inspector.js

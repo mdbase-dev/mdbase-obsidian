@@ -15,7 +15,8 @@ import {
   type SyncHistoryRun,
 } from "./syncHistory";
 import { syncPlanSafety, type MdbaseSyncPreview, type SyncPlanSafety } from "./syncPreview";
-import { syncProblem, type FileTransferProgress, type SyncProblem } from "./syncUx";
+import { syncFailureProblem, syncProblem, type FileTransferProgress, type SyncProblem } from "./syncUx";
+import type { AutoResolution } from "./connectSync";
 
 export interface SyncSessionState {
   status: MirrorStatus | null;
@@ -30,14 +31,23 @@ export interface SyncSessionState {
   localChangeObserved: boolean;
   /** A review, sync or connection operation is running. */
   busy: boolean;
+  /** The person stopped sync; automatic sync waits until they resume it. */
+  paused: boolean;
+  /** When the next automatic attempt is due after a failure, if one is scheduled. */
+  retryAt: number | null;
 }
 
-export type SyncNowResult = "applied" | "up_to_date" | "needs_review" | "failed" | "busy";
+export type SyncNowResult = "applied" | "up_to_date" | "needs_review" | "failed" | "busy" | "paused";
+
+/** Rounds of inspect, apply and settle conflicts one Sync now may take before it stops. */
+const MAX_SYNC_ROUNDS = 4;
 
 type SyncController = Pick<
   ConnectSyncController,
+  | "inspect"
   | "preview"
   | "status"
+  | "autoResolveConflicts"
   | "sync"
   | "cancelSync"
   | "isSyncing"
@@ -65,6 +75,8 @@ const EMPTY_STATE: SyncSessionState = {
   message: "",
   localChangeObserved: false,
   busy: false,
+  paused: false,
+  retryAt: null,
 };
 
 /**
@@ -76,10 +88,15 @@ export class SyncSession {
   private current: SyncSessionState = { ...EMPTY_STATE };
   private readonly listeners = new Set<() => void>();
 
+  /** The last failure pinned to history, so automatic retries do not pin it again. */
+  private pinnedFailure: string | null = null;
+
   constructor(
     private readonly controller: SyncController,
     private readonly getProfile: () => MirrorProfile | null,
     private readonly history: SyncHistoryLog | null,
+    /** Brief, dismissible notices for things the person should know happened. */
+    private readonly notify: (message: string) => void = () => undefined,
   ) {}
 
   get state(): Readonly<SyncSessionState> {
@@ -178,45 +195,87 @@ export class SyncSession {
   }
 
   /**
-   * Review, then apply immediately when the plan is routine. Plans with
-   * deletions, conflicts, attachment uploads or other consent boundaries stay
-   * on screen for review instead.
+   * Inspect, apply and settle conflicts until local and hosted agree. Routine
+   * plans apply at once; a plan that changed underneath is inspected again;
+   * conflicts are merged or kept as two files and their results synced. Only
+   * a plan that needs consent stops, and stays on screen for review.
    */
-  async syncNow(options: { quiet?: boolean } = {}): Promise<SyncNowResult> {
+  async syncNow(options: { quiet?: boolean; automatic?: boolean } = {}): Promise<SyncNowResult> {
     if (!this.getProfile()) return "failed";
     if (this.current.busy || this.controller.isSyncing()) return "busy";
+    if (options.automatic && this.current.paused) return "paused";
+    if (!options.automatic && this.current.paused) this.update({ paused: false });
     const result = await this.exclusive(async (): Promise<SyncNowResult> => {
-      await this.loadPreview();
-      const preview = this.current.preview;
-      if (!preview) return "failed";
-      if (!preview.plan.actions.length) {
-        if (!options.quiet) this.update({ message: "Already up to date." });
-        return "up_to_date";
+      let applied = false;
+      for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
+        const preview = await this.loadPreview();
+        if (!preview) return "failed";
+        if (!preview.plan.actions.length) {
+          if (await this.settleConflicts()) continue;
+          if (!applied && !options.quiet) this.update({ message: "Already up to date." });
+          return applied ? "applied" : "up_to_date";
+        }
+        // A prepared batch was approved when it was prepared; finishing it needs no new consent.
+        const resuming = this.current.status?.recovery_required === true
+          && this.current.status.plan_fingerprint === preview.plan.fingerprint;
+        if (!resuming && !this.safety()?.safe) return "needs_review";
+        const outcome = await this.applyReviewed();
+        if (outcome === "stale") continue;
+        if (outcome === "cancelled") return "paused";
+        if (outcome === "failed") return "failed";
+        applied = true;
+        if (await this.settleConflicts()) continue;
+        if (!this.current.preview) return "applied";
       }
-      if (!this.safety()?.safe) return "needs_review";
-      await this.applyReviewed();
-      return this.current.problem ? "failed" : "applied";
+      return applied ? "applied" : "up_to_date";
     }, options.quiet);
     return result ?? "failed";
   }
 
-  /** Background sync: never acts while a person needs to decide something. */
+  /** Background sync: waits while the person has paused it or must decide something. */
   async autoSync(): Promise<SyncNowResult> {
-    const { problem, status, preview } = this.current;
-    if (problem && problem.action !== "retry") return "needs_review";
-    if (preview?.plan.actions.length && !this.safety()?.safe) return "needs_review";
-    if (status?.conflicts.length || status?.recovery_required) return "needs_review";
-    return this.syncNow({ quiet: true });
+    const { problem, paused } = this.current;
+    if (paused) return "paused";
+    if (problem && ["auth", "device"].includes(problem.kind)) return "needs_review";
+    return this.syncNow({ quiet: true, automatic: true });
+  }
+
+  /** The scheduler's next automatic attempt, shown beside an offline problem. */
+  setRetryAt(retryAt: number | null): void {
+    if (this.current.retryAt !== retryAt) this.update({ retryAt });
+  }
+
+  /** Settle open conflicts; true when that changed files that now need syncing. */
+  private async settleConflicts(): Promise<boolean> {
+    if (!this.current.status?.conflicts.length) return false;
+    let resolutions: AutoResolution[];
+    try {
+      resolutions = await this.controller.autoResolveConflicts();
+    } catch (error) {
+      this.update({ problem: syncProblem(error) });
+      return false;
+    }
+    for (const resolution of resolutions) {
+      await this.recordEvent(conflictEvent(resolution));
+      if (resolution.outcome === "kept_both") {
+        this.notify(`${resolution.path} was edited on two devices. Both versions were kept; this device's is ${resolution.copyPath ?? "a copy beside it"}.`);
+      } else if (resolution.outcome === "unresolved") {
+        this.notify(`Couldn't sync ${resolution.path}: ${resolution.reason ?? "it needs a decision"}.`);
+      }
+    }
+    return resolutions.some((resolution) => resolution.outcome !== "unresolved");
   }
 
   safety(): SyncPlanSafety | null {
     return this.current.preview ? syncPlanSafety(this.current.preview) : null;
   }
 
+  /** Stop now and keep automatic sync off until the person resumes it. */
   cancel(): void {
+    this.update({ paused: true });
     if (!this.controller.isSyncing()) return;
     this.controller.cancelSync();
-    this.update({ message: "Stopping after the current network request…" });
+    this.update({ message: "Stopping…" });
   }
 
   /** Renew credentials. Returns "reauthorize" when Connect needs a fresh approval. */
@@ -329,20 +388,22 @@ export class SyncSession {
     }
   }
 
-  private async loadPreview(): Promise<void> {
+  /** One inspection gives both the plan and the status. Null when it failed. */
+  private async loadPreview(): Promise<MdbaseSyncPreview | null> {
     try {
-      const preview = await this.controller.preview();
-      const status = await this.controller.status();
+      const { preview, status } = await this.controller.inspect();
       this.update({ preview, status, problem: null });
+      return preview;
     } catch (error) {
       const problem = syncProblem(error);
       this.update({ problem, message: problem.message });
+      return null;
     }
   }
 
-  private async applyReviewed(): Promise<void> {
+  private async applyReviewed(): Promise<"applied" | "attention" | "cancelled" | "stale" | "failed"> {
     const reviewed = this.current.preview;
-    if (!reviewed) return;
+    if (!reviewed) return "failed";
     const collectionId = this.getProfile()?.collectionId;
     const startedAt = new Date().toISOString();
     const files: SyncHistoryFile[] = [];
@@ -360,22 +421,22 @@ export class SyncSession {
       );
       runOutcome = outcome.status;
       runMessage = outcome.failure?.message;
-      const status = await this.controller.status();
-      const preview = await this.controller.preview();
+      const { preview, status } = await this.controller.inspect();
+      // A stale plan is inspected again by the caller; it is not a problem to show.
       const problem = outcome.status === "cancelled"
         ? syncProblem(new DOMException("Synchronization stopped.", "AbortError"))
-        : outcome.status === "stale"
-          ? syncProblem(Object.assign(new Error("The reviewed plan changed."), { code: "mirror_plan_stale" }))
+        : outcome.status === "failed" || outcome.status === "blocked"
+          ? syncFailureProblem(outcome.failure ?? { code: "sync_failed", message: "Synchronization stopped." })
           : null;
       const message = outcome.status === "applied"
         ? "Sync complete."
         : outcome.status === "attention"
           ? outcome.applied > 0 ? "Available changes synced. Remaining items need attention." : "No available changes. Resolve the listed items and review again."
           : outcome.status === "cancelled"
-            ? `Sync paused safely after ${outcome.applied} actions; ${outcome.pending} remain.`
+            ? `Sync paused after ${outcome.applied} ${outcome.applied === 1 ? "change" : "changes"}. Resume to finish the rest.`
             : outcome.status === "stale"
-              ? "Changes detected. Review the newest changes."
-              : `Sync stopped at a durable boundary: ${outcome.failure?.message ?? outcome.status}.`;
+              ? "Files changed during sync; checking again."
+              : problem?.message ?? `Sync stopped: ${outcome.failure?.message ?? outcome.status}.`;
       this.update({
         status,
         // A finished run leaves nothing to review; keep the plan only when work remains.
@@ -384,8 +445,18 @@ export class SyncSession {
         message,
         ...(outcome.status === "applied" && outcome.pending === 0 ? { localChangeObserved: false } : {}),
       });
-      // A completed run with file rows is already its own history entry.
-      if (outcome.status !== "applied" || !files.length) await this.recordEvent({
+      // A completed run with file rows is already its own history entry; a stale
+      // plan is retried at once and offline failures retry by themselves.
+      // Conflicts get their own entries once settled; a failure already pinned
+      // is not pinned again by each automatic retry.
+      const failureKey = problem ? `${problem.kind}:${problem.code}` : null;
+      const quietFailure = outcome.status === "stale"
+        || problem?.kind === "offline"
+        || (outcome.status === "attention" && status.conflicts.length > 0)
+        || (failureKey !== null && failureKey === this.pinnedFailure);
+      if (outcome.status === "applied") this.pinnedFailure = null;
+      else if (failureKey && !quietFailure) this.pinnedFailure = failureKey;
+      if (!quietFailure && (outcome.status !== "applied" || !files.length)) await this.recordEvent({
         summary: outcome.status === "applied"
           ? `Synchronized ${outcome.applied} ${outcome.applied === 1 ? "change" : "changes"}`
           : outcome.status === "cancelled"
@@ -393,19 +464,25 @@ export class SyncSession {
             : outcome.applied > 0 ? "Synced available changes" : "Synchronization needs attention",
         message,
         tone: outcome.status === "applied" ? "success" : "attention",
-        needsAcknowledgement: outcome.status !== "applied",
+        needsAcknowledgement: outcome.status !== "applied" && outcome.status !== "attention",
       }, collectionId);
+      return outcome.status === "blocked" ? "failed" : outcome.status;
     } catch (error) {
       const problem = syncProblem(error);
-      runOutcome = problem.code === "AbortError" ? "cancelled" : "failed";
+      runOutcome = problem.kind === "paused" ? "cancelled" : "failed";
       runMessage = problem.message;
       this.update({ problem, message: problem.message });
-      await this.recordEvent({
-        summary: problem.title,
-        message: problem.message,
-        tone: problem.action === "resume" ? "attention" : "error",
-        needsAcknowledgement: true,
-      }, collectionId);
+      const failureKey = `${problem.kind}:${problem.code}`;
+      if (problem.kind !== "offline" && failureKey !== this.pinnedFailure) {
+        this.pinnedFailure = failureKey;
+        await this.recordEvent({
+          summary: problem.title,
+          message: problem.message,
+          tone: problem.kind === "paused" ? "attention" : "error",
+          needsAcknowledgement: problem.kind !== "paused",
+        }, collectionId);
+      }
+      return problem.kind === "paused" ? "cancelled" : "failed";
     } finally {
       this.update({ progress: null, fileProgress: null });
       if (collectionId && files.length && this.history) {
@@ -430,4 +507,34 @@ export class SyncSession {
 
 function sameProfile(a: MirrorProfile | null, b: MirrorProfile | null): boolean {
   return a?.collectionId === b?.collectionId;
+}
+
+function conflictEvent(resolution: AutoResolution): SyncEventInput {
+  const name = resolution.path.split("/").pop() ?? resolution.path;
+  switch (resolution.outcome) {
+    case "merged":
+      return { summary: `Merged edits to ${name}`, message: "Changes made here and on another device were combined.", path: resolution.path, tone: "success" };
+    case "kept_both":
+      return {
+        summary: `Kept both versions of ${name}`,
+        message: `The same part was edited on two devices. The other device's version is in place and this device's version was saved as ${resolution.copyPath ?? "a copy"}.`,
+        path: resolution.path,
+        tone: "attention",
+        needsAcknowledgement: true,
+      };
+    case "restored":
+      return { summary: `Restored ${name}`, message: "It was deleted here but edited on another device, so the edited version was kept.", path: resolution.path, tone: "info" };
+    case "kept_local":
+      return { summary: `Kept ${name}`, message: "It was deleted on another device but edited here, so this version was uploaded again.", path: resolution.path, tone: "info" };
+    case "took_hosted":
+      return { summary: `Settled ${name}`, message: "The hosted version was kept.", path: resolution.path, tone: "info" };
+    case "unresolved":
+      return {
+        summary: `Couldn't sync ${name}`,
+        message: resolution.reason ?? "This change needs a decision.",
+        path: resolution.path,
+        tone: "attention",
+        needsAcknowledgement: true,
+      };
+  }
 }

@@ -88,11 +88,12 @@ export class MdbaseSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Sync automatically")
-      .setDesc("Apply routine changes in the background. Deletions, conflicts, attachment uploads and large transfers still wait for your review.")
+      .setDesc("Keep this vault in sync in the background. Deleted files go to the trash, and conflicting edits are merged or kept as two files. Deleting many files at once on this device waits for your review.")
       .addToggle((toggle) =>
         toggle.setValue(plugin.settings.autoSync).onChange(async (value) => {
           plugin.settings.autoSync = value;
           await plugin.saveSettings();
+          plugin.requestSync();
         }),
       );
 

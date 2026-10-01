@@ -5,8 +5,11 @@ import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
   App,
   addIcon,
+  apiVersion,
+  FileSystemAdapter,
   MarkdownView,
   Notice,
+  Platform,
   Plugin,
   TFile,
   normalizePath,
@@ -55,6 +58,8 @@ import { NoteSyncHistoryModal } from "./src/syncHistoryModal";
 import { registerCommands } from "./src/commands";
 import { MdbaseSettingTab } from "./src/settingsTab";
 import { SyncSession } from "./src/syncSession";
+import { SyncScheduler } from "./src/syncScheduler";
+import { syncDiagnostics } from "./src/syncDiagnostics";
 import { normalizeActivity, syncIndicator, type SyncActivityEntry } from "./src/syncUx";
 
 interface MdbasePluginSettings {
@@ -67,6 +72,8 @@ interface MdbasePluginSettings {
   archivedTypeDrafts: StoredTypeDraft[];
   /** Apply routine sync plans in the background; risky plans still wait for review. */
   autoSync: boolean;
+  /** 2: automatic sync became the default. */
+  syncSettingsVersion?: number;
   /** Pre-0.4 activity log, migrated into sync history on load. */
   syncActivity?: SyncActivityEntry[];
 }
@@ -79,8 +86,12 @@ const DEFAULT_SETTINGS: MdbasePluginSettings = {
   mirrorProfile: null,
   typeDrafts: {},
   archivedTypeDrafts: [],
-  autoSync: false,
+  autoSync: true,
+  syncSettingsVersion: 2,
 };
+
+/** Vault-scoped device storage key; Obsidian keeps it out of the vault and out of plugin data. */
+const DEVICE_ID_KEY = "mdbase-sync-device-id";
 
 function isMirrorProfile(value: unknown): value is MirrorProfile {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -131,6 +142,7 @@ export default class MdbasePlugin extends Plugin {
   private noteStatusEl: HTMLElement;
   private noteStatusVersion = 0;
   sync: SyncSession;
+  private syncScheduler: SyncScheduler | null = null;
   private recordCache: Map<string, CollectionRecord> | null = null;
   private recordCacheSettings = "";
   private recordList: CollectionRecord[] | null = null;
@@ -170,8 +182,9 @@ export default class MdbasePlugin extends Plugin {
         this.settings.mirrorProfile = profile;
         await this.saveSettings();
         if (!profile) this.sync?.reset();
-        else void this.sync?.refreshStatus();
+        else this.requestSync();
       },
+      deviceId: () => this.deviceId(),
     });
     this.interopBridge = new ObsidianInteropBridge(app, () => this.settings?.interopEnabled === true);
     this.api = {
@@ -278,27 +291,53 @@ export default class MdbasePlugin extends Plugin {
     if (active && this.settings.validateOnOpen) {
       void this.validateFileAndStore(active, "open");
     }
-    if (this.getMirrorProfile()) void this.checkSync();
-    this.registerInterval(window.setInterval(() => void this.checkSync(), 60_000));
+    this.startSyncScheduler();
   }
 
   /**
-   * Refresh mirror status and, with automatic sync on, apply routine changes.
-   * Plans that need consent are left for review and shown in the status bar.
+   * Sync runs when local edits settle, when Connect has hosted changes, when the
+   * app returns to the front or the network comes back, and retries with backoff.
    */
-  private async checkSync(): Promise<void> {
-    if (!this.getMirrorProfile() || this.sync.isSyncing() || this.sync.state.busy) return;
-    const status = await this.sync.refreshStatus();
-    if (!this.settings.autoSync || !status) return;
-    const waiting = status.pending > 0
-      || ["changes_waiting", "planned", "cancelled"].includes(status.state)
-      || this.sync.state.localChangeObserved;
-    if (waiting) await this.sync.autoSync();
+  private startSyncScheduler(): void {
+    this.syncScheduler = new SyncScheduler({
+      connected: () => this.getMirrorProfile() !== null,
+      automatic: () => this.settings.autoSync,
+      problemKind: () => this.sync.state.problem?.kind ?? (this.sync.state.paused ? "paused" : null),
+      autoSync: () => this.sync.autoSync(),
+      refreshStatus: () => this.sync.refreshStatus(),
+      remoteChangesWaiting: () => this.connectSync.remoteChangesWaiting(),
+      reportProblem: (error) => {
+        this.sync.reportProblem(error);
+      },
+      setRetryAt: (at) => this.sync.setRetryAt(at),
+    });
+    this.registerDomEvent(window, "online", () => this.syncScheduler?.noteOnline());
+    this.registerDomEvent(window, "focus", () => this.syncScheduler?.noteVisibility(true));
+    // The main window's visibility is the app's: hidden on mobile when backgrounded.
+    const appDocument = window.document;
+    this.registerDomEvent(appDocument, "visibilitychange", () => {
+      this.syncScheduler?.noteVisibility(appDocument.visibilityState === "visible");
+    });
+    this.syncScheduler.start();
+  }
+
+  /** Run the scheduler's decision soon, e.g. after connecting or changing sync settings. */
+  requestSync(): void {
+    this.syncScheduler?.requestSoon();
+  }
+
+  /** Vault-scoped and device-local: a copied vault or synced plugin data gets its own. */
+  private deviceId(): string {
+    const stored: unknown = this.app.loadLocalStorage(DEVICE_ID_KEY);
+    if (typeof stored === "string" && stored) return stored;
+    const created = crypto.randomUUID();
+    this.app.saveLocalStorage(DEVICE_ID_KEY, created);
+    return created;
   }
 
   onunload(): void {
     this.validationAbort?.abort();
-    if (this.autoSyncTimer !== null) window.clearTimeout(this.autoSyncTimer);
+    this.syncScheduler?.stop();
     this.connectSync.dispose();
     void this.interopBridge.dispose().catch((error: unknown) => {
       console.error("mdbase: failed to dispose the interoperability bridge", error);
@@ -309,7 +348,14 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored = (await this.loadData()) as Partial<MdbasePluginSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
+    // Before version 2 automatic sync was off by default and stopped for most
+    // plans, so a stored `false` is almost always the old default, not a choice.
+    if (stored && (stored.syncSettingsVersion ?? 1) < 2) {
+      this.settings.autoSync = true;
+      this.settings.syncSettingsVersion = 2;
+    }
     if (!isMirrorProfile(this.settings.mirrorProfile)) {
       this.settings.mirrorProfile = null;
     } else {
@@ -343,6 +389,66 @@ export default class MdbasePlugin extends Plugin {
       : null;
   }
 
+  /**
+   * Other tools that also move this vault's files. Two sync services on the
+   * same files can duplicate notes or bring deleted ones back, and cloud
+   * folders can evict files that then look deleted.
+   */
+  otherSyncServices(): string[] {
+    const services: string[] = [];
+    const app = this.app as unknown as {
+      internalPlugins?: { getEnabledPluginById?(id: string): { vaultId?: unknown } | null };
+      plugins?: { enabledPlugins?: Set<string> };
+    };
+    // The Sync core plugin is enabled by default; it only syncs once a remote vault is chosen.
+    const obsidianSync = app.internalPlugins?.getEnabledPluginById?.("sync");
+    if (typeof obsidianSync?.vaultId === "string" && obsidianSync.vaultId) services.push("Obsidian Sync");
+    const community: Record<string, string> = {
+      "obsidian-livesync": "Self-hosted LiveSync",
+      "remotely-save": "Remotely Save",
+      "obsidian-git": "Obsidian Git",
+    };
+    for (const [id, name] of Object.entries(community)) {
+      if (app.plugins?.enabledPlugins?.has(id)) services.push(name);
+    }
+    const adapter = this.app.vault.adapter;
+    const base = typeof FileSystemAdapter === "function" && adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
+    const folders: Array<[RegExp, string]> = [
+      [/Mobile Documents|iCloud/i, "iCloud Drive"],
+      [/[\\/]Dropbox[\\/]/i, "Dropbox"],
+      [/[\\/]OneDrive/i, "OneDrive"],
+      [/Google ?Drive|GoogleDrive/i, "Google Drive"],
+    ];
+    for (const [pattern, name] of folders) if (pattern.test(base)) services.push(name);
+    return services;
+  }
+
+  /** Copies a support report; the person sees it in the clipboard before sharing it. */
+  async copySyncDiagnostics(): Promise<void> {
+    const profile = this.getMirrorProfile();
+    let checkpoint = null;
+    try {
+      checkpoint = await this.connectSync.checkpointSummary();
+    } catch (error) {
+      console.error("mdbase: could not read the sync checkpoint for diagnostics", error);
+    }
+    const report = syncDiagnostics({
+      generatedAt: new Date().toISOString(),
+      pluginVersion: this.manifest.version,
+      obsidianVersion: apiVersion,
+      platform: Platform.isIosApp ? "iOS" : Platform.isAndroidApp ? "Android" : Platform.isMacOS ? "macOS" : Platform.isWin ? "Windows" : Platform.isLinux ? "Linux" : "unknown",
+      profile,
+      otherDevice: this.connectSync.isOtherDevice(profile),
+      automatic: this.settings.autoSync,
+      otherSyncServices: this.otherSyncServices(),
+      state: this.sync.state,
+      checkpoint,
+      history: this.sync.historyRuns(),
+    });
+    await navigator.clipboard.writeText(report);
+    new Notice("Copied sync diagnostics. They name the collection and recent files but contain no note text or credentials.");
+  }
+
   openNoteSyncHistory(path: string): void {
     new NoteSyncHistoryModal(this.app, path, this.sync.historyRuns()).open();
   }
@@ -365,7 +471,9 @@ export default class MdbasePlugin extends Plugin {
       // History is a convenience; an unreadable log must not block sync.
       console.error("mdbase: could not load sync history", error);
     }
-    this.sync = new SyncSession(this.connectSync, () => this.getMirrorProfile(), history);
+    this.sync = new SyncSession(this.connectSync, () => this.getMirrorProfile(), history, (message) => {
+      new Notice(`mdbase: ${message}`, 10_000);
+    });
     this.register(this.sync.subscribe(() => this.updateStatusBar()));
   }
 
@@ -958,24 +1066,17 @@ export default class MdbasePlugin extends Plugin {
     }
   }
 
+  /**
+   * Edits made while a sync runs still count; only the mirror's own writes are
+   * echoes. The scheduler syncs once the burst of edits settles.
+   */
   private observeLocalMirrorChange(path: string): void {
-    if (!this.getMirrorProfile() || this.connectSync.isSyncing()) return;
+    if (!this.getMirrorProfile() || this.connectSync.isEngineWrite(path)) return;
     const normalized = normalizePath(path);
     const reservedFolders = [this.app.vault.configDir, ".mdbase", ".trash", ".git"];
     if (reservedFolders.some((folder) => normalized === folder || normalized.startsWith(`${folder}/`))) return;
     this.sync.observeLocalChange();
-    if (this.settings.autoSync) this.scheduleAutoSync();
-  }
-
-  private autoSyncTimer: number | null = null;
-
-  /** Edits arrive in bursts; sync once they settle. */
-  private scheduleAutoSync(): void {
-    if (this.autoSyncTimer !== null) window.clearTimeout(this.autoSyncTimer);
-    this.autoSyncTimer = window.setTimeout(() => {
-      this.autoSyncTimer = null;
-      void this.checkSync();
-    }, 20_000);
+    this.syncScheduler?.noteLocalChange();
   }
 
   async validateFileAndStore(
