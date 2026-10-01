@@ -15,7 +15,7 @@ index dd5830c..e774a50 100644
      checkpointStatus(): Promise<MirrorStatus>;
      private checkpointStatusUnlocked;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
-index a9018ff..80cc6e3 100644
+index a9018ff..39a316a 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 +++ b/node_modules/@mdbase-dev/connect-sync/dist/directory-mirror.js
 @@ -68,7 +68,7 @@ export class DirectoryMirror {
@@ -75,6 +75,56 @@ index a9018ff..80cc6e3 100644
      }
      async checkpointStatus() {
          return this.lease.runExclusive(() => this.checkpointStatusUnlocked());
+@@ -280,13 +292,6 @@ export class DirectoryMirror {
+         }
+         if ((planned.decision_id ?? "") !== decisionId)
+             throw staleConflict();
+-        const revalidator = new PlanRevalidator(this.fileSystem, this.runtime);
+-        if (planned.local.state === "exact") {
+-            await revalidator.validateExpected(planned.local);
+-        }
+-        else if (planned.remote.state === "exact") {
+-            await revalidator.validateExpectedAt(planned.remote.object.path, planned.local);
+-        }
+         const snapshot = await loadMirrorSnapshot(this.replicaId, this.transport, this.mode, this.selectiveSync, this.runtime);
+         const currentRecord = planned.entity === "record"
+             ? snapshot.records.find(({ record }) => record.record_id === identity)?.record
+@@ -299,6 +304,15 @@ export class DirectoryMirror {
+             : fileStateMatches(planned.remote, currentFile);
+         if (!remoteMatches)
+             throw staleConflict();
++        // Snapshot loading can take arbitrarily long. Fence the decision's local
++        // bytes after that network wait, not before it.
++        const revalidator = new PlanRevalidator(this.fileSystem, this.runtime);
++        if (planned.local.state === "exact") {
++            await revalidator.validateExpected(planned.local);
++        }
++        else if (planned.remote.state === "exact") {
++            await revalidator.validateExpectedAt(planned.remote.object.path, planned.local);
++        }
+         if (resolution === "remote") {
+             if (planned.entity === "record") {
+                 await this.installRemoteRecord(state, identity, currentRecord);
+@@ -314,14 +328,12 @@ export class DirectoryMirror {
+     }
+     async installRemoteRecord(state, identity, current) {
+         if (current) {
+-            const conflict = state.planned_conflicts?.[identity];
+-            const acceptedDocument = await this.fileSystem.read(current.path);
+-            const pathBelongsToIdentity = state.records[identity]?.path === current.path
+-                || (conflict?.local.state === "exact" && conflict.local.object.path === current.path);
++            // Accept only the local version named by the conflict decision. Never
++            // authorize whatever bytes happen to be present after an async reread.
++            const local = state.planned_conflicts?.[identity]?.local;
+             await this.materializer.put(state, current, {
+-                inspectionPreflighted: false,
+-                ...(pathBelongsToIdentity && acceptedDocument !== null
+-                    ? { acceptedHash: this.runtime.digest(acceptedDocument) }
++                ...(local?.state === "exact" && local.object.path === current.path
++                    ? { acceptedHash: local.object.payload_revision.replace(/^sha256:/u, "") }
+                     : {})
+             });
+             return;
 diff --git a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js b/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js
 index 6936f79..64b0670 100644
 --- a/node_modules/@mdbase-dev/connect-sync/dist/mirror-materializer.js

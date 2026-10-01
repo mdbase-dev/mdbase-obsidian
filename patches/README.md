@@ -48,6 +48,13 @@ addition is the optional `ancestor_document` below):
 - `sync-executor.js`: the special receive-only malformed-frontmatter repair
   allowance applies only to that explicitly identified target, never every
   download in a partial plan. Conditional writes remain enforced.
+- `directory-mirror.js`: a hosted conflict resolution accepts only the inspected
+  local document revision, not whatever bytes happen to exist after loading the
+  authority snapshot. A user edit or recreated file during that await leaves
+  the decision stale instead of silently overwriting bytes absent from the copy.
+  Ported exactly from mdbase-connect `56dabd74` (local revalidation after the
+  snapshot, decision-bound `acceptedHash`). Integration regression:
+  `test/connectSync.settlement.test.ts`.
 - `directory-mirror.js`: partial completion reports attention, not failure or
   falsely complete synchronization, while preserving its unresolved diagnostics.
 - `directory-mirror.js`: release stale batches at the SDK's existing safe journal

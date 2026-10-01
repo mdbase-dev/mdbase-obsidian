@@ -109,6 +109,23 @@ test("a merged write racing a user edit preserves the edit and the hosted half",
   assert.equal(here.vault.read(result!.copyPath!), remote);
 });
 
+test("taking hosted after keeping a copy cannot overwrite a newer local edit during snapshot loading", async () => {
+  const here = await pair();
+  await here.conflict();
+  let snapshots = 0;
+  here.wrap((transport) => interceptSnapshot(transport, async () => {
+    snapshots += 1;
+    // One snapshot for merging, then the SDK's conflict-resolution snapshot.
+    if (snapshots === 2) {
+      await here.vault.modify(here.vault.getAbstractFileByPath("plan.md") as TFile, "new user edit after copy\n");
+    }
+  }));
+  await here.controller.autoResolveConflicts();
+  const texts = here.vault.getMarkdownFiles().map((file) => here.vault.read(file.path));
+  assert.ok(texts.includes("new user edit after copy\n"), "newer edit must survive somewhere");
+  assert.ok(texts.includes("local line\n"), "the original kept copy survives too");
+});
+
 test("an old conflict without ancestor capture keeps both and settles only once", async () => {
   const here = await pair();
   await here.conflict();
