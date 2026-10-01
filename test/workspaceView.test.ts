@@ -877,6 +877,53 @@ test("sync history lists runs, expands to their files and filters by path", () =
   f.dom.window.close();
 });
 
+test("pinned conflict events expose their retained copy without empty history controls", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "conflict-event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Kept both versions of Plan.md", path: "Tasks/Plan.md", needsAcknowledgement: true,
+    message: "This device's version was saved as Tasks/Plan (local conflict copy).md.", tone: "attention",
+  });
+  const opened: string[] = [];
+  Object.assign(f.host, { openFileByPath: async (path: string) => { opened.push(path); } });
+  (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
+  f.state.render();
+  assert.match(f.text(), /local conflict copy/);
+  assert.equal(f.root.querySelector("[data-focus-key='history-search']"), null);
+  assert.doesNotMatch(f.text(), /No completed syncs|Clear history/);
+  button(f.root, "Tasks/Plan.md").click();
+  assert.deepEqual(opened, ["Tasks/Plan.md"]);
+  const details = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-conflict-event']")!;
+  assert.ok(details.open);
+  details.open = false;
+  f.state.render();
+  assert.doesNotMatch(f.text(), /local conflict copy/);
+  assert.equal(f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-conflict-event']")?.open, false);
+  f.dom.window.close();
+});
+
+test("ordinary history event details retain disclosure and keyboard focus on redraw", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "reconnect", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Collection reconnected", message: "Credentials were renewed and the checkpoint was preserved.", tone: "success",
+  });
+  f.state.render();
+  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
+  f.state.render();
+  const details = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-reconnect']")!;
+  assert.ok(details);
+  assert.equal(details.open, false);
+  details.open = true;
+  details.querySelector<HTMLElement>("summary")!.focus();
+  f.state.render();
+  assert.match(f.text(), /Credentials were renewed/);
+  assert.equal(f.dom.window.document.activeElement?.textContent, "Collection reconnected");
+  f.dom.window.close();
+});
+
 test("expanding a field adds a collapse action without inserting a filter above the list", async () => {
   const f = typesFixture();
   await f.view.selectType("_types/task.md");

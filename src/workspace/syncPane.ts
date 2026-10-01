@@ -333,6 +333,8 @@ export class SyncPane {
     section.addClass("mdbase-activity");
     section.id = "mdbase-sync-activity";
     for (const run of [...pinned].reverse()) this.renderEventRow(section, run);
+    const completed = runs.filter((run) => !run.needsAcknowledgement);
+    if (!completed.length) return;
 
     const header = section.createDiv({ cls: "mdbase-section-header mdbase-history-controls" });
     const query = header.createEl("input", { type: "search" });
@@ -352,7 +354,7 @@ export class SyncPane {
     }
 
     const needle = this.historyQuery.trim().toLowerCase();
-    const timeline = filterRuns(runs.filter((run) => !run.needsAcknowledgement), needle)
+    const timeline = filterRuns(completed, needle)
       .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt));
     if (!timeline.length) {
       section.createDiv({ cls: "mdbase-muted", text: needle ? "No synced files match." : "No completed syncs." });
@@ -436,12 +438,23 @@ export class SyncPane {
     const summary = run.summary ?? "";
     if (run.message && run.message !== summary) {
       const details = body.createEl("details");
-      details.createEl("summary", { text: summary });
+      const key = `history-event-${run.id}`;
+      details.dataset.disclosure = key;
+      details.open = this.ctx.disclosures.get(key) ?? Boolean(run.needsAcknowledgement);
+      details.createEl("summary", { text: summary }).setAttr("data-focus-key", `disclosure-${key}`);
       details.createDiv({ text: run.message });
     } else body.createEl("strong", { text: summary });
     body.createSpan({ cls: "mdbase-muted", text: formatHistoryTime(run.finishedAt) });
+    if (run.path && this.ctx.app.vault.getAbstractFileByPath(run.path)) {
+      const path = run.path;
+      const open = body.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open", text: path });
+      open.setAttr("title", `Open ${path}`);
+      open.setAttr("data-focus-key", `event-open-${run.id}`);
+      open.onclick = () => void this.ctx.host.openFileByPath(path);
+    }
     if (run.needsAcknowledgement) {
       const dismiss = row.createEl("button", { text: "Dismiss" });
+      dismiss.setAttr("data-focus-key", `event-dismiss-${run.id}`);
       dismiss.disabled = this.ctx.busy;
       dismiss.onclick = () => void this.session.dismissEvent(run.id);
     }
