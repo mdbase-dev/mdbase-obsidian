@@ -2406,11 +2406,16 @@ export class ConnectSyncController {
   private readonly engineWrites = new Map<string, number>();
 
   private noteEngineWrite(path: string): void {
-    const now = Date.now();
+    const now = performance.now();
+    // Refreshing keys at the tail keeps monotonic timestamps in insertion
+    // order. Each expired entry is visited once, not once per bulk write.
     for (const [known, at] of this.engineWrites) {
-      if (now - at > ENGINE_WRITE_ECHO_MS) this.engineWrites.delete(known);
+      if (now - at <= ENGINE_WRITE_ECHO_MS) break;
+      this.engineWrites.delete(known);
     }
-    this.engineWrites.set(normalizePath(path), now);
+    const key = normalizePath(path);
+    this.engineWrites.delete(key);
+    this.engineWrites.set(key, now);
   }
 
   /** Suppress one echo, not every user edit arriving soon after that write. */
@@ -2418,7 +2423,7 @@ export class ConnectSyncController {
     const key = normalizePath(path);
     const at = this.engineWrites.get(key);
     this.engineWrites.delete(key);
-    const elapsed = at === undefined ? -1 : Date.now() - at;
+    const elapsed = at === undefined ? -1 : performance.now() - at;
     return elapsed >= 0 && elapsed <= ENGINE_WRITE_ECHO_MS;
   }
 
