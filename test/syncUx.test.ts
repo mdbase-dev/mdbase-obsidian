@@ -123,6 +123,14 @@ test("sync problems translate credentials, cancellation, busy work, stale decisi
   assert.equal(syncProblem(Object.assign(new Error("x"), { code: "mirror_enrollment_unreachable" })).kind, "offline");
 });
 
+test("a local conflict version removed during review is stale, not an internal failure", () => {
+  const problem = syncProblem(Object.assign(new Error("No local file exists at note.md."), { code: "mirror_conflict_copy_missing" }));
+  assert.equal(problem.kind, "decision");
+  assert.equal(problem.action, "review");
+  assert.match(problem.message, /Review the newest/);
+  assert.doesNotMatch(problem.message, /diagnostics|unexpected/);
+});
+
 test("credentials, copied vaults and unexpected failures are told apart from being offline", () => {
   assert.equal(syncProblem(new HttpStatusError("mirror_access_rejected", "no", 401)).kind, "auth");
   assert.equal(syncProblem(Object.assign(new Error("gone"), { code: "mirror_pairing_not_found" })).kind, "auth");

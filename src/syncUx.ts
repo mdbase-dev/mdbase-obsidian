@@ -236,7 +236,7 @@ export function syncProblem(error: unknown): SyncProblem {
       actionLabel: "Resume sync",
     };
   }
-  if (["stale", "stale_mirror_plan", "mirror_plan_stale", "sync_plan_stale", "conflict_decision_stale"].includes(code)) {
+  if (["stale", "stale_mirror_plan", "mirror_plan_stale", "sync_plan_stale", "conflict_decision_stale", "mirror_conflict_copy_missing"].includes(code)) {
     return {
       code,
       kind: "decision",
