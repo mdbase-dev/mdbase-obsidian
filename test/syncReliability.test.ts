@@ -280,8 +280,10 @@ test("the mirror's own writes are recognised as echoes, not edits", async () => 
   const { preview } = await controller.inspect();
   await controller.sync(preview);
   assert.equal(vault.read("notes/a.md")?.endsWith("a\n"), true);
-  assert.equal(controller.isEngineWrite("notes/a.md"), true);
-  assert.equal(controller.isEngineWrite("notes/other.md"), false);
+  assert.equal(controller.consumeEngineWrite("notes/a.md"), true);
+  await edit(vault, "notes/a.md", "typed immediately after the download\n");
+  assert.equal(controller.consumeEngineWrite("notes/a.md"), false, "the next edit event is not another echo just because it arrived within two seconds");
+  assert.equal(controller.consumeEngineWrite("notes/other.md"), false);
 });
 
 test("text downloads cannot follow a TFile renamed while Vault.process is queued", async () => {

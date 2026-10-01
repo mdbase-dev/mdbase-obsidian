@@ -2183,9 +2183,13 @@ export class ConnectSyncController {
     this.engineWrites.set(normalizePath(path), now);
   }
 
-  isEngineWrite(path: string): boolean {
-    const at = this.engineWrites.get(normalizePath(path));
-    return at !== undefined && Date.now() - at <= ENGINE_WRITE_ECHO_MS;
+  /** Suppress one echo, not every user edit arriving soon after that write. */
+  consumeEngineWrite(path: string): boolean {
+    const key = normalizePath(path);
+    const at = this.engineWrites.get(key);
+    this.engineWrites.delete(key);
+    const elapsed = at === undefined ? -1 : Date.now() - at;
+    return elapsed >= 0 && elapsed <= ENGINE_WRITE_ECHO_MS;
   }
 
   isSyncing(): boolean {

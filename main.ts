@@ -1071,7 +1071,7 @@ export default class MdbasePlugin extends Plugin {
    * echoes. The scheduler syncs once the burst of edits settles.
    */
   private observeLocalMirrorChange(path: string): void {
-    if (!this.getMirrorProfile() || this.connectSync.isEngineWrite(path)) return;
+    if (!this.getMirrorProfile() || this.connectSync.consumeEngineWrite(path)) return;
     const normalized = normalizePath(path);
     const reservedFolders = [this.app.vault.configDir, ".mdbase", ".trash", ".git"];
     if (reservedFolders.some((folder) => normalized === folder || normalized.startsWith(`${folder}/`))) return;
