@@ -63,6 +63,35 @@ function interceptSnapshot(transport: SyncTransport, intercept: () => Promise<vo
     snapshot: async (id, page) => { await intercept(); return transport.snapshot(id, page); } };
 }
 
+test("unclean Markdown/YAML corpus keeps both exact documents through the next sync", async () => {
+  const fields = [
+    "state: 'seed-value' # inline comment",
+    "state: |\n  seed-value\n  literal --- and 🥒",
+    "state: >-\n  seed-value\n  continuation",
+    "state: [seed-value, α, 🥒]",
+    "state: {nested: seed-value, values: [a, b]}",
+    "state:\n  nested: seed-value\n  values:\n    - α\n    - 🥒",
+  ];
+  for (const field of fields) for (let format = 0; format < 3; format++) {
+    const eol = format === 1 ? "\r\n" : "\n";
+    const bom = format === 2 ? "\uFEFF" : "";
+    const base = `${bom}---\n# header\n${field}\n---\nBody\n\n---\ninside body${format === 2 ? "" : "\n"}`.split("\n").join(eol);
+    const local = base.replace("seed-value", "local-α🥒");
+    const remote = base.replace("seed-value", "hosted-β🌈");
+    const here = await pair(base);
+    await here.conflict(local, remote);
+    const [result] = await here.controller.autoResolveConflicts();
+    assert.equal(result?.outcome, "kept_both", `${field} / format ${format}`);
+    assert.equal(here.vault.read("plan.md"), remote);
+    assert.equal(here.vault.read(result!.copyPath!), local);
+    await here.sync();
+    await here.remoteMirror.sync();
+    assert.equal(here.remoteVault.read("plan.md"), remote);
+    assert.equal(here.remoteVault.read(result!.copyPath!), local);
+    assert.deepEqual(await here.controller.autoResolveConflicts(), []);
+  }
+});
+
 test("repeated settling of a stale local decision does not multiply identical copies", async () => {
   const here = await pair();
   await here.conflict();
