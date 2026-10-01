@@ -34,6 +34,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   readonly issues = new IssuesPane(this);
   private refreshVersion = 0;
   private unsubscribeSync: (() => void) | null = null;
+  private syncRenderTimer: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, readonly host: MdbaseWorkspaceHost) {
     super(leaf);
@@ -81,8 +82,24 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
         void this.types.saveCurrentType();
       }
     });
-    // Sync state changes (progress, outcomes) only redraw the destination that shows them.
+    // Progress is current in the session immediately, but a burst of transfer
+    // callbacks needs only one presentation update. Decisions/outcomes never wait.
+    let previous = this.host.sync.state;
     this.unsubscribeSync = this.host.sync.subscribe(() => {
+      const state = this.host.sync.state;
+      const progressOnly = (Object.keys(state) as Array<keyof typeof state>).every((key) =>
+        key === "progress" || key === "fileProgress" || previous[key] === state[key]);
+      previous = state;
+      if (progressOnly && (state.progress || state.fileProgress)) {
+        if (this.destination === "sync" && this.syncRenderTimer === null) {
+          this.syncRenderTimer = window.setTimeout(() => {
+            this.syncRenderTimer = null;
+            if (this.destination === "sync") this.render();
+          }, 100);
+        }
+        return;
+      }
+      this.cancelSyncRender();
       if (this.destination === "sync") this.render();
       else this.renderTopbarOnly();
     });
@@ -93,8 +110,14 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     this.refreshVersion++;
     this.unsubscribeSync?.();
     this.unsubscribeSync = null;
+    this.cancelSyncRender();
     await this.types.dispose();
     this.sync.dispose();
+  }
+
+  private cancelSyncRender(): void {
+    if (this.syncRenderTimer !== null) window.clearTimeout(this.syncRenderTimer);
+    this.syncRenderTimer = null;
   }
 
   async refresh(forceReload = false): Promise<void> {
