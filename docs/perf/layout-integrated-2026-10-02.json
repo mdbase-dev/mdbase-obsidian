@@ -1,0 +1,2066 @@
+[
+  {
+    "state": "healthy",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "healthy",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "healthy",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "healthy",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "scope",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "scope",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "scope",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "scope",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "local-issue",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Open file",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "local-issue",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Open file",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "local-issue",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Open file",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "local-issue",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Open file",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "offline",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Retry now",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "offline",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Retry now",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "offline",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Retry now",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "offline",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Retry now",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "auth",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sign in again",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "auth",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sign in again",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "auth",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sign in again",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "auth",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sign in again",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "copied",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Set up this device",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "copied",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Set up this device",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "copied",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Set up this device",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "copied",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Set up this device",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "paused",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Resume sync",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "paused",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Resume sync",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "paused",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Resume sync",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "paused",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Resume sync",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "internal",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Try again",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "internal",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Try again",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "internal",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Try again",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "internal",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Try again",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "progress",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "progress",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 700,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "progress",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "progress",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "first-sync",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 555,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "first-sync",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 555,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "first-sync",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "first-sync",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "deletions",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1044,
+    "headingWidth": 542,
+    "scrollWidth": 1044,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 25 changes",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "deletions",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1044,
+    "headingWidth": 542,
+    "scrollWidth": 1044,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 25 changes",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "deletions",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 334,
+    "headingWidth": 306,
+    "scrollWidth": 334,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 25 changes",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "deletions",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 334,
+    "headingWidth": 306,
+    "scrollWidth": 334,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 25 changes",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "rebuild",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 555,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "rebuild",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 555,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "rebuild",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "rebuild",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync 1 change",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "conflict",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Keep local",
+        "height": 30
+      },
+      {
+        "text": "Use hosted",
+        "height": 30
+      },
+      {
+        "text": "Keep both",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      },
+      {
+        "text": "Keep both",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Keep local",
+        "height": 30
+      },
+      {
+        "text": "Use hosted",
+        "height": 30
+      },
+      {
+        "text": "Keep both",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      },
+      {
+        "text": "Keep both",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Keep local",
+        "height": 44
+      },
+      {
+        "text": "Use hosted",
+        "height": 44
+      },
+      {
+        "text": "Keep both",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      },
+      {
+        "text": "Keep both",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Keep local",
+        "height": 44
+      },
+      {
+        "text": "Use hosted",
+        "height": 44
+      },
+      {
+        "text": "Keep both",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      },
+      {
+        "text": "Keep both",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-busy",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 611,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Checking…",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Keep local",
+        "height": 30
+      },
+      {
+        "text": "Use hosted",
+        "height": 30
+      },
+      {
+        "text": "Keep both",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": true
+      },
+      {
+        "text": "Use hosted",
+        "disabled": true
+      },
+      {
+        "text": "Keep both",
+        "disabled": true
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-busy",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 611,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Checking…",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Keep local",
+        "height": 30
+      },
+      {
+        "text": "Use hosted",
+        "height": 30
+      },
+      {
+        "text": "Keep both",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": true
+      },
+      {
+        "text": "Use hosted",
+        "disabled": true
+      },
+      {
+        "text": "Keep both",
+        "disabled": true
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-busy",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Checking…",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Keep local",
+        "height": 44
+      },
+      {
+        "text": "Use hosted",
+        "height": 44
+      },
+      {
+        "text": "Keep both",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": true
+      },
+      {
+        "text": "Use hosted",
+        "disabled": true
+      },
+      {
+        "text": "Keep both",
+        "disabled": true
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-busy",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Checking…",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Keep local",
+        "height": 44
+      },
+      {
+        "text": "Use hosted",
+        "height": 44
+      },
+      {
+        "text": "Keep both",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": true
+      },
+      {
+        "text": "Use hosted",
+        "disabled": true
+      },
+      {
+        "text": "Keep both",
+        "disabled": true
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-local-absent",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Delete from Connect",
+        "height": 30
+      },
+      {
+        "text": "Use hosted",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Delete from Connect",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-local-absent",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Delete from Connect",
+        "height": 30
+      },
+      {
+        "text": "Use hosted",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Delete from Connect",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-local-absent",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Delete from Connect",
+        "height": 44
+      },
+      {
+        "text": "Use hosted",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Delete from Connect",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-local-absent",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Delete from Connect",
+        "height": 44
+      },
+      {
+        "text": "Use hosted",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Delete from Connect",
+        "disabled": false
+      },
+      {
+        "text": "Use hosted",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-hosted-absent",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Keep local",
+        "height": 30
+      },
+      {
+        "text": "Move local file to trash",
+        "height": 30
+      },
+      {
+        "text": "Keep a local copy",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Move local file to trash",
+        "disabled": false
+      },
+      {
+        "text": "Keep a local copy",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-hosted-absent",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Hide",
+        "height": 30
+      },
+      {
+        "text": "Keep local",
+        "height": 30
+      },
+      {
+        "text": "Move local file to trash",
+        "height": 30
+      },
+      {
+        "text": "Keep a local copy",
+        "height": 30
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Move local file to trash",
+        "disabled": false
+      },
+      {
+        "text": "Keep a local copy",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-hosted-absent",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Keep local",
+        "height": 44
+      },
+      {
+        "text": "Move local file to trash",
+        "height": 44
+      },
+      {
+        "text": "Keep a local copy",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Move local file to trash",
+        "disabled": false
+      },
+      {
+        "text": "Keep a local copy",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "conflict-hosted-absent",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Hide",
+        "height": 44
+      },
+      {
+        "text": "Keep local",
+        "height": 44
+      },
+      {
+        "text": "Move local file to trash",
+        "height": 44
+      },
+      {
+        "text": "Keep a local copy",
+        "height": 44
+      }
+    ],
+    "choices": [
+      {
+        "text": "Keep local",
+        "disabled": false
+      },
+      {
+        "text": "Move local file to trash",
+        "disabled": false
+      },
+      {
+        "text": "Keep a local copy",
+        "disabled": false
+      }
+    ],
+    "failures": []
+  },
+  {
+    "state": "history",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Dismiss",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "history",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "headingWidth": 619,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 30
+      },
+      {
+        "text": "Dismiss",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "history",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Dismiss",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "history",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "headingWidth": 318,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Sync now",
+        "height": 44
+      },
+      {
+        "text": "Dismiss",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "enrollment",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Connect",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "enrollment",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Connect",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "enrollment",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Connect",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "enrollment",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Connect",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "upload",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Upload to Connect",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "upload",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Upload to Connect",
+        "height": 30
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "upload",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Upload to Connect",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "upload",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [
+      {
+        "text": "Upload to Connect",
+        "height": 44
+      }
+    ],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-offline",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Offline",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-offline",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Offline",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-offline",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Offline",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-offline",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Offline",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-auth",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Sign in",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-auth",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Sign in",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-auth",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Sign in",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-auth",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Sign in",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-copied",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Set up",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-copied",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Set up",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-copied",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Set up",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-copied",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Set up",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-paused",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Paused",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-paused",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Paused",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-paused",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Paused",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-paused",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Paused",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-internal",
+    "width": 1100,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Error",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-internal",
+    "width": 1100,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Error",
+    "paneWidth": 1056,
+    "scrollWidth": 1056,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-internal",
+    "width": 390,
+    "theme": "theme-dark",
+    "topbarOverflow": false,
+    "tabStatus": "Error",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  },
+  {
+    "state": "away-internal",
+    "width": 390,
+    "theme": "theme-light",
+    "topbarOverflow": false,
+    "tabStatus": "Error",
+    "paneWidth": 346,
+    "scrollWidth": 346,
+    "overflow": false,
+    "buttons": [],
+    "choices": [],
+    "failures": []
+  }
+]
