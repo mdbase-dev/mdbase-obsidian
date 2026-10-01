@@ -257,6 +257,56 @@ test("Obsidian HTTP transport downloads bounded binary parts and cleans up the t
   ]);
 });
 
+test("multipart uploads do not repeatedly copy the whole unconsumed source tail", async () => {
+  const bytes = new Uint8Array(8 * 1024 * 1024).fill(7);
+  const file = descriptor("Media/large.png", bytes);
+  const transferId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const partSize = 512 * 1024;
+  let uploadedBytes = 0;
+  const send = async (request: { url: string; body?: string | ArrayBuffer }) => {
+    if (request.url.endsWith("/uploads")) return response(200, {
+      protocol_version: 1, type: "file_transfer", transfer_id: transferId,
+      direction: "upload", protection: "transport_tls", total_size: bytes.length,
+      strategy: { kind: "object_multipart", part_size: partSize }, received: [], uploaded_parts: [],
+    });
+    if (request.url.endsWith("/parts")) {
+      const part = JSON.parse(String(request.body)) as { part_number: number; content_length: number };
+      return response(200, { protocol_version: 1, type: "file_part", transfer_id: transferId,
+        part_index: part.part_number - 1, offset: (part.part_number - 1) * partSize,
+        content_length: part.content_length, method: "PUT", url: `https://objects.example/${part.part_number}`,
+        headers: {}, expires_at: "2099-01-01T00:00:00.000Z" });
+    }
+    if (request.url.startsWith("https://objects.example/")) {
+      const part = new Uint8Array(request.body as ArrayBuffer);
+      assert.equal(part.length, partSize);
+      assert.ok(part.every((byte) => byte === 7));
+      uploadedBytes += part.length;
+      return response(200, {}, new ArrayBuffer(0), { etag: `part-${uploadedBytes}` });
+    }
+    if (request.url.endsWith("/commit")) return response(200, {
+      protocol_version: 1, type: "file_upload_committed", transfer_id: transferId, file,
+    });
+    throw new Error("unexpected test request");
+  };
+  const transport = new ObsidianSyncTransport(syncUrl, "test-token", send as never);
+  const slice = Uint8Array.prototype.slice;
+  let slicedBytes = 0;
+  Uint8Array.prototype.slice = function (...args: Parameters<typeof slice>) {
+    const copy = slice.apply(this, args);
+    slicedBytes += copy.byteLength;
+    return copy;
+  };
+  try {
+    await transport.uploadFile({ protocol_version: 1, type: "open_file_upload", transfer_id: transferId,
+      path: file.path, size: file.size, content_digest: file.content_digest, media_type: file.media_type },
+    (async function* () { yield bytes; })());
+  } finally {
+    Uint8Array.prototype.slice = slice;
+  }
+  assert.equal(uploadedBytes, bytes.length);
+  assert.ok(slicedBytes <= bytes.length, `an 8 MB source caused ${slicedBytes / 1024 / 1024} MB of tail copies`);
+});
+
 test("Obsidian HTTP transport uploads exact multipart bytes without forwarding credentials", async () => {
   const bytes = Uint8Array.of(9, 8, 7, 6, 5);
   const file = descriptor("Media/upload.png", bytes);

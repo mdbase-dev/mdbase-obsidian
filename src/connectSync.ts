@@ -784,7 +784,9 @@ class BinaryPartReader {
       const count = Math.min(length - offset, this.remainder.byteLength);
       output.set(this.remainder.subarray(0, count), offset);
       offset += count;
-      this.remainder = this.remainder.slice(count);
+      // Keep a view of our owned chunk, not a new copy of its entire tail
+      // for every part (quadratic allocation for large mobile attachments).
+      this.remainder = this.remainder.subarray(count);
     }
     return output;
   }
