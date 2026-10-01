@@ -5,11 +5,11 @@ import { ATTACHMENT_SCOPE_DESCRIPTION, renderFolderExclusions } from "./folderEx
 import { DisconnectMirrorModal } from "./modals";
 
 const FILE_CLASSES: Array<[FileMediaClass, string]> = [
-  ["image", "Images"],
-  ["audio", "Audio"],
-  ["video", "Video"],
+  ["image", "images"],
+  ["audio", "audio"],
+  ["video", "video"],
   ["pdf", "PDFs"],
-  ["other", "Other files"],
+  ["other", "other files"],
 ];
 
 /**
@@ -125,7 +125,7 @@ export class MdbaseSettingTab extends PluginSettingTab {
     };
     for (const [value, label] of FILE_CLASSES) {
       new Setting(containerEl)
-        .setName(`Sync ${label.toLowerCase()}`)
+        .setName(`Sync ${label}`)
         .setDesc(value === "other" ? "All remaining visible file formats. Markdown always syncs." : "")
         .addToggle((toggle) =>
           toggle.setValue(policy.file_classes.includes(value)).onChange(async (enabled) => {

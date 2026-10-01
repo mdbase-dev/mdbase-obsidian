@@ -55,6 +55,14 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
 
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 
+test("attachment settings use sentence case without lowercasing the PDF acronym", () => {
+  const f = fixture();
+  assert.match(f.root.textContent!, /Sync images/);
+  assert.match(f.root.textContent!, /Sync PDFs/);
+  assert.match(f.root.textContent!, /Sync other files/);
+  f.dom.window.close();
+});
+
 test("Open sync and Reconnect close settings before handing off to the workspace", async () => {
   for (const connected of [false, true]) {
     const f = fixture();
