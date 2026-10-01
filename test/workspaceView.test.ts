@@ -239,6 +239,21 @@ test("a stale reviewed plan cannot be applied before refreshing the newest chang
   f.dom.window.close();
 });
 
+test("a diagnostics copy failure is reported and returns focus instead of an unhandled rejection", async () => {
+  const f = fixture(true);
+  f.host.sync.reportProblem(new Error("Sync stopped"));
+  f.host.copySyncDiagnostics = async () => { throw new Error("Clipboard is unavailable"); };
+  f.state.render();
+  button(f.root, "Copy diagnostics").focus();
+  button(f.root, "Copy diagnostics").click();
+  await settle();
+  assert.match(f.text(), /Clipboard is unavailable/);
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Copy diagnostics"));
+  assert.equal(button(f.root, "Copy diagnostics").disabled, false);
+  assert.ok(button(f.root, "Try again"));
+  f.dom.window.close();
+});
+
 test("enrollment exposes only essential controls but retains the upload warning and advanced options", () => {
   const f = fixture();
   f.state.render();

@@ -269,7 +269,14 @@ export class SyncPane {
     if (problem.kind === "internal" || problem.kind === "recovery") {
       const copy = buttons.createEl("button", { text: "Copy diagnostics" });
       copy.setAttr("data-focus-key", "sync-diagnostics");
-      copy.onclick = () => void this.ctx.host.copySyncDiagnostics();
+      copy.disabled = this.ctx.busy;
+      copy.onclick = () => void this.ctx.perform(async () => {
+        try {
+          await this.ctx.host.copySyncDiagnostics();
+        } finally {
+          this.ctx.pendingFocusKey = "sync-diagnostics";
+        }
+      });
     }
   }
 
