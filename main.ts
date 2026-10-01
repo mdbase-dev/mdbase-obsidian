@@ -775,7 +775,9 @@ export default class MdbasePlugin extends Plugin {
 
   private markRecordChanged(path: string): void {
     this.validation.changed(path);
-    if (!this.recordCache) return;
+    // A yielded initial scan can already have read this path. Keep its change
+    // even before the completed cache is installed, then reconcile it below.
+    if (!this.recordCache && !this.recordLoadPromise) return;
     this.dirtyRecordPaths.add(normalizePath(path));
     this.recordList = null;
   }
@@ -801,7 +803,8 @@ export default class MdbasePlugin extends Plugin {
       this.recordCache = new Map(records.map((record) => [record.path, record]));
       this.recordCacheSettings = settingsKey;
       this.recordList = null;
-    } else if (this.dirtyRecordPaths.size) {
+    }
+    if (this.dirtyRecordPaths.size) {
       const paths = [...this.dirtyRecordPaths];
       this.dirtyRecordPaths.clear();
       for (const path of paths) {
