@@ -91,6 +91,35 @@ async function device(hosted: MemoryAuthority, collectionId: string, options: De
   return { vault, controller, state, states, secrets, replicaId, profile: () => profile, syncOnce };
 }
 
+test("the remote change probe uses the state store's lean checkpoint port", async () => {
+  class ProbeState extends MemoryMirrorStateStore {
+    reads = 0;
+    checkpoint: { cursor: number; scope_epoch: number; recovery_required: boolean } | null = {
+      cursor: 0, scope_epoch: 1, recovery_required: false,
+    };
+    override async read(): Promise<MirrorState | null> {
+      this.reads++;
+      throw new Error("A probe must not read the full state");
+    }
+    async readCheckpoint() { return this.checkpoint; }
+  }
+  const hosted = new MemoryAuthority();
+  const state = new ProbeState();
+  let changes = 0;
+  const here = await device(hosted, hosted.collectionId, { state, wrapTransport: transport => ({
+    ...transport, changes: async (...args) => { changes++; return transport.changes(...args); },
+  }) });
+  assert.equal(await here.controller.remoteChangesWaiting(), false);
+  assert.equal(state.reads, 0);
+  assert.equal(changes, 1);
+  state.checkpoint!.recovery_required = true;
+  assert.equal(await here.controller.remoteChangesWaiting(), true, "a prepared batch must recover without probing Connect");
+  state.checkpoint = null;
+  assert.equal(await here.controller.remoteChangesWaiting(), true, "an uninitialized mirror always has work");
+  assert.equal(changes, 1);
+  here.controller.dispose();
+});
+
 /** A second device that edits through the bare SDK engine. */
 function otherDevice(hosted: MemoryAuthority) {
   const replica = hosted.registerReplica({ name: "Other", mode: "read_write" });

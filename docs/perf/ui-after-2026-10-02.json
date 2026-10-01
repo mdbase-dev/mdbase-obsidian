@@ -1,0 +1,56 @@
+{
+  "mode": "current",
+  "files": 20052,
+  "coldOpen": {
+    "ms": 80.5,
+    "max_frame_gap_ms": 81.8,
+    "ticks": 2,
+    "record_loads": 0
+  },
+  "records": {
+    "ms": 485.1,
+    "max_frame_gap_ms": 27.5,
+    "ticks": 31,
+    "value": 20000
+  },
+  "progress": {
+    "ms": 129.1,
+    "max_frame_gap_ms": 16.3,
+    "ticks": 9,
+    "value": {
+      "renders": 1
+    }
+  },
+  "closedHistory": {
+    "ms": 3.3,
+    "max_frame_gap_ms": 16.1,
+    "ticks": 1,
+    "value": {
+      "rows": 0,
+      "nodes": 20
+    }
+  },
+  "summariesHistory": {
+    "ms": 11.7,
+    "max_frame_gap_ms": 16.1,
+    "ticks": 1,
+    "value": {
+      "rows": 0,
+      "nodes": 134
+    }
+  },
+  "trace": {
+    "long_tasks": 1,
+    "max_task_ms": 69.408,
+    "top_tasks_ms": [
+      69.408,
+      33.592,
+      16.251,
+      11.275,
+      8.91,
+      8.832,
+      8.62,
+      8.34
+    ]
+  }
+}

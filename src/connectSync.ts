@@ -1295,45 +1295,113 @@ export class IndexedDbMirrorBlobStore implements MirrorBlobStore {
   }
 }
 
+export interface MirrorCheckpointSummary {
+  cursor: number;
+  scope_epoch: number;
+  recovery_required: boolean;
+}
+
+function mirrorCheckpointSummary(state: MirrorState | null): MirrorCheckpointSummary | null {
+  return state ? { cursor: state.cursor, scope_epoch: state.scope_epoch, recovery_required: Boolean(state.batch) } : null;
+}
+
+type CheckpointReadingStateStore = MirrorStateStore & {
+  readCheckpoint?(): Promise<MirrorCheckpointSummary | null>;
+};
+
 export class IndexedDbMirrorStateStore implements MirrorStateStore {
   private database: Promise<IDBDatabase> | null = null;
+  private checkpointReady = false;
 
   constructor(private readonly key: string) {}
 
+  // Array keys cannot collide with the string keys used by existing state.
+  // Keeping the same object store avoids an incompatible database upgrade.
+  private get checkpointKey(): string[] { return [this.key, "checkpoint"]; }
+
   async read(): Promise<MirrorState | null> {
     const database = await this.open();
+    const refreshCheckpoint = !this.checkpointReady;
     return new Promise((resolve, reject) => {
-      const request = database.transaction(STATE_STORE, "readonly").objectStore(STATE_STORE).get(this.key);
-      request.onsuccess = () => resolve((request.result as MirrorState | undefined) ?? null);
-      request.onerror = () => reject(indexedDbError(request.error, "mirror state read"));
+      const transaction = database.transaction(STATE_STORE, refreshCheckpoint ? "readwrite" : "readonly");
+      const store = transaction.objectStore(STATE_STORE);
+      const request = store.get(this.key);
+      let state: MirrorState | null = null;
+      request.onsuccess = () => {
+        state = (request.result as MirrorState | undefined) ?? null;
+        if (refreshCheckpoint) {
+          if (state) store.put(mirrorCheckpointSummary(state), this.checkpointKey);
+          else store.delete(this.checkpointKey);
+        }
+      };
+      transaction.oncomplete = () => {
+        if (refreshCheckpoint) this.checkpointReady = true;
+        resolve(state);
+      };
+      transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror state read"));
+      transaction.onabort = () => reject(indexedDbError(transaction.error, "mirror state read"));
     });
+  }
+
+  /** No document clone on repeated probes. One initial read also repairs legacy summaries. */
+  async readCheckpoint(): Promise<MirrorCheckpointSummary | null> {
+    // Revalidate once per adapter lifetime: an older plugin may have written or
+    // cleared state without knowing about the summary. Normal startup inspection
+    // already reads the state and primes this, so polling stays tiny thereafter.
+    if (!this.checkpointReady) return mirrorCheckpointSummary(await this.read());
+    const database = await this.open();
+    const result = await new Promise<{ exists: boolean; checkpoint: MirrorCheckpointSummary | null }>((resolve, reject) => {
+      const transaction = database.transaction(STATE_STORE, "readonly");
+      const store = transaction.objectStore(STATE_STORE);
+      const checkpoint = store.get(this.checkpointKey);
+      const stateKey = store.getKey(this.key);
+      transaction.oncomplete = () => resolve({
+        exists: stateKey.result !== undefined,
+        checkpoint: (checkpoint.result as MirrorCheckpointSummary | undefined) ?? null,
+      });
+      transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror checkpoint read"));
+      transaction.onabort = () => reject(indexedDbError(transaction.error, "mirror checkpoint read"));
+    });
+    if (!result.exists) return null;
+    if (!result.checkpoint) {
+      this.checkpointReady = false;
+      return mirrorCheckpointSummary(await this.read());
+    }
+    return result.checkpoint;
   }
 
   async write(state: MirrorState): Promise<void> {
     const database = await this.open();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STATE_STORE, "readwrite");
-      transaction.objectStore(STATE_STORE).put(state, this.key);
+      const store = transaction.objectStore(STATE_STORE);
+      store.put(state, this.key);
+      store.put(mirrorCheckpointSummary(state), this.checkpointKey);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror state write"));
       transaction.onabort = () => reject(indexedDbError(transaction.error, "mirror state write"));
     });
+    this.checkpointReady = true;
   }
 
   async clear(): Promise<void> {
     const database = await this.open();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STATE_STORE, "readwrite");
-      transaction.objectStore(STATE_STORE).delete(this.key);
+      const store = transaction.objectStore(STATE_STORE);
+      store.delete(this.key);
+      store.delete(this.checkpointKey);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror state clear"));
       transaction.onabort = () => reject(indexedDbError(transaction.error, "mirror state clear"));
     });
+    this.checkpointReady = true;
   }
 
   close(): void {
     void this.database?.then((database) => database.close(), () => undefined);
     this.database = null;
+    this.checkpointReady = false;
   }
 
   private open(): Promise<IDBDatabase> {
@@ -1758,11 +1826,14 @@ export class ConnectSyncController {
    */
   async remoteChangesWaiting(): Promise<boolean> {
     const profile = this.requireProfile();
-    const state = await this.stateStoreFor(profile).read();
-    if (!state || state.batch) return true;
+    const store: CheckpointReadingStateStore = this.stateStoreFor(profile);
+    const checkpoint = store.readCheckpoint
+      ? await store.readCheckpoint()
+      : mirrorCheckpointSummary(await store.read());
+    if (!checkpoint || checkpoint.recovery_required) return true;
     const transport = await this.transportFor(profile);
-    const page = await transport.changes(state.cursor, 1);
-    return page.reset_required || page.scope_epoch !== state.scope_epoch || page.head > state.cursor;
+    const page = await transport.changes(checkpoint.cursor, 1);
+    return page.reset_required || page.scope_epoch !== checkpoint.scope_epoch || page.head > checkpoint.cursor;
   }
 
   /** The durable mirror checkpoint, for diagnostics. */
