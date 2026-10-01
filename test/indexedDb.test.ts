@@ -116,6 +116,24 @@ test("IndexedDB checkpoint survives adapter recreation and isolates replicas", a
   assert.equal(await new IndexedDbMirrorStateStore(key).read(), null);
 });
 
+test("binary staging tolerates suspended sources without keeping an IndexedDB transaction alive", async () => {
+  const store = new IndexedDbMirrorBlobStore(crypto.randomUUID());
+  await store.write(digest, (async function* () {
+    yield Uint8Array.of(0, 1);
+    // IndexedDB auto-commits transactions across event-loop turns. A mobile
+    // source can take far longer; each chunk must use a fresh short transaction.
+    await new Promise((resolve) => setImmediate(resolve));
+    yield Uint8Array.of(255);
+  })());
+  const result: number[] = [];
+  for await (const chunk of store.read(digest)) {
+    result.push(...chunk);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(result, [0, 1, 255]);
+  store.close();
+});
+
 test("IndexedDB binary snapshot survives restart and an interrupted replacement", async () => {
   const key = crypto.randomUUID();
   const store = new IndexedDbMirrorBlobStore(key);

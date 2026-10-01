@@ -1,7 +1,8 @@
 import * as assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import type { CollectionFileDescriptor } from "@mdbase-dev/connect-protocol";
+import type { CollectionFileDescriptor, SyncMutation } from "@mdbase-dev/connect-protocol";
+import { MemoryAuthority } from "@mdbase-dev/connect-sync";
 import { ObsidianSyncTransport } from "../src/connectSync";
 import {
   abortableSleep,
@@ -159,6 +160,46 @@ test("cancelling sync aborts the request in flight, not after it", async () => {
   const pending = fetchSend({ url: "https://connect.example/probe", signal: abort.signal, throw: false }, hung as typeof fetch);
   abort.abort();
   await assert.rejects(pending, (error: unknown) => error instanceof DOMException && error.name === "AbortError");
+});
+
+test("an abandoned mobile mutation arriving after its retry has one authority effect", async () => {
+  const hosted = new MemoryAuthority({ id: authorityId });
+  const replicaId = hosted.registerReplica({ name: "Mobile simulation", mode: "read_write" });
+  const authority = hosted.transport(replicaId);
+  const bodies: string[] = [];
+  let deliverLate!: () => Promise<void>;
+  const native = async (request: { body?: string | ArrayBuffer }) => {
+    bodies.push(String(request.body));
+    const mutation = JSON.parse(String(request.body)) as SyncMutation;
+    if (bodies.length === 1) return new Promise<ReturnType<typeof response>>((resolve) => {
+      deliverLate = async () => { resolve(response(200, await authority.mutate(mutation))); };
+    });
+    return response(200, await authority.mutate(mutation));
+  };
+  const send = reliableSend((request) => requestUrlSend({ ...request, timeoutMs: bodies.length === 0 ? 5 : 30_000 }, native),
+    { ...noSleep, attempts: 2 });
+  const transport = new ObsidianSyncTransport(syncUrl, "test-token", send);
+  const receipt = await transport.mutate({ mutation_id: crypto.randomUUID(), replica_id: replicaId, scope_epoch: 1,
+    record_id: crypto.randomUUID(), created_at: "2026-10-01T00:00:00.000Z", operation: "put", path: "mobile.md", document: "exact mobile edit\n" });
+  assert.equal(receipt.status, "applied");
+  await deliverLate();
+  await Promise.resolve();
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0], bodies[1], "retry preserves the mutation ID and exact document");
+  assert.equal(hosted.serialize().head, 1, "late native request does not apply a second write");
+  assert.equal(hosted.serialize().records[0]?.document, "exact mobile edit\n");
+  assert.equal(receipt.status, "applied", "the late receipt cannot replace the accepted retry receipt");
+});
+
+test("an aborted mobile request ignores its eventual native response", async () => {
+  const abort = new AbortController();
+  let finish!: (value: ReturnType<typeof response>) => void;
+  const native = new Promise<ReturnType<typeof response>>((resolve) => { finish = resolve; });
+  const pending = requestUrlSend({ url: "https://connect.example/probe", signal: abort.signal }, () => native);
+  abort.abort();
+  await assert.rejects(pending, (error: unknown) => error instanceof DOMException && error.name === "AbortError");
+  finish(response(200));
+  await Promise.resolve();
 });
 
 test("transient failures retry with backoff; client errors do not", async () => {

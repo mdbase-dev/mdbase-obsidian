@@ -36,7 +36,9 @@ class FakeClock implements SchedulerClock {
       const due = [...this.timers.entries()].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
       if (!due) break;
       this.timers.delete(due[0]);
-      this.time = due[1].at;
+      // An overdue timer after app suspension fires at resume time, never by
+      // rewinding the wall clock to when it would have fired in the background.
+      this.time = Math.max(this.time, due[1].at);
       due[1].callback();
       for (let i = 0; i < 10; i++) await Promise.resolve();
     }
@@ -220,6 +222,49 @@ test("turning automatic sync back on syncs edits already observed while it was o
   h.scheduler.requestSoon();
   await h.clock.advance(0);
   assert.equal(h.calls.autoSync, 1, "enabling automatic sync catches up without needing another edit");
+});
+
+test("an hour-long mobile freeze expires retryAt without replaying every missed interval", async () => {
+  const h = harness();
+  h.setResult("failed");
+  h.setProblem("offline");
+  h.scheduler.start();
+  await h.clock.advance(0);
+  h.scheduler.noteVisibility(false);
+  const oldRetry = h.retryAt()!;
+  h.clock.time += 60 * 60_000; // JS/timers frozen while wall time advances.
+  assert.ok(oldRetry < h.clock.now());
+  h.setResult("applied");
+  h.setProblem(null);
+  h.scheduler.noteVisibility(true);
+  await h.clock.advance(0);
+  assert.equal(h.calls.autoSync, 2, "one catch-up, not all missed retries/probes");
+  assert.equal(h.retryAt(), null);
+  await h.clock.advance(SYNC_TIMING.probeVisibleMs);
+  assert.equal(h.calls.autoSync, 2, "the successful catch-up restarts the normal cadence");
+});
+
+test("foregrounding an in-flight mobile run coalesces one follow-up after thaw", async () => {
+  let release!: () => void;
+  let runs = 0;
+  const h = harness({ autoSync: async () => {
+    runs += 1;
+    if (runs === 1) await new Promise<void>((resolve) => { release = resolve; });
+    return "applied";
+  } });
+  h.scheduler.start();
+  await h.clock.advance(0);
+  h.scheduler.noteVisibility(false);
+  h.clock.time += 60 * 60_000;
+  h.scheduler.noteVisibility(true);
+  await h.clock.advance(0);
+  assert.equal(runs, 1, "the original in-flight operation is not duplicated");
+  release();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  await h.clock.advance(0);
+  assert.equal(runs, 2, "one foreground catch-up follows completion");
+  await h.clock.advance(0);
+  assert.equal(runs, 2);
 });
 
 test("with automatic sync off, the scheduler only keeps status fresh", async () => {
