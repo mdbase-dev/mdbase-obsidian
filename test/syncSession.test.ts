@@ -235,6 +235,26 @@ test("conflicts are settled after a sync and the settled files synced in the sam
   assert.ok(runs.some((run) => run.summary === "Merged edits to a.md"));
 });
 
+test("a failed conflict settlement remains a failed sync eligible for retry", async () => {
+  const conflict = { entity: "record", object_id: "r1", decision_id: "d1", path: "a.md", kind: "conflicted", message: "c" } as const;
+  const h = harness(previewFromPlan(plan([])), { conflicts: [conflict] });
+  h.controller.autoResolveConflicts = async () => {
+    throw Object.assign(new Error("offline while loading conflict versions"), { code: "network_unreachable" });
+  };
+  assert.equal(await h.session.syncNow(), "failed");
+  assert.equal(h.session.state.problem?.kind, "offline");
+  assert.notEqual(h.session.state.message, "Already up to date.");
+});
+
+test("an unresolved conflict never reports Already up to date", async () => {
+  const conflict = { entity: "record", object_id: "r1", decision_id: "d1", path: "a.md", kind: "conflicted", message: "refused" } as const;
+  const h = harness(previewFromPlan(plan([])), {
+    conflicts: [conflict], resolutions: [{ path: "a.md", outcome: "unresolved", reason: "Connect refused this change." }],
+  });
+  assert.equal(await h.session.syncNow(), "needs_review");
+  assert.notEqual(h.session.state.message, "Already up to date.");
+});
+
 test("automatic sync waits while paused or while Connect needs approval", async () => {
   const { session, applied } = harness(previewFromPlan(plan([write("a.md")])));
   session.cancel();

@@ -219,7 +219,9 @@ export class SyncSession {
         if (!preview.plan.actions.length) {
           const settled = await this.settleConflicts();
           if (this.current.paused) return "paused";
+          if (settled === null) return "failed";
           if (settled) continue;
+          if (this.current.status?.conflicts.length) return "needs_review";
           if (!applied && !options.quiet) this.update({ message: "Already up to date." });
           return applied ? "applied" : "up_to_date";
         }
@@ -235,7 +237,9 @@ export class SyncSession {
         if (this.current.paused) return "paused";
         const settled = await this.settleConflicts();
         if (this.current.paused) return "paused";
+        if (settled === null) return "failed";
         if (settled) continue;
+        if (this.current.status?.conflicts.length) return "needs_review";
         if (!this.current.preview) return "applied";
       }
       // Yield after a bounded number of changing plans, but keep the scheduler
@@ -258,15 +262,16 @@ export class SyncSession {
     if (this.current.retryAt !== retryAt) this.update({ retryAt });
   }
 
-  /** Settle open conflicts; true when that changed files that now need syncing. */
-  private async settleConflicts(): Promise<boolean> {
+  /** True when files changed, false when none did, null when settling failed. */
+  private async settleConflicts(): Promise<boolean | null> {
     if (!this.current.status?.conflicts.length) return false;
     let resolutions: AutoResolution[];
     try {
       resolutions = await this.controller.autoResolveConflicts();
     } catch (error) {
-      this.update({ problem: syncProblem(error) });
-      return false;
+      const problem = syncProblem(error);
+      this.update({ problem, message: problem.message });
+      return null;
     }
     for (const resolution of resolutions) {
       await this.recordEvent(conflictEvent(resolution));
