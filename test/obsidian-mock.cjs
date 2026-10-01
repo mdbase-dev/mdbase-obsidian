@@ -60,6 +60,7 @@ class Vault {}
 class Plugin {
   constructor(app, manifest) { this.app = app; this.manifest = manifest; }
   registerEvent() {}
+  registerDomEvent() {}
 }
 class FileSystemAdapter {}
 class MarkdownView {}

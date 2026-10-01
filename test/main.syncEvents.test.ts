@@ -45,6 +45,20 @@ test("folder-only rename events schedule sync and invalidate cached descendant r
   f.plugin.connectSync.dispose();
 });
 
+test("paused sync takes precedence over a previous offline problem in scheduler wiring", () => {
+  const f = fixture();
+  f.plugin.sync = { state: { paused: true, problem: { kind: "offline" } } } as never;
+  const internal = f.plugin as unknown as {
+    startSyncScheduler(): void;
+    syncScheduler: { host: { problemKind(): string | null }; stop(): void };
+  };
+  internal.startSyncScheduler();
+  // Clear the real timer immediately; this is a wiring test, not a live sync.
+  internal.syncScheduler.stop();
+  assert.equal(internal.syncScheduler.host.problemKind(), "paused");
+  f.plugin.connectSync.dispose();
+});
+
 test("folder-only deletion events schedule sync while reserved folders stay ignored", () => {
   const f = fixture();
   f.handlers.get("delete")!(new TestFolder("Notes"));

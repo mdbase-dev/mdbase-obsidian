@@ -259,7 +259,7 @@ export default class MdbasePlugin extends Plugin {
     this.syncScheduler = new SyncScheduler({
       connected: () => this.getMirrorProfile() !== null,
       automatic: () => this.settings.autoSync,
-      problemKind: () => this.sync.state.problem?.kind ?? (this.sync.state.paused ? "paused" : null),
+      problemKind: () => this.sync.state.paused ? "paused" : this.sync.state.problem?.kind ?? null,
       autoSync: () => this.sync.autoSync(),
       refreshStatus: () => this.sync.refreshStatus(),
       remoteChangesWaiting: () => this.connectSync.remoteChangesWaiting(),
