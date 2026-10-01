@@ -1,7 +1,7 @@
-// Candidate qualification, not live Obsidian or hosted acceptance.
-// Run with the Obsidian test loader after installing immutable candidate SDK
-// artifacts without changing package.json/package-lock.json. The released
-// beta.91 SDK is expected to fail this stricter contract until its pin advances.
+// Lossless SDK qualification, not live Obsidian or hosted acceptance.
+// Runs with the Obsidian test loader against the installed (pinned) SDK, or
+// against immutable candidate SDK artifacts installed without changing
+// package.json/package-lock.json.
 import assert from "node:assert/strict";
 import { TFile } from "obsidian";
 import { MemoryAuthority } from "@mdbase-dev/connect-sync";
@@ -18,8 +18,10 @@ function vaultFixture() {
     files,
     getAbstractFileByPath: (path) => files.get(path)?.file ?? null,
     getMarkdownFiles: () => [...files.values()].map(({ file }) => file),
+    getFiles: () => [...files.values()].map(({ file }) => file),
     adapter: {
       exists: async (path) => files.has(path),
+      stat: async (path) => (files.has(path) ? { type: "file" } : null),
       readBinary: async (path) => {
         assert.ok(files.has(path), `Missing fixture: ${path}`);
         return new TextEncoder().encode(files.get(path).document).buffer;
@@ -34,6 +36,12 @@ function vaultFixture() {
     modify: async (file, document) => {
       assert.ok(files.has(file.path));
       files.set(file.path, { file, document });
+    },
+    process: async (file, transform) => {
+      assert.ok(files.has(file.path));
+      const document = transform(files.get(file.path).document);
+      files.set(file.path, { file, document });
+      return document;
     },
   };
 }

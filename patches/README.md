@@ -1,8 +1,15 @@
 # Temporary Connect sync SDK reliability patch
 
-`@mdbase-dev/connect-sync` remains pinned to beta.91. `npm ci` applies the adjacent
-version-specific patch through `postinstall` and fails if it cannot apply. The
-plugin bundle includes the patched SDK; no patching occurs in users' vaults.
+`@mdbase-dev/connect-sync` is pinned to beta.120 (with `connect-protocol` at the
+same version). `npm ci` applies the adjacent version-specific patch through
+`postinstall` and fails if it cannot apply. The plugin bundle includes the patched
+SDK; no patching occurs in users' vaults.
+
+The patch was rebased from beta.91 without changing its effect. The published
+beta.120 distribution and the Connect source at its release contain none of the
+fixes below; against unpatched beta.120, five tests in `test/v3-foundations.test.ts`
+fail. When upgrading again, run `npm ci --ignore-scripts && npm test` first to
+see which fixes the new release carries.
 
 These fixes belong in the upstream SDK. This patch keeps clean builds reproducible
 without requiring an unpublished package or modifying a separate Connect checkout.

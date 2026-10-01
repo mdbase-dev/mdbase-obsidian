@@ -1,6 +1,8 @@
 import type { MirrorPlanAction, MirrorState, MirrorStateStore } from "@mdbase-dev/connect-sync/mirror";
 import { actionEntry, type SyncPreviewAction, type SyncPreviewDirection } from "./syncPreview";
 
+export type SyncEventTone = "success" | "info" | "attention" | "error";
+
 type DurableBatch = NonNullable<MirrorState["batch"]>;
 export type SyncActionReceipt = DurableBatch["receipts"][number];
 
@@ -23,14 +25,45 @@ export interface SyncHistoryRun {
   outcome: string;
   files: SyncHistoryFile[];
   message?: string;
+  /**
+   * Set on entries that are events rather than transfers: reconnects, conflict
+   * decisions, pauses and failures. Transfers are summarized from their files.
+   */
+  summary?: string;
+  tone?: SyncEventTone;
+  path?: string;
+  /** Stays pinned at the top of history until dismissed. */
+  needsAcknowledgement?: boolean;
 }
+
+export type SyncEventInput = Pick<SyncHistoryRun, "message" | "path" | "needsAcknowledgement"> & {
+  summary: string;
+  tone: SyncEventTone;
+};
 
 export interface SyncHistoryLimits {
   maxAgeDays: number;
   maxFiles: number;
+  maxRuns: number;
 }
 
-export const DEFAULT_HISTORY_LIMITS: SyncHistoryLimits = { maxAgeDays: 90, maxFiles: 5_000 };
+export const DEFAULT_HISTORY_LIMITS: SyncHistoryLimits = { maxAgeDays: 90, maxFiles: 5_000, maxRuns: 1_000 };
+
+export function historyEvent(collectionId: string, input: SyncEventInput, now = new Date().toISOString()): SyncHistoryRun {
+  return {
+    id: crypto.randomUUID(),
+    collectionId,
+    startedAt: now,
+    finishedAt: now,
+    outcome: "event",
+    files: [],
+    ...input,
+  };
+}
+
+export function isHistoryEvent(run: SyncHistoryRun): boolean {
+  return run.summary !== undefined;
+}
 
 /** Converts one durable engine receipt into a history row. Checkpoint actions have no file. */
 export function historyFileFromReceipt(
@@ -89,6 +122,7 @@ export class ReceiptObservingStateStore implements MirrorStateStore {
 }
 
 export function summarizeRun(run: SyncHistoryRun): string {
+  if (run.summary !== undefined) return run.summary;
   const count = (direction: SyncPreviewDirection) =>
     run.files.filter((file) => file.direction === direction && file.status === "completed").length;
   const parts = [
@@ -107,16 +141,31 @@ export function historyForPath(
   path: string,
 ): Array<{ run: SyncHistoryRun; file: SyncHistoryFile }> {
   return runs
-    .flatMap((run) => run.files
-      .filter((file) => file.path === path || file.fromPath === path)
-      .map((file) => ({ run, file })))
+    .flatMap((run) => run.summary !== undefined
+      ? run.path === path ? [{ run, file: eventFile(run) }] : []
+      : run.files
+        .filter((file) => file.path === path || file.fromPath === path)
+        .map((file) => ({ run, file })))
     .sort((a, b) => b.file.at.localeCompare(a.file.at));
+}
+
+function eventFile(run: SyncHistoryRun): SyncHistoryFile {
+  return {
+    path: run.path ?? "",
+    kind: "document",
+    direction: "attention",
+    action: "review",
+    status: "completed",
+    at: run.finishedAt,
+    ...(run.message ? { message: run.message } : {}),
+  };
 }
 
 export function filterRuns(runs: readonly SyncHistoryRun[], query: string): SyncHistoryRun[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [...runs];
   return runs.flatMap((run) => {
+    if (run.summary !== undefined) return run.path?.toLowerCase().includes(needle) ? [run] : [];
     const files = run.files.filter((file) =>
       file.path.toLowerCase().includes(needle) || file.fromPath?.toLowerCase().includes(needle));
     return files.length ? [{ ...run, files }] : [];
@@ -133,7 +182,7 @@ export function pruneRuns(
   const kept = runs.filter((run) => Date.parse(run.finishedAt) >= cutoff);
   let files = kept.reduce((total, run) => total + run.files.length, 0);
   let start = 0;
-  while (files > limits.maxFiles && start < kept.length - 1) {
+  while ((files > limits.maxFiles || kept.length - start > limits.maxRuns) && start < kept.length - 1) {
     files -= kept[start].files.length;
     start += 1;
   }
@@ -209,8 +258,15 @@ export class SyncHistoryStore {
     });
   }
 
+  /** Removes one entry, e.g. a dismissed event. */
+  remove(id: string): Promise<void> {
+    this.runs = this.runs.filter((run) => run.id !== id);
+    return this.enqueue(() => this.rewrite());
+  }
+
+  /** Clears history but keeps events that still need acknowledgement. */
   clear(): Promise<void> {
-    this.runs = [];
+    this.runs = this.runs.filter((run) => run.needsAcknowledgement);
     return this.enqueue(() => this.rewrite());
   }
 

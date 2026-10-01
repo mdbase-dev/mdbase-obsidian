@@ -1682,6 +1682,41 @@ test("writable mirror uploads local edits and collision preflight makes no write
   assert.equal(await collisionState.read(), null);
 });
 
+test("Obsidian Bases sync as YAML document records, never as binary files", async () => {
+  const hosted = new MemoryAuthority();
+  const replica = hosted.registerReplica({ name: "Obsidian writer", mode: "read_write" });
+  const vault = new MemoryVault();
+  const adapter = new ObsidianMirrorFileSystem(vault as never);
+  const writer = new WritableDirectoryMirror(replica, hosted.transport(replica), {
+    fileSystem: adapter,
+    stateStore: new MemoryMirrorStateStore(),
+    selectiveSync: { file_classes: ["other"], excluded_folders: [] },
+  });
+  const base = "views:\n  - type: table\n    name: Tasks\n";
+  await vault.createFolder("views");
+  await vault.create("views/tasks.base", base);
+  await vault.create("views/upper.BASE", "views: []\n");
+  assert.deepEqual(await adapter.listMarkdown(new Set()), ["views/tasks.base"]);
+  assert.deepEqual(await adapter.listBinary(new Set()), []);
+  await writer.sync();
+  await writer.sync();
+  assert.equal((await writer.status()).state, "up_to_date");
+  const session = await hosted.transport(replica).openSession();
+  const snapshot = await hosted.transport(replica).snapshot(session.snapshot_id);
+  assert.deepEqual(snapshot.records.map((record) => record.path), ["views/tasks.base"]);
+
+  const readerReplica = hosted.registerReplica({ name: "Obsidian reader", mode: "read_only" });
+  const readerVault = new MemoryVault();
+  const reader = new DirectoryMirror(readerReplica, hosted.transport(readerReplica), {
+    fileSystem: new ObsidianMirrorFileSystem(readerVault as never),
+    stateStore: new MemoryMirrorStateStore(),
+  });
+  await reader.sync();
+  assert.equal(readerVault.read("views/tasks.base"), base);
+  assert.equal((await reader.inspect()).actions.length, 0);
+  assert.equal((await reader.status()).state, "up_to_date");
+});
+
 test("interrupted mirror write resumes its IndexedDB checkpoint after adapter recreation", async () => {
   const hosted = new MemoryAuthority({ snapshotPageSize: 1 });
   hosted.seed([

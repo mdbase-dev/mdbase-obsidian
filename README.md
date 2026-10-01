@@ -23,32 +23,47 @@ leaves execution and presentation to query-capable companion tools.
 
 ## Collection roles
 
+On first open, the workspace asks one question: where does the collection
+live? **Start a collection** makes this vault its source. **Copy from Connect**
+makes this vault a synced copy of a hosted collection. A local collection can
+later be uploaded to Connect from the Sync tab.
+
 ### Local collection
 
-`Initialize this vault` creates a canonical v0.3 `mdbase.yaml` and `_types/`
+**Start a collection** creates a canonical v0.3 `mdbase.yaml` and `_types/`
 directory. The vault is authoritative and remains an ordinary collection of
 files.
 
 ### Hosted mirror
 
-`Connect a hosted collection` enrolls the vault through mdbase Connect. The
+**Copy from Connect** enrolls the vault through mdbase Connect. The
 portable directory-mirror engine syncs hosted resources, records, and opt-in
 collection files into the vault. A mirror role marker is stored below
 `.mdbase/`; credentials are stored only in Obsidian SecretStorage.
 
 The plugin refuses to enroll a directory that contains local collection
-authority metadata. Sync is explicit, preflighted, protected by an in-process
-lease, and conservative around conflicts.
+authority metadata. Sync is preflighted, protected by an in-process lease, and
+conservative around conflicts.
 
-Before every sync, the workspace presents an exact transfer ledger grouped by
-downloads, uploads, and items needing attention. If the hosted head or local
-changes move after review, the plugin stops and asks for a fresh review. Sync
+**Sync now** plans the sync and applies it straight away when every change is
+routine: note creates, updates and renames. A plan stops for review when it
+contains the first sync, a rebuild, deletions, conflicts, attachment uploads,
+blocking issues, more than 200 changes, or more than 25 MiB. The review is an
+exact transfer ledger grouped by downloads, uploads, and items needing
+attention, with the reasons it was held. If the hosted head or local changes
+move after review, the plugin stops and asks for a fresh review.
+
+**Sync automatically** (off by default, in settings) applies routine plans in
+the background after local edits settle and when the periodic status check
+finds changes. Plans that need review are never applied in the background; the
+status bar shows "Review N changes" and the Sync tab carries a badge. Sync
 can be stopped safely after the current request without losing its durable
 checkpoint, and path collisions never overwrite local files silently. Disabling
 the plugin cancels sync/enrollment/adoption and fences subsequent mirror content
 writes; an already-issued Vault write or HTTP request may still finish.
 
-Markdown always syncs. Binary files are an explicit per-device choice, grouped
+Markdown always syncs. Binary files are an explicit per-device choice in
+settings, grouped
 as images, audio, video, PDFs, and other files, with collection-relative folder
 exclusions. Hidden, reserved, Markdown, and non-portable file paths are never
 materialized. Downloads and uploads are digest-verified; writable uploads are
@@ -62,12 +77,18 @@ as files—not Markdown—in the preflight ledger. Local collection adoption use
 the same policy and stages exact bytes for both warm and fenced snapshots.
 
 The status bar reports whether the mirror is synced, has changes waiting, is
-transferring a named file, is paused, or needs attention. The sync workspace
-keeps a bounded recent-activity ledger, shows byte progress for large files,
+transferring a named file, is paused, has changes held for review, or needs
+attention. Sync history is one device-local log of transfers and events
+(reconnects, conflict decisions, pauses, failures); events that need
+acknowledgement stay pinned until dismissed. The Sync tab shows byte progress
+for large files,
 and translates expired approval, offline service, stale review, cancellation,
 and durable recovery into explicit next actions. Conflict review provides a
 bounded Markdown diff or binary metadata and a local image preview, with
 **Keep local**, **Use hosted**, and collision-safe **Keep both** decisions.
+
+Connection details, reconnect, attachments, excluded folders and disconnect
+live in the plugin's settings tab.
 
 Disconnecting is explicit: retain the vault as a local unsynced copy, or remove
 only files that still exactly match the last durable checkpoint. Locally
@@ -75,9 +96,12 @@ changed files are always preserved. The plugin removes the connection before
 it starts file deletion, so failed settings persistence cannot turn local
 cleanup into remote deletions.
 
-Useful Obsidian commands include **mdbase: Review sync changes**, **mdbase: Sync
-now**, **mdbase: Cancel current sync**, **mdbase: Open sync activity**,
-**mdbase: Resolve sync conflicts**, and **mdbase: Reconnect collection**.
+Commands: **Open workspace**, **Create type definition**, **Edit type
+definition** (the current note's type, or a picker), **Create note from type**,
+**Validate current note**, **Validate collection**, and, for a synced vault,
+**Sync now** and **Show sync history for current note**. **Initialize
+collection**, **Cancel current sync**, **Resolve sync conflicts** and
+**Reconnect collection** appear only when they apply.
 
 ## Type workbench
 
@@ -175,12 +199,13 @@ writing it and enforces checked-in schema, migration-analysis, validation, and
 issue-render budgets. Set `OBSIDIAN_TEST_VAULT` to profile another registered
 disposable vault with the exact installed bundle.
 
-The Connect protocol and sync SDKs are pinned to `0.1.0-beta.91`, and mdbase
-interop is pinned to `0.1.0-rc.2`. Update `package.json`, regenerate
-`package-lock.json`, and rerun the binary round-trip and mobile gates when
-advancing them. The pending lossless malformed-frontmatter upgrade is documented
-in [SDK consumer qualification](docs/lossless-sdk-acceptance.md); its strict
-candidate check is separate from the released beta.91 test suite.
+The Connect protocol and sync SDKs are pinned to `0.1.0-beta.120`, and mdbase
+interop is pinned to `0.1.0-rc.2`. `npm ci` applies a version-specific sync SDK
+reliability patch (see [`patches/README.md`](patches/README.md)). Update
+`package.json`, regenerate `package-lock.json`, rebase or remove the patch, and
+rerun the binary round-trip, lossless (`npm run test:lossless`, part of
+`npm test`) and mobile gates when advancing them. See
+[SDK consumer qualification](docs/lossless-sdk-acceptance.md).
 
 ## Compatibility
 

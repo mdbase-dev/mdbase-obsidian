@@ -3,6 +3,7 @@ import test from "node:test";
 import type { MirrorPlanAction, MirrorState, MirrorStateStore } from "@mdbase-dev/connect-sync/mirror";
 import {
   filterRuns,
+  historyEvent,
   historyFileFromReceipt,
   historyForPath,
   parseHistory,
@@ -149,8 +150,8 @@ test("pruning drops old runs, then the oldest runs over the file limit, but neve
     run("b", "2026-09-21T00:00:00.000Z", ["4", "5"]),
     run("c", "2026-09-22T00:00:00.000Z", ["6", "7", "8", "9"]),
   ];
-  assert.deepEqual(pruneRuns(runs, { maxAgeDays: 90, maxFiles: 6 }, now).map((r) => r.id), ["b", "c"]);
-  assert.deepEqual(pruneRuns(runs.slice(3), { maxAgeDays: 90, maxFiles: 1 }, now).map((r) => r.id), ["c"]);
+  assert.deepEqual(pruneRuns(runs, { maxAgeDays: 90, maxFiles: 6, maxRuns: 100 }, now).map((r) => r.id), ["b", "c"]);
+  assert.deepEqual(pruneRuns(runs.slice(3), { maxAgeDays: 90, maxFiles: 1, maxRuns: 100 }, now).map((r) => r.id), ["c"]);
 });
 
 test("a torn or foreign line does not lose the rest of the log", () => {
@@ -184,4 +185,30 @@ test("the store appends one line per run, filters by collection and survives a r
   assert.deepEqual(reloaded.list("c1").map((r) => r.id), ["1"]);
   await reloaded.clear();
   assert.equal(adapter.files.get("history.jsonl"), "");
+});
+
+test("events share the log: they filter by path, appear in note history, and pinned ones survive clearing", async () => {
+  const adapter = new MemoryAdapter();
+  const store = new SyncHistoryStore(adapter, "history.jsonl");
+  await store.load();
+  const now = new Date().toISOString();
+  const pinned = historyEvent("c1", { summary: "Synchronization needs attention", tone: "attention", needsAcknowledgement: true }, now);
+  const decision = historyEvent("c1", { summary: "Conflict resolved with local version", tone: "info", path: "notes/a.md" }, now);
+  await store.append(run("1", now, ["notes/b.md"]));
+  await store.append(pinned);
+  await store.append(decision);
+  assert.equal(summarizeRun(decision), "Conflict resolved with local version");
+  assert.deepEqual(filterRuns(store.list("c1"), "notes/a").map((r) => r.id), [decision.id]);
+  assert.deepEqual(historyForPath(store.list("c1"), "notes/a.md").map(({ run }) => run.id), [decision.id]);
+  await store.clear();
+  assert.deepEqual(store.list("c1").map((r) => r.id), [pinned.id]);
+  await store.remove(pinned.id);
+  assert.deepEqual(store.list("c1"), []);
+});
+
+test("pruning bounds the number of entries as well as their files", () => {
+  const now = Date.now();
+  const at = new Date(now).toISOString();
+  const runs = Array.from({ length: 5 }, (_, index) => historyEvent("c1", { summary: String(index), tone: "info" }, at));
+  assert.equal(pruneRuns(runs, { maxAgeDays: 90, maxFiles: 100, maxRuns: 3 }, now).length, 3);
 });

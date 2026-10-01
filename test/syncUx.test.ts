@@ -2,7 +2,6 @@ import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MirrorStatus, MirrorSyncPlan } from "@mdbase-dev/connect-sync/mirror";
 import {
-  appendActivity,
   normalizeActivity,
   syncIndicator,
   syncProblem,
@@ -114,18 +113,30 @@ test("sync problems translate credentials, cancellation, busy work, stale decisi
   assert.equal(offline.message, "network unavailable");
 });
 
-test("activity validation is strict and the durable list remains bounded", () => {
-  let entries: SyncActivityEntry[] = [];
-  for (let index = 0; index < 35; index += 1) {
-    entries = appendActivity(entries, {
-      id: String(index),
-      occurredAt: "2026-08-12T00:00:00.000Z",
-      summary: `Entry ${index}`,
-      tone: "success",
-      requiresAcknowledgement: false,
-    });
-  }
-  assert.equal(entries.length, 30);
-  assert.equal(entries[0]?.id, "5");
-  assert.deepEqual(normalizeActivity([{}, ...entries]), entries);
+test("legacy activity is validated strictly before migration", () => {
+  const entries: SyncActivityEntry[] = Array.from({ length: 35 }, (_, index) => ({
+    id: String(index),
+    occurredAt: "2026-08-12T00:00:00.000Z",
+    summary: `Entry ${index}`,
+    tone: "success",
+    requiresAcknowledgement: false,
+  }));
+  const normalized = normalizeActivity([{}, ...entries]);
+  assert.equal(normalized.length, 30);
+  assert.equal(normalized[0]?.id, "5");
+});
+
+test("a plan held for review is named in the status bar ahead of ordinary pending changes", () => {
+  const indicator = syncIndicator({
+    connected: true,
+    status: status({ state: "changes_waiting", pending: 3 }),
+    progress: null,
+    fileProgress: null,
+    problem: null,
+    validationIssues: 0,
+    localChangeObserved: true,
+    reviewChanges: 2,
+  });
+  assert.equal(indicator.label, "mdbase: Review 2 changes");
+  assert.equal(indicator.destination, "sync");
 });
