@@ -970,20 +970,22 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
       throw new SyncError("mirror_path_collision", `A folder blocks the mirror file ${path}.`);
     }
     this.assertActive();
-    this.observeWrite(path);
     if (existing instanceof TFile && before === undefined) {
+      this.observeWrite(path);
       await this.vault.modify(existing, value);
     } else if (existing instanceof TFile) {
       await this.vault.process(existing, (current) => {
         this.assertActive();
         if (existing.path !== path || this.vault.getAbstractFileByPath(path) !== existing) throw stale();
         if (current !== before && current !== value) throw stale();
+        this.observeWrite(path);
         return value;
       });
     } else {
       if (before !== null) throw stale();
       // Vault.create refuses an occupied destination, including one created
       // after the existence check. Never fall back to overwriting it.
+      this.observeWrite(path);
       await this.vault.create(path, value);
     }
   }

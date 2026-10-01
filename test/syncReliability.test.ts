@@ -305,6 +305,21 @@ test("text downloads cannot follow a TFile renamed while Vault.process is queued
   assert.equal(vault.read("moved.md"), "base\n", "the engine must not write through the moved object");
 });
 
+test("a stale conditional text write does not reserve an echo for a user's edit", async () => {
+  const vault = new MemoryVault();
+  await vault.create("note.md", "base\n");
+  const writes: string[] = [];
+  const fs = new ObsidianMirrorFileSystem(vault as never, undefined, undefined, (path) => writes.push(path));
+  const process = vault.process.bind(vault);
+  vault.process = async (file, transform) => {
+    await vault.modify(file, "user edit\n");
+    return process(file, transform);
+  };
+  await assert.rejects(fs.write("note.md", "hosted\n", "base\n"), (error: unknown) =>
+    (error as { code?: string }).code === "sync_plan_stale");
+  assert.deepEqual(writes, [], "an abandoned write must not hide the real modify event");
+});
+
 test("binary edits made while a download stream is consumed are not overwritten", async () => {
   const vault = new MemoryVault();
   const original = new Uint8Array([1, 2, 3]).buffer;
