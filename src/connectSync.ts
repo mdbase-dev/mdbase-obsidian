@@ -49,6 +49,7 @@ import {
   type CompletedAuthorityAdoption,
 } from "@mdbase-dev/connect-sync/adoption";
 import {
+  applySyncJournalEvent,
   DirectoryMirror,
   type DirectoryMirrorOptions,
   type MirrorApplyResult,
@@ -62,6 +63,7 @@ import {
   type MirrorTextReadResult,
   type MirrorStateStore,
   type MirrorStatus,
+  type SyncJournalEvent,
   WritableDirectoryMirror,
 } from "@mdbase-dev/connect-sync/mirror";
 import {
@@ -1465,6 +1467,17 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
   // Keeping the same object store avoids an incompatible database upgrade.
   private get checkpointKey(): string[] { return [this.key, "checkpoint"]; }
 
+  /**
+   * Journal events since the last full write, as [key, "journal", sequence].
+   * Recording a receipt appends one small event instead of rewriting the whole
+   * prepared batch; a first sync of N notes would otherwise write the growing
+   * state N times. A full write or clear drops the journal in the same
+   * transaction, so state plus journal is always one consistent snapshot.
+   */
+  private journalRange(): IDBKeyRange {
+    return IDBKeyRange.bound([this.key, "journal", 0], [this.key, "journal", Number.MAX_SAFE_INTEGER]);
+  }
+
   async read(): Promise<MirrorState | null> {
     const database = await this.open();
     const refreshCheckpoint = !this.checkpointReady;
@@ -1472,9 +1485,11 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
       const transaction = database.transaction(STATE_STORE, refreshCheckpoint ? "readwrite" : "readonly");
       const store = transaction.objectStore(STATE_STORE);
       const request = store.get(this.key);
+      const journal = store.getAll(this.journalRange());
       let state: MirrorState | null = null;
       request.onsuccess = () => {
         state = (request.result as MirrorState | undefined) ?? null;
+        // Journal events never change the summarized cursor, scope or batch presence.
         if (refreshCheckpoint) {
           if (state) store.put(mirrorCheckpointSummary(state), this.checkpointKey);
           else store.delete(this.checkpointKey);
@@ -1482,6 +1497,18 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
       };
       transaction.oncomplete = () => {
         if (refreshCheckpoint) this.checkpointReady = true;
+        const events = journal.result as SyncJournalEvent[];
+        if (state && events.length) {
+          try {
+            for (const event of events) applySyncJournalEvent(state, event);
+          } catch {
+            reject(new SyncError("invalid_mirror_state", "The mirror sync journal is corrupt."));
+            return;
+          }
+        } else if (!state && events.length) {
+          reject(new SyncError("invalid_mirror_state", "The mirror sync journal has no base state."));
+          return;
+        }
         resolve(state);
       };
       transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror state read"));
@@ -1523,11 +1550,36 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
       const store = transaction.objectStore(STATE_STORE);
       store.put(state, this.key);
       store.put(mirrorCheckpointSummary(state), this.checkpointKey);
+      store.delete(this.journalRange());
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror state write"));
       transaction.onabort = () => reject(indexedDbError(transaction.error, "mirror state write"));
     });
     this.checkpointReady = true;
+  }
+
+  /** The SDK appends receipts and phase changes here between full writes. */
+  async appendJournal(event: SyncJournalEvent): Promise<void> {
+    const database = await this.open();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(STATE_STORE, "readwrite");
+      const store = transaction.objectStore(STATE_STORE);
+      const base = store.getKey(this.key);
+      const last = store.openKeyCursor(this.journalRange(), "prev");
+      let failure: Error | null = null;
+      last.onsuccess = () => {
+        if (base.result === undefined) {
+          failure = new SyncError("invalid_mirror_state", "The mirror sync journal has no base state.");
+          transaction.abort();
+          return;
+        }
+        const previous = last.result ? (last.result.key as [string, string, number])[2] : -1;
+        store.put(event, [this.key, "journal", previous + 1]);
+      };
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(failure ?? indexedDbError(transaction.error, "mirror journal append"));
+      transaction.onabort = () => reject(failure ?? indexedDbError(transaction.error, "mirror journal append"));
+    });
   }
 
   async clear(): Promise<void> {
@@ -1537,6 +1589,7 @@ export class IndexedDbMirrorStateStore implements MirrorStateStore {
       const store = transaction.objectStore(STATE_STORE);
       store.delete(this.key);
       store.delete(this.checkpointKey);
+      store.delete(this.journalRange());
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(indexedDbError(transaction.error, "mirror state clear"));
       transaction.onabort = () => reject(indexedDbError(transaction.error, "mirror state clear"));

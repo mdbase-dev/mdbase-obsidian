@@ -1,4 +1,4 @@
-import type { MirrorPlanAction, MirrorState, MirrorStateStore } from "@mdbase-dev/connect-sync/mirror";
+import type { MirrorPlanAction, MirrorState, MirrorStateStore, SyncJournalEvent } from "@mdbase-dev/connect-sync/mirror";
 import { actionEntry, type SyncPreviewAction, type SyncPreviewDirection } from "./syncPreview";
 
 export type SyncEventTone = "success" | "info" | "attention" | "error";
@@ -94,13 +94,43 @@ export function historyFileFromReceipt(
  * are exactly the actions this run completed, including runs that stop early.
  * A resumed batch already carries earlier receipts; they are the baseline.
  */
+type JournalingStateStore = MirrorStateStore & { appendJournal?(event: SyncJournalEvent): Promise<void> };
+
 export class ReceiptObservingStateStore implements MirrorStateStore {
   private readonly seen = new Map<string, { receipts: number; actions: Map<string, MirrorPlanAction> }>();
+  /**
+   * Present only when the inner store journals: the SDK chooses appending over
+   * full rewrites by this method's presence, so the wrapper must not hide it.
+   */
+  readonly appendJournal?: (event: SyncJournalEvent) => Promise<void>;
 
   constructor(
-    private readonly inner: MirrorStateStore,
+    private readonly inner: JournalingStateStore,
     private readonly onReceipt: (action: MirrorPlanAction, receipt: SyncActionReceipt) => void,
-  ) {}
+  ) {
+    const append = inner.appendJournal?.bind(inner);
+    if (append) {
+      this.appendJournal = async (event) => {
+        await append(event);
+        if (event.type === "receipt") await this.observeJournaledReceipt(event.plan_fingerprint, event.receipt);
+      };
+    }
+  }
+
+  private async observeJournaledReceipt(fingerprint: string, receipt: SyncActionReceipt): Promise<void> {
+    let entry = this.seen.get(fingerprint);
+    if (!entry) {
+      // A batch resumed after a restart: its preparing write happened in an
+      // earlier session. Load its plan once; this receipt is already counted.
+      const batch = (await this.inner.read())?.batch;
+      if (!batch || batch.plan.fingerprint !== fingerprint) return;
+      entry = { receipts: batch.receipts.length - 1, actions: new Map(batch.plan.actions.map((action) => [action.action_id, action])) };
+      this.seen.set(fingerprint, entry);
+    }
+    entry.receipts += 1;
+    const action = entry.actions.get(receipt.action_id);
+    if (action) this.onReceipt(action, receipt);
+  }
 
   read(): Promise<MirrorState | null> {
     return this.inner.read();
