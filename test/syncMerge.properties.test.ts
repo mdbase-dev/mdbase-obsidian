@@ -89,13 +89,13 @@ test("added or removed frontmatter with another body edit keeps both", () => {
 });
 
 // Isolate performance cases so a regression cannot hang the entire test runner.
-async function largeMerge(scenario: string): Promise<void> {
+async function largeMerge(scenario: string, mustMerge = false): Promise<void> {
   const moduleUrl = new URL("../src/syncMerge.js", import.meta.url).href;
   const worker = new Worker(`
     const { parentPort } = require("node:worker_threads");
     import(${JSON.stringify(moduleUrl)}).then(({ mergeDocuments }) => {
       const body = "a\\n".repeat(512 * 1024);
-      const base = "---\\nstatus: open\\n---\\n" + body;
+      let base = "---\\nstatus: open\\n---\\n" + body;
       ${scenario}
       parentPort.postMessage(mergeDocuments(base, local, remote, () => true));
     });
@@ -107,6 +107,7 @@ async function largeMerge(scenario: string): Promise<void> {
       worker.once("message", (result: { clean: boolean; text?: string }) => {
         clearTimeout(timer);
         try {
+          if (mustMerge) assert.equal(result.clean, true, "unchanged bulk must not prevent a small clean merge");
           // Keeping both is acceptable for pathological diffs; a clean merge
           // must retain both edits, not return a partial result.
           if (result.clean) {
@@ -125,6 +126,12 @@ async function largeMerge(scenario: string): Promise<void> {
 test("1 MB repeated-line body with independent frontmatter edit stays responsive", async () => {
   await largeMerge(`const local = base.replace("status: open", "status: local edit");
     const remote = base + "hosted edit\\n";`);
+});
+
+test("1 MB unchanged prefix does not force conflict copies for small disjoint edits", async () => {
+  await largeMerge(`base += "alpha\\n\\nbeta\\n\\ngamma\\n";
+    const local = base.replace("alpha", "local edit");
+    const remote = base.replace("gamma", "hosted edit");`, true);
 });
 
 test("1 MB repeated-line body edited on both sides stays responsive", async () => {

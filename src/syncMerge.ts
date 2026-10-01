@@ -75,19 +75,32 @@ function mergeLines(base: string, local: string, remote: string): string | null 
   const b = base.split("\n");
   const l = local.split("\n");
   const r = remote.split("\n");
+  // Trim only text that all three versions leave identical. Large notes often
+  // have tiny edits near one end; unchanged bulk must not force conflict copies.
+  let start = 0;
+  while (start < b.length && start < l.length && start < r.length
+    && b[start] === l[start] && b[start] === r[start]) start += 1;
+  let endB = b.length;
+  let endL = l.length;
+  let endR = r.length;
+  while (endB > start && endL > start && endR > start
+    && b[endB - 1] === l[endL - 1] && b[endB - 1] === r[endR - 1]) {
+    endB -= 1;
+    endL -= 1;
+    endR -= 1;
+  }
   // node-diff3's LCS is quadratic in the worst case (especially repeated
   // lines). Never freeze Obsidian's UI trying to merge a pathological note:
-  // the caller keeps both exact documents instead. Ordinary field/body edits
-  // above avoid diffing an unchanged body regardless of its size.
-  const work = b.length * (l.length + r.length);
+  // the caller keeps both exact documents instead.
+  const work = (endB - start) * (endL + endR - 2 * start);
   if (work > 4_000_000) return null;
-  const regions = diff3Merge(l, b, r, { excludeFalseConflicts: true });
+  const regions = diff3Merge(l.slice(start, endL), b.slice(start, endB), r.slice(start, endR), { excludeFalseConflicts: true });
   const merged: string[] = [];
   for (const region of regions) {
     if (region.conflict) return null;
     for (const line of region.ok ?? []) merged.push(line);
   }
-  return merged.join("\n");
+  return b.slice(0, start).concat(merged, b.slice(endB)).join("\n");
 }
 
 const PREAMBLE = "\u0000preamble";
