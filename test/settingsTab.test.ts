@@ -31,16 +31,18 @@ function fixture() {
     saveSettings: async () => undefined,
     requestSync: () => undefined,
     getMirrorProfile: () => ({ name: "Notes", mode: "read_write", controlUrl: "https://connect.example" }),
-    openWorkspace: async () => ({ reconnectCollection: async () => undefined }),
+    openWorkspace: async (_destination: string) => ({ reconnectCollection: async () => undefined }),
     connectSync: { getSelectiveSync: () => policy },
     sync: {
       isSyncing: () => false,
       configureSelectiveSync: async (next: typeof policy) => { policy = next; },
     },
   };
-  const tab = new MdbaseSettingTab({ vault: { getAllLoadedFiles: () => [] } } as never, plugin as never);
+  let settingsClosed = 0;
+  const app = { vault: { getAllLoadedFiles: () => [] }, setting: { close: () => { settingsClosed++; } } };
+  const tab = new MdbaseSettingTab(app as never, plugin as never);
   tab.display();
-  return { dom, plugin, tab, root: tab.containerEl, notices, policy: () => policy };
+  return { dom, plugin, tab, root: tab.containerEl, notices, policy: () => policy, settingsClosed: () => settingsClosed };
 }
 
 function button(root: HTMLElement, label: string): HTMLButtonElement {
@@ -50,6 +52,27 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
 }
 
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("Open sync and Reconnect close settings before handing off to the workspace", async () => {
+  for (const connected of [false, true]) {
+    const f = fixture();
+    if (!connected) Object.assign(f.plugin, { getMirrorProfile: () => null });
+    let opened = 0;
+    let reconnected = 0;
+    f.plugin.openWorkspace = async (destination) => {
+      assert.equal(destination, "sync");
+      assert.equal(f.settingsClosed(), 1, "approval and cancellation must not stay hidden behind settings");
+      opened++;
+      return { reconnectCollection: async () => { reconnected++; } };
+    };
+    f.tab.display();
+    button(f.root, connected ? "Reconnect" : "Open sync").click();
+    await settle();
+    assert.equal(opened, 1);
+    assert.equal(reconnected, connected ? 1 : 0);
+    f.dom.window.close();
+  }
+});
 
 test("failed exclusion changes report only failure and leave the saved scope unchanged", async () => {
   const f = fixture();
@@ -83,6 +106,17 @@ test("applying exclusions waits for persistence and prevents duplicate requests"
   await settle();
   assert.deepEqual(f.notices, ["Excluded folders updated. The next sync applies them."]);
   assert.equal(apply.disabled, false);
+  f.dom.window.close();
+});
+
+test("Open sync failures report a notice instead of an unhandled settings rejection", async () => {
+  const f = fixture();
+  Object.assign(f.plugin, { getMirrorProfile: () => null });
+  f.plugin.openWorkspace = async () => { throw new Error("Workspace could not open"); };
+  f.tab.display();
+  button(f.root, "Open sync").click();
+  await settle();
+  assert.deepEqual(f.notices, ["Workspace could not open"]);
   f.dom.window.close();
 });
 
