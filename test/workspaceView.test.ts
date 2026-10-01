@@ -949,6 +949,28 @@ test("sync actions and filters preserve focus across progress and review renders
   f.dom.window.close();
 });
 
+test("popout inputs retain their selection even when DOM constructors belong to another window", () => {
+  const popout = fixture(true);
+  // A second realm represents the main window where the plugin module executes.
+  const main = fixture();
+  popout.host.getIssues = () => [{ path: "notes.md", severity: "error", code: "required", message: "Missing title" }];
+  popout.state.destination = "issues";
+  popout.state.render();
+  let search = popout.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.value = "notes";
+  search.dispatchEvent(new popout.dom.window.Event("input"));
+  search = popout.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.focus();
+  search.setSelectionRange(1, 3);
+  popout.state.render();
+  const restored = popout.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  assert.equal(popout.dom.window.document.activeElement, restored);
+  assert.equal(restored.selectionStart, 1);
+  assert.equal(restored.selectionEnd, 3);
+  popout.dom.window.close();
+  main.dom.window.close();
+});
+
 test("quoted transfer paths cannot break focus restoration while comparing changes", () => {
   const f = fixture(true);
   (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
