@@ -230,10 +230,10 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (this.destination === "sync" || !this.host.getMirrorProfile()) return null;
     const { problem, paused, status, progress, fileProgress } = this.host.sync.state;
     if (progress || fileProgress) return null;
-    const kind = problem?.kind ?? (paused ? "paused" : status?.recovery_required ? "recovery" : null);
+    const kind = paused ? "paused" : problem?.kind ?? (status?.recovery_required ? "recovery" : null);
     if (!kind || kind === "busy") return null;
     const labels = { offline: "Offline", auth: "Sign in", device: "Set up", internal: "Error", decision: "Review", recovery: "Review", paused: "Paused" };
-    return { kind, label: labels[kind], detail: problem?.title ?? (paused ? "Sync is paused" : "Synchronization needs recovery") };
+    return { kind, label: labels[kind], detail: paused ? "Sync is paused" : problem?.title ?? "Synchronization needs recovery" };
   }
 
   /** Refresh tab badges without rebuilding the active pane (and losing its focus). */

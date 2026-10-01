@@ -106,14 +106,15 @@ export class SyncPane {
     const state = this.session.state;
     const syncing = Boolean(state.fileProgress || state.progress);
     const problem = state.problem?.kind === "busy" ? null : state.problem;
-    const recoveryProblem: SyncProblem | null = problem ?? (state.paused && !syncing ? {
+    const pauseNeedsResume = state.paused && !syncing && !state.busy && (!problem || ["offline", "internal"].includes(problem.kind));
+    const recoveryProblem: SyncProblem | null = pauseNeedsResume ? {
       code: "sync_paused",
       kind: "paused",
       title: "Sync is paused",
       message: "Changes on this device and in Connect wait until you resume.",
       action: "resume",
       actionLabel: "Resume sync",
-    } : state.status?.recovery_required ? {
+    } : problem ?? (state.status?.recovery_required ? {
       code: "mirror_recovery_required",
       kind: "recovery",
       title: "Synchronization needs recovery",
@@ -125,7 +126,7 @@ export class SyncPane {
     const preview = state.preview;
     const safety = this.session.safety();
     const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
-    const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? "Checking…"
+    const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? state.paused ? "Stopping…" : "Checking…"
       : recoveryProblem?.kind === "paused" ? "Paused"
       : recoveryProblem?.kind === "offline" ? "Offline"
       : recoveryProblem?.kind === "auth" ? "Approval needed"

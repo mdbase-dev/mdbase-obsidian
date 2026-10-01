@@ -258,6 +258,22 @@ test("a stale reviewed plan cannot be applied before refreshing the newest chang
   f.dom.window.close();
 });
 
+test("an explicit idle pause supersedes an old offline retry without discarding its diagnostic cause", () => {
+  const f = fixture(true);
+  f.host.sync.reportProblem(Object.assign(new Error("Offline"), { code: "network_timeout" }));
+  f.host.sync.setRetryAt(Date.now() + 30000);
+  f.host.sync.cancel();
+  f.state.render();
+  assert.equal(f.root.querySelector(".mdbase-sync-heading > .mdbase-muted")?.textContent?.split(" · ")[0], "Paused");
+  assert.ok(button(f.root, "Resume sync"));
+  assert.doesNotMatch(f.text(), /Retry now|Trying again|sync automatically/);
+  assert.equal(f.host.sync.state.problem?.kind, "offline", "retain the cause for recovery/diagnostics");
+  f.state.destination = "issues";
+  f.state.render();
+  assert.equal(f.root.querySelector(".mdbase-nav-status")?.textContent, "Paused");
+  f.dom.window.close();
+});
+
 test("a diagnostics copy failure is reported and returns focus instead of an unhandled rejection", async () => {
   const f = fixture(true);
   f.host.sync.reportProblem(new Error("Sync stopped"));
