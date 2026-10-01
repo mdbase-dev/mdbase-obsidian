@@ -90,6 +90,51 @@ test("a hosted spelling can conditionally update and remove an aliased cached TF
   assert.equal(vault.getFiles().length, 0);
 });
 
+test("a user rename during destination checks is not silently replaced by a hosted rename", async () => {
+  const vault = new AliasingVault();
+  const file = await vault.create("note.md", "exact user bytes\n");
+  const exists = vault.adapter.exists.bind(vault.adapter);
+  let raced = false;
+  vault.adapter.exists = async (path) => {
+    if (path === "hosted.md" && !raced) {
+      raced = true;
+      // Obsidian mutates a TFile's path in place when it is renamed.
+      const entry = vault.files.get("note.md")!;
+      vault.files.delete("note.md");
+      file.path = "saved-by-user.md";
+      vault.files.set(file.path, entry);
+    }
+    return exists(path);
+  };
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  await assert.rejects(fs.move("note.md", "hosted.md"), (error: unknown) => (error as { code?: string }).code === "sync_plan_stale");
+  assert.equal(vault.read("saved-by-user.md"), "exact user bytes\n");
+  assert.equal(vault.read("hosted.md"), null);
+});
+
+test("a TFile renamed before an async cache lookup completes is not deleted at its new path", async () => {
+  const vault = new AliasingVault();
+  const file = await vault.create("note.md", "keep this rename\n");
+  const lookup = vault.getAbstractFileByPath.bind(vault);
+  let raced = false;
+  vault.getAbstractFileByPath = (path) => {
+    const result = lookup(path);
+    if (path === "note.md" && !raced) {
+      raced = true;
+      queueMicrotask(() => {
+        const entry = vault.files.get("note.md")!;
+        vault.files.delete("note.md");
+        file.path = "saved-by-user.md";
+        vault.files.set(file.path, entry);
+      });
+    }
+    return result;
+  };
+  const fs = new ObsidianMirrorFileSystem(vault as never);
+  await assert.rejects(fs.remove("note.md"), (error: unknown) => (error as { code?: string }).code === "sync_plan_stale");
+  assert.equal(vault.read("saved-by-user.md"), "keep this rename\n");
+});
+
 test("binary inspection and writes use the aliased TFile rather than declaring it absent", async () => {
   const vault = new AliasingVault();
   await vault.createBinary("cafe\u0301.png", new Uint8Array([0, 255, 128]).buffer);
