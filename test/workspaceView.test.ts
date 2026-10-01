@@ -133,6 +133,24 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   return result;
 }
 
+test("opening waits for the requested destination before scanning collection records", async () => {
+  const f = fixture(true);
+  f.state.destination = "types";
+  let recordLoads = 0;
+  Object.assign(f.host, {
+    loadWorkspaceSchema: async () => ({ config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() }),
+    loadCollectionRecords: async () => { recordLoads++; return []; },
+  });
+  await f.view.onOpen();
+  assert.equal(recordLoads, 0, "onOpen must not scan Types before setState can restore Sync");
+  await f.view.setState({ destination: "sync" }, {} as never);
+  assert.equal(recordLoads, 0);
+  await f.view.setState({ destination: "types" }, {} as never);
+  assert.equal(recordLoads, 1, "opening Types still loads its statistics");
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
 test("Sync and Issues refreshes do not parse all records or run type impact scans", async () => {
   const f = fixture(true);
   let recordLoads = 0;
