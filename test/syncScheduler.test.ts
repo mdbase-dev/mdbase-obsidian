@@ -218,6 +218,16 @@ test("a run that finds sync busy tries again shortly and keeps the pending edits
   assert.equal(h.calls.autoSync, 2);
 });
 
+test("a bounded run with work remaining gets a prompt follow-up without another vault event", async () => {
+  const h = harness();
+  h.setResult("pending");
+  h.scheduler.start();
+  await h.clock.advance(0);
+  h.setResult("applied");
+  await h.clock.advance(2_000);
+  assert.equal(h.calls.autoSync, 2, "local work left by a bounded run must not wait for the safety net");
+});
+
 test("a trigger that fires while a sync is running is not lost, and later syncs still happen", async () => {
   // Regression: a timer firing mid-run left a stale due time that made every
   // later schedule() think a timer was already pending, so sync stopped forever.

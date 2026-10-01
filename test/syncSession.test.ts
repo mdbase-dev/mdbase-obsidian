@@ -190,6 +190,17 @@ test("a plan that changed underneath is inspected again and applied, not shown a
   assert.equal(session.state.problem, null);
 });
 
+test("continually stale plans request a follow-up instead of claiming the vault is up to date", async () => {
+  const h = harness(previewFromPlan(plan([write("a.md")])), {
+    outcomes: Array.from({ length: 4 }, () => ({ status: "stale" })),
+  });
+  assert.equal(await h.session.autoSync(), "pending");
+  assert.equal(h.applied.length, 4, "one attempt remains bounded so the vault stays responsive");
+  assert.equal(h.session.state.problem, null, "a changing plan is routine, not a defect");
+  assert.ok(h.session.state.preview?.plan.actions.length);
+  assert.equal(await h.session.autoSync(), "applied", "a later attempt can finish");
+});
+
 test("a failure recorded by the engine is a problem, and an offline one is retried quietly", async () => {
   const offline = harness(previewFromPlan(plan([write("a.md")])), {
     outcomes: [{ status: "failed", failure: { code: "network_unreachable", message: "offline" } }],

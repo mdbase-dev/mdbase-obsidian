@@ -162,8 +162,8 @@ export class SyncScheduler {
     if (!due) return null;
     this.lastSyncAt = now;
     const result = await this.host.autoSync();
-    if (result === "busy") {
-      this.changed ||= local;
+    if (result === "busy" || result === "pending") {
+      this.changed ||= local || result === "pending";
       return 2_000;
     }
     if (result === "failed") {

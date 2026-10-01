@@ -37,7 +37,7 @@ export interface SyncSessionState {
   retryAt: number | null;
 }
 
-export type SyncNowResult = "applied" | "up_to_date" | "needs_review" | "failed" | "busy" | "paused";
+export type SyncNowResult = "applied" | "up_to_date" | "needs_review" | "failed" | "busy" | "paused" | "pending";
 
 /** Rounds of inspect, apply and settle conflicts one Sync now may take before it stops. */
 const MAX_SYNC_ROUNDS = 4;
@@ -238,7 +238,9 @@ export class SyncSession {
         if (settled) continue;
         if (!this.current.preview) return "applied";
       }
-      return applied ? "applied" : "up_to_date";
+      // Yield after a bounded number of changing plans, but keep the scheduler
+      // chasing the remaining work instead of declaring it settled for 15 min.
+      return "pending";
     }, options.quiet);
     return result ?? "failed";
   }
