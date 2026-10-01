@@ -410,11 +410,15 @@ export class SyncSession {
 
   /** One inspection gives both the plan and the status. Null when it failed. */
   private async loadPreview(): Promise<MdbaseSyncPreview | null> {
+    const profile = this.getProfile();
+    if (!profile) return null;
     try {
       const { preview, status } = await this.controller.inspect();
+      if (!sameProfile(profile, this.getProfile())) return null;
       this.update({ preview, status, problem: null });
       return preview;
     } catch (error) {
+      if (!sameProfile(profile, this.getProfile())) return null;
       const problem = syncProblem(error);
       this.update({ problem, message: problem.message });
       return null;
@@ -526,7 +530,9 @@ export class SyncSession {
 }
 
 function sameProfile(a: MirrorProfile | null, b: MirrorProfile | null): boolean {
-  return a?.collectionId === b?.collectionId;
+  return a?.collectionId === b?.collectionId
+    && a?.replicaId === b?.replicaId
+    && a?.enrollmentId === b?.enrollmentId;
 }
 
 function conflictEvent(resolution: AutoResolution): SyncEventInput {

@@ -7,7 +7,7 @@ import { SyncSession } from "../src/syncSession";
 import type { AutoResolution } from "../src/connectSync";
 
 const digest = `sha256:${"4".repeat(64)}`;
-const profile = { collectionId: "c1", name: "Notes" };
+const profile = { collectionId: "c1", replicaId: "r1", name: "Notes" };
 
 function status(overrides: Partial<MirrorStatus> = {}): MirrorStatus {
   return {
@@ -113,8 +113,13 @@ function harness(initial: MdbaseSyncPreview, options: HarnessOptions = {}) {
     remove: async () => undefined,
     clear: async () => undefined,
   };
-  const session = new SyncSession(controller as never, () => profile as never, history);
-  return { session, controller, applied, runs, resolveCalls: () => resolveCalls, setNext: (preview: MdbaseSyncPreview) => { next = preview; } };
+  let currentProfile: typeof profile | null = profile;
+  const session = new SyncSession(controller as never, () => currentProfile as never, history);
+  return {
+    session, controller, applied, runs, resolveCalls: () => resolveCalls,
+    setNext: (preview: MdbaseSyncPreview) => { next = preview; },
+    setProfile: (next: typeof profile | null) => { currentProfile = next; },
+  };
 }
 
 test("progress and unrelated updates do not rescan a large plan's consent policy", () => {
@@ -273,6 +278,38 @@ test("reconnect reports when Connect needs a fresh approval instead of failing",
   assert.equal(await session.reconnect(), "reauthorize");
   assert.equal(session.state.problem?.action, "reauthorize");
   assert.equal(session.state.busy, false);
+});
+
+test("a status request from a retired replica cannot overwrite the reauthorized session", async () => {
+  const h = harness(previewFromPlan(plan([])));
+  let release!: () => void;
+  h.controller.status = () => new Promise((resolve) => { release = () => resolve(status({ cursor: 99 })); });
+  const refreshing = h.session.refreshStatus();
+  h.setProfile({ ...profile, replicaId: "r2" });
+  h.session.update({ status: status({ cursor: 4 }) });
+  release();
+  assert.equal(await refreshing, null);
+  assert.equal(h.session.state.status?.cursor, 4);
+});
+
+test("inspection finishing after disconnect cannot restore the old preview or problems", async () => {
+  const h = harness(previewFromPlan(plan([write("a.md")])));
+  const inspect = h.controller.inspect;
+  let release!: () => void;
+  h.controller.inspect = async () => {
+    h.controller.inspect = inspect;
+    await new Promise<void>((resolve) => { release = resolve; });
+    return inspect();
+  };
+  const running = h.session.syncNow();
+  h.setProfile(null);
+  h.session.reset();
+  release();
+  await running;
+  assert.equal(h.session.state.status, null);
+  assert.equal(h.session.state.preview, null);
+  assert.equal(h.session.state.problem, null);
+  assert.equal(h.applied.length, 0);
 });
 
 test("listeners hear every state change", async () => {
