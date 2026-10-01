@@ -346,6 +346,44 @@ test("restoring an empty YAML draft preserves the unsaved empty text", async () 
   f.dom.window.close();
 });
 
+test("destination tabs expose a labelled panel and native roving keyboard navigation", async () => {
+  const f = fixture(true);
+  f.state.destination = "issues";
+  f.state.render();
+  const selected = () => f.root.querySelector<HTMLButtonElement>("[role='tab'][aria-selected='true']")!;
+  assert.equal(f.root.querySelectorAll("[role='tab'][tabindex='0']").length, 1);
+  assert.equal(f.root.querySelectorAll("[role='tab'][tabindex='-1']").length, 2);
+  const panel = f.root.querySelector("[role='tabpanel']")!;
+  assert.ok(panel);
+  assert.equal(panel.getAttribute("aria-labelledby"), selected().id);
+  assert.equal(selected().getAttribute("aria-controls"), panel.id);
+  selected().focus();
+  for (const [key, destination] of [["ArrowRight", "types"], ["ArrowLeft", "issues"], ["Home", "types"], ["End", "issues"], ["ArrowLeft", "sync"]]) {
+    const event = new f.dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    selected().dispatchEvent(event);
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(f.state.destination, destination);
+    assert.equal(f.dom.window.document.activeElement, selected());
+    assert.equal(selected().tabIndex, 0);
+  }
+  await settle();
+  f.dom.window.close();
+});
+
+test("background sync badge updates preserve keyboard focus on the destination tabs", async () => {
+  const f = fixture(true);
+  f.state.destination = "issues";
+  Object.assign(f.host, { loadWorkspaceSchema: async () => null });
+  await f.view.onOpen();
+  const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-issues']")!;
+  tab.focus();
+  f.host.sync.update({ status: { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] } as never });
+  assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "destination-issues");
+  assert.notEqual(f.dom.window.document.activeElement, tab, "focus follows the replacement tab");
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
 test("empty Issues has no redundant filters, counts, or empty panels", () => {
   const f = fixture();
   f.state.destination = "issues";

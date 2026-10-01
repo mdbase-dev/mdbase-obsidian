@@ -32,6 +32,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   readonly types = new TypesPane(this);
   readonly sync = new SyncPane(this);
   readonly issues = new IssuesPane(this);
+  private static nextNavigationId = 0;
+  private readonly navigationId = `mdbase-workspace-${++MdbaseWorkspaceView.nextNavigationId}`;
   private refreshVersion = 0;
   private unsubscribeSync: (() => void) | null = null;
   private syncRenderTimer: number | null = null;
@@ -195,6 +197,9 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     }
     const content = shell.createDiv({ cls: "mdbase-workspace-content" });
     content.setAttr("data-scroll-key", "workspace");
+    content.id = `${this.navigationId}-${this.destination}-panel`;
+    content.setAttr("role", "tabpanel");
+    content.setAttr("aria-labelledby", `${this.navigationId}-${this.destination}-tab`);
     if (this.destination === "types") this.types.render(content);
     else if (this.destination === "sync") this.sync.render(content);
     else this.issues.render(content);
@@ -221,10 +226,14 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   private renderTopbarOnly(): void {
     const topbar = this.containerEl.querySelector<HTMLElement>(".mdbase-topbar");
     if (!topbar) return;
+    const snapshot = this.captureRenderSnapshot(topbar);
     const replacement = this.containerEl.ownerDocument.createElement("div");
     this.renderTopbar(replacement);
     const next = replacement.firstElementChild;
-    if (next) topbar.replaceWith(next);
+    if (next) {
+      topbar.replaceWith(next);
+      this.restoreRenderSnapshot(next as HTMLElement, snapshot);
+    }
   }
 
   private captureRenderSnapshot(root: HTMLElement): RenderSnapshot {
@@ -291,10 +300,15 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     const topbar = container.createDiv({ cls: "mdbase-topbar" });
     const nav = topbar.createDiv({ cls: "mdbase-nav" });
     nav.setAttr("role", "tablist");
-    for (const [destination, label] of [["types", "Types"], ["sync", "Sync"], ["issues", "Issues"]] as const) {
+    nav.setAttr("aria-label", "mdbase destinations");
+    const destinations = [["types", "Types"], ["sync", "Sync"], ["issues", "Issues"]] as const;
+    for (const [index, [destination, label]] of destinations.entries()) {
       const button = nav.createEl("button", { text: label, cls: "clickable-icon" });
       button.addClass("mdbase-nav-button");
       button.setAttr("role", "tab");
+      button.id = `${this.navigationId}-${destination}-tab`;
+      if (this.destination === destination) button.setAttr("aria-controls", `${this.navigationId}-${destination}-panel`);
+      button.tabIndex = this.destination === destination ? 0 : -1;
       button.setAttr("data-focus-key", `destination-${destination}`);
       button.setAttr("aria-selected", String(this.destination === destination));
       if (this.destination === destination) button.addClass("is-active");
@@ -309,6 +323,16 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
         count.setAttr("title", attention.label);
       }
       button.onclick = () => this.showDestination(destination);
+      button.onkeydown = (event) => {
+        const nextIndex = event.key === "ArrowRight" ? (index + 1) % destinations.length
+          : event.key === "ArrowLeft" ? (index + destinations.length - 1) % destinations.length
+          : event.key === "Home" ? 0
+          : event.key === "End" ? destinations.length - 1 : null;
+        if (nextIndex === null) return;
+        event.preventDefault();
+        this.pendingFocusKey = `destination-${destinations[nextIndex][0]}`;
+        this.showDestination(destinations[nextIndex][0]);
+      };
     }
   }
 
