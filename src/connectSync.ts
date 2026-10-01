@@ -2,6 +2,7 @@ import {
   App,
   normalizePath,
   parseYaml,
+  type MarkdownView,
   type RequestUrlResponse,
   stringifyYaml,
   TFile,
@@ -963,6 +964,34 @@ async function ensureFolder(vault: Vault, path: string): Promise<void> {
   }
 }
 
+function editorComparable(value: string): string {
+  // CodeMirror normalizes line separators and may omit the encoding BOM.
+  return value.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
+/** Fence unsaved buffers; advance clean views before disk IO so its notification
+ * cannot replace typing that happens while the write is awaiting the adapter. */
+export function prepareMirrorEditorChange(app: App, path: string, before: string | undefined, after: string | null): void {
+  const leaves = (app.workspace?.getLeavesOfType?.("markdown") ?? []).filter((leaf) => {
+    const view = leaf.view as MarkdownView;
+    return view.file && portablePathKey(view.file.path) === portablePathKey(path);
+  });
+  for (const leaf of leaves) {
+    const view = leaf.view as MarkdownView;
+    if (view.getMode() === "source" && editorComparable(view.editor.getValue()) !== editorComparable(before ?? view.data)) {
+      throw new SyncError("sync_plan_stale", `${path} has unsaved editor changes. Let them save before syncing again.`);
+    }
+  }
+  for (const leaf of leaves) {
+    const view = leaf.view as MarkdownView;
+    if (after === null) leaf.detach();
+    else {
+      view.setViewData(after, false);
+      view.data = after;
+    }
+  }
+}
+
 export class ObsidianMirrorFileSystem implements MirrorFileSystem {
   constructor(
     private readonly vault: Vault,
@@ -971,6 +1000,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     private readonly assertActive: () => void = () => undefined,
     /** Told about every path this adapter is about to change, so the host can tell its own writes from the user's. */
     private readonly observeWrite: (path: string) => void = () => undefined,
+    private readonly prepareEditorChange: (path: string, before: string | undefined, after: string | null) => void = () => undefined,
   ) {}
 
   /** Resolve a disk alias only after proving its physical name is unambiguous. */
@@ -1078,6 +1108,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
         this.assertActive();
         if (existing.path !== spelling || this.vault.getAbstractFileByPath(spelling) !== existing) throw stale();
         if (current !== before && current !== value) throw stale();
+        this.prepareEditorChange(spelling, current, value);
         this.observeWrite(path);
         this.observeWrite(spelling);
         return value;
@@ -1135,6 +1166,7 @@ export class ObsidianMirrorFileSystem implements MirrorFileSystem {
     }
     this.assertActive();
     this.assertEntry(path, existing);
+    this.prepareEditorChange(existing.path, typeof expected === "string" ? expected : undefined, null);
     this.observeWrite(path);
     this.observeWrite(existing.path);
     await this.trashFile(existing);
@@ -1654,6 +1686,7 @@ export class ConnectSyncController {
       (file) => app.fileManager.trashFile(file),
       () => this.assertActive(),
       (path) => this.noteEngineWrite(path),
+      (path, before, after) => prepareMirrorEditorChange(app, path, before, after),
     );
     this.enrollmentClient = options.enrollmentClient ?? new MirrorEnrollmentClient({
       request: createObsidianEnrollmentRequester(),
