@@ -107,6 +107,8 @@ export function syncIndicator(input: {
   problem: SyncProblem | null;
   validationIssues: number;
   localChangeObserved: boolean;
+  /** Automatic sync stays off after the person stops it, even with a healthy checkpoint. */
+  paused?: boolean;
   /** Changes in a plan that stopped for review instead of applying automatically. */
   reviewChanges?: number;
 }): SyncIndicator {
@@ -140,6 +142,9 @@ export function syncIndicator(input: {
       detail: "Open synchronization progress",
       destination: "sync",
     };
+  }
+  if (input.paused && !problem) {
+    return { state: "paused", label: "mdbase: Paused", detail: "Changes wait until you resume sync", destination: "sync" };
   }
   if (problem && problem.kind !== "busy") {
     return {

@@ -111,6 +111,15 @@ test("sync indicator gives transfer, attention, waiting, and synced states stabl
   assert.match(transferring.detail, /large\.bin/);
 });
 
+test("an explicit pause cannot claim Synced just because the last checkpoint is healthy", () => {
+  const base = { connected: true, status: status(), progress: null, fileProgress: null, problem: null, validationIssues: 0, localChangeObserved: false, paused: true };
+  const indicator = syncIndicator(base);
+  assert.equal(indicator.state, "paused");
+  assert.equal(indicator.label, "mdbase: Paused");
+  assert.match(indicator.detail, /resume/);
+  assert.equal(syncIndicator({ ...base, progress: { phase: "uploading", completed: 1, total: 2 } as never }).state, "syncing", "active progress remains honest until stopping finishes");
+});
+
 test("sync problems translate credentials, cancellation, busy work, stale decisions, and network failures", () => {
   assert.equal(syncProblem(Object.assign(new Error("missing"), { code: "mirror_credentials_missing" })).action, "reauthorize");
   assert.equal(syncProblem(new DOMException("stopped", "AbortError")).action, "resume");
