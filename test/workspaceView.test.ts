@@ -680,6 +680,29 @@ test("pending record updates can be compared before syncing", async () => {
   f.dom.window.close();
 });
 
+test("collapsed history does not construct hidden transfer ledgers", () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push(...Array.from({ length: 20 }, (_, index) => ({
+    id: `large-${index}`, collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "applied",
+    files: Array.from({ length: 250 }, (_, file) => ({ path: `${index}/${file}.md`, kind: "document" as const,
+      direction: "download" as const, action: "create" as const, status: "completed" as const, at })),
+  })));
+  f.state.render();
+  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 0, "closed History needs only its heading");
+  const history = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!;
+  history.open = true;
+  history.dispatchEvent(new f.dom.window.Event("toggle"));
+  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 10);
+  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 0,
+    "closed runs need only summaries, not 2,500 hidden rows");
+  const run = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-run-large-0']")!;
+  run.open = true;
+  run.dispatchEvent(new f.dom.window.Event("toggle"));
+  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 250);
+  f.dom.window.close();
+});
+
 test("sync history lists runs, expands to their files and filters by path", () => {
   const f = fixture(true);
   const at = new Date().toISOString();

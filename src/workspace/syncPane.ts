@@ -297,6 +297,9 @@ export class SyncPane {
     const section = this.ctx.disclosure(container, "sync-activity", "History", pinned.length > 0);
     section.addClass("mdbase-activity");
     section.id = "mdbase-sync-activity";
+    const disclosure = section.parentElement as HTMLDetailsElement;
+    this.renderHistoryOnToggle(disclosure);
+    if (!disclosure.open) return;
     for (const run of [...pinned].reverse()) this.renderEventRow(section, run);
 
     const header = section.createDiv({ cls: "mdbase-section-header mdbase-history-controls" });
@@ -337,6 +340,14 @@ export class SyncPane {
     }
   }
 
+  /** Hidden history can contain thousands of rows; construct it only when opened. */
+  private renderHistoryOnToggle(details: HTMLDetailsElement): void {
+    const renderedOpen = details.open;
+    details.addEventListener("toggle", () => {
+      if (this.ctx.containerEl.contains(details) && details.open !== renderedOpen) this.ctx.render();
+    });
+  }
+
   private renderHistoryRun(container: HTMLElement, run: SyncHistoryRun, filtered: boolean): void {
     const details = container.createEl("details", { cls: "mdbase-history-run" });
     const key = `history-run-${run.id}`;
@@ -360,6 +371,8 @@ export class SyncPane {
     });
     if (run.message && run.outcome !== "applied") body.createDiv({ text: run.message });
     setIcon(summary.createSpan({ cls: "mdbase-history-chevron" }), "chevron-right");
+    this.renderHistoryOnToggle(details);
+    if (!details.open) return;
 
     const ledger = details.createDiv({ cls: "mdbase-transfer-ledger mdbase-history-files" });
     for (const file of run.files.slice(0, 250)) {
