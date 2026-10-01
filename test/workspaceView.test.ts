@@ -146,6 +146,37 @@ test("connected Sync is one status and one primary action; settings live in the 
   f.dom.window.close();
 });
 
+test("recovery states have one next action and never show a stale healthy heading", () => {
+  for (const scenario of [
+    { patch: { paused: true }, action: "Resume sync", label: "Paused" },
+    { patch: { status: { state: "up_to_date", recovery_required: true, conflicts: [], local_issues: [] } }, action: "Resume recovery", label: "Needs attention" },
+    { patch: { problem: { code: "stale_mirror_plan", kind: "decision", title: "The collection changed again", message: "Review the newest versions.", action: "review", actionLabel: "Review newest changes" } }, action: "Review newest changes", label: "Needs attention" },
+  ]) {
+    const f = fixture(true);
+    f.host.sync.update(scenario.patch as never);
+    f.state.render();
+    assert.equal(f.root.querySelectorAll(".mod-cta").length, 1, f.text());
+    assert.ok(button(f.root, scenario.action));
+    assert.match(f.root.querySelector(".mdbase-sync-heading")!.textContent!, new RegExp(scenario.label));
+    assert.doesNotMatch(f.text(), /Up to date|Sync now/);
+    f.dom.window.close();
+  }
+});
+
+test("a stale reviewed plan cannot be applied before refreshing the newest changes", () => {
+  const f = fixture(true);
+  f.state.mirrorPreview = {
+    phase: "incremental", plan: { actions: [{ command: "delete_local" }], issues: [], summary: { blocking_issues: 0 } },
+    entries: [{ path: "old.md", direction: "download", action: "delete", detail: "Delete old file" }], collisions: [], local_issues: [],
+  };
+  f.host.sync.reportProblem(Object.assign(new Error("Plan changed"), { code: "stale_mirror_plan" }));
+  f.state.render();
+  assert.equal(f.root.querySelectorAll(".mod-cta").length, 1, f.text());
+  assert.ok(button(f.root, "Review newest changes"));
+  assert.doesNotMatch(f.text(), /Sync 1 change|Refresh review/);
+  f.dom.window.close();
+});
+
 test("enrollment exposes only essential controls but retains the upload warning and advanced options", () => {
   const f = fixture();
   f.state.render();

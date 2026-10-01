@@ -105,13 +105,35 @@ export class SyncPane {
     }
     const state = this.session.state;
     const syncing = Boolean(state.fileProgress || state.progress);
+    const problem = state.problem?.kind === "busy" ? null : state.problem;
+    const recoveryProblem: SyncProblem | null = problem ?? (state.paused && !syncing ? {
+      code: "sync_paused",
+      kind: "paused",
+      title: "Sync is paused",
+      message: "Changes on this device and in Connect wait until you resume.",
+      action: "resume",
+      actionLabel: "Resume sync",
+    } : state.status?.recovery_required ? {
+      code: "mirror_recovery_required",
+      kind: "recovery",
+      title: "Synchronization needs recovery",
+      message: "Your original files are safe. Resume from the durable checkpoint before disconnecting this vault.",
+      action: "resume",
+      actionLabel: "Resume recovery",
+    } : null);
+    const label = syncing ? "Syncing" : state.busy ? "Checking…"
+      : recoveryProblem?.kind === "paused" ? "Paused"
+      : recoveryProblem?.kind === "offline" ? "Offline"
+      : recoveryProblem?.kind === "auth" ? "Approval needed"
+      : recoveryProblem?.kind === "device" ? "Set up this device"
+      : recoveryProblem ? "Needs attention" : syncStateLabel(state.status);
 
     const status = document.createEl("section", { cls: "mdbase-sync-status" });
     status.setAttr("data-state", state.status?.state ?? "checking");
     const heading = status.createDiv({ cls: "mdbase-sync-heading" });
     heading.createEl("h2", { text: profile.name });
     heading.createDiv({ cls: "mdbase-muted", text:
-      `${syncing ? "Syncing" : syncStateLabel(state.status)} · ${relativeTime(state.status?.last_synced_at)}`,
+      `${label} · ${relativeTime(state.status?.last_synced_at)}`,
     });
     const scope = heading.createDiv({ cls: "mdbase-muted mdbase-sync-scope" });
     scope.createSpan({ text: this.syncScopeText(profile.mode) });
@@ -156,25 +178,7 @@ export class SyncPane {
       });
     }
 
-    if (state.paused && !state.problem && !syncing) {
-      this.renderRecoveryCard(status, {
-        code: "sync_paused",
-        kind: "paused",
-        title: "Sync is paused",
-        message: "Changes on this device and in Connect wait until you resume.",
-        action: "resume",
-        actionLabel: "Resume sync",
-      });
-    } else if (state.problem || state.status?.recovery_required) {
-      this.renderRecoveryCard(status, state.problem ?? {
-        code: "mirror_recovery_required",
-        kind: "recovery",
-        title: "Synchronization needs recovery",
-        message: "Your original files are safe. Resume from the durable checkpoint before disconnecting this vault.",
-        action: "resume",
-        actionLabel: "Resume recovery",
-      });
-    }
+    if (recoveryProblem) this.renderRecoveryCard(status, recoveryProblem);
 
     const busy = this.ctx.busy || state.busy || syncing;
     const preview = state.preview;
@@ -186,8 +190,8 @@ export class SyncPane {
     }
     const safety = this.session.safety();
     const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
-    const actions = status.createDiv({ cls: "mdbase-sync-actions" });
-    if (!syncing && !(state.problem && state.problem.action !== "review")) {
+    if (!syncing && !recoveryProblem) {
+      const actions = status.createDiv({ cls: "mdbase-sync-actions" });
       if (reviewing && preview) {
         // The plan needs consent: apply exactly what is listed below.
         const presentation = syncReviewPresentation(preview.plan, preview.entries.length, busy);
