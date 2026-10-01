@@ -2223,11 +2223,24 @@ export class ConnectSyncController {
     const stem = extension ? path.slice(0, -extension.length) : path;
     // A copy can itself conflict on another device. Keep the sibling names
     // flat rather than producing copies of copies of copies.
-    const base = stem.replace(/(?: \((?:local|hosted) conflict copy(?: \d+)?\))+$/, "");
+    const base = stem.replace(/(?: \((?:local|hosted) conflict copy(?: [a-zA-Z0-9%_-]+)?(?: \d+)?\))+$/, "");
+    // Two devices can preserve different bytes before either sees the other's
+    // copy. Numbering within one vault cannot reserve a hosted path: partition
+    // connected copies by the existing replica identity, not by device names.
+    // Standalone copies (without an enrollment) retain ordinary local numbering.
+    const replica = this.settingsHost.getMirrorProfile()?.replicaId;
+    const namespace = replica ? ` ${encodeURIComponent(replica)}` : "";
     const bytes = new Uint8Array(document);
+    const parent = base.slice(0, base.lastIndexOf("/") + 1);
+    const encoder = new TextEncoder();
     let suffix = 1;
     while (true) {
-      const target = `${base} (${label}${suffix === 1 ? "" : ` ${suffix}`})${extension}`;
+      const tail = ` (${label}${namespace}${suffix === 1 ? "" : ` ${suffix}`})${extension}`;
+      const budget = Math.min(255, 1024 - parent.length) - encoder.encode(tail).byteLength;
+      if (budget < 1) throw new SyncError("mirror_path_collision", "This filename leaves no room for a recovery copy. Shorten it before settling the conflict.");
+      const leaf = [...base.slice(parent.length)];
+      while (encoder.encode(leaf.join("")).byteLength > budget) leaf.pop();
+      const target = `${parent}${leaf.join("")}${tail}`;
       if (target === path) {
         suffix += 1;
         continue;
