@@ -281,6 +281,14 @@ test("a rejected access token is renewed once and the request repeated", async (
     error instanceof HttpStatusError && error.code === "mirror_access_rejected" && error.status === 401);
 });
 
+test("mobile lazy JSON getters cannot hide a transient plain-text HTTP error", async () => {
+  const nativeResponse = { status: 503, headers: { "Retry-After": "7" }, arrayBuffer: new ArrayBuffer(0),
+    text: "Service temporarily unavailable", get json(): unknown { throw new SyntaxError("native JSON getter cannot parse plain text"); } };
+  const transport = new ObsidianSyncTransport(syncUrl, "test-token", async () => nativeResponse);
+  await assert.rejects(transport.openSession(), (error: unknown) => error instanceof HttpStatusError
+    && error.status === 503 && error.code === "authority_unavailable" && error.retryAfterMs === 7000 && isTransientError(error));
+});
+
 test("server errors are classified as transient, with their HTTP status", async () => {
   const transport = new ObsidianSyncTransport(syncUrl, "t", (async () => response(503, {})) as never);
   await assert.rejects(transport.openSession(), (error: unknown) =>

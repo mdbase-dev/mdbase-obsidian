@@ -388,8 +388,17 @@ async function adoptionRequestBody(value: unknown, raw: boolean | undefined): Pr
   throw new SyncError("invalid_file_upload", "The adoption upload body was not binary data.");
 }
 
-function parseJsonResponse(text: string, parsed: unknown): unknown {
-  if (parsed !== undefined && parsed !== null) return parsed;
+function parseJsonResponse(response: { text: string; json: unknown }): unknown {
+  // Mobile requestUrl exposes JSON as a lazy getter. Proxy/plain-text errors
+  // (and empty 204 replies) can make that getter throw before HTTP status is
+  // classified. Keep parsing best-effort so retries/auth retain their meaning.
+  try {
+    const parsed = response.json;
+    if (parsed !== undefined && parsed !== null) return parsed;
+  } catch {
+    // Parse text below if it is JSON; otherwise retain the HTTP error fallback.
+  }
+  const text = response.text;
   if (!text.trim()) return {};
   try {
     return JSON.parse(text);
@@ -416,7 +425,7 @@ export function createObsidianEnrollmentRequester(): MirrorEnrollmentRequester {
     if (request.signal?.aborted) throw new DOMException("Enrollment cancelled.", "AbortError");
     return {
       status: response.status,
-      body: parseJsonResponse(response.text, response.json),
+      body: parseJsonResponse(response),
       retryAfterMs: retryAfterMilliseconds(response.headers),
     };
   };
@@ -438,7 +447,7 @@ export function createObsidianAdoptionRequester(): AuthorityAdoptionRequester {
     if (request.signal?.aborted) throw new DOMException("Collection adoption cancelled.", "AbortError");
     return {
       status: response.status,
-      body: parseJsonResponse(response.text, response.json),
+      body: parseJsonResponse(response),
       retryAfterMs: retryAfterMilliseconds(response.headers),
       headers: response.headers,
     };
@@ -718,7 +727,7 @@ implements SyncTransport<Frontmatter> {
       contentType: body === undefined ? undefined : "application/json",
       throw: false,
     });
-    const value = parseJsonResponse(response.text, response.json);
+    const value = parseJsonResponse(response);
     if (response.status < 200 || response.status >= 300) {
       throw this.responseError(response, "sync_failed");
     }
@@ -744,7 +753,7 @@ implements SyncTransport<Frontmatter> {
     response: { status: number; text: string; json: unknown; headers?: Record<string, string> },
     fallbackCode: string,
   ): SyncError {
-    const value = parseJsonResponse(response.text, response.json);
+    const value = parseJsonResponse(response);
     const error = isRecord(value) && isRecord(value.error) ? value.error : {};
     const code = typeof error.code === "string"
       ? error.code
