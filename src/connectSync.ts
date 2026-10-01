@@ -1375,6 +1375,16 @@ export class DeviceMirrorLease implements MirrorLease {
   constructor(private readonly key: string) {}
 
   async runExclusive<Value>(operation: () => Promise<Value>): Promise<Value> {
+    // Static fields only protect one plugin/renderer instance. Web Locks share
+    // the same origin/storage scope as IndexedDB, including popout windows and
+    // independently evaluated plugin bundles.
+    const locks = typeof navigator === "undefined" ? null : navigator.locks;
+    if (locks) {
+      return locks.request(`mdbase-mirror:${this.key}`, { ifAvailable: true }, async (lock) => {
+        if (!lock) throw new SyncError("mirror_busy", "Another window is synchronizing this vault.");
+        return operation();
+      });
+    }
     if (DeviceMirrorLease.active.has(this.key)) {
       throw new SyncError("mirror_busy", "A mirror operation is already running for this vault.");
     }

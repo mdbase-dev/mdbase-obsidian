@@ -12,7 +12,7 @@ import {
   WritableDirectoryMirror,
 } from "@mdbase-dev/connect-sync/mirror";
 import type { MirrorEnrollmentClient } from "@mdbase-dev/connect-sync/enrollment";
-import { ConnectSyncController, normalizeMirrorProfile, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
+import { ConnectSyncController, DeviceMirrorLease, normalizeMirrorProfile, ObsidianMirrorFileSystem, type MirrorProfile } from "../src/connectSync";
 import { MemoryVault } from "./memoryVault";
 import { SyncSession } from "../src/syncSession";
 
@@ -474,6 +474,38 @@ test("a hosted deletion conflict decision cannot discard an edit made just befor
   await assert.rejects(mirror.resolveConflict(conflict.object_id, conflict.decision_id, "remote"), (error: unknown) =>
     ["sync_plan_stale", "conflict_decision_stale"].includes((error as { code: string }).code));
   assert.equal(vault.read("a.md"), "newer local edit\n");
+});
+
+test("independently loaded plugin windows share a browser mirror lease", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const held = new Set<string>();
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: {
+    request: async (name: string, _options: unknown, callback: (lock: object | null) => Promise<unknown>) => {
+      if (held.has(name)) return callback(null);
+      held.add(name);
+      try { return await callback({ name }); } finally { held.delete(name); }
+    },
+  } } });
+  const moduleUrl = new URL("../src/connectSync.js", import.meta.url);
+  moduleUrl.search = "?second-window";
+  const other = await import(moduleUrl.href) as typeof import("../src/connectSync");
+  const key = crypto.randomUUID();
+  const first = new DeviceMirrorLease(key);
+  const second = new other.DeviceMirrorLease(key);
+  const gate = deferred();
+  const running = first.runExclusive(() => gate.promise);
+  try {
+    await assert.rejects(second.runExclusive(async () => "concurrent writer"), (error: unknown) =>
+      (error as { code?: string }).code === "mirror_busy");
+    gate.release();
+    await running;
+    assert.equal(await second.runExclusive(async () => "released"), "released");
+  } finally {
+    gate.release();
+    await running;
+    if (descriptor) Object.defineProperty(globalThis, "navigator", descriptor);
+    else Reflect.deleteProperty(globalThis, "navigator");
+  }
 });
 
 test("a vault copied to another device or folder refuses to sync until it is set up there", async () => {
