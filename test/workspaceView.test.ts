@@ -997,6 +997,28 @@ test("popout inputs retain their selection even when DOM constructors belong to 
   main.dom.window.close();
 });
 
+test("moving an existing workspace input to a popout preserves its first redraw selection", () => {
+  const original = fixture(true);
+  original.host.getIssues = () => [{ path: "notes.md", severity: "error", code: "required", message: "Missing title" }];
+  original.state.destination = "issues";
+  original.state.render();
+  let search = original.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.value = "notes";
+  search.dispatchEvent(new original.dom.window.Event("input"));
+  const popout = fixture();
+  popout.dom.window.document.body.appendChild(original.root);
+  search = original.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  search.focus();
+  search.setSelectionRange(1, 3);
+  original.state.render();
+  const restored = original.root.querySelector<HTMLInputElement>("[data-focus-key='issue-search']")!;
+  assert.equal(popout.dom.window.document.activeElement, restored);
+  assert.equal(restored.selectionStart, 1);
+  assert.equal(restored.selectionEnd, 3);
+  original.dom.window.close();
+  popout.dom.window.close();
+});
+
 test("quoted transfer paths cannot break focus restoration while comparing changes", () => {
   const f = fixture(true);
   (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});

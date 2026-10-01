@@ -257,8 +257,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     }
     const activeDocument = root.ownerDocument;
     const active = root.contains(activeDocument.activeElement) ? activeDocument.activeElement as HTMLElement : null;
-    const ownerWindow = activeDocument.defaultView;
-    const editable = ownerWindow && (active instanceof ownerWindow.HTMLInputElement || active instanceof ownerWindow.HTMLTextAreaElement) ? active : null;
+    // Adopted nodes keep their original realm's prototypes when a leaf moves.
+    const editable = active?.matches("input, textarea") ? active as HTMLInputElement | HTMLTextAreaElement : null;
     const scroll = new Map<string, { top: number; left: number }>();
     for (const element of Array.from(root.querySelectorAll<HTMLElement>("[data-scroll-key]"))) {
       const key = element.getAttr("data-scroll-key");
@@ -282,12 +282,11 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (!snapshot.focusKey) return;
     const active = this.focusTarget(root, snapshot.focusKey);
     active?.focus({ preventScroll: true });
-    const ownerWindow = root.ownerDocument.defaultView;
+    const editable = active?.matches("input, textarea") ? active as HTMLInputElement | HTMLTextAreaElement : null;
     if (
-      ownerWindow && (active instanceof ownerWindow.HTMLInputElement || active instanceof ownerWindow.HTMLTextAreaElement)
-      && snapshot.selectionStart !== null
+      editable && snapshot.selectionStart !== null
       && snapshot.selectionEnd !== null
-    ) active.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+    ) editable.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
   }
 
   /** Paths and field names are opaque keys, not CSS selector fragments. */
