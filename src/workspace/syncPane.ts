@@ -351,8 +351,12 @@ export class SyncPane {
     };
     if (runs.length > pinned.length) {
       const clear = header.createEl("button", { text: "Clear history" });
+      clear.setAttr("data-focus-key", "history-clear");
       clear.disabled = this.ctx.busy;
-      clear.onclick = () => void this.session.clearHistory();
+      clear.onclick = () => void this.ctx.perform(async () => {
+        await this.session.clearHistory();
+        this.ctx.pendingFocusKey = this.session.historyRuns().length ? "disclosure-sync-activity" : "destination-sync";
+      });
     }
 
     const needle = this.historyQuery.trim().toLowerCase();
@@ -458,7 +462,11 @@ export class SyncPane {
       const dismiss = row.createEl("button", { text: "Dismiss" });
       dismiss.setAttr("data-focus-key", `event-dismiss-${run.id}`);
       dismiss.disabled = this.ctx.busy;
-      dismiss.onclick = () => void this.session.dismissEvent(run.id);
+      dismiss.onclick = () => void this.ctx.perform(async () => {
+        await this.session.dismissEvent(run.id);
+        this.ctx.pendingFocusKey = run.message && run.message !== summary
+          ? `disclosure-history-event-${run.id}` : "disclosure-sync-activity";
+      });
     }
   }
 

@@ -110,7 +110,7 @@ function harness(initial: MdbaseSyncPreview, options: HarnessOptions = {}) {
   const history = {
     list: () => runs,
     append: async (run: SyncHistoryRun) => { runs.push(run); },
-    remove: async () => undefined,
+    acknowledge: async () => undefined,
     clear: async () => undefined,
   };
   const session = new SyncSession(controller as never, () => profile as never, history);

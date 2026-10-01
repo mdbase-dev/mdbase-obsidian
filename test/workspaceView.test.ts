@@ -55,7 +55,10 @@ function fixture(connected = false) {
   const history = {
     list: () => historyRuns,
     append: async (run: SyncHistoryRun) => { historyRuns.push(run); },
-    remove: async (id: string) => { historyRuns.splice(historyRuns.findIndex((run) => run.id === id), 1); },
+    acknowledge: async (id: string) => {
+      const run = historyRuns.find((run) => run.id === id);
+      if (run) run.needsAcknowledgement = false;
+    },
     clear: async () => { historyRuns.length = 0; },
   };
   let settingsOpened = 0;
@@ -900,6 +903,46 @@ test("pinned conflict events expose their retained copy without empty history co
   f.state.render();
   assert.doesNotMatch(f.text(), /local conflict copy/);
   assert.equal(f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-conflict-event']")?.open, false);
+  f.dom.window.close();
+});
+
+test("dismissing a conflict event unpins it without erasing its history", async () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "conflict-event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Kept both versions of Plan.md", path: "Tasks/Plan.md", needsAcknowledgement: true,
+    message: "This device's version was saved as Tasks/Plan (local conflict copy).md.", tone: "attention",
+  });
+  f.state.render();
+  button(f.root, "Dismiss").focus();
+  button(f.root, "Dismiss").click();
+  await settle();
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "disclosure-history-event-conflict-event");
+  assert.equal(f.historyRuns.length, 1, "dismiss acknowledges a notice, not deletion of the audit trail");
+  assert.equal(f.historyRuns[0].needsAcknowledgement, false);
+  assert.match(f.text(), /Kept both versions of Plan.md/);
+  assert.doesNotMatch(f.text(), /Dismiss/);
+  assert.ok(button(f.root, "Clear history"), "explicit Clear can remove acknowledged history");
+  f.dom.window.close();
+});
+
+test("history write failures are visible rather than unhandled UI rejections", async () => {
+  const f = fixture(true);
+  const at = new Date().toISOString();
+  f.historyRuns.push({
+    id: "event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
+    summary: "Collection reconnected", tone: "success",
+  });
+  f.host.sync.clearHistory = async () => { throw new Error("History could not be saved"); };
+  f.state.render();
+  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
+  f.state.render();
+  button(f.root, "Clear history").click();
+  await settle();
+  assert.match(f.text(), /History could not be saved/);
+  assert.equal(button(f.root, "Clear history").disabled, false);
   f.dom.window.close();
 });
 

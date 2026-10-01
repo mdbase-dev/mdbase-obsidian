@@ -265,9 +265,9 @@ export class SyncHistoryStore {
     });
   }
 
-  /** Removes one entry, e.g. a dismissed event. */
-  remove(id: string): Promise<void> {
-    this.runs = this.runs.filter((run) => run.id !== id);
+  /** Dismisses the pinned notice, retaining its evidence in ordinary history. */
+  acknowledge(id: string): Promise<void> {
+    this.runs = this.runs.map((run) => run.id === id ? { ...run, needsAcknowledgement: false } : run);
     return this.enqueue(() => this.rewrite());
   }
 

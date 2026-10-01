@@ -222,8 +222,13 @@ test("events share the log: they filter by path, appear in note history, and pin
   assert.deepEqual(historyForPath(store.list("c1"), "notes/a.md").map(({ run }) => run.id), [decision.id]);
   await store.clear();
   assert.deepEqual(store.list("c1").map((r) => r.id), [pinned.id]);
-  await store.remove(pinned.id);
-  assert.deepEqual(store.list("c1"), []);
+  await store.acknowledge(pinned.id);
+  assert.deepEqual(store.list("c1").map((r) => [r.id, r.needsAcknowledgement]), [[pinned.id, false]]);
+  const reloaded = new SyncHistoryStore(adapter, "history.jsonl");
+  await reloaded.load();
+  assert.deepEqual(reloaded.list("c1").map((r) => [r.id, r.needsAcknowledgement]), [[pinned.id, false]]);
+  await reloaded.clear();
+  assert.deepEqual(reloaded.list("c1"), []);
 });
 
 test("pruning bounds the number of entries as well as their files", () => {
