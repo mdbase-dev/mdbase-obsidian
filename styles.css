@@ -2043,6 +2043,7 @@ button.mdbase-match-row:hover {
   align-items: baseline;
   gap: 4px 12px;
   margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
 .mdbase-review-reasons {
@@ -2056,6 +2057,7 @@ button.mdbase-match-row:hover {
   align-items: baseline;
   gap: 4px 12px;
   font-size: var(--font-ui-small);
+  overflow-wrap: anywhere;
 }
 
 .mdbase-enrollment-actions {

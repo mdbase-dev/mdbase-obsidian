@@ -25,7 +25,7 @@ fs.mkdirSync(shots, {recursive:true});
    app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();
    window.open=()=>null;
  });
- const states=['healthy','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload'];
+ const states=['healthy','scope','local-issue','offline','auth','copied','paused','internal','progress','first-sync','deletions','rebuild','conflict','conflict-local-absent','conflict-hosted-absent','history','enrollment','upload'];
  const results=[];
  for(const state of states) {
   await page.evaluate(state=>{
@@ -42,6 +42,8 @@ fs.mkdirSync(shots, {recursive:true});
     copied:{kind:'device',title:'Set up sync on this device',message:"This vault's sync settings came from another device or another copy of the vault. Approve this copy to give it its own connection. Your files stay as they are.",action:'reauthorize',actionLabel:'Set up this device'},
     internal:{kind:'internal',title:'Sync stopped unexpectedly',message:'An unexpected error stopped synchronization. Your files are safe. Copy diagnostics if it happens again.',action:'retry',actionLabel:'Try again'}
    };
+   if(state==='scope')p.settings.mirrorProfile.selectiveSync.excluded_folders=[longPath.replace('.md','')];
+   if(state==='local-issue')p.sync.update({status:{state:'attention',conflicts:[],local_issues:[{code:'file_read_failed',path:longPath,message:'Could not read this file. Open it to inspect the problem.'}]}});
    if(problems[state])p.sync.update({problem:{code:'fixture',...problems[state]},retryAt:state==='offline'?Date.now()+40000:null});
    if(state==='paused')p.sync.update({paused:true});
    if(state==='progress')p.sync.update({fileProgress:{direction:'upload',path:longPath,transferredBytes:32768,totalBytes:8388608}});

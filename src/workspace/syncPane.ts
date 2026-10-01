@@ -1140,11 +1140,12 @@ export class SyncPane {
     });
     for (const issue of status.local_issues) {
       const row = section.createDiv({ cls: "mdbase-conflict-row" });
-      const text = row.createDiv();
+      const text = row.createDiv({ cls: "mdbase-conflict-summary" });
       text.createEl("strong", { text: issue.path });
       text.createDiv({ text: issue.message });
       const actions = row.createDiv({ cls: "mdbase-actions" });
       const open = actions.createEl("button", { text: "Open file" });
+      open.setAttr("data-focus-key", `issue-open-${issue.path}`);
       open.disabled = this.ctx.busy;
       open.onclick = () => void this.ctx.host.openFileByPath(issue.path);
     }

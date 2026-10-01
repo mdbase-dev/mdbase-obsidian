@@ -470,6 +470,21 @@ test("blocking review shows the issue without a misleading apply button or dupli
   f.dom.window.close();
 });
 
+test("opening a local sync issue preserves the path action's focus across redraw", () => {
+  const f = fixture(true);
+  const path = 'Projects/Long review "draft".md';
+  f.state.mirrorStatus = { state: "attention", conflicts: [], local_issues: [{ code: "file_read_failed", path, message: "Could not read this file." }] };
+  const opened: string[] = [];
+  Object.assign(f.host, { openFileByPath: async (path: string) => { opened.push(path); } });
+  f.state.render();
+  button(f.root, "Open file").focus();
+  f.state.render();
+  assert.equal(f.dom.window.document.activeElement, button(f.root, "Open file"));
+  button(f.root, "Open file").click();
+  assert.deepEqual(opened, [path]);
+  f.dom.window.close();
+});
+
 test("conflicts reveal resolution actions only after loading the versions", async () => {
   const f = fixture(true);
   f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{
