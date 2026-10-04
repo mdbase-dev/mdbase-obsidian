@@ -1,5 +1,6 @@
 import { ContractCatalogModal, recoverPackInstall } from "./src/contractCatalog";
 import { ValidationState } from "./src/validationState";
+import { MdbaseMutationBackend } from "./src/mdbaseMutationBackend";
 import { createNoteFromTypeCommand } from "./src/commands";
 import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
@@ -116,6 +117,7 @@ export interface MdbaseObsidianApiV1 {
 export default class MdbasePlugin extends Plugin {
   readonly api: MdbaseObsidianApiV1;
   readonly connectSync: ConnectSyncController;
+  private mutationBackend: MdbaseMutationBackend | null = null;
   settings: MdbasePluginSettings;
   private issueMap = new Map<string, MdbaseIssue[]>();
   private readonly validation = new ValidationState();
@@ -170,7 +172,7 @@ export default class MdbasePlugin extends Plugin {
         else this.requestSync();
       },
       deviceId: () => this.deviceId(),
-    });
+    }, { assertLegacyRuntime: () => this.assertLegacyOperation("Old Connect operations") });
     this.interopBridge = new ObsidianInteropBridge(app, () => this.settings?.interopEnabled === true);
     this.api = {
       apiVersion: 1,
@@ -180,6 +182,37 @@ export default class MdbasePlugin extends Plugin {
         profileVersion: "0.1",
       }),
     };
+  }
+
+  /** Internal seam only; runtime attachment/activation is a separate follow-up. */
+  setMdbaseMutationBackend(backend: MdbaseMutationBackend | null): void {
+    this.connectSync.assertIdle();
+    if (backend && (this.getMirrorProfile() || this.connectSync.getAdoptionMarker())) {
+      throw new Error("Disconnect or complete migration from the old Connect runtime before attaching mdbase next.");
+    }
+    this.mutationBackend = backend;
+  }
+
+  private assertLegacyOperation(operation: string): void {
+    if (this.mutationBackend) throw new Error(`${operation} is not yet available through the shared runtime.`);
+  }
+
+  async createTypedNote(path: string, frontmatter: Record<string, unknown>): Promise<TFile> {
+    if (this.mutationBackend) {
+      return this.mutationBackend.create(this.app.vault, path, `${formatMarkdown(frontmatter, "")}\n`);
+    }
+    this.connectSync.assertLocalAuthorityWritable();
+    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
+    const { createNoteFromType } = await import("./src/mdbaseCore");
+    return createNoteFromType(this.app.vault, path, frontmatter);
+  }
+
+  private async transformRecord(file: TFile, transform: (raw: string) => string): Promise<void> {
+    if (this.mutationBackend) {
+      await this.mutationBackend.transform(file.path, transform);
+    } else {
+      await this.app.vault.process(file, transform);
+    }
   }
 
   async onload(): Promise<void> {
@@ -539,6 +572,7 @@ export default class MdbasePlugin extends Plugin {
   cancelValidation(): void { this.validationAbort?.abort(); }
 
   async openContractCatalog(): Promise<void> {
+    this.assertLegacyOperation("Installing packs");
     if (this.getMirrorProfile()) throw new Error("Install packs at the hosted collection authority using mdbase editor.");
     const loaded = await this.getConfigAndTypes();
     if (!loaded || !loaded.config.spec_version.startsWith("0.3.")) throw new Error("Initialize or migrate this collection first.");
@@ -562,6 +596,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async initializeCollection(): Promise<void> {
+    this.assertLegacyOperation("Initializing collections");
     this.connectSync.assertLocalAuthorityWritable();
     const { created } = await ensureCollectionInitialized(this.app.vault, { seedNoteType: false });
     this.invalidateSchemaCache();
@@ -581,6 +616,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async applyMigration(plan: V02MigrationPlan, allowLossy: boolean): Promise<void> {
+    this.assertLegacyOperation("Migrating v0.2 collections");
     this.connectSync.assertLocalAuthorityWritable();
     if (this.getMirrorProfile()) {
       throw new Error("Collection authority resources must be migrated at the collection authority.");
@@ -616,7 +652,7 @@ export default class MdbasePlugin extends Plugin {
 
     if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
     let changed = false;
-    await this.app.vault.process(file, (raw) => {
+    await this.transformRecord(file, (raw) => {
       this.connectSync.assertLocalAuthorityWritable();
       const result = applyQuickFixToDocument(raw, issue);
       changed = result.changed;
@@ -639,7 +675,7 @@ export default class MdbasePlugin extends Plugin {
         continue;
       }
       let applied = false;
-      await this.app.vault.process(file, (raw) => {
+      await this.transformRecord(file, (raw) => {
         this.connectSync.assertLocalAuthorityWritable();
         const result = applyQuickFixToDocument(raw, issue);
         applied = result.changed;
@@ -1217,6 +1253,11 @@ export default class MdbasePlugin extends Plugin {
     const defaultTargetPath = normalizePath(`${typesFolder}/${typeName}.md`);
 
     if (!existingFile) {
+      if (this.mutationBackend) {
+        const created = await this.mutationBackend.putResource(this.app.vault, defaultTargetPath, content, null);
+        this.invalidateSchemaCache();
+        return created;
+      }
       await this.ensureFolderExists(typesFolder);
 
       if (await this.app.vault.adapter.exists(defaultTargetPath)) {
@@ -1242,6 +1283,13 @@ export default class MdbasePlugin extends Plugin {
 
     if (targetPath !== existingFile.path && (await this.app.vault.adapter.exists(targetPath))) {
       throw new Error(`Cannot rename type file to ${targetPath}; file already exists.`);
+    }
+
+    if (this.mutationBackend) {
+      if (targetPath !== originalPath) throw new Error("Type renames need the shared runtime's rename planner; no files were changed.");
+      const updated = await this.mutationBackend.putResource(this.app.vault, originalPath, content, originalContent);
+      this.invalidateSchemaCache();
+      return updated;
     }
 
     let renamed = false;

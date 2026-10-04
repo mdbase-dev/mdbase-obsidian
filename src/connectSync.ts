@@ -1664,6 +1664,8 @@ export class DeviceMirrorLease implements MirrorLease {
 }
 
 export interface ConnectSyncControllerOptions {
+  /** Fail closed before any old-runtime network/adoption operation. */
+  assertLegacyRuntime?: () => void;
   stateStoreFactory?: (profile: MirrorProfile) => MirrorStateStore;
   blobStoreFactory?: (profile: MirrorProfile) => MirrorBlobStore;
   adoptionBlobStoreFactory?: (collectionId: string) => MirrorBlobStore;
@@ -1693,8 +1695,16 @@ export class ConnectSyncController {
     this.blobStores.clear();
   }
 
+  private activeOperations = 0;
+
+  assertIdle(): void {
+    if (this.activeOperations !== 0) throw new Error("Wait for the old Connect operation to finish before attaching mdbase next.");
+  }
+
   private async withLifetime<T>(signal: AbortSignal | undefined, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
     this.assertActive();
+    this.options.assertLegacyRuntime?.();
+    this.activeOperations += 1;
     const controller = new AbortController();
     const abort = () => controller.abort();
     this.lifetime.signal.addEventListener("abort", abort, { once: true });
@@ -1704,6 +1714,7 @@ export class ConnectSyncController {
       abortIfNeeded(controller.signal);
       return await operation(controller.signal);
     } finally {
+      this.activeOperations -= 1;
       this.lifetime.signal.removeEventListener("abort", abort);
       signal?.removeEventListener("abort", abort);
     }
