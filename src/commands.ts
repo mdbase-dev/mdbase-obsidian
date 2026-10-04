@@ -2,7 +2,6 @@ import { Notice, TFile } from "obsidian";
 import { CreateTypedNoteModal } from "./createTypedNoteModal";
 import type MdbasePlugin from "../main";
 import {
-  ensureCollectionInitialized,
   getTypesForFile,
   parseFrontmatter,
   type MdbaseTypeDef,
@@ -163,9 +162,7 @@ export async function syncNow(plugin: MdbasePlugin): Promise<void> {
 
 async function initializeCollection(plugin: MdbasePlugin): Promise<void> {
   plugin.connectSync.assertLocalAuthorityWritable();
-  const { created } = await ensureCollectionInitialized(plugin.app.vault, { seedNoteType: false });
-  plugin.invalidateSchemaCache();
-  new Notice(created.length ? `Initialized mdbase collection: ${created.join(", ")}` : "mdbase collection already initialized.");
+  await plugin.initializeCollection();
 }
 
 /** Edits the type of the open note (or the open type file); otherwise asks which type. */
@@ -225,8 +222,7 @@ export async function createNoteFromTypeCommand(plugin: MdbasePlugin, typeName?:
     new CreateTypedNoteModal(plugin.app, chosenType, loaded.config, loaded.types, async (path, frontmatter) => {
       plugin.connectSync.assertLocalAuthorityWritable();
       if (plugin.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
-      const { createNoteFromType } = await import("./mdbaseCore");
-      const file = await createNoteFromType(plugin.app.vault, path, frontmatter);
+      const file = await plugin.createTypedNote(path, frontmatter);
       await plugin.app.workspace.getLeaf(true).openFile(file);
       await plugin.validateFileAndStore(file, "manual");
     }).open();
