@@ -1,0 +1,6 @@
+# Obsidian's and the plugin's local state
+.obsidian/plugins/
+.obsidian/workspace*.json
+.obsidian/*cache*
+.mdbase/
+.trash/

@@ -214,6 +214,13 @@ writing it and enforces checked-in schema, migration-analysis, validation, and
 issue-render budgets. Set `OBSIDIAN_TEST_VAULT` to profile another registered
 disposable vault with the exact installed bundle.
 
+`mdbase-test-vault/` is a small committed local collection for trying the
+plugin in a real Obsidian: `book`, `person` and `note` types, valid records,
+one record that breaks every rule of its type, and one typed only by its path.
+Its `Welcome.md` says what each is for, and a unit test keeps the records
+validating as described. Open a copy of it, not the committed folder, so test
+runs don't leave plugin state behind; never enroll it in Connect.
+
 The Connect protocol and sync SDKs are pinned to `0.1.0-beta.120`, and mdbase
 interop is pinned to `0.1.0-rc.2`. `npm ci` applies a version-specific sync SDK
 reliability patch (see [`patches/README.md`](patches/README.md)). Update
