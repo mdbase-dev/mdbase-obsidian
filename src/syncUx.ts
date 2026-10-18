@@ -206,6 +206,13 @@ const AUTH_CODES = new Set([
   "replica_revoked",
 ]);
 
+const UPGRADE_CODES = new Set([
+  "collection_unavailable",
+  "onboarding_moved",
+  "collection_not_yet_migrated",
+  "account_suspended",
+]);
+
 export function syncProblem(error: unknown): SyncProblem {
   const code = errorCode(error);
   if (code === "mirror_busy") {
@@ -266,6 +273,28 @@ export function syncProblem(error: unknown): SyncProblem {
       message: "Your original files are safe. Resume from the durable checkpoint before disconnecting this vault.",
       action: "resume",
       actionLabel: "Resume recovery",
+    };
+  }
+  // Service-upgrade refusals carry plain-language copy written to be shown
+  // as-is. Never wrap it in "stopped unexpectedly ... report it".
+  if (code === "collection_migrating") {
+    return {
+      code,
+      kind: "offline",
+      title: "This collection is being upgraded",
+      message: errorMessage(error, "This collection is being upgraded. Your files are safe, and sync will resume once the upgrade finishes."),
+      action: "retry",
+      actionLabel: "Check now",
+    };
+  }
+  if (UPGRADE_CODES.has(code)) {
+    return {
+      code,
+      kind: "internal",
+      title: code === "account_suspended" ? "Your mdbase account is suspended" : "mdbase has been updated",
+      message: errorMessage(error, "mdbase has been updated. Your files are safe. Check mdbase.dev/downloads for an updated app."),
+      action: "retry",
+      actionLabel: "Check again",
     };
   }
   if (isTransientError(error)) {

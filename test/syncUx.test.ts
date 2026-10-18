@@ -207,3 +207,21 @@ test("a plan held for review is named in the status bar ahead of ordinary pendin
   assert.equal(indicator.label, "mdbase: Review 2 changes");
   assert.equal(indicator.destination, "sync");
 });
+
+test("service-upgrade refusals show the server's message as-is, never as an unexpected failure", () => {
+  const upgrading = "This collection is being upgraded. Your data is safe, and editing will resume once the upgrade finishes. Try again in a few minutes.";
+  const migrating = syncProblem(new HttpStatusError("collection_migrating", upgrading, 409));
+  assert.equal(migrating.kind, "offline", "waits and retries quietly instead of asking for a report");
+  assert.equal(migrating.title, "This collection is being upgraded");
+  assert.equal(migrating.message, upgrading);
+
+  const moved = "mdbase has been updated. Copy any unsaved work somewhere safe, then reload this page to continue.";
+  for (const code of ["collection_unavailable", "onboarding_moved"]) {
+    const problem = syncProblem(new HttpStatusError(code, moved, 409));
+    assert.equal(problem.title, "mdbase has been updated");
+    assert.equal(problem.message, moved);
+    assert.doesNotMatch(problem.message, /diagnostics|unexpected/);
+  }
+  assert.equal(syncFailureProblem({ code: "collection_migrating", message: upgrading }).message, upgrading);
+  assert.equal(syncProblem(new HttpStatusError("account_suspended", "Suspended.", 403)).title, "Your mdbase account is suspended");
+});
