@@ -115,7 +115,29 @@ class Setting {
       setButtonText(text) { el.textContent = text; return api; },
       setDisabled(value) { el.disabled = value; return api; },
       setWarning() { el.classList.add("mod-warning"); return api; },
+      setCta() { el.classList.add("mod-cta"); return api; },
       onClick(handler) { el.onclick = handler; return api; },
+    };
+    build(api);
+    return this;
+  }
+  addExtraButton(build) {
+    const el = this.controlEl.createEl("button");
+    const api = {
+      setIcon() { return api; },
+      setTooltip(text) { el.setAttribute("aria-label", text); return api; },
+      onClick(handler) { el.onclick = handler; return api; },
+    };
+    build(api);
+    return this;
+  }
+  addText(build) {
+    const el = this.controlEl.createEl("input", { type: "text" });
+    const api = {
+      inputEl: el,
+      setValue(value) { el.value = value; return api; },
+      setPlaceholder(value) { el.placeholder = value; return api; },
+      onChange(handler) { el.oninput = () => handler(el.value); return api; },
     };
     build(api);
     return this;

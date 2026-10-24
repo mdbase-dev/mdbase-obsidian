@@ -1,1201 +1,371 @@
-import { ATTACHMENT_SCOPE_DESCRIPTION, renderFolderExclusions } from "../folderExclusions";
-import type { SyncSession } from "../syncSession";
-import { isHistoryEvent } from "../syncHistory";
-import { setIcon } from "obsidian";
-import type { MirrorStatus } from "@mdbase-dev/connect-sync/mirror";
-import type { AuthorityAdoptionStatus } from "@mdbase-dev/connect-sync/adoption";
-import type { AdoptionRenamePlan } from "../adoptionPaths";
-import type {
-  AdoptionPreview,
-  AdoptLocalCollectionCallbacks,
-  MirrorConflictComparison,
-  MirrorProfile,
-} from "../connectSync";
-import type { FileMediaClass, SelectiveSyncPolicy } from "@mdbase-dev/connect-protocol";
-import type { MdbaseSyncPreview, SyncPreviewDirection } from "../syncPreview";
-import {
-  filterRuns,
-  formatHistoryTime,
-  summarizeRun,
-  type SyncHistoryRun,
-} from "../syncHistory";
-import { boundedLineDiff } from "../conflictPresentation";
-import {
-  formatBytes,
-  syncProblem,
-  syncReviewPresentation,
-  type SyncProblem,
-} from "../syncUx";
+import { Notice, Setting } from "obsidian";
+import type { HeldFile, HoldChoice, SyncKind, SyncSnapshot } from "../sync/controller";
+import { errorText, holdReasonText, modeName, summarize } from "../sync/words";
+import { renderStatus, type WorkspaceContext } from "./shared";
 
-import {
-  DEFAULT_CONNECT_CONTROL_URL,
-  WorkspaceContext,
-  defaultDeviceName,
-  inputRow,
-  renderStatus,
-  HISTORY_PAGE,
-  HISTORY_OUTCOMES,
-  capitalize,
-  relativeTime,
-  syncStateLabel,
-  isAbortError,
-} from "./shared";
+export const DOWNLOAD_URL = "https://mdbase.dev/downloads";
 
+const HANDLED_NOTICES = new Set(["holds_pending", "devices_waiting_for_approval"]);
+
+/**
+ * The Sync destination. It answers, in order: is this vault synced, is it
+ * healthy, and what can be done now. Everything about keys, devices and
+ * servers stays inside the mdbase app unless a person has to act.
+ */
 export class SyncPane {
-  private readonly conflictComparisons = new Map<string, MirrorConflictComparison>();
-  private readonly loadingConflictComparisons = new Set<string>();
-  private pendingSyncFocus: "activity" | "conflicts" | null = null;
-  private historyQuery = "";
-  private transferQuery = "";
-  private transferFilter = "all";
-  private readonly transferPages = new Map<SyncPreviewDirection, number>();
-  private historyLimit = HISTORY_PAGE;
-  private readonly previewComparisons = new Map<string, MirrorConflictComparison>();
-  private comparedPreview: MdbaseSyncPreview | null = null;
-  private readonly loadingPreviewComparisons = new Set<string>();
-  private enrollmentVerification = "";
-  private enrollmentAbort: AbortController | null = null;
-  private enrollmentControlUrl = DEFAULT_CONNECT_CONTROL_URL;
-  // Connect lists devices by this name; the vault and platform tell them apart.
-  private enrollmentMirrorName = defaultDeviceName(this.ctx.app.vault.getName());
-  private enrollmentCollectionId = "";
-  private enrollmentMode: "read_only" | "read_write" = "read_write";
-  private filePolicyDraft: SelectiveSyncPolicy | null = null;
-  private adoptionFileProgress = "";
-  private adoptionPreview: AdoptionPreview | null = null;
-  private adoptionRenamePlan: AdoptionRenamePlan | null = null;
-  private adoptionStage = "";
-  private adoptionFailed = false;
+  private kind: SyncKind = "cloud";
+  private name = "";
+  private joinText = "";
+  private joinFolder = "";
+  private codes = new Map<string, string>();
 
   constructor(private readonly ctx: WorkspaceContext) {}
 
-  getState(): Record<string, unknown> { return { historyQuery: this.historyQuery }; }
-
-  setState(state: Record<string, unknown>): void {
-    if (typeof state.historyQuery === "string") this.historyQuery = state.historyQuery.slice(0, 2000);
+  getState(): Record<string, unknown> {
+    return {};
   }
 
-  private get session(): SyncSession {
-    return this.ctx.host.sync;
+  setState(_state: Record<string, unknown>): void {}
+
+  async refresh(): Promise<void> {
+    await this.ctx.host.syncController.refresh();
   }
 
-  dispose(): void {
-    this.enrollmentAbort?.abort();
-    this.enrollmentAbort = null;
+  dispose(): void {}
+
+  prefillJoin(collection: string, name: string): void {
+    this.joinText = collection;
+    if (name) this.joinFolder = name;
   }
 
-  focusSection(section: "activity" | "conflicts"): void {
-    this.ctx.destination = "sync";
-    this.pendingSyncFocus = section;
-    this.ctx.render();
-    window.setTimeout(() => this.focusPendingSyncSection(), 0);
+  private get s(): SyncSnapshot {
+    return this.ctx.host.syncController.snapshot;
   }
 
-  async reconnectCollection(): Promise<void> {
-    const result = await this.session.reconnect();
-    if (result === "reauthorize") await this.ctx.perform(() => this.reauthorizeCollection());
+  private run(action: () => Promise<unknown>): void {
+    this.ctx.message = "";
+    void action().catch((error: unknown) => {
+      const text = error && typeof error === "object" && "code" in error ? errorText(error as { code: string; reason?: string; message: string }) : String(error);
+      // Shown in the workspace's message bar, which stays above the scrolling content.
+      this.ctx.message = text;
+      this.ctx.render();
+    });
   }
 
   render(container: HTMLElement): void {
-    const document = container.createDiv({ cls: "mdbase-sync-document" });
-    const profile = this.ctx.host.getMirrorProfile();
-    if (!profile) {
-      this.renderEnrollment(document);
+    const s = this.s;
+    const summary = summarize(s);
+    const root = container.createDiv({ cls: "mdbase-sync" });
+    const heading = root.createDiv({ cls: "mdbase-sync-heading" });
+    heading.setAttr("data-tone", summary.tone);
+    heading.createEl("h2", { text: summary.syncing ? summary.label : "Sync" });
+    const detail = heading.createEl("p", { cls: "mdbase-sync-detail", text: summary.detail });
+    detail.setAttr("role", "status");
+    if (s.busy) root.createEl("p", { cls: "mdbase-muted", text: `${s.busy}…` });
+
+    switch (s.daemon) {
+      case "mobile":
+        root.createEl("p", { text: "Sync this vault from Obsidian on your computer, with the mdbase app installed. Types and validation work here as usual." });
+        return;
+      case "checking":
+        return;
+      case "not_installed":
+        this.renderInstall(root);
+        return;
+      case "not_running":
+        this.actions(root, [["Start mdbase", true, () => this.run(() => this.ctx.host.syncController.startApp())], ["Check again", false, () => this.run(() => this.refreshAndRender())]]);
+        return;
+      case "error":
+        this.actions(root, [["Try again", true, () => this.run(() => this.refreshAndRender())]]);
+        return;
+      default:
+        break;
+    }
+
+    const collection = s.collection;
+    const signedIn = s.status?.account.signed_in === true;
+    if (!signedIn) this.renderSignIn(root, Boolean(collection && collection.mode !== "local"));
+    if (!collection || collection.mode === "local") {
+      if (signedIn) this.renderSetup(root, collection !== null);
       return;
     }
-    const state = this.session.state;
-    const syncing = Boolean(state.fileProgress || state.progress);
-    const problem = state.problem?.kind === "busy" ? null : state.problem;
-    const pauseNeedsResume = state.paused && !syncing && !state.busy && (!problem || ["offline", "internal"].includes(problem.kind));
-    const recoveryProblem: SyncProblem | null = pauseNeedsResume ? {
-      code: "sync_paused",
-      kind: "paused",
-      title: "Sync is paused",
-      message: "Changes on this device and in Connect wait until you resume.",
-      action: "resume",
-      actionLabel: "Resume sync",
-    } : problem ?? (state.status?.recovery_required ? {
-      code: "mirror_recovery_required",
-      kind: "recovery",
-      title: "Synchronization needs recovery",
-      message: "Your original files are safe. Resume from the durable checkpoint before disconnecting this vault.",
-      action: "resume",
-      actionLabel: "Resume recovery",
-    } : null);
-    const authorizing = Boolean(this.enrollmentAbort);
-    const preview = state.preview;
-    const safety = this.session.safety();
-    const reviewing = Boolean(preview?.plan.actions.length || preview?.entries.length);
-    const label = authorizing ? "Waiting for approval" : syncing ? "Syncing" : state.busy ? state.paused ? "Stopping…" : "Checking…"
-      : recoveryProblem?.kind === "paused" ? "Paused"
-      : recoveryProblem?.kind === "offline" ? "Offline"
-      : recoveryProblem?.kind === "auth" ? "Approval needed"
-      : recoveryProblem?.kind === "device" ? "Set up this device"
-      : recoveryProblem ? "Needs attention"
-      : reviewing && safety && !safety.safe ? "Review needed"
-      : preview?.plan.actions.length ? "Changes waiting" : syncStateLabel(state.status);
+    this.renderLink(root);
+    this.renderApprovals(root);
+    this.renderHolds(root);
+    this.renderMerged(root);
+    for (const notice of collection.notices) {
+      if (!HANDLED_NOTICES.has(notice.code)) root.createEl("p", { cls: "mdbase-sync-notice", text: notice.message });
+    }
+    this.renderDetails(root);
+  }
 
-    const status = document.createEl("section", { cls: "mdbase-sync-status" });
-    status.setAttr("data-state", state.status?.state ?? "checking");
-    const heading = status.createDiv({ cls: "mdbase-sync-heading" });
-    heading.createEl("h2", { text: profile.name });
-    const settled = !authorizing && !syncing && !state.busy && !recoveryProblem && !reviewing
-      && state.status?.state === "up_to_date";
-    heading.createDiv({ cls: "mdbase-muted", text: settled && state.status?.last_synced_at
-      ? `${label} · ${relativeTime(state.status.last_synced_at)}` : label,
+  private async refreshAndRender(): Promise<void> {
+    await this.ctx.host.syncController.refresh();
+    this.ctx.render();
+  }
+
+  private actions(container: HTMLElement, buttons: [string, boolean, () => void][]): void {
+    const row = container.createDiv({ cls: "mdbase-actions" });
+    for (const [label, primary, onClick] of buttons) {
+      const button = row.createEl("button", { text: label, cls: primary ? "mod-cta" : "" });
+      button.setAttr("data-focus-key", `sync-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
+      button.disabled = this.s.busy !== null;
+      button.onclick = onClick;
+    }
+  }
+
+  private renderInstall(root: HTMLElement): void {
+    root.createEl("p", { text: "mdbase syncs this vault through the mdbase app. It runs in the background and keeps your notes on this computer in step with your other devices." });
+    this.actions(root, [
+      ["Download mdbase", true, () => window.open(DOWNLOAD_URL)],
+      ["Check again", false, () => this.run(() => this.refreshAndRender())],
+    ]);
+    const hint = root.createEl("p", { cls: "mdbase-muted" });
+    hint.appendText("Installed it somewhere unusual? Set its location in ");
+    const link = hint.createEl("a", { text: "settings", href: "#" });
+    link.onclick = (event) => { event.preventDefault(); this.ctx.host.openSettings(); };
+    hint.appendText(".");
+  }
+
+  private renderSignIn(root: HTMLElement, syncing: boolean): void {
+    const controller = this.ctx.host.syncController;
+    if (this.s.signingIn) {
+      root.createEl("p", { text: "Finish signing in in your browser, then come back here. If no page opened, copy the sign-in link into your browser." });
+      const page = this.s.signingIn;
+      this.actions(root, [
+        ["Open the sign-in page again", false, () => window.open(page)],
+        ["Copy sign-in link", false, () => void navigator.clipboard.writeText(page).then(() => new Notice("Copied. Paste it into your browser."))],
+        ["Cancel", false, () => { controller.cancelSignIn(); this.ctx.render(); }],
+      ]);
+      return;
+    }
+    if (!syncing) root.createEl("p", { text: "Sign in to mdbase to sync this vault with your other devices." });
+    this.actions(root, [["Sign in", true, () => this.run(async () => { await controller.signIn(); this.ctx.render(); })]]);
+  }
+
+  private renderSetup(root: HTMLElement, isCollection: boolean): void {
+    const controller = this.ctx.host.syncController;
+    if (!this.name) this.name = this.ctx.app.vault.getName();
+    const legacy = this.ctx.host.legacyConnect();
+    if (legacy) {
+      const note = root.createDiv({ cls: "mdbase-sync-notice" });
+      note.createEl("p", { text: `This vault used the earlier mdbase Connect sync for "${legacy.name}", which has been replaced. Your notes here are untouched.` });
+      note.createEl("p", { text: `To keep working on "${legacy.name}", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it.` });
+      if (!this.joinText) this.joinText = legacy.collectionId;
+      if (!this.joinFolder) this.joinFolder = legacy.name;
+    }
+
+    const section = root.createDiv({ cls: "mdbase-sync-section" });
+    section.createEl("h3", { text: isCollection ? "Turn on sync" : "Sync this vault" });
+    if (!isCollection) {
+      new Setting(section).setName("Name").setDesc("How this vault appears on your other devices.").addText((text) => text
+        .setValue(this.name)
+        .onChange((value) => { this.name = value; }));
+    }
+    const choice = section.createDiv({ cls: "mdbase-sync-choice" });
+    choice.setAttr("role", "radiogroup");
+    const option = (kind: SyncKind, title: string, description: string) => {
+      const label = choice.createEl("label", { cls: "mdbase-sync-option" });
+      const input = label.createEl("input", { type: "radio" });
+      input.name = "mdbase-sync-kind";
+      input.checked = this.kind === kind;
+      label.toggleClass("is-selected", input.checked);
+      input.setAttr("data-focus-key", `sync-kind-${kind}`);
+      input.onchange = () => {
+        this.kind = kind;
+        choice.querySelectorAll("label").forEach((el) => el.toggleClass("is-selected", el === label));
+      };
+      const text = label.createDiv();
+      text.createDiv({ cls: "mdbase-sync-option-title", text: title });
+      text.createDiv({ cls: "mdbase-muted", text: description });
+    };
+    option("cloud", "Cloud copy (recommended)", "mdbase keeps a copy online, so your notes open in mdbase apps on the web and arrive on a new device straight away.");
+    option("private", "Private", "Encrypted so only your devices can read it. A new device needs approval from one you already use, and web apps work only while one of your devices is on.");
+    this.actions(section, [["Turn on sync", true, () => this.run(async () => {
+      await controller.setUp(this.kind, this.name);
+      new Notice("Sync is on for this vault.");
+    })]]);
+
+    if (isCollection) return;
+    const join = root.createDiv({ cls: "mdbase-sync-section" });
+    join.createEl("h3", { text: "Add a collection you already sync" });
+    join.createEl("p", { cls: "mdbase-muted", text: "On a device that already syncs it, copy the link from the sync tab of the mdbase view, then paste it here." });
+    new Setting(join).setName("Link or ID").addText((text) => {
+      text.setPlaceholder("Paste the collection link").setValue(this.joinText).onChange((value) => { this.joinText = value; });
+      text.inputEl.setAttr("data-focus-key", "sync-join-link");
     });
-    const scope = heading.createDiv({ cls: "mdbase-muted mdbase-sync-scope" });
-    scope.createSpan({ text: this.syncScopeText(profile.mode) });
-    const settings = scope.createEl("button", { cls: "mdbase-link-button", text: "Settings" });
-    settings.setAttr("aria-label", "Open sync settings");
-    settings.onclick = () => this.ctx.host.openSettings();
-
-    if (state.message && !state.problem) {
-      const message = status.createDiv({ cls: "mdbase-inline-message mdbase-notice" });
-      message.createSpan({ text: state.message }).setAttr("role", "status");
-      const dismiss = this.ctx.iconButton(message, "x", "Dismiss sync message");
-      dismiss.onclick = () => this.session.clearMessage();
-    }
-
-    if (syncing) {
-      const progressArea = status.createDiv({ cls: "mdbase-sync-progress", attr: { "aria-live": "polite" } });
-      const total = state.fileProgress?.totalBytes ?? state.progress?.total ?? null;
-      const completed = state.fileProgress?.transferredBytes ?? state.progress?.completed ?? 0;
-      const progress = progressArea.createEl("progress");
-      progress.setAttr("aria-label", "Sync progress");
-      progress.max = total ?? 1;
-      progress.value = total == null ? 0 : completed;
-      if (total == null) progress.removeAttribute("value");
-      progressArea.createDiv({
-        cls: "mdbase-progress-label",
-        text: state.fileProgress
-          ? `${state.fileProgress.direction === "upload" ? "Uploading" : "Downloading"} ${state.fileProgress.path} · ${formatBytes(completed)} of ${formatBytes(total ?? 0)}`
-          : `${state.progress?.phase === "uploading"
-            ? "Uploading local changes"
-            : state.progress?.phase === "downloading"
-              ? "Downloading collection files"
-              : "Applying changes"} · ${completed}${total == null ? "" : ` of ${total}`}`,
-      });
-      const cancel = progressArea.createEl("button", { text: "Stop" });
-      cancel.setAttr("data-focus-key", "sync-stop");
-      cancel.onclick = () => this.session.cancel();
-    }
-
-    const otherServices = this.ctx.host.otherSyncServices();
-    if (otherServices.length) {
-      status.createDiv({
-        cls: "mdbase-inline-message mdbase-sync-coexistence",
-        text: `${otherServices.join(" and ")} also ${otherServices.length === 1 ? "syncs" : "sync"} this vault. Two services syncing the same notes can duplicate them or bring deleted ones back; let only one of them sync this vault's notes.`,
+    const empty = this.ctx.host.vaultTopLevelEntries().length === 0;
+    if (!empty) {
+      new Setting(join).setName("Folder").setDesc("This vault already has notes, so the collection goes into a new folder.").addText((text) => {
+        text.setPlaceholder("Folder name").setValue(this.joinFolder).onChange((value) => { this.joinFolder = value; });
+        text.inputEl.setAttr("data-focus-key", "sync-join-folder");
       });
     }
+    this.actions(join, [["Add collection", false, () => this.run(async () => {
+      const folder = await controller.join(this.joinText, this.joinFolder || nameFromLink(this.joinText) || "Synced notes");
+      this.joinText = "";
+      new Notice(folder ? `Added. Notes arrive in "${folder}".` : "Added. Notes arrive in this vault.");
+    })]]);
+  }
 
-    if (authorizing) this.renderApproval(status, false);
-    else if (recoveryProblem) this.renderRecoveryCard(status, recoveryProblem);
+  private renderLink(root: HTMLElement): void {
+    const controller = this.ctx.host.syncController;
+    const link = this.s.link;
+    if (link === "connecting" && !this.s.live) {
+      root.createEl("p", { cls: "mdbase-muted", text: "If mdbase asks whether Obsidian may use this vault, allow it. Obsidian then shows live status and keeps open notes in step." });
+    } else if (link === "declined") {
+      root.createEl("p", { text: "Obsidian isn't allowed to use this vault's sync yet. Sync still runs, but open notes can't update while you type." });
+      this.actions(root, [["Allow Obsidian", false, () => this.run(() => controller.linkAgain())]]);
+    }
+  }
 
-    const busy = this.ctx.busy || state.busy || syncing;
-    // Comparisons belong to the plan they were opened from.
-    if (preview !== this.comparedPreview) {
-      this.previewComparisons.clear();
-      this.loadingPreviewComparisons.clear();
-      this.comparedPreview = preview;
-      this.transferPages.clear();
+  private renderApprovals(root: HTMLElement): void {
+    const controller = this.ctx.host.syncController;
+    for (const approval of this.s.approvals) {
+      const section = root.createDiv({ cls: "mdbase-sync-section" });
+      section.createEl("h3", { text: `${approval.name} wants to join` });
+      section.createEl("p", { text: "If you're setting up a new device, type the six-digit code it shows. Only approve devices you own." });
+      new Setting(section).setName("Code").addText((text) => {
+        text.setPlaceholder("123456").setValue(this.codes.get(approval.device) ?? "").onChange((value) => this.codes.set(approval.device, value));
+        text.inputEl.inputMode = "numeric";
+        text.inputEl.setAttr("data-focus-key", `sync-code-${approval.device}`);
+      });
+      this.actions(section, [
+        ["Approve", true, () => this.run(async () => {
+          await controller.approve(approval.device, this.codes.get(approval.device) ?? "");
+          this.codes.delete(approval.device);
+          new Notice("Approved. The new device is syncing.");
+        })],
+        ["Decline", false, () => this.run(() => controller.reject(approval.device))],
+      ]);
     }
-    if (reviewing && safety && !safety.safe && preview?.plan.actions.length) {
-      status.createDiv({ cls: "mdbase-muted mdbase-review-reasons", text: `${safety.reasons.join(", ")}.` });
+  }
+
+  private renderHolds(root: HTMLElement): void {
+    const holds = this.s.holds;
+    if (!holds.length) return;
+    const section = root.createDiv({ cls: "mdbase-sync-section" });
+    section.createEl("p", { cls: "mdbase-muted", text: "mdbase didn't overwrite anything. Until you choose, the version on this computer stays as it is." });
+    const list = section.createDiv({ cls: "mdbase-hold-list" });
+    for (const hold of holds) this.renderHold(list, hold);
+  }
+
+  private renderHold(list: HTMLElement, hold: HeldFile): void {
+    const controller = this.ctx.host.syncController;
+    const vaultPath = this.s.prefix ? `${this.s.prefix}/${hold.path}` : hold.path;
+    const row = list.createDiv({ cls: "mdbase-hold" });
+    const name = row.createEl("a", { cls: "mdbase-hold-path", text: vaultPath, href: "#" });
+    name.setAttr("data-focus-key", `hold-${hold.id}`);
+    name.onclick = (event) => { event.preventDefault(); void this.ctx.host.openFileByPath(vaultPath); };
+    row.createDiv({ cls: "mdbase-muted", text: holdReasonText(hold.reason) });
+    if (hold.mine !== null && hold.theirs !== null) {
+      this.compare(row, `hold-${hold.id}`, "Compare versions", ["On this computer", hold.mine], ["From your other device", hold.theirs]);
     }
-    if (!syncing && !recoveryProblem && !authorizing) {
-      const actions = status.createDiv({ cls: "mdbase-sync-actions" });
-      if (reviewing && preview) {
-        // The plan needs consent: apply exactly what is listed below.
-        const presentation = syncReviewPresentation(preview.plan, preview.entries.length, busy);
-        if (preview.plan.actions.length && !presentation.actionDisabled) {
-          const sync = actions.createEl("button", { text: presentation.actionLabel, cls: "mod-cta" });
-          sync.setAttr("data-focus-key", "sync-apply");
-          sync.disabled = presentation.actionDisabled;
-          sync.onclick = () => void this.session.apply();
-        }
-        const refresh = this.ctx.iconButton(actions, "refresh-cw", "Refresh review");
-        refresh.disabled = busy;
-        refresh.onclick = () => void this.session.review();
+    const choose = (choice: HoldChoice) => () => this.run(() => controller.resolve(hold, choice));
+    const buttons: [string, boolean, () => void][] = [["Keep this computer's", true, choose("keep_mine")]];
+    if (hold.reason === "deleted_elsewhere") buttons.push(["Delete it", false, choose("delete")]);
+    else if (hold.hasTheirs) buttons.push(["Use the other version", false, choose("take_theirs")], ["Keep both", false, choose("keep_both")]);
+    this.actions(row, buttons);
+  }
+
+  /** Two versions, showing only the lines that differ (with one line around them). */
+  private compare(row: HTMLElement, key: string, label: string, a: [string, string], b: [string, string]): void {
+    const body = this.ctx.disclosure(row, key, label);
+    const [x, y] = differingLines(a[1], b[1]);
+    body.createDiv({ cls: "mdbase-hold-label", text: a[0] });
+    body.createEl("pre", { cls: "mdbase-hold-text", text: x });
+    body.createDiv({ cls: "mdbase-hold-label", text: b[0] });
+    body.createEl("pre", { cls: "mdbase-hold-text", text: y });
+  }
+
+  private renderMerged(root: HTMLElement): void {
+    const merged = this.s.merged;
+    if (!merged.length) return;
+    const controller = this.ctx.host.syncController;
+    const section = root.createDiv({ cls: "mdbase-sync-section" });
+    section.createEl("h3", { text: merged.length === 1 ? "1 change to check" : `${merged.length} changes to check` });
+    section.createEl("p", { cls: "mdbase-muted", text: "These were edited on two devices at once. mdbase kept one side so sync could carry on; check that it kept what you want." });
+    const list = section.createDiv({ cls: "mdbase-hold-list" });
+    for (const change of merged) {
+      const row = list.createDiv({ cls: "mdbase-hold" });
+      const vaultPath = change.path && this.s.prefix ? `${this.s.prefix}/${change.path}` : change.path;
+      if (vaultPath) {
+        const name = row.createEl("a", { cls: "mdbase-hold-path", text: vaultPath, href: "#" });
+        name.onclick = (event) => { event.preventDefault(); void this.ctx.host.openFileByPath(vaultPath); };
       } else {
-        // One action: routine changes apply at once; anything risky stops for review.
-        const sync = actions.createEl("button", { text: state.busy ? "Checking…" : "Sync now", cls: "mod-cta" });
-        sync.setAttr("data-focus-key", "sync-now");
-        sync.disabled = busy;
-        sync.onclick = () => void this.session.syncNow();
+        row.createDiv({ cls: "mdbase-hold-path", text: "A note that was since removed" });
       }
-    }
-
-    if (preview && reviewing) this.renderMirrorPreview(document, preview);
-    if (state.status?.conflicts.length) this.renderConflicts(document, state.status);
-    if (state.status?.local_issues.length && !reviewing) {
-      this.renderLocalMirrorIssues(document, state.status);
-    }
-    this.renderHistory(document);
-    window.setTimeout(() => this.focusPendingSyncSection(), 0);
-  }
-
-  /** Which part of this vault the mirror owns, and with what access. */
-  private syncScopeText(mode: MirrorProfile["mode"]): string {
-    const excluded = this.ctx.host.connectSync.getSelectiveSync().excluded_folders;
-    const scope = excluded.length
-      ? `Whole vault except ${excluded.length > 2 ? `${excluded.slice(0, 2).join(", ")} +${excluded.length - 2}` : excluded.join(", ")}`
-      : "Whole vault";
-    return `${mode === "read_only" ? "Read only" : "Read and write"} · ${scope}`;
-  }
-
-  private renderRecoveryCard(container: HTMLElement, problem: SyncProblem): void {
-    const card = container.createDiv({ cls: "mdbase-recovery-card" });
-    card.setAttr("data-kind", problem.kind);
-    const text = card.createDiv();
-    text.createEl("strong", { text: problem.title });
-    text.createDiv({ text: problem.message });
-    const retryAt = this.session.state.retryAt;
-    if (retryAt && (problem.kind === "offline" || problem.kind === "internal")) {
-      const seconds = Math.max(0, Math.round((retryAt - Date.now()) / 1000));
-      text.createDiv({
-        cls: "mdbase-muted",
-        text: seconds <= 1
-          ? "Trying again now…"
-          : seconds < 60 ? `Trying again in ${seconds}s.` : `Trying again in ${Math.round(seconds / 60)} min.`,
-      });
-    }
-    const buttons = card.createDiv({ cls: "mdbase-recovery-actions" });
-    const action = buttons.createEl("button", { text: problem.actionLabel, cls: "mod-cta" });
-    action.setAttr("data-focus-key", "sync-recovery");
-    action.disabled = this.ctx.busy || this.session.state.busy;
-    action.onclick = () => {
-      if (problem.kind === "auth") void this.reconnectCollection();
-      else if (problem.action === "reauthorize") void this.ctx.perform(() => this.reauthorizeCollection());
-      else if (problem.action === "review") void this.session.review();
-      else void this.session.syncNow();
-    };
-    if (problem.kind === "internal" || problem.kind === "recovery") {
-      const copy = buttons.createEl("button", { text: "Copy diagnostics" });
-      copy.setAttr("data-focus-key", "sync-diagnostics");
-      copy.disabled = this.ctx.busy;
-      copy.onclick = () => void this.ctx.perform(async () => {
-        try {
-          await this.ctx.host.copySyncDiagnostics();
-        } finally {
-          this.ctx.pendingFocusKey = "sync-diagnostics";
-        }
-      });
-    }
-  }
-
-  /** The same approval wait, whether enrolling or restoring an existing connection. */
-  private renderApproval(container: HTMLElement, showStatus = true): void {
-    const approval = container.createDiv({ cls: "mdbase-approval-link" });
-    if (showStatus) approval.createSpan({ text: this.enrollmentVerification ? "Waiting for approval · " : "Connecting… " }).setAttr("role", "status");
-    if (this.enrollmentVerification) {
-      const link = approval.createEl("a", { text: "Open Connect", href: this.enrollmentVerification });
-      link.setAttr("target", "_blank");
-      link.setAttr("rel", "noopener noreferrer");
-      link.setAttr("data-focus-key", "approval-link");
-    }
-    const stop = approval.createEl("button", { text: "Stop waiting" });
-    stop.setAttr("data-focus-key", "stop-approval");
-    stop.onclick = () => {
-      this.enrollmentAbort?.abort();
-      this.enrollmentVerification = "";
-      this.ctx.render();
-    };
-  }
-
-  private async reauthorizeCollection(): Promise<void> {
-    this.enrollmentAbort?.abort();
-    const abort = new AbortController();
-    this.enrollmentAbort = abort;
-    this.ctx.pendingFocusKey = "stop-approval";
-    this.ctx.render();
-    try {
-      await this.session.reauthorize({
-        signal: abort.signal,
-        onVerification: (verification) => {
-          this.enrollmentVerification = verification.verificationUri;
-          this.ctx.message = "";
-          window.open(verification.verificationUri, "_blank", "noopener,noreferrer");
-          this.ctx.render();
-        },
-        onStatus: (status) => {
-          this.ctx.message = status.state === "waiting_for_approval"
-            ? ""
-            : `Connect is retrying approval (attempt ${status.attempt}).`;
-          this.ctx.render();
-        },
-      });
-      this.ctx.message = "";
-    } catch (error) {
-      if (!isAbortError(error)) throw error;
-      this.ctx.message = "Cancelled. Your files and connection are unchanged.";
-      this.ctx.pendingFocusKey = "sync-recovery";
-    } finally {
-      if (this.enrollmentAbort === abort) {
-        this.enrollmentAbort = null;
-        this.enrollmentVerification = "";
+      const key = `merged-${change.entry.mutation}-${change.field ?? change.kind}`;
+      if (change.kind === "field" && change.field !== null) {
+        row.createDiv({ cls: "mdbase-muted", text: `"${change.field}" was set to ${change.kept}. The other device set it to ${change.lost}.` });
+        this.actions(row, [
+          ["Keep it", true, () => this.run(() => controller.dismissMerged(change))],
+          [`Use ${clip(change.lost)}`, false, () => this.run(() => controller.useOtherValue(change))],
+        ]);
+        continue;
       }
+      row.createDiv({ cls: "mdbase-muted", text: mergedText(change.kind) });
+      if (change.kept || change.lost) this.compare(row, key, "Show both versions", ["Kept", change.kept], ["Replaced", change.lost]);
+      this.actions(row, [["OK", false, () => this.run(() => controller.dismissMerged(change))]]);
     }
   }
 
-  private renderHistory(container: HTMLElement): void {
-    const runs = this.session.historyRuns();
-    if (!runs.length) return;
-    const pinned = runs.filter((run) => run.needsAcknowledgement);
-    const section = this.ctx.disclosure(container, "sync-activity", "History", pinned.length > 0);
-    section.addClass("mdbase-activity");
-    section.id = "mdbase-sync-activity";
-    const disclosure = section.parentElement as HTMLDetailsElement;
-    this.renderHistoryOnToggle(disclosure);
-    if (!disclosure.open) return;
-    for (const run of [...pinned].reverse()) this.renderEventRow(section, run);
-    const completed = runs.filter((run) => !run.needsAcknowledgement);
-    if (!completed.length) return;
-
-    const header = section.createDiv({ cls: "mdbase-section-header mdbase-history-controls" });
-    const query = header.createEl("input", { type: "search" });
-    query.setAttr("aria-label", "Filter history by path");
-    query.setAttr("data-focus-key", "history-search");
-    query.placeholder = "Filter by path";
-    query.value = this.historyQuery;
-    query.oninput = () => {
-      this.historyQuery = query.value;
-      this.historyLimit = HISTORY_PAGE;
-      this.ctx.render();
-    };
-    if (runs.length > pinned.length) {
-      const clear = header.createEl("button", { text: "Clear history" });
-      clear.setAttr("data-focus-key", "history-clear");
-      clear.disabled = this.ctx.busy;
-      clear.onclick = () => void this.ctx.perform(async () => {
-        await this.session.clearHistory();
-        this.ctx.pendingFocusKey = this.session.historyRuns().length ? "disclosure-sync-activity" : "destination-sync";
-      });
-    }
-
-    const needle = this.historyQuery.trim().toLowerCase();
-    const timeline = filterRuns(completed, needle)
-      .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt));
-    if (!timeline.length) {
-      section.createDiv({ cls: "mdbase-muted", text: needle ? "No synced files match." : "No completed syncs." });
-      return;
-    }
-    for (const run of timeline.slice(0, this.historyLimit)) {
-      if (isHistoryEvent(run)) this.renderEventRow(section, run);
-      else this.renderHistoryRun(section, run, needle !== "");
-    }
-    if (timeline.length > this.historyLimit) {
-      const more = section.createEl("button", { cls: "mdbase-link-button", text: `Show ${Math.min(HISTORY_PAGE, timeline.length - this.historyLimit)} more` });
-      more.setAttr("data-focus-key", "history-more");
-      more.onclick = () => {
-        this.historyLimit += HISTORY_PAGE;
-        this.ctx.render();
-      };
-    }
+  private renderDetails(root: HTMLElement): void {
+    const s = this.s;
+    const collection = s.collection;
+    if (!collection) return;
+    const details = root.createDiv({ cls: "mdbase-sync-section mdbase-status-list" });
+    const row = (label: string, value: string) => renderStatus(details, label, value);
+    row("Collection", collection.name);
+    row("Kind", modeName(collection.mode));
+    if (s.prefix) row("Folder", s.prefix);
+    if (s.status?.account.computer_name) row("This computer", s.status.account.computer_name);
+    this.actions(root, [
+      ["Copy link", false, () => {
+        const link = `obsidian://mdbase-join?collection=${collection.id}&name=${encodeURIComponent(collection.name)}`;
+        void navigator.clipboard.writeText(link).then(() => new Notice("Copied. Open the link on your other device, or paste it into the sync tab there."));
+      }],
+      ["Sync settings", false, () => this.ctx.host.openSettings()],
+    ]);
   }
-
-  /** Hidden history can contain thousands of rows; construct it only when opened. */
-  private renderHistoryOnToggle(details: HTMLDetailsElement): void {
-    const renderedOpen = details.open;
-    details.addEventListener("toggle", () => {
-      if (this.ctx.containerEl.contains(details) && details.open !== renderedOpen) this.ctx.render();
-    });
-  }
-
-  private renderHistoryRun(container: HTMLElement, run: SyncHistoryRun, filtered: boolean): void {
-    const details = container.createEl("details", { cls: "mdbase-history-run" });
-    const key = `history-run-${run.id}`;
-    // Filtered results open without overwriting the remembered disclosure state.
-    if (filtered) details.open = true;
-    else {
-      details.dataset.disclosure = key;
-      details.open = this.ctx.disclosures.get(key) ?? false;
-    }
-    const summary = details.createEl("summary", { cls: "mdbase-activity-row" });
-    summary.setAttr("data-focus-key", `disclosure-${key}`);
-    const tone = run.outcome === "applied" ? "success" : run.outcome === "failed" ? "error" : "attention";
-    summary.setAttr("data-tone", tone);
-    setIcon(summary.createSpan(), tone === "success" ? "check" : "circle-alert");
-    const body = summary.createDiv();
-    body.createEl("strong", { text: summarizeRun(run) });
-    const outcome = HISTORY_OUTCOMES[run.outcome];
-    body.createSpan({
-      cls: "mdbase-muted",
-      text: outcome ? `${formatHistoryTime(run.finishedAt)} · ${outcome}` : formatHistoryTime(run.finishedAt),
-    });
-    if (run.message && run.outcome !== "applied") body.createDiv({ text: run.message });
-    setIcon(summary.createSpan({ cls: "mdbase-history-chevron" }), "chevron-right");
-    this.renderHistoryOnToggle(details);
-    if (!details.open) return;
-
-    const ledger = details.createDiv({ cls: "mdbase-transfer-ledger mdbase-history-files" });
-    for (const file of run.files.slice(0, 250)) {
-      const row = ledger.createDiv({ cls: "mdbase-transfer-row" });
-      row.setAttr("title", new Date(file.at).toLocaleString());
-      const action = row.createSpan({ cls: "mdbase-transfer-action", text: file.action });
-      action.setAttr("data-action", file.status === "completed" ? file.action : "fix");
-      const direction = row.createDiv({ cls: "mdbase-transfer-body" });
-      const pathLine = direction.createDiv({ cls: "mdbase-transfer-path" });
-      const icon = pathLine.createSpan({ cls: "mdbase-history-direction" });
-      const directionLabel = file.direction === "download" ? "Downloaded" : file.direction === "upload" ? "Uploaded" : "Needs attention";
-      icon.setAttr("aria-label", directionLabel);
-      icon.setAttr("title", directionLabel);
-      setIcon(icon, file.direction === "download" ? "download" : file.direction === "upload" ? "upload" : "circle-alert");
-      if (file.action !== "delete" && this.ctx.app.vault.getAbstractFileByPath(file.path)) {
-        const open = pathLine.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open" });
-        open.createEl("code", { text: file.path });
-        open.setAttr("title", `Open ${file.path}`);
-        open.setAttr("data-focus-key", `history-open-${run.id}-${file.path}`);
-        open.onclick = () => void this.ctx.host.openFileByPath(file.path);
-      } else pathLine.createEl("code", { text: file.path });
-      if (file.fromPath) direction.createDiv({ cls: "mdbase-muted", text: `From ${file.fromPath}` });
-      if (file.status !== "completed") {
-        direction.createDiv({ text: file.message ? `${capitalize(file.status)}: ${file.message}` : capitalize(file.status) });
-      }
-    }
-    if (run.files.length > 250) {
-      ledger.createDiv({ cls: "mdbase-transfer-more", text: `${run.files.length - 250} more files are recorded in this sync.` });
-    }
-  }
-
-  /** A non-transfer event: reconnects, conflict decisions, pauses and failures. */
-  private renderEventRow(container: HTMLElement, run: SyncHistoryRun): void {
-    const tone = run.tone ?? "info";
-    const row = container.createDiv({ cls: "mdbase-activity-row" });
-    row.setAttr("data-tone", tone);
-    setIcon(row.createSpan(), tone === "success" ? "check" : tone === "info" ? "info" : "circle-alert");
-    const body = row.createDiv();
-    const summary = run.summary ?? "";
-    if (run.message && run.message !== summary) {
-      const details = body.createEl("details");
-      const key = `history-event-${run.id}`;
-      details.dataset.disclosure = key;
-      details.open = this.ctx.disclosures.get(key) ?? Boolean(run.needsAcknowledgement);
-      details.createEl("summary", { text: summary }).setAttr("data-focus-key", `disclosure-${key}`);
-      details.createDiv({ text: run.message });
-    } else body.createEl("strong", { text: summary });
-    body.createSpan({ cls: "mdbase-muted", text: formatHistoryTime(run.finishedAt) });
-    if (run.path && this.ctx.app.vault.getAbstractFileByPath(run.path)) {
-      const path = run.path;
-      const open = body.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open", text: path });
-      open.setAttr("title", `Open ${path}`);
-      open.setAttr("data-focus-key", `event-open-${run.id}`);
-      open.onclick = () => void this.ctx.host.openFileByPath(path);
-    }
-    if (run.needsAcknowledgement) {
-      const dismiss = row.createEl("button", { text: "Dismiss" });
-      dismiss.setAttr("data-focus-key", `event-dismiss-${run.id}`);
-      dismiss.disabled = this.ctx.busy;
-      dismiss.onclick = () => void this.ctx.perform(async () => {
-        await this.session.dismissEvent(run.id);
-        this.ctx.pendingFocusKey = run.message && run.message !== summary
-          ? `disclosure-history-event-${run.id}` : "disclosure-sync-activity";
-      });
-    }
-  }
-
-  private focusPendingSyncSection(): void {
-    if (!this.pendingSyncFocus) return;
-    const id = this.pendingSyncFocus === "activity" ? "mdbase-sync-activity" : "mdbase-sync-conflicts";
-    const target = this.ctx.containerEl.querySelector<HTMLElement>(`#${id}`);
-    if (!target) return;
-    this.pendingSyncFocus = null;
-    const details = target.closest("details");
-    if (details) details.open = true;
-    target.scrollIntoView({ block: "nearest" });
-  }
-
-  private filePolicy(): SelectiveSyncPolicy {
-    this.filePolicyDraft ??= JSON.parse(JSON.stringify(this.ctx.host.connectSync.getSelectiveSync())) as SelectiveSyncPolicy;
-    return this.filePolicyDraft;
-  }
-
-  /** Attachment and folder choices made before connecting; afterwards they live in settings. */
-  private renderFilePolicyControls(container: HTMLElement): void {
-    const policy = this.filePolicy();
-    const section = container.createEl("section", { cls: "mdbase-editor-section mdbase-file-policy" });
-    section.createEl("h3", { text: "Attachments" });
-    const choices = section.createDiv({ cls: "mdbase-file-class-grid" });
-    const labels: Array<[FileMediaClass, string]> = [
-      ["image", "Images"],
-      ["audio", "Audio"],
-      ["video", "Video"],
-      ["pdf", "PDFs"],
-      ["other", "Other files"],
-    ];
-    for (const [value, label] of labels) {
-      const choice = choices.createEl("label");
-      const checkbox = choice.createEl("input", { type: "checkbox" });
-      checkbox.setAttr("data-focus-key", `file-class-${value}`);
-      checkbox.checked = policy.file_classes.includes(value);
-      checkbox.onchange = () => {
-        policy.file_classes = checkbox.checked
-          ? [...new Set([...policy.file_classes, value])]
-          : policy.file_classes.filter((entry) => entry !== value);
-        this.ctx.render();
-      };
-      choice.createSpan({ text: label });
-    }
-    section.createDiv({ cls: "mdbase-form-description", text: ATTACHMENT_SCOPE_DESCRIPTION });
-    section.createEl("h4", { text: "Excluded folders" });
-    renderFolderExclusions(this.ctx.app, section, policy.excluded_folders, folders => { policy.excluded_folders = folders; });
-    if (policy.file_classes.includes("other")) {
-      section.createDiv({
-        cls: "mdbase-inline-message",
-        text: "Other files includes all remaining visible file formats.",
-      });
-    }
-  }
-
-  private renderEnrollment(container: HTMLElement): void {
-    if (this.ctx.schema || this.ctx.host.connectSync.getAdoptionMarker()) {
-      this.renderLocalAdoption(container);
-      return;
-    }
-    const section = container.createEl("section", { cls: "mdbase-editor-section mdbase-enrollment" });
-    section.createEl("h3", { text: "Copy a collection from Connect" });
-    section.createEl("p", { cls: "mdbase-muted", text: "Connect holds the collection; this vault syncs a copy. Choose a collection in Connect, then review the first sync." });
-    if (this.enrollmentAbort) {
-      this.renderApproval(section);
-      return;
-    }
-    inputRow(section, "Device name", this.enrollmentMirrorName, (value) => {
-      this.enrollmentMirrorName = value;
-    });
-    const access = section.createDiv({ cls: "mdbase-form-row" });
-    const accessLabel = access.createEl("label", { text: "Access" });
-    const select = access.createEl("select");
-    accessLabel.htmlFor = select.id = "mdbase-enrollment-access";
-    select.setAttr("data-focus-key", "enrollment-access");
-    select.createEl("option", { value: "read_write", text: "Read and write" });
-    select.createEl("option", { value: "read_only", text: "Read only" });
-    select.value = this.enrollmentMode;
-    select.onchange = () => {
-      this.enrollmentMode = select.value === "read_only" ? "read_only" : "read_write";
-      this.ctx.render();
-    };
-    const scope = section.createDiv({ cls: "mdbase-form-row mdbase-sync-target" });
-    scope.createEl("label", { text: "Syncs" });
-    const scopeValue = scope.createDiv({ cls: "mdbase-sync-target-value" });
-    const excluded = this.filePolicy().excluded_folders;
-    scopeValue.createSpan({
-      text: `Whole vault “${this.ctx.app.vault.getName()}”${excluded.length ? ` except ${excluded.join(", ")}` : ""}`,
-    });
-    const change = scopeValue.createEl("button", { cls: "mdbase-link-button", text: "Exclude folders" });
-    change.onclick = () => {
-      this.ctx.disclosures.set("enrollment-options", true);
-      this.ctx.render();
-    };
-    section.createEl("p", { cls: "mdbase-form-description", text: this.enrollmentMode === "read_write"
-      ? "Existing notes may upload. Nothing moves until you review and sync."
-      : "Downloads only. Existing local changes must be resolved or excluded.",
-    });
-    const advanced = this.ctx.disclosure(section, "enrollment-options", "Advanced");
-    inputRow(advanced, "Connect URL", this.enrollmentControlUrl, (value) => {
-      this.enrollmentControlUrl = value;
-    }, { placeholder: DEFAULT_CONNECT_CONTROL_URL });
-    inputRow(advanced, "Collection ID", this.enrollmentCollectionId, (value) => {
-      this.enrollmentCollectionId = value;
-    }, { placeholder: "Choose during approval" });
-    this.renderFilePolicyControls(advanced);
-    const enrollmentActions = section.createDiv({ cls: "mdbase-actions mdbase-enrollment-actions" });
-    const button = enrollmentActions.createEl("button", { text: "Connect" });
-    button.setAttr("title", "Opens Connect in your browser to choose a collection");
-    button.setAttr("data-focus-key", "enrollment-connect");
-    button.addClass("mod-cta");
-    button.disabled = this.ctx.busy;
-    button.onclick = () => void this.ctx.perform(async () => {
-      this.enrollmentAbort?.abort();
-      const abort = new AbortController();
-      this.enrollmentAbort = abort;
-      this.ctx.pendingFocusKey = "stop-approval";
-      this.ctx.render();
-      try {
-        await this.ctx.host.connectSync.enroll({
-          controlUrl: this.enrollmentControlUrl,
-          mirrorName: this.enrollmentMirrorName,
-          mode: this.enrollmentMode,
-          selectiveSync: this.filePolicy(),
-          ...(this.enrollmentCollectionId.trim() ? { collectionId: this.enrollmentCollectionId.trim() } : {}),
-        }, {
-          signal: abort.signal,
-          onVerification: (verification) => {
-            this.enrollmentVerification = verification.verificationUri;
-            this.ctx.message = "";
-            window.open(verification.verificationUri, "_blank", "noopener,noreferrer");
-            this.ctx.render();
-          },
-          onStatus: (status) => {
-            this.ctx.message = status.state === "waiting_for_approval"
-              ? ""
-              : `Connect is retrying enrollment (attempt ${status.attempt}).`;
-            this.ctx.render();
-          },
-        });
-        this.enrollmentVerification = "";
-        if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
-        // Copying from Connect consents to downloads, not uploading existing notes.
-        const result = await this.session.syncNow();
-        const preview = this.session.state.preview;
-        if (result === "needs_review" && preview) {
-          const bytes = preview.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0);
-          const items = preview.entries.length;
-          this.ctx.message = `Connected. Review ${items} ${items === 1 ? "item" : "items"}${bytes ? ` · ${formatBytes(bytes)}` : ""} before syncing.`;
-          this.ctx.pendingFocusKey = "sync-apply";
-        } else {
-          this.ctx.message = "";
-          this.ctx.pendingFocusKey = this.session.state.problem ? "sync-recovery" : result === "busy" ? "sync-stop" : "sync-now";
-        }
-      } catch (error) {
-        this.ctx.pendingFocusKey = "enrollment-connect";
-        if (!isAbortError(error)) throw error;
-        this.enrollmentVerification = "";
-        this.ctx.message = "Cancelled. No files synced.";
-      } finally {
-        if (this.enrollmentAbort === abort) {
-          this.enrollmentAbort = null;
-          this.enrollmentVerification = "";
-        }
-      }
-    });
-  }
-
-  private renderLocalAdoption(container: HTMLElement): void {
-    const checkpoint = this.ctx.host.connectSync.getAdoptionMarker();
-    const recovery = checkpoint ? this.ctx.host.connectSync.getAdoptionRecovery() : null;
-    const usesLiveFiles = !checkpoint || ["waiting_for_approval", "uploading"].includes(checkpoint.phase);
-    const conflicts = usesLiveFiles ? this.adoptionPreview?.conflicts ?? [] : [];
-    const section = container.createEl("section", { cls: "mdbase-editor-section mdbase-enrollment" });
-    section.createEl("h3", { text: "Upload to Connect" });
-    section.createEl("p", { cls: "mdbase-muted", text: recovery
-      ? recovery.canReset
-        ? "This upload expired and its device authorization is missing. Reset setup to start again. Your files stay local."
-        : recovery.canReconnect
-          ? "Device authorization is unavailable. Reconnect to the hosted collection through Connect. This vault stays protected until approval succeeds."
-          : `Device authorization is unavailable. Restore Obsidian's secret storage, or reset setup after ${new Date(checkpoint?.session.expiresAt ?? "").toLocaleString()}.`
-      : this.ctx.busy && this.adoptionStage
-        ? this.adoptionStage
-        : checkpoint
-          ? checkpoint.phase === "waiting_for_approval"
-            ? "Not connected yet. Approval is pending in Connect."
-            : checkpoint.phase === "adopted"
-              ? "Collection is hosted. Finish connecting this device."
-              : checkpoint.phase === "activating"
-                ? "Activation outcome is pending. Resume to check it safely."
-                : conflicts.length || this.adoptionFailed
-              ? "Approval received. Upload stopped; this vault is not connected yet."
-              : "Approval received. Transfer is not running; resume to continue."
-          : "This vault holds the collection. Upload it to Connect to sync it with other devices; Connect then holds the collection and this vault syncs a copy.",
-      attr: { role: "status", "aria-live": "polite" },
-    });
-    const verificationUri = this.enrollmentVerification || (!recovery && checkpoint?.phase === "waiting_for_approval" ? checkpoint.session.verificationUri : undefined);
-    if (verificationUri) {
-      const approval = section.createDiv({ cls: "mdbase-approval-link" });
-      approval.createSpan({ text: "Approval page: " });
-      const link = approval.createEl("a", { text: "Open Connect", href: verificationUri });
-      link.setAttr("target", "_blank");
-      link.setAttr("rel", "noopener noreferrer");
-    }
-    if (checkpoint) {
-      this.enrollmentControlUrl = checkpoint.session.controlUrl;
-      this.enrollmentMirrorName = checkpoint.session.requested.mirrorName ?? "Obsidian";
-    }
-    if (!checkpoint) {
-      inputRow(section, "Device name", this.enrollmentMirrorName, (value) => {
-        this.enrollmentMirrorName = value;
-      });
-      const advanced = this.ctx.disclosure(section, "adoption-options", "Advanced");
-      inputRow(advanced, "Connect URL", this.enrollmentControlUrl, (value) => {
-        this.enrollmentControlUrl = value;
-      }, { placeholder: DEFAULT_CONNECT_CONTROL_URL });
-      this.renderFilePolicyControls(advanced);
-    } else {
-      const values = this.ctx.disclosure(section, "adoption-details", "Details");
-      renderStatus(values, "Collection", checkpoint.session.requested.collectionId);
-      renderStatus(values, "Phase", checkpoint.phase.replace(/_/g, " "));
-      renderStatus(values, "Connect", checkpoint.session.controlUrl);
-      const policy = this.ctx.host.connectSync.getSelectiveSync();
-      renderStatus(values, "Files", policy.file_classes.length ? policy.file_classes.join(", ") : "Markdown only");
-    }
-    if (!recovery && usesLiveFiles) {
-      if (this.adoptionPreview) section.createEl("p", {
-        cls: "mdbase-muted", text: `${this.adoptionPreview.records.toLocaleString()} notes · ${this.adoptionPreview.files.toLocaleString()} attachments`,
-      });
-      if (conflicts.length) {
-        section.createEl("h4", { text: `${conflicts.length} filename conflicts` });
-        this.renderAdoptionRenameReview(section, conflicts);
-      }
-    }
-    if (!recovery) section.createEl("p", { cls: "mdbase-form-description", text: "Sync starts only after the upload completes." });
-    const actions = section.createDiv({ cls: "mdbase-actions mdbase-enrollment-actions" });
-    if (!recovery && usesLiveFiles) {
-      const check = actions.createEl("button", { text: "Check files" });
-      check.disabled = this.ctx.busy;
-      check.onclick = () => void this.ctx.perform(async () => {
-        this.adoptionRenamePlan = null;
-        this.adoptionPreview = await this.ctx.host.connectSync.previewAdoption(this.filePolicy());
-        this.ctx.message = this.adoptionPreview.conflicts.length ? "Resolve the listed filename conflicts before continuing." : "Files checked. No filename conflicts.";
-      });
-    }
-    if (recovery && !recovery.canReconnect) {
-      if (recovery.canReset) {
-        const reset = actions.createEl("button", { text: "Reset setup", cls: "mod-cta" });
-        reset.disabled = this.ctx.busy;
-        reset.onclick = () => void this.ctx.perform(async () => {
-          this.filePolicyDraft = this.ctx.host.connectSync.getSelectiveSync();
-          await this.ctx.host.connectSync.resetExpiredAdoption();
-          this.enrollmentVerification = "";
-          this.ctx.message = "Expired setup cleared. Your files and collection identity are unchanged. Start a new upload to approve this device again.";
-          await this.ctx.refresh(true);
-        });
-      } else {
-        const check = actions.createEl("button", { text: "Check again" });
-        check.disabled = this.ctx.busy;
-        check.onclick = () => this.ctx.render();
-      }
-      return;
-    }
-    if (checkpoint && !recovery && !["activating", "adopted"].includes(checkpoint.phase)) {
-      const cancel = actions.createEl("button", { text: "Cancel upload" });
-      cancel.disabled = this.ctx.busy;
-      cancel.onclick = () => void this.ctx.perform(async () => {
-        await this.ctx.host.connectSync.cancelAdoption();
-        this.enrollmentVerification = "";
-        this.ctx.message = "Upload cancelled. The collection is still local.";
-        await this.ctx.refresh(true);
-      });
-    }
-    if (this.enrollmentAbort) {
-      const stop = actions.createEl("button", { text: checkpoint?.phase === "waiting_for_approval" ? "Stop waiting" : "Pause upload" });
-      stop.onclick = () => {
-        this.enrollmentAbort?.abort();
-        this.ctx.message = "Upload paused. Resume when ready.";
-        this.ctx.render();
-      };
-    }
-    const button = actions.createEl("button", {
-      text: recovery ? "Reconnect collection" : checkpoint ? "Resume upload" : "Upload to Connect",
-    });
-    button.addClass("mod-cta");
-    button.disabled = this.ctx.busy || (!recovery && conflicts.length > 0);
-    button.onclick = () => void this.ctx.perform(async () => {
-      this.adoptionFailed = false;
-      this.adoptionStage = "Checking files…";
-      this.enrollmentAbort?.abort();
-      const abort = new AbortController();
-      this.enrollmentAbort = abort;
-      const onVerification = (verification: { verificationUri: string }) => {
-        this.enrollmentVerification = verification.verificationUri;
-        this.adoptionStage = "Waiting for approval in Connect…";
-        this.ctx.message = "Approve the upload in Connect.";
-        this.ctx.render();
-      };
-      const onStatus = (status: AuthorityAdoptionStatus) => {
-        this.ctx.message = status.state === "waiting_for_approval"
-          ? "Waiting for upload approval in Connect…"
-          : `Connect is retrying (attempt ${status.attempt}).`;
-        this.ctx.render();
-      };
-      const onProgress: NonNullable<AdoptLocalCollectionCallbacks["onProgress"]> = (progress) => {
-        this.adoptionStage = progress.stage === "checking" ? "Checking files…"
-          : progress.stage === "uploading" ? `Approval received. Uploading ${progress.records?.toLocaleString() ?? ""} notes…`
-          : progress.stage === "activating" ? "Activating hosted collection. Keep this vault open…"
-          : "Finishing this device's connection…";
-        this.enrollmentVerification = "";
-        this.ctx.message = "";
-        this.ctx.render();
-      };
-      const onFileProgress = (path: string, transferredBytes: number, totalBytes: number) => {
-        this.adoptionFileProgress = `${path} · ${formatBytes(transferredBytes)} of ${formatBytes(totalBytes)}`;
-        this.adoptionStage = `Uploading ${this.adoptionFileProgress}`;
-        this.ctx.render();
-      };
-      const callbacks = { signal: abort.signal, onVerification, onStatus, onFileProgress, onProgress };
-      try {
-        if (recovery) {
-          await this.ctx.host.connectSync.reconnectAdoption(callbacks);
-        } else if (checkpoint) {
-          await this.ctx.host.connectSync.resumeAdoption(callbacks);
-        } else {
-          await this.ctx.host.connectSync.adoptLocalCollection({
-            controlUrl: this.enrollmentControlUrl,
-            mirrorName: this.enrollmentMirrorName,
-            selectiveSync: this.filePolicy(),
-          }, callbacks);
-        }
-        this.enrollmentVerification = "";
-        this.ctx.message = "Collection hosted. This vault is now connected.";
-        await this.ctx.refresh(true);
-      } catch (error) {
-        if (this.ctx.host.connectSync.getAdoptionMarker()?.phase !== "waiting_for_approval") this.enrollmentVerification = "";
-        if (!isAbortError(error)) {
-          this.adoptionFailed = true;
-          await this.ctx.host.connectSync.previewAdoption(this.filePolicy()).then(preview => { this.adoptionPreview = preview; }).catch(() => undefined);
-          throw error;
-        }
-        this.ctx.message = "Upload paused. Resume when ready.";
-      } finally {
-        this.adoptionStage = "";
-        if (this.enrollmentAbort === abort) this.enrollmentAbort = null;
-      }
-    });
-  }
-
-  private renderAdoptionRenameReview(container: HTMLElement, conflicts: string[][]): void {
-    const plan = this.adoptionRenamePlan;
-    container.createEl("p", { text: plan
-      ? "Keep both files with distinct names. Nothing is merged or deleted. Link updates follow your Obsidian settings."
-      : "Names must also be distinct on case-insensitive devices. Review suggested names, or rename the files yourself." });
-    const list = container.createEl("ul", { cls: "mdbase-adoption-conflicts" });
-    const rows = plan ? plan.renames.map(change => [change.from, change.to]) : conflicts;
-    for (const paths of rows) {
-      const row = list.createEl("li");
-      paths.forEach((path, index) => {
-        if (index) row.appendText(plan ? " → " : " ↔ ");
-        row.createEl("code", { text: path });
-      });
-    }
-    if (plan?.manual.length) container.createEl("p", { text: "Collection-resource conflicts need manual review: " + plan.manual.map(group => group.join(" ↔ ")).join("; ") });
-    const actions = container.createDiv({ cls: "mdbase-actions" });
-    if (!plan) {
-      const review = actions.createEl("button", { text: "Review renames…" });
-      review.disabled = this.ctx.busy;
-      review.onclick = () => void this.ctx.perform(async () => {
-        this.adoptionRenamePlan = await this.ctx.host.connectSync.planAdoptionRenames(this.filePolicy());
-      });
-      return;
-    }
-    const apply = actions.createEl("button", { text: `Rename ${plan.renames.length} ${plan.renames.length === 1 ? "file" : "files"}`, cls: "mod-cta" });
-    apply.disabled = this.ctx.busy || !plan.renames.length;
-    apply.onclick = () => void this.ctx.perform(async () => {
-      try {
-        const count = await this.ctx.host.connectSync.applyAdoptionRenames(plan, this.filePolicy(), (done, total) => {
-          this.adoptionStage = `Renaming ${done} of ${total} files…`;
-          this.ctx.render();
-        });
-        this.ctx.message = `Renamed ${count} ${count === 1 ? "file" : "files"}. Review the file check, then resume the upload.`;
-      } finally {
-        this.adoptionStage = "";
-        this.adoptionRenamePlan = null;
-        await this.ctx.host.connectSync.previewAdoption(this.filePolicy()).then(preview => { this.adoptionPreview = preview; }).catch(() => undefined);
-      }
-    });
-    const cancel = actions.createEl("button", { text: "Cancel" });
-    cancel.disabled = this.ctx.busy;
-    cancel.onclick = () => { this.adoptionRenamePlan = null; this.ctx.render(); };
-  }
-
-  private renderMirrorPreview(container: HTMLElement, preview: MdbaseSyncPreview): void {
-    const section = container.createEl("section", { cls: "mdbase-transfer-review" });
-    const heading = section.createDiv({ cls: "mdbase-transfer-heading" });
-    const title = heading.createDiv();
-    title.createEl("h3", { text: preview.phase === "initial" ? "First sync" : "Changes" });
-    const estimatedBytes = preview.entries.reduce((sum, entry) => sum + (entry.estimatedBytes ?? 0), 0);
-    heading.createSpan({
-      cls: "mdbase-transfer-total",
-      text: preview.entries.length ? `${preview.entries.length} ${preview.entries.length === 1 ? "item" : "items"}${estimatedBytes ? ` · ${formatBytes(estimatedBytes)}` : ""}` : "No changes",
-    });
-
-    const controls = section.createDiv({ cls: "mdbase-issue-controls" });
-    const query = controls.createEl("input", { type: "search", placeholder: "Search transfer paths" });
-    query.setAttr("aria-label", "Search transfer paths");
-    query.setAttr("data-focus-key", "transfer-search");
-    query.value = this.transferQuery;
-    query.oninput = () => { this.transferQuery = query.value; this.transferPages.clear(); this.ctx.render(); };
-    const filter = controls.createEl("select");
-    filter.setAttr("aria-label", "Filter transfers");
-    filter.setAttr("data-focus-key", "transfer-filter");
-    for (const [value, label] of [["all", "All changes"], ["delete", "Deletes"], ["replace", "Replacements"], ["upload", "Uploads"], ["download", "Downloads"], ["attention", "Needs attention"]]) {
-      filter.createEl("option", { value, text: label });
-    }
-    filter.value = this.transferFilter;
-    filter.onchange = () => { this.transferFilter = filter.value; this.transferPages.clear(); this.ctx.render(); };
-    const needle = this.transferQuery.trim().toLowerCase();
-    const visible = preview.entries.filter(entry => (!needle || `${entry.path} ${entry.detail}`.toLowerCase().includes(needle))
-      && (this.transferFilter === "all" || entry.action === this.transferFilter || entry.direction === this.transferFilter));
-    if (!visible.length) section.createDiv({ cls: "mdbase-muted", text: "No changes match these filters." });
-    section.createDiv({ cls: "mdbase-muted", text: `Showing ${visible.length} of ${preview.entries.length} items. Approval always applies to the entire reviewed plan, not just these filters.` });
-    const groups: Array<{ direction: SyncPreviewDirection; title: string }> = [
-      { direction: "download", title: "Downloads" },
-      { direction: "upload", title: "Uploads" },
-      { direction: "attention", title: "Needs attention" },
-    ];
-    for (const group of groups) {
-      const entries = visible.filter((entry) => entry.direction === group.direction);
-      if (!entries.length) continue;
-      const block = section.createEl("section", { cls: "mdbase-transfer-group" });
-      block.setAttr("data-direction", group.direction);
-      const groupHeading = block.createDiv({ cls: "mdbase-transfer-group-heading" });
-      const icon = groupHeading.createSpan({ cls: "mdbase-transfer-group-icon" });
-      setIcon(icon, group.direction === "download" ? "download" : group.direction === "upload" ? "upload" : "circle-alert");
-      groupHeading.createEl("h4", { text: group.title });
-      groupHeading.createSpan({ text: String(entries.length), cls: "mdbase-transfer-count" });
-      const ledger = block.createDiv({ cls: "mdbase-transfer-ledger" });
-      const page = Math.min(this.transferPages.get(group.direction) ?? 0, Math.floor((entries.length - 1) / 250));
-      const start = page * 250;
-      for (const entry of entries.slice(start, start + 250)) {
-        const row = ledger.createDiv({ cls: "mdbase-transfer-row" });
-        const action = row.createSpan({ cls: "mdbase-transfer-action", text: entry.action });
-        action.setAttr("data-action", entry.action);
-        const body = row.createDiv({ cls: "mdbase-transfer-body" });
-        const pathLine = body.createDiv({ cls: "mdbase-transfer-path" });
-        const localPath = this.ctx.app.vault.getAbstractFileByPath(entry.path) ? entry.path : null;
-        if (localPath) {
-          const open = pathLine.createEl("button", { cls: "mdbase-link-button mdbase-transfer-open" });
-          open.createEl("code", { text: entry.path });
-          open.setAttr("title", `Open ${entry.path}`);
-          open.setAttr("data-focus-key", `preview-open-${entry.path}`);
-          open.onclick = () => void this.ctx.host.openFileByPath(localPath);
-        } else pathLine.createEl("code", { text: entry.path });
-        if (entry.estimatedBytes !== undefined) {
-          pathLine.createSpan({ cls: "mdbase-transfer-size", text: formatBytes(entry.estimatedBytes) });
-        }
-        if (entry.direction === "attention" || ["rename", "replace", "delete"].includes(entry.action)) {
-          body.createDiv({ text: entry.detail });
-        } else row.setAttr("title", entry.detail);
-        const recordId = entry.recordId;
-        if (recordId && entry.kind === "document" && entry.action === "update" && localPath) {
-          const key = `${recordId}:${entry.path}`;
-          const comparison = this.previewComparisons.get(key);
-          const compare = row.createEl("button", {
-            text: comparison ? "Hide" : this.loadingPreviewComparisons.has(key) ? "Loading…" : "Compare",
-          });
-          compare.setAttr("data-focus-key", `preview-compare-${key}`);
-          compare.disabled = this.loadingPreviewComparisons.has(key);
-          compare.onclick = () => {
-            if (comparison) {
-              this.previewComparisons.delete(key);
-              this.ctx.render();
-            } else void this.loadPreviewComparison(key, recordId, entry.path, preview);
-          };
-          if (comparison) this.renderConflictComparison(body, comparison);
-        }
-      }
-      if (entries.length > 250) {
-        const pages = ledger.createDiv({ cls: "mdbase-actions" });
-        pages.createSpan({ cls: "mdbase-muted", text: `Showing ${start + 1}–${Math.min(start + 250, entries.length)} of ${entries.length}` });
-        const previous = pages.createEl("button", { text: `Previous ${group.title.toLowerCase()}` });
-        previous.disabled = page === 0;
-        previous.setAttr("data-focus-key", `transfer-previous-${group.direction}`);
-        previous.onclick = () => { this.transferPages.set(group.direction, page - 1); this.ctx.render(); };
-        const next = pages.createEl("button", { text: `Next ${group.title.toLowerCase()}` });
-        next.disabled = start + 250 >= entries.length;
-        next.setAttr("data-focus-key", `transfer-next-${group.direction}`);
-        next.onclick = () => { this.transferPages.set(group.direction, page + 1); this.ctx.render(); };
-      }
-    }
-
-    if (preview.collisions.length) {
-      section.createDiv({
-        cls: "mdbase-inline-error",
-        text: "Colliding files and related moves are left unchanged. Independent files can still sync. Move or rename the obstruction, then review again.",
-      });
-    } else if (preview.local_issues.length) {
-      section.createDiv({
-        cls: "mdbase-inline-message",
-        text: preview.plan.summary.blocking_issues > 0
-          ? syncReviewPresentation(preview.plan, preview.entries.length).message
-          : "These diagnostics do not block synchronization. Document bytes are preserved unchanged.",
-      });
-    }
-  }
-
-  private renderConflicts(container: HTMLElement, status: MirrorStatus): void {
-    const section = container.createEl("section", { cls: "mdbase-editor-section" });
-    section.id = "mdbase-sync-conflicts";
-    section.createEl("h3", { text: "Conflicts" });
-    for (const conflict of status.conflicts) {
-      const row = section.createDiv({ cls: "mdbase-conflict-row" });
-      const text = row.createDiv({ cls: "mdbase-conflict-summary" });
-      text.createEl("strong", { text: conflict.path ?? conflict.object_id });
-      text.createDiv({ text: conflict.message });
-      const actions = row.createDiv({ cls: "mdbase-actions" });
-      const comparisonKey = `${conflict.object_id}:${conflict.decision_id}`;
-      const comparison = this.conflictComparisons.get(comparisonKey);
-      const compare = actions.createEl("button", {
-        text: comparison ? "Hide" : this.loadingConflictComparisons.has(comparisonKey) ? "Loading…" : "Resolve…",
-      });
-      compare.setAttr("data-focus-key", `compare-${comparisonKey}`);
-      compare.disabled = this.ctx.busy || this.loadingConflictComparisons.has(comparisonKey);
-      compare.onclick = () => {
-        if (comparison) {
-          this.conflictComparisons.delete(comparisonKey);
-          this.ctx.render();
-          return;
-        }
-        void this.loadConflictComparison(conflict, comparisonKey);
-      };
-      if (comparison) {
-        const resolutionBusy = this.ctx.busy || this.session.state.busy || this.session.isSyncing();
-        for (const resolution of ["local", "remote"] as const) {
-          const destructive = comparison[resolution].state === "absent";
-          const button = actions.createEl("button", {
-            text: resolution === "local"
-              ? destructive ? "Delete from Connect" : "Keep local"
-              : destructive ? "Move local file to trash" : "Use hosted",
-            cls: destructive ? "mod-warning" : "",
-          });
-          button.setAttr("data-focus-key", `resolve-${comparisonKey}-${resolution}`);
-          button.disabled = resolutionBusy;
-          button.onclick = () => void this.resolveMirrorConflict(conflict, resolution, false);
-        }
-        if (conflict.path && comparison.local.state === "exact") {
-          const keepBoth = actions.createEl("button", { text: comparison.remote.state === "absent" ? "Keep a local copy" : "Keep both" });
-          keepBoth.setAttr("data-focus-key", `resolve-${comparisonKey}-both`);
-          keepBoth.disabled = resolutionBusy;
-          keepBoth.onclick = () => void this.resolveMirrorConflict(conflict, "remote", true);
-        }
-        this.renderConflictComparison(row, comparison, Boolean(conflict.path));
-      }
-    }
-  }
-
-  /** Loading disables its opener. Return focus only if the person hasn't moved it. */
-  private comparisonFocus(key: string): () => void {
-    const document = this.ctx.containerEl.ownerDocument;
-    const wasFocused = document.activeElement?.getAttribute("data-focus-key") === key;
-    return () => {
-      if (wasFocused && this.ctx.destination === "sync" && this.ctx.containerEl.ownerDocument === document
-        && document.activeElement === document.body) this.ctx.pendingFocusKey = key;
-    };
-  }
-
-  private async loadPreviewComparison(key: string, recordId: string, path: string, preview: MdbaseSyncPreview): Promise<void> {
-    if (this.session.state.preview !== preview) return;
-    const returnFocus = this.comparisonFocus(`preview-compare-${key}`);
-    this.loadingPreviewComparisons.add(key);
-    this.ctx.render();
-    try {
-      const comparison = await this.ctx.host.connectSync.recordComparison(recordId, path);
-      if (this.session.state.preview === preview) this.previewComparisons.set(key, comparison);
-    } catch (error) {
-      if (this.session.state.preview === preview) this.ctx.message = syncProblem(error).message;
-    } finally {
-      // An old request must not clear a newer plan's loading indicator for this path.
-      if (this.session.state.preview === preview) {
-        this.loadingPreviewComparisons.delete(key);
-        returnFocus();
-      }
-      this.ctx.render();
-    }
-  }
-
-  private async loadConflictComparison(
-    conflict: MirrorStatus["conflicts"][number],
-    comparisonKey: string,
-  ): Promise<void> {
-    const returnFocus = this.comparisonFocus(`compare-${comparisonKey}`);
-    this.loadingConflictComparisons.add(comparisonKey);
-    this.ctx.render();
-    try {
-      this.conflictComparisons.set(comparisonKey, await this.ctx.host.connectSync.conflictComparison(conflict));
-    } catch (error) {
-      const problem = this.session.reportProblem(error);
-      if (problem.code === "conflict_decision_stale") await this.session.refreshStatus();
-    } finally {
-      this.loadingConflictComparisons.delete(comparisonKey);
-      returnFocus();
-      this.ctx.render();
-    }
-  }
-
-  private renderConflictComparison(container: HTMLElement, comparison: MirrorConflictComparison, canKeepCopy = false): void {
-    const comparisonEl = container.createDiv({ cls: "mdbase-conflict-comparison" });
-    if (comparison.local.state === "absent") comparisonEl.createDiv({ cls: "mdbase-muted", text: "No local version." });
-    if (comparison.remote.state === "absent") comparisonEl.createDiv({
-      cls: "mdbase-muted",
-      text: canKeepCopy && comparison.local.state === "exact"
-        ? "No hosted version. Keeping a local copy saves this device's version before moving the original to trash."
-        : "No hosted version.",
-    });
-    if (comparison.entity === "record") {
-      const diff = boundedLineDiff(comparison.local.document ?? "", comparison.remote.document ?? "");
-      const legend = comparisonEl.createDiv({ cls: "mdbase-conflict-legend" });
-      legend.createSpan({ text: "− Local only", cls: "is-local" });
-      legend.createSpan({ text: "+ Hosted only", cls: "is-remote" });
-      const code = comparisonEl.createEl("pre", { cls: "mdbase-conflict-diff" });
-      for (const line of diff.lines) {
-        const output = code.createEl("div", { cls: `is-${line.kind}` });
-        output.createSpan({ text: line.kind === "local" ? "−" : line.kind === "remote" ? "+" : " " });
-        output.createSpan({ text: line.value || " " });
-      }
-      if (diff.truncated) comparisonEl.createDiv({ cls: "mdbase-muted", text: "Diff shortened for a responsive review. Open the local note to inspect it in full." });
-      return;
-    }
-    const sides = comparisonEl.createDiv({ cls: "mdbase-conflict-sides" });
-    this.renderConflictSide(sides, "Local", comparison.local);
-    this.renderConflictSide(sides, "Hosted", comparison.remote);
-  }
-
-  private renderConflictSide(
-    container: HTMLElement,
-    label: string,
-    side: MirrorConflictComparison["local"],
-  ): void {
-    const card = container.createDiv({ cls: "mdbase-conflict-side" });
-    card.createEl("h4", { text: label });
-    if (side.state === "absent") {
-      card.createDiv({ cls: "mdbase-muted", text: "File is absent in this version." });
-      return;
-    }
-    if (side.path) card.createEl("code", { text: side.path });
-    if (side.size !== undefined) card.createDiv({ text: `Size: ${formatBytes(side.size)}` });
-    if (side.modifiedAt) card.createDiv({ text: `Modified: ${new Date(side.modifiedAt).toLocaleString()}` });
-    if (side.revision) card.createDiv({ cls: "mdbase-conflict-digest", text: `Digest: ${side.revision}` });
-    if (side.resourceUrl && side.path && /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(side.path)) {
-      const preview = card.createEl("img", { cls: "mdbase-conflict-image-preview" });
-      preview.src = side.resourceUrl;
-      preview.alt = `${label} preview of ${side.path}`;
-    } else if (label === "Hosted") {
-      card.createDiv({ cls: "mdbase-muted", text: "Hosted binary preview is materialized only after you choose it." });
-    }
-  }
-
-  private async resolveMirrorConflict(
-    conflict: MirrorStatus["conflicts"][number],
-    resolution: "local" | "remote",
-    keepBoth: boolean,
-  ): Promise<void> {
-    await this.ctx.perform(async () => {
-      if (await this.session.resolveConflict(conflict, resolution, keepBoth)) {
-        this.conflictComparisons.delete(`${conflict.object_id}:${conflict.decision_id}`);
-      }
-    });
-  }
-
-  private renderLocalMirrorIssues(container: HTMLElement, status: MirrorStatus): void {
-    const section = container.createEl("section", { cls: "mdbase-editor-section" });
-    section.createEl("h3", { text: "Local files needing attention" });
-    section.createEl("p", {
-      text: "Review these file diagnostics. The sync preview identifies which issues block synchronization; a diagnostic alone does not mean syncing is paused.",
-    });
-    for (const issue of status.local_issues) {
-      const row = section.createDiv({ cls: "mdbase-conflict-row" });
-      const text = row.createDiv({ cls: "mdbase-conflict-summary" });
-      text.createEl("strong", { text: issue.path });
-      text.createDiv({ text: issue.message });
-      const actions = row.createDiv({ cls: "mdbase-actions" });
-      const open = actions.createEl("button", { text: "Open file" });
-      open.setAttr("data-focus-key", `issue-open-${issue.path}`);
-      open.disabled = this.ctx.busy;
-      open.onclick = () => void this.ctx.host.openFileByPath(issue.path);
-    }
-  }
-
-  /** Refresh what the Sync destination shows: mirror status, or the upload check for a local collection. */
-  async refresh(): Promise<void> {
-    if (this.session.isSyncing()) return;
-    if (!this.ctx.host.getMirrorProfile()) {
-      if (!this.ctx.schema || this.enrollmentAbort) return;
-      try {
-        this.adoptionPreview = await this.ctx.host.connectSync.previewAdoption(this.filePolicy());
-      } catch (error) {
-        this.ctx.message = syncProblem(error).message;
-      }
-      return;
-    }
-    await this.session.refreshStatus();
-  }
-
 }
 
+/** The collection name carried by a copied link (`…&name=…`), if any. */
+export function nameFromLink(text: string): string {
+  const match = /[?&]name=([^&\s]*)/.exec(text);
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1].replace(/\+/g, " ")).trim();
+  } catch {
+    return "";
+  }
+}
+
+function mergedText(kind: string): string {
+  switch (kind) {
+    case "body": return "The text was changed on two devices. mdbase kept one version.";
+    case "frontmatter": return "The properties were changed on two devices. mdbase kept one version.";
+    case "path": return "It was renamed or moved on two devices. mdbase kept one name.";
+    case "delete": return "It was deleted on one device and changed on another.";
+    default: return "It was changed on two devices. mdbase kept one version.";
+  }
+}
+
+const clip = (value: string) => (value.length > 24 ? `${value.slice(0, 23)}…` : value);
+
+/** The differing middle of two texts, by line, with one line of context. */
+export function differingLines(a: string, b: string): [string, string] {
+  const x = a.split("\n");
+  const y = b.split("\n");
+  let start = 0;
+  while (start < x.length && start < y.length && x[start] === y[start]) start++;
+  let end = 0;
+  while (end < x.length - start && end < y.length - start && x[x.length - 1 - end] === y[y.length - 1 - end]) end++;
+  const from = Math.max(0, start - 1);
+  const cut = (lines: string[]) => {
+    const to = Math.min(lines.length, lines.length - end + 1);
+    const more = (rest: string[]) => rest.some((line) => line.trim());
+    return `${more(lines.slice(0, from)) ? "…\n" : ""}${lines.slice(from, to).join("\n")}${more(lines.slice(to)) ? "\n…" : ""}`;
+  };
+  return [cut(x), cut(y)];
+}

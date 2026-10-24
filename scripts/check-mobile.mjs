@@ -4,21 +4,10 @@ import { readFile } from "node:fs/promises";
 const bundle = await readFile(new URL("../main.js", import.meta.url));
 const source = bundle.toString("utf8");
 const gzipBytes = gzipSync(bundle).byteLength;
-// The type-workbench baseline adds record impact previews, constraint editing,
-// the YAML source editor (CodeMirror itself is supplied by Obsidian, not bundled),
-// rule-grouped issues, and adoption recovery on top of the sync-polish work.
-// connect-sync beta.120 adds ~1.3 KB (lossless malformed-frontmatter handling
-// and Obsidian Bases as YAML document records). The sync session (one-step
-// sync with a safety check for routine plans, automatic sync and a unified
-// history log) and the sync settings tab add ~3.3 KB.
-// Keep a narrow margin over that reviewed production bundle so unintentional
-// dependency growth is visible.
-// Reviewed UX and partial-sync additions on the beta.120 workspace baseline.
-// Sync reliability adds ~25 KB raw / ~8 KB gzip: request deadlines and retry,
-// the sync scheduler, automatic conflict settling with a three-way merge
-// (node-diff3 is ~5 KB of that), device ownership and diagnostics.
-// The product budget is 5 MB (raw and gzip); this check still guards against
-// Node-only imports and runaway growth.
+// Sync talks to the mdbase desktop app: the SDK's thin client and Node modules
+// (through Obsidian's `window.require`) load only when sync is used, so nothing
+// here may import Node built-ins at module level. The product budget is 5 MB
+// (raw and gzip); this check guards against Node-only imports and runaway growth.
 const rawBudget = 5 * 1024 * 1024;
 const gzipBudget = 5 * 1024 * 1024;
 const forbidden = [

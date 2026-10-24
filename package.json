@@ -1,11 +1,10 @@
 {
   "name": "mdbase-obsidian",
   "version": "0.4.2",
-  "description": "The Obsidian gateway to mdbase types and mdbase Connect",
+  "description": "mdbase types and sync for Obsidian",
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "postinstall": "patch-package --error-on-fail",
     "lint": "npm run lint:ts && npm run lint:css",
     "lint:ts": "eslint main.ts src/ package.json --max-warnings=0",
     "lint:ts:fix": "eslint main.ts src/ package.json --fix",
@@ -14,14 +13,10 @@
     "lint:fix": "npm run lint:ts:fix && npm run lint:css:fix",
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-    "build:staging": "tsc -noEmit -skipLibCheck && MDBASE_CONNECT_CONTROL_URL=https://connect-staging.mdbase.dev node esbuild.config.mjs production",
     "check:mobile": "npm run build && node scripts/check-mobile.mjs",
     "build:test": "npm run build && node copy-files.mjs",
-    "build:test:staging": "npm run build:staging && node copy-files.mjs",
     "profile:testvault": "node scripts/profile-testvault.mjs",
-    "test": "npm run test:unit && npm run test:lossless",
-    "test:sdk-candidate": "tsc -p tsconfig.test.json && npm run test:lossless",
-    "test:lossless": "node --loader ./test/obsidian-loader.mjs scripts/test-lossless-sync.mjs",
+    "test": "npm run test:unit",
     "test:unit": "tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test .test-dist/test/**/*.test.js",
     "copy-files": "node copy-files.mjs",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
@@ -53,7 +48,6 @@
     "globals": "^15.15.0",
     "jsdom": "^29.1.1",
     "obsidian": "latest",
-    "patch-package": "^8.0.1",
     "postcss-selector-parser": "^7.1.5",
     "prettier": "^3.9.6",
     "stylelint": "^17.14.1",
@@ -63,11 +57,10 @@
   },
   "dependencies": {
     "@callumalpass/mdbase-interop": "0.1.0-rc.2",
-    "@mdbase-dev/connect-protocol": "0.1.0-beta.120",
-    "@mdbase-dev/connect-sync": "0.1.0-beta.120",
+    "@mdbase-dev/sdk": "file:vendor/sdk-eaa4e697-production-beta141.tgz",
+    "@noble/hashes": "2.4.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "node-diff3": "^3.2.1",
     "picomatch": "^4.0.5"
   }
 }

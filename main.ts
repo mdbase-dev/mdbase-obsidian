@@ -1,12 +1,10 @@
 import { ContractCatalogModal, recoverPackInstall } from "./src/contractCatalog";
 import { ValidationState } from "./src/validationState";
-import { MdbaseMutationBackend } from "./src/mdbaseMutationBackend";
 import { createNoteFromTypeCommand } from "./src/commands";
 import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
   App,
   addIcon,
-  apiVersion,
   FileSystemAdapter,
   MarkdownView,
   Notice,
@@ -37,11 +35,6 @@ import {
 } from "./src/mdbaseCore";
 import type { StoredTypeDraft, TypeEditorModel } from "./src/typeEditorTypes";
 import {
-  ConnectSyncController,
-  normalizeMirrorProfile,
-  type MirrorProfile,
-} from "./src/connectSync";
-import {
   analyzeV02Migration,
   applyV02Migration,
   type V02MigrationPlan,
@@ -55,45 +48,36 @@ import {
 } from "./src/workspaceView";
 import { MDBASE_ICON_ID, MDBASE_ICON_SVG } from "./src/mdbaseIcon";
 import { KeyedTrailingDebouncer } from "./src/trailingDebouncer";
-import { historyEvent, SyncHistoryStore } from "./src/syncHistory";
-import { NoteSyncHistoryModal } from "./src/syncHistoryModal";
 import { registerCommands } from "./src/commands";
 import { MdbaseSettingTab } from "./src/settingsTab";
-import { SyncSession } from "./src/syncSession";
-import { SyncScheduler } from "./src/syncScheduler";
-import { syncDiagnostics } from "./src/syncDiagnostics";
-import { normalizeActivity, syncIndicator, type SyncActivityEntry } from "./src/syncUx";
+import { SyncController } from "./src/sync/controller";
+import { summarize } from "./src/sync/words";
 
 interface MdbasePluginSettings {
   validateOnSave: boolean;
   validateOnOpen: boolean;
   showNoticeOnSave: boolean;
   interopEnabled: boolean;
-  mirrorProfile: MirrorProfile | null;
   typeDrafts: Record<string, StoredTypeDraft>;
   archivedTypeDrafts: StoredTypeDraft[];
-  /** Apply routine sync plans in the background; risky plans still wait for review. */
-  autoSync: boolean;
-  /** 2: automatic sync became the default. */
-  syncSettingsVersion?: number;
-  /** Pre-0.4 activity log, migrated into sync history on load. */
-  syncActivity?: SyncActivityEntry[];
+  /** Path of the mdbase app's `mdbase` tool; empty to find it automatically. */
+  mdbaseAppPath: string;
+  /** The collection this vault synced with the earlier Connect plugin sync, for guidance. */
+  legacyConnect?: { name: string; collectionId: string };
 }
+
+/** Settings keys of the earlier Connect sync, removed on load. */
+const LEGACY_SYNC_KEYS = ["mirrorProfile", "autoSync", "syncSettingsVersion", "syncActivity"];
 
 const DEFAULT_SETTINGS: MdbasePluginSettings = {
   validateOnSave: true,
   validateOnOpen: true,
   showNoticeOnSave: false,
   interopEnabled: false,
-  mirrorProfile: null,
   typeDrafts: {},
   archivedTypeDrafts: [],
-  autoSync: true,
-  syncSettingsVersion: 2,
+  mdbaseAppPath: "",
 };
-
-/** Vault-scoped device storage key; Obsidian keeps it out of the vault and out of plugin data. */
-const DEVICE_ID_KEY = "mdbase-sync-device-id";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -116,8 +100,7 @@ export interface MdbaseObsidianApiV1 {
 
 export default class MdbasePlugin extends Plugin {
   readonly api: MdbaseObsidianApiV1;
-  readonly connectSync: ConnectSyncController;
-  private mutationBackend: MdbaseMutationBackend | null = null;
+  readonly syncController: SyncController;
   settings: MdbasePluginSettings;
   private issueMap = new Map<string, MdbaseIssue[]>();
   private readonly validation = new ValidationState();
@@ -127,8 +110,6 @@ export default class MdbasePlugin extends Plugin {
   private ribbonEl: HTMLElement | undefined;
   private noteStatusEl: HTMLElement;
   private noteStatusVersion = 0;
-  sync: SyncSession;
-  private syncScheduler: SyncScheduler | null = null;
   private recordCache: Map<string, CollectionRecord> | null = null;
   private recordCacheSettings = "";
   private recordCacheEpoch = 0;
@@ -163,16 +144,14 @@ export default class MdbasePlugin extends Plugin {
 
   constructor(app: App, manifest: import("obsidian").PluginManifest) {
     super(app, manifest);
-    this.connectSync = new ConnectSyncController(app, {
-      getMirrorProfile: () => this.getMirrorProfile(),
-      saveMirrorProfile: async (profile) => {
-        this.settings.mirrorProfile = profile;
-        await this.saveSettings();
-        if (!profile) this.sync?.reset();
-        else this.requestSync();
-      },
-      deviceId: () => this.deviceId(),
-    }, { assertLegacyRuntime: () => this.assertLegacyOperation("Old Connect operations") });
+    this.syncController = new SyncController({
+      vaultPath: () => this.vaultPath(),
+      vaultTopLevel: () => this.vaultTopLevelEntries(),
+      workspace: () => this.app.workspace,
+      binaryOverride: () => this.settings?.mdbaseAppPath ?? "",
+      appVersion: manifest.version,
+      openUrl: (url) => window.open(url),
+    }, Platform.isMobile);
     this.interopBridge = new ObsidianInteropBridge(app, () => this.settings?.interopEnabled === true);
     this.api = {
       apiVersion: 1,
@@ -184,41 +163,27 @@ export default class MdbasePlugin extends Plugin {
     };
   }
 
-  /** Internal seam only; runtime attachment/activation is a separate follow-up. */
-  setMdbaseMutationBackend(backend: MdbaseMutationBackend | null): void {
-    this.connectSync.assertIdle();
-    if (backend && (this.getMirrorProfile() || this.connectSync.getAdoptionMarker())) {
-      throw new Error("Disconnect or complete migration from the old Connect runtime before attaching mdbase next.");
-    }
-    this.mutationBackend = backend;
-  }
-
-  private assertLegacyOperation(operation: string): void {
-    if (this.mutationBackend) throw new Error(`${operation} is not yet available through the shared runtime.`);
-  }
-
   async createTypedNote(path: string, frontmatter: Record<string, unknown>): Promise<TFile> {
-    if (this.mutationBackend) {
-      return this.mutationBackend.create(this.app.vault, path, `${formatMarkdown(frontmatter, "")}\n`);
-    }
-    this.connectSync.assertLocalAuthorityWritable();
-    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
     const { createNoteFromType } = await import("./src/mdbaseCore");
     return createNoteFromType(this.app.vault, path, frontmatter);
   }
 
-  private async transformRecord(file: TFile, transform: (raw: string) => string): Promise<void> {
-    if (this.mutationBackend) {
-      await this.mutationBackend.transform(file.path, transform);
-    } else {
-      await this.app.vault.process(file, transform);
-    }
+  /** The vault's folder on disk; null on mobile. */
+  vaultPath(): string | null {
+    const adapter = this.app.vault.adapter;
+    return typeof FileSystemAdapter === "function" && adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+  }
+
+  vaultTopLevelEntries(): string[] {
+    return this.app.vault.getRoot().children.map((entry) => entry.name).filter((name) => !name.startsWith("."));
+  }
+
+  legacyConnect(): { name: string; collectionId: string } | null {
+    return this.syncController.snapshot.collection ? null : this.settings.legacyConnect ?? null;
   }
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    await this.connectSync.initialize();
-    await this.createSyncSession();
     addIcon(MDBASE_ICON_ID, MDBASE_ICON_SVG);
 
     this.statusBarEl = this.addStatusBarItem();
@@ -251,8 +216,19 @@ export default class MdbasePlugin extends Plugin {
     this.updateStatusBar();
 
     registerCommands(this);
+    this.registerObsidianProtocolHandler("mdbase-join", (params) => {
+      void this.openWorkspace("sync").then((view) => view.prefillJoin(params.collection ?? "", params.name ?? ""));
+    });
 
     this.registerVaultEvents();
+    this.register(this.syncController.subscribe(() => this.updateStatusBar()));
+    this.register(() => this.syncController.stop());
+    const reportOpenNotes = () => this.syncController.reportFenceSoon();
+    this.registerEvent(this.app.workspace.on("layout-change", reportOpenNotes));
+    this.registerEvent(this.app.workspace.on("file-open", reportOpenNotes));
+    this.registerEvent(this.app.workspace.on("editor-change", reportOpenNotes));
+    this.registerEvent(this.app.vault.on("modify", reportOpenNotes));
+    this.registerDomEvent(window, "focus", () => void this.syncController.refresh());
 
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
@@ -285,54 +261,11 @@ export default class MdbasePlugin extends Plugin {
     if (active && this.settings.validateOnOpen) {
       void this.validateFileAndStore(active, "open");
     }
-    this.startSyncScheduler();
-  }
-
-  /**
-   * Sync runs when local edits settle, when Connect has hosted changes, when the
-   * app returns to the front or the network comes back, and retries with backoff.
-   */
-  private startSyncScheduler(): void {
-    this.syncScheduler = new SyncScheduler({
-      connected: () => this.getMirrorProfile() !== null,
-      automatic: () => this.settings.autoSync,
-      problemKind: () => this.sync.state.paused ? "paused" : this.sync.state.problem?.kind ?? null,
-      autoSync: () => this.sync.autoSync(),
-      refreshStatus: () => this.sync.refreshStatus(),
-      remoteChangesWaiting: () => this.connectSync.remoteChangesWaiting(),
-      reportProblem: (error) => {
-        this.sync.reportProblem(error);
-      },
-      setRetryAt: (at) => this.sync.setRetryAt(at),
-    });
-    this.registerDomEvent(window, "online", () => this.syncScheduler?.noteOnline());
-    this.registerDomEvent(window, "focus", () => this.syncScheduler?.noteVisibility(true));
-    // The main window's visibility is the app's: hidden on mobile when backgrounded.
-    const appDocument = window.document;
-    this.registerDomEvent(appDocument, "visibilitychange", () => {
-      this.syncScheduler?.noteVisibility(appDocument.visibilityState === "visible");
-    });
-    this.syncScheduler.start();
-  }
-
-  /** Run the scheduler's decision soon, e.g. after connecting or changing sync settings. */
-  requestSync(): void {
-    this.syncScheduler?.requestSoon();
-  }
-
-  /** Vault-scoped and device-local: a copied vault or synced plugin data gets its own. */
-  private deviceId(): string {
-    const stored: unknown = this.app.loadLocalStorage(DEVICE_ID_KEY);
-    if (typeof stored === "string" && stored) return stored;
-    const created = crypto.randomUUID();
-    this.app.saveLocalStorage(DEVICE_ID_KEY, created);
-    return created;
+    this.app.workspace.onLayoutReady(() => this.syncController.start());
   }
 
   onunload(): void {
     this.validationAbort?.abort();
-    this.syncScheduler?.stop();
-    this.connectSync.dispose();
     void this.interopBridge.dispose().catch((error: unknown) => {
       console.error("mdbase: failed to dispose the interoperability bridge", error);
     });
@@ -342,17 +275,20 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    const stored = (await this.loadData()) as Partial<MdbasePluginSettings> | null;
+    const stored = (await this.loadData()) as (Partial<MdbasePluginSettings> & { mirrorProfile?: { name?: unknown; collectionId?: unknown } | null }) | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
-    // Before version 2 automatic sync was off by default and stopped for most
-    // plans, so a stored `false` is almost always the old default, not a choice.
-    const version = typeof stored?.syncSettingsVersion === "number"
-      && Number.isSafeInteger(stored.syncSettingsVersion) && stored.syncSettingsVersion >= 1
-      ? stored.syncSettingsVersion : 1;
-    this.settings.syncSettingsVersion = Math.max(2, version);
-    this.settings.autoSync = version < 2 || typeof stored?.autoSync !== "boolean"
-      ? DEFAULT_SETTINGS.autoSync : stored.autoSync;
-    this.settings.mirrorProfile = normalizeMirrorProfile(this.settings.mirrorProfile);
+    // The earlier Connect sync kept a mirror profile here. That sync has been
+    // replaced; remember only which collection it was, to guide setup.
+    const legacy = stored?.mirrorProfile;
+    if (legacy && typeof legacy.collectionId === "string") {
+      this.settings.legacyConnect = { name: typeof legacy.name === "string" ? legacy.name : "your collection", collectionId: legacy.collectionId };
+    }
+    const settings = this.settings as unknown as Record<string, unknown>;
+    if (LEGACY_SYNC_KEYS.some((key) => key in settings)) {
+      for (const key of LEGACY_SYNC_KEYS) delete settings[key];
+      await this.saveSettings();
+    }
+    if (typeof this.settings.mdbaseAppPath !== "string") this.settings.mdbaseAppPath = "";
     if (!this.settings.typeDrafts || typeof this.settings.typeDrafts !== "object" || Array.isArray(this.settings.typeDrafts)) {
       this.settings.typeDrafts = {};
     }
@@ -370,119 +306,11 @@ export default class MdbasePlugin extends Plugin {
     return this.sortedIssuesCache;
   }
 
-  getMirrorProfile(): MirrorProfile | null {
-    return this.settings.mirrorProfile
-      ? JSON.parse(JSON.stringify(this.settings.mirrorProfile)) as MirrorProfile
-      : null;
-  }
-
-  /**
-   * Other tools that also move this vault's files. Two sync services on the
-   * same files can duplicate notes or bring deleted ones back, and cloud
-   * folders can evict files that then look deleted.
-   */
-  otherSyncServices(): string[] {
-    const services: string[] = [];
-    const app = this.app as unknown as {
-      internalPlugins?: { getEnabledPluginById?(id: string): { vaultId?: unknown } | null };
-      plugins?: { enabledPlugins?: Set<string> };
-    };
-    // The Sync core plugin is enabled by default; it only syncs once a remote vault is chosen.
-    const obsidianSync = app.internalPlugins?.getEnabledPluginById?.("sync");
-    if (typeof obsidianSync?.vaultId === "string" && obsidianSync.vaultId) services.push("Obsidian Sync");
-    const community: Record<string, string> = {
-      "obsidian-livesync": "Self-hosted LiveSync",
-      "remotely-save": "Remotely Save",
-      "obsidian-git": "Obsidian Git",
-    };
-    for (const [id, name] of Object.entries(community)) {
-      if (app.plugins?.enabledPlugins?.has(id)) services.push(name);
-    }
-    const adapter = this.app.vault.adapter;
-    const base = typeof FileSystemAdapter === "function" && adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
-    const folders: Array<[RegExp, string]> = [
-      [/Mobile Documents|iCloud/i, "iCloud Drive"],
-      [/[\\/]Dropbox[\\/]/i, "Dropbox"],
-      [/[\\/]OneDrive/i, "OneDrive"],
-      [/Google ?Drive|GoogleDrive/i, "Google Drive"],
-    ];
-    for (const [pattern, name] of folders) if (pattern.test(base)) services.push(name);
-    return services;
-  }
-
-  /** Copies a support report; the person sees it in the clipboard before sharing it. */
-  async copySyncDiagnostics(): Promise<void> {
-    const profile = this.getMirrorProfile();
-    let checkpoint = null;
-    try {
-      checkpoint = await this.connectSync.checkpointSummary();
-    } catch (error) {
-      console.error("mdbase: could not read the sync checkpoint for diagnostics", error);
-    }
-    const report = syncDiagnostics({
-      generatedAt: new Date().toISOString(),
-      pluginVersion: this.manifest.version,
-      obsidianVersion: apiVersion,
-      platform: Platform.isIosApp ? "iOS" : Platform.isAndroidApp ? "Android" : Platform.isMacOS ? "macOS" : Platform.isWin ? "Windows" : Platform.isLinux ? "Linux" : "unknown",
-      profile,
-      otherDevice: this.connectSync.isOtherDevice(profile),
-      automatic: this.settings.autoSync,
-      otherSyncServices: this.otherSyncServices(),
-      state: this.sync.state,
-      checkpoint,
-      history: this.sync.historyRuns(),
-    });
-    await navigator.clipboard.writeText(report);
-    new Notice("Copied sync diagnostics. They name the collection and recent files but contain no note text or credentials.");
-  }
-
-  openNoteSyncHistory(path: string): void {
-    new NoteSyncHistoryModal(this.app, path, this.sync.historyRuns()).open();
-  }
-
   openSettings(): void {
     // Obsidian exposes the settings modal on app but not in its public typings.
     const setting = (this.app as unknown as { setting?: { open(): void; openTabById(id: string): void } }).setting;
     setting?.open();
     setting?.openTabById(this.manifest.id);
-  }
-
-  /** Sync state lives in one session; the status bar and views subscribe to it. */
-  private async createSyncSession(): Promise<void> {
-    const folder = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-    const history = new SyncHistoryStore(this.app.vault.adapter, normalizePath(`${folder}/sync-history.jsonl`));
-    try {
-      await history.load();
-      await this.migrateSyncActivity(history);
-    } catch (error) {
-      // History is a convenience; an unreadable log must not block sync.
-      console.error("mdbase: could not load sync history", error);
-    }
-    this.sync = new SyncSession(this.connectSync, () => this.getMirrorProfile(), history, (message) => {
-      new Notice(`mdbase: ${message}`, 10_000);
-    });
-    this.register(this.sync.subscribe(() => this.updateStatusBar()));
-  }
-
-  /** Before 0.4 events were kept in plugin data; they now share the history log. */
-  private async migrateSyncActivity(history: SyncHistoryStore): Promise<void> {
-    const legacy = normalizeActivity(this.settings.syncActivity);
-    const collectionId = this.settings.mirrorProfile?.collectionId;
-    if (collectionId) {
-      for (const entry of legacy) {
-        await history.append(historyEvent(collectionId, {
-          summary: entry.summary,
-          tone: entry.tone,
-          ...(entry.detail ? { message: entry.detail } : {}),
-          ...(entry.path ? { path: entry.path } : {}),
-          ...(entry.requiresAcknowledgement ? { needsAcknowledgement: true } : {}),
-        }, entry.occurredAt));
-      }
-    }
-    if (this.settings.syncActivity !== undefined) {
-      delete this.settings.syncActivity;
-      await this.saveSettings();
-    }
   }
 
   async loadWorkspaceSchema(forceReload = false): Promise<MdbaseWorkspaceSchema | null> {
@@ -536,10 +364,6 @@ export default class MdbasePlugin extends Plugin {
     existingPath: string | null,
     expectedSourceRevision?: string,
   ): Promise<TFile> {
-    this.connectSync.assertLocalAuthorityWritable();
-    if (this.getMirrorProfile()?.mode === "read_only") {
-      throw new Error("This mirror has read-only access. Re-enroll it with write access before editing types.");
-    }
     const config = await loadMdbaseConfig(this.app.vault);
     if (!config) throw new Error("No mdbase.yaml found.");
     if (!config.spec_version.startsWith("0.3.")) {
@@ -572,15 +396,10 @@ export default class MdbasePlugin extends Plugin {
   cancelValidation(): void { this.validationAbort?.abort(); }
 
   async openContractCatalog(): Promise<void> {
-    this.assertLegacyOperation("Installing packs");
-    if (this.getMirrorProfile()) throw new Error("Install packs at the hosted collection authority using mdbase editor.");
     const loaded = await this.getConfigAndTypes();
     if (!loaded || !loaded.config.spec_version.startsWith("0.3.")) throw new Error("Initialize or migrate this collection first.");
     if (loaded.config.settings.types_folder !== "_types" || (loaded.config.settings.contracts_folder ?? "_contracts") !== "_contracts") throw new Error("Catalog packs require the standard _types and _contracts folders. Use mdbase editor for custom target mappings.");
-    new ContractCatalogModal(this.app, () => {
-      this.connectSync.assertLocalAuthorityWritable();
-      if (this.getMirrorProfile()) throw new Error("The vault role changed. Install at the collection authority instead.");
-    }, async primary => {
+    new ContractCatalogModal(this.app, () => undefined, async primary => {
       this.invalidateSchemaCache();
       const view = await this.openWorkspace("types");
       await view.refresh(true);
@@ -596,8 +415,6 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async initializeCollection(): Promise<void> {
-    this.assertLegacyOperation("Initializing collections");
-    this.connectSync.assertLocalAuthorityWritable();
     const { created } = await ensureCollectionInitialized(this.app.vault, { seedNoteType: false });
     this.invalidateSchemaCache();
     new Notice(created.length ? `Initialized mdbase collection: ${created.join(", ")}` : "mdbase collection already initialized.");
@@ -609,18 +426,10 @@ export default class MdbasePlugin extends Plugin {
   }
 
   analyzeMigration(): Promise<V02MigrationPlan> {
-    if (this.getMirrorProfile()) {
-      throw new Error("Collection authority resources must be migrated at the collection authority.");
-    }
     return analyzeV02Migration(this.app.vault);
   }
 
   async applyMigration(plan: V02MigrationPlan, allowLossy: boolean): Promise<void> {
-    this.assertLegacyOperation("Migrating v0.2 collections");
-    this.connectSync.assertLocalAuthorityWritable();
-    if (this.getMirrorProfile()) {
-      throw new Error("Collection authority resources must be migrated at the collection authority.");
-    }
     const result = await applyV02Migration(this.app.vault, plan, { allowLossy });
     if (!result.applied) {
       throw new Error(
@@ -643,17 +452,14 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async applyQuickFix(issue: MdbaseIssue): Promise<void> {
-    this.connectSync.assertLocalAuthorityWritable();
     const file = this.app.vault.getAbstractFileByPath(issue.path);
     if (!(file instanceof TFile)) {
       new Notice(`File not found: ${issue.path}`);
       return;
     }
 
-    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
     let changed = false;
-    await this.transformRecord(file, (raw) => {
-      this.connectSync.assertLocalAuthorityWritable();
+    await this.app.vault.process(file, (raw) => {
       const result = applyQuickFixToDocument(raw, issue);
       changed = result.changed;
       return result.content;
@@ -663,8 +469,6 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async applyQuickFixes(issues: MdbaseIssue[]): Promise<{ changed: number; skipped: number }> {
-    this.connectSync.assertLocalAuthorityWritable();
-    if (this.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
     let changed = 0;
     let skipped = 0;
     const touched = new Map<string, TFile>();
@@ -675,8 +479,7 @@ export default class MdbasePlugin extends Plugin {
         continue;
       }
       let applied = false;
-      await this.transformRecord(file, (raw) => {
-        this.connectSync.assertLocalAuthorityWritable();
+      await this.app.vault.process(file, (raw) => {
         const result = applyQuickFixToDocument(raw, issue);
         applied = result.changed;
         return result.content;
@@ -732,28 +535,21 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private async onRibbonClick(): Promise<void> {
-    const indicator = this.syncIndicator(this.getIssues().length);
-    // Mobile has no status bar. Its ribbon is the direct way to inspect pending
-    // sync; a settled/local collection keeps Types as the primary destination.
-    if (Platform.isMobile && !["local", "synced"].includes(indicator.state)) await this.openStatusDestination();
-    else await this.openWorkspace();
+    await this.openWorkspace();
   }
 
+  /** The status bar shows sync only once this vault syncs; the note status shows types. */
   private updateStatusBar(): void {
-    // The sync session can report before onload has created either indicator.
-    if (!this.statusBarEl && !this.ribbonEl) return;
-    const indicator = this.syncIndicator(this.getIssues().length);
-    if (this.statusBarEl) {
-      this.statusBarEl.setText(indicator.label);
-      this.statusBarEl.setAttr("aria-label", `${indicator.detail}. Open mdbase ${indicator.destination}.`);
-      this.statusBarEl.setAttr("title", indicator.detail);
-      this.statusBarEl.setAttr("data-state", indicator.state);
-    }
-    if (this.ribbonEl) {
-      const destination = Platform.isMobile && !["local", "synced"].includes(indicator.state) ? indicator.destination : "types";
-      this.ribbonEl.setAttr("aria-label", `${indicator.label}. Open mdbase ${destination}.`);
-      this.ribbonEl.setAttr("title", indicator.detail);
-      this.ribbonEl.setAttr("data-state", indicator.state);
+    if (!this.statusBarEl) return;
+    const summary = summarize(this.syncController.snapshot);
+    if (!summary.syncing) {
+      this.statusBarEl.hide();
+    } else {
+      this.statusBarEl.show();
+      this.statusBarEl.setText(summary.label);
+      this.statusBarEl.setAttr("aria-label", `${summary.detail} Open mdbase sync.`);
+      this.statusBarEl.setAttr("title", summary.detail);
+      this.statusBarEl.setAttr("data-tone", summary.tone);
     }
     if (this.noteStatusEl) void this.updateNoteStatus();
   }
@@ -856,25 +652,8 @@ export default class MdbasePlugin extends Plugin {
     return this.recordList;
   }
 
-  private syncIndicator(validationIssues: number) {
-    const state = this.sync.state;
-    const safety = this.sync.safety();
-    return syncIndicator({
-      connected: this.getMirrorProfile() !== null,
-      status: state.status,
-      progress: state.progress,
-      fileProgress: state.fileProgress,
-      problem: state.problem,
-      validationIssues,
-      localChangeObserved: state.localChangeObserved,
-      paused: state.paused,
-      busy: state.busy,
-      reviewChanges: safety && !safety.safe ? state.preview?.plan.actions.length ?? 0 : 0,
-    });
-  }
-
   private async openStatusDestination(): Promise<void> {
-    await this.openWorkspace(this.syncIndicator(this.getIssues().length).destination);
+    await this.openWorkspace("sync");
   }
 
   async openIssuesView(): Promise<void> {
@@ -1054,7 +833,6 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private onVaultFolderChange(...paths: string[]): void {
-    for (const path of paths) this.observeLocalMirrorChange(path);
     // A folder event need not be accompanied by child-file events. The old
     // descendant paths are no longer a valid incremental record/schema cache.
     // An older in-flight read must not reinstall those invalidated paths.
@@ -1066,7 +844,6 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private onVaultModify(file: TFile): void {
-    this.observeLocalMirrorChange(file.path);
     this.markRecordChanged(file.path);
     if (this.isSchemaRelevantPath(file.path)) {
       this.scheduleSchemaRefresh();
@@ -1078,10 +855,8 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private onVaultRename(file: TFile, oldPath: string): void {
-    this.observeLocalMirrorChange(oldPath);
     this.markRecordChanged(oldPath);
     this.markRecordChanged(file.path);
-    this.observeLocalMirrorChange(file.path);
     if (this.isSchemaRelevantPath(oldPath) || this.isSchemaRelevantPath(file.path)) {
       this.refreshSchemaNow();
     }
@@ -1097,7 +872,6 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private onVaultDelete(file: TFile): void {
-    this.observeLocalMirrorChange(file.path);
     this.markRecordChanged(file.path);
     if (this.isSchemaRelevantPath(file.path)) {
       this.refreshSchemaNow();
@@ -1109,24 +883,10 @@ export default class MdbasePlugin extends Plugin {
   }
 
   private onVaultCreate(file: TFile): void {
-    this.observeLocalMirrorChange(file.path);
     this.markRecordChanged(file.path);
     if (this.isSchemaRelevantPath(file.path)) {
       this.refreshSchemaNow();
     }
-  }
-
-  /**
-   * Edits made while a sync runs still count; only the mirror's own writes are
-   * echoes. The scheduler syncs once the burst of edits settles.
-   */
-  private observeLocalMirrorChange(path: string): void {
-    if (!this.getMirrorProfile() || this.connectSync.consumeEngineWrite(path)) return;
-    const normalized = normalizePath(path);
-    const reservedFolders = [this.app.vault.configDir, ".mdbase", ".trash", ".git"];
-    if (reservedFolders.some((folder) => normalized === folder || normalized.startsWith(`${folder}/`))) return;
-    this.sync.observeLocalChange();
-    this.syncScheduler?.noteLocalChange();
   }
 
   async validateFileAndStore(
@@ -1253,11 +1013,6 @@ export default class MdbasePlugin extends Plugin {
     const defaultTargetPath = normalizePath(`${typesFolder}/${typeName}.md`);
 
     if (!existingFile) {
-      if (this.mutationBackend) {
-        const created = await this.mutationBackend.putResource(this.app.vault, defaultTargetPath, content, null);
-        this.invalidateSchemaCache();
-        return created;
-      }
       await this.ensureFolderExists(typesFolder);
 
       if (await this.app.vault.adapter.exists(defaultTargetPath)) {
@@ -1283,13 +1038,6 @@ export default class MdbasePlugin extends Plugin {
 
     if (targetPath !== existingFile.path && (await this.app.vault.adapter.exists(targetPath))) {
       throw new Error(`Cannot rename type file to ${targetPath}; file already exists.`);
-    }
-
-    if (this.mutationBackend) {
-      if (targetPath !== originalPath) throw new Error("Type renames need the shared runtime's rename planner; no files were changed.");
-      const updated = await this.mutationBackend.putResource(this.app.vault, originalPath, content, originalContent);
-      this.invalidateSchemaCache();
-      return updated;
     }
 
     let renamed = false;

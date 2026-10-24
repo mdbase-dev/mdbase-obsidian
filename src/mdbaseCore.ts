@@ -1,5 +1,5 @@
 import { getFrontMatterInfo, normalizePath, parseYaml, stringifyYaml, TFile, Vault } from "obsidian";
-import type { CollectionContractDescriptor } from "@mdbase-dev/connect-protocol";
+import type { CollectionContractDescriptor } from "./contractTypes";
 import type { ErrorObject } from "ajv";
 import { Ajv2020 } from "ajv/dist/2020";
 import addFormatsImport from "ajv-formats";

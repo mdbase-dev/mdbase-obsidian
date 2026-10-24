@@ -10,7 +10,6 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = process.argv[2] === "production";
-const connectControlUrl = process.env.MDBASE_CONNECT_CONTROL_URL ?? "https://connect.mdbase.dev";
 
 const context = await esbuild.context({
   banner: {
@@ -43,9 +42,6 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: "main.js",
   minify: prod,
-  define: {
-    __MDBASE_CONNECT_CONTROL_URL__: JSON.stringify(connectControlUrl),
-  },
 });
 
 if (prod) {

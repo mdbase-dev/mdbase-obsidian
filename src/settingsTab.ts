@@ -1,23 +1,14 @@
-import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
-import type { FileMediaClass, SelectiveSyncPolicy } from "@mdbase-dev/connect-protocol";
+import { type App, Modal, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
 import type MdbasePlugin from "../main";
-import { ATTACHMENT_SCOPE_DESCRIPTION, renderFolderExclusions } from "./folderExclusions";
-import { DisconnectMirrorModal } from "./modals";
-
-const FILE_CLASSES: Array<[FileMediaClass, string]> = [
-  ["image", "images"],
-  ["audio", "audio"],
-  ["video", "video"],
-  ["pdf", "PDFs"],
-  ["other", "other files"],
-];
+import { errorText, modeName, summarize } from "./sync/words";
 
 /**
  * Validation and sync preferences live here, where Obsidian users look for
- * them. The workspace Sync destination keeps only status, the next action,
- * conflicts and history.
+ * them. The workspace Sync destination keeps status, setup and decisions.
  */
 export class MdbaseSettingTab extends PluginSettingTab {
+  private unsubscribe: (() => void) | null = null;
+
   constructor(app: App, private readonly plugin: MdbasePlugin) {
     super(app, plugin);
   }
@@ -25,6 +16,9 @@ export class MdbaseSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl, plugin } = this;
     containerEl.empty();
+    this.unsubscribe ??= plugin.syncController.subscribe(() => {
+      if (containerEl.isShown() && !containerEl.contains(containerEl.ownerDocument.activeElement)) this.display();
+    });
 
     new Setting(containerEl)
       .setName("Validate notes automatically")
@@ -63,118 +57,105 @@ export class MdbaseSettingTab extends PluginSettingTab {
     this.displaySync(containerEl);
   }
 
-  /** Settings can be a native popout; finish that surface before approval opens. */
-  private openSync(): ReturnType<MdbasePlugin["openWorkspace"]> {
+  hide(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+  }
+
+  private closeSettings(): void {
     (this.app as unknown as { setting?: { close(): void } }).setting?.close();
-    return this.plugin.openWorkspace("sync");
+  }
+
+  private async attempt(action: () => Promise<unknown>): Promise<void> {
+    try {
+      await action();
+    } catch (error) {
+      const e = error as { code?: string; reason?: string; message?: string };
+      new Notice(typeof e?.code === "string" ? errorText({ code: e.code, reason: e.reason, message: e.message ?? "" }) : String(error));
+    }
+    this.display();
   }
 
   private displaySync(containerEl: HTMLElement): void {
     const { plugin } = this;
-    const profile = plugin.getMirrorProfile();
+    const controller = plugin.syncController;
+    const s = controller.snapshot;
     new Setting(containerEl).setName("Sync").setHeading();
-    if (!profile) {
-      new Setting(containerEl)
-        .setName("Not connected")
-        .setDesc("Connect this vault to mdbase Connect from the sync tab of the mdbase workspace.")
-        .addButton((button) => button.setButtonText("Open sync").onClick(async () => {
-          try {
-            await this.openSync();
-          } catch (error) {
-            new Notice(error instanceof Error ? error.message : String(error));
-          }
-        }));
+    if (Platform.isMobile) {
+      new Setting(containerEl).setName("Sync isn't available on phones and tablets yet").setDesc("Sync this vault from Obsidian on your computer, with the mdbase app installed.");
       return;
     }
-
+    const summary = summarize(s);
     new Setting(containerEl)
-      .setName(profile.name)
-      .setDesc(`${profile.mode === "read_write" ? "Read and write" : "Read only"} · ${new URL(profile.controlUrl).host}`)
-      .addButton((button) => button.setButtonText("Reconnect").onClick(async () => {
-        button.setDisabled(true);
-        try {
-          await this.openSync().then((view) => view.reconnectCollection());
-        } catch (error) {
-          new Notice(error instanceof Error ? error.message : String(error));
-        } finally {
-          button.setDisabled(false);
-        }
+      .setName(summary.syncing ? summary.label : "Status")
+      .setDesc(summary.detail)
+      .addButton((button) => button.setButtonText("Open sync").onClick(() => {
+        this.closeSettings();
+        void plugin.openWorkspace("sync");
       }));
 
-    new Setting(containerEl)
-      .setName("Sync automatically")
-      .setDesc("Keep this vault in sync in the background. Deleted files go to the trash, and conflicting edits are merged or kept as two files. Deleting many files at once on this device waits for your review.")
-      .addToggle((toggle) =>
-        toggle.setValue(plugin.settings.autoSync).onChange(async (value) => {
-          plugin.settings.autoSync = value;
-          await plugin.saveSettings();
-          plugin.requestSync();
-        }),
-      );
-
-    const policy = plugin.connectSync.getSelectiveSync();
-    const apply = async (next: SelectiveSyncPolicy) => {
-      try {
-        await plugin.sync.configureSelectiveSync(next);
-        return true;
-      } catch (error) {
-        new Notice(error instanceof Error ? error.message : String(error));
-        this.display();
-        return false;
+    if (s.daemon === "running" && s.status) {
+      const account = s.status.account;
+      const signIn = new Setting(containerEl).setName("Account");
+      if (account.signed_in) {
+        signIn.setDesc(account.computer_name ? `Signed in. This computer is "${account.computer_name}".` : "Signed in.");
+        signIn.addButton((button) => button.setButtonText("Sign out").onClick(async () => {
+          if (!await confirm(this.app, "Sign out of mdbase?", "Every vault on this computer stops syncing until you sign in again. Your notes stay on this computer.", "Sign out")) return;
+          await this.attempt(() => controller.signOut());
+        }));
+      } else {
+        signIn.setDesc("Not signed in.");
+        signIn.addButton((button) => button.setButtonText("Sign in").setCta().onClick(async () => {
+          // The browser wait (and the link to copy) shows in Sync.
+          this.closeSettings();
+          await plugin.openWorkspace("sync");
+          await this.attempt(() => controller.signIn());
+        }));
       }
-    };
-    for (const [value, label] of FILE_CLASSES) {
-      new Setting(containerEl)
-        .setName(`Sync ${label}`)
-        .setDesc(value === "other" ? "All remaining visible file formats. Markdown always syncs." : "")
-        .addToggle((toggle) =>
-          toggle.setValue(policy.file_classes.includes(value)).onChange(async (enabled) => {
-            const current = plugin.connectSync.getSelectiveSync();
-            await apply({
-              ...current,
-              file_classes: enabled
-                ? [...new Set([...current.file_classes, value])]
-                : current.file_classes.filter((entry) => entry !== value),
-            });
-          }),
-        );
     }
 
-    let folders = [...policy.excluded_folders];
-    const exclusions = new Setting(containerEl).setName("Excluded folders").setDesc(ATTACHMENT_SCOPE_DESCRIPTION);
-    renderFolderExclusions(this.app, exclusions.controlEl, folders, next => { folders = next; });
-    exclusions.addButton(button => button.setButtonText("Apply").onClick(async () => {
-      button.setDisabled(true);
-      try {
-        if (await apply({ ...plugin.connectSync.getSelectiveSync(), excluded_folders: folders })) {
-          new Notice("Excluded folders updated. The next sync applies them.");
-        }
-      } finally {
-        button.setDisabled(false);
-      }
-    }));
+    const collection = s.daemon === "running" ? s.collection : null;
+    if (collection) {
+      new Setting(containerEl)
+        .setName(collection.name)
+        .setDesc(`${modeName(collection.mode)}${s.prefix ? ` · in the folder "${s.prefix}"` : ""}`)
+        .addButton((button) => button
+          .setButtonText("Disconnect…")
+          .setWarning()
+          .onClick(async () => {
+            const where = s.prefix ? `the folder "${s.prefix}"` : "this vault";
+            if (!await confirm(this.app, `Stop syncing ${where}?`, "This computer stops syncing it. Your notes stay here, and your other devices keep syncing as before.", "Stop syncing")) return;
+            await this.attempt(() => controller.disconnect());
+          }));
+    }
 
     new Setting(containerEl)
-      .setName("Disconnect")
-      .setDesc("Stop syncing this vault. The hosted collection is not deleted.")
-      .addButton((button) => button
-        .setButtonText("Disconnect…")
-        .setWarning()
-        .setDisabled(plugin.sync.isSyncing())
-        .onClick(async () => {
-          button.setDisabled(true);
-          try {
-            const choice = await new DisconnectMirrorModal(this.app).choose(profile.name);
-            if (!choice) return;
-            button.setButtonText("Disconnecting…");
-            await plugin.sync.disconnect(profile, choice === "remove");
-            new Notice(plugin.sync.state.message);
-          } catch (error) {
-            new Notice(error instanceof Error ? error.message : String(error));
-          } finally {
-            button.setDisabled(false);
-          }
-          this.display();
-        }));
+      .setName("mdbase app location")
+      .setDesc(s.daemon === "not_installed" ? "Obsidian can't find the mdbase app. If it's installed, enter the full path of its mdbase tool." : "Leave empty to find the mdbase app automatically.")
+      .addText((text) => text
+        .setPlaceholder("Automatic")
+        .setValue(plugin.settings.mdbaseAppPath)
+        .onChange(async (value) => {
+          plugin.settings.mdbaseAppPath = value.trim();
+          await plugin.saveSettings();
+        }))
+      .addExtraButton((button) => button.setIcon("refresh-cw").setTooltip("Check again").onClick(() => this.attempt(() => controller.refresh())));
   }
+}
+
+function confirm(app: App, title: string, body: string, action: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const modal = new Modal(app);
+    let answered = false;
+    modal.titleEl.setText(title);
+    modal.contentEl.createEl("p", { text: body });
+    new Setting(modal.contentEl)
+      .addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close()))
+      .addButton((button) => button.setButtonText(action).setWarning().onClick(() => {
+        answered = true;
+        modal.close();
+      }));
+    modal.onClose = () => resolve(answered);
+    modal.open();
+  });
 }

@@ -19,14 +19,12 @@
     ]
   },
   "include": [
-    "src/connectSync.ts",
     "src/mdbaseCore.ts",
     "src/migration.ts",
     "src/typeModel.ts",
     "src/typeEditorTypes.ts",
     "src/trailingDebouncer.ts",
-    "src/syncUx.ts",
-    "src/conflictPresentation.ts",
+    "src/sync/*.ts",
     "test/**/*.ts"
   ]
 }
