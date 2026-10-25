@@ -44,7 +44,8 @@ test("the status summary prefers what needs a person, then progress, then calm",
     "Your mdbase storage is full. Changes stay on this computer until there's room.");
   assert.equal(summarize(snapshot({ collection: null })).syncing, false);
   const joining = summarize(snapshot({ collection: collection({ mode: "synced_e2e", state: "opening", sync: { confirmed_through: 2, head_known: 4, pending: 0, holds: 0, unresolved: 0, connection: "online", last_error: "waiting_for_key" } }) }));
-  assert.equal(joining.label, "Waiting for approval");
+  assert.equal(joining.label, "Private: first computer only");
+  assert.match(joining.detail, /first computer only for now.*Cloud copy collections have no such limit/);
   const unreachable = summarize(snapshot({
     status: { account: { signed_in: true, online: false }, collections: [] },
     live: { confirmedThrough: 3, headKnown: 3, pending: 1, holds: 0, unresolved: 0, connection: "connecting", incidents: [] } as never,
@@ -64,7 +65,7 @@ test("collection kinds and errors read as plain words", () => {
   assert.equal(errorText({ code: "rate_limited", message: "x" }), "Too many attempts. Wait a few minutes, then try again.");
   assert.equal(errorText({ code: "internal", message: "disk is full" }), "Disk is full.");
   assert.match(errorText({ code: "unavailable", reason: "sync_refused", message: "server refused (409 not_current_private)" }), /couldn't find that collection/);
-  assert.match(errorText({ code: "unauthenticated", reason: "registration_mismatch", message: "this account does not own the local registration" }), /Sign out of mdbase in settings, then sign in again/);
+  assert.match(errorText({ code: "unauthenticated", reason: "registration_mismatch", message: "this account does not own the local registration" }), /sign-in stopped working/);
   assert.match(errorText({ code: "unavailable", reason: "daemon_unreachable", message: "daemon protocol: credential store unavailable: platform failure" }), /password store/);
 });
 

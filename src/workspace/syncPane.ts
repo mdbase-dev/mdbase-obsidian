@@ -180,7 +180,7 @@ export class SyncPane {
       text.createDiv({ cls: "mdbase-muted", text: description });
     };
     option("cloud", "Cloud copy (recommended)", "mdbase keeps a copy online, so your notes open in mdbase apps on the web and arrive on a new device straight away.");
-    option("private", "Private", "Encrypted so only your devices can read it. A new device needs approval from one you already use, and web apps work only while one of your devices is on.");
+    option("private", "Private", "Encrypted so only your devices can read it. For now it works on this computer only: other computers can't be added yet. Web apps work only while this computer is on.");
     this.actions(section, [["Turn on sync", true, () => this.run(async () => {
       await controller.setUp(this.kind, this.name);
       new Notice("Sync is on for this vault.");
@@ -189,7 +189,7 @@ export class SyncPane {
     if (isCollection) return;
     const join = root.createDiv({ cls: "mdbase-sync-section" });
     join.createEl("h3", { text: "Add a collection you already sync" });
-    join.createEl("p", { cls: "mdbase-muted", text: "On a device that already syncs it, copy the link from the sync tab of the mdbase view, then paste it here." });
+    join.createEl("p", { cls: "mdbase-muted", text: "On a device that already syncs it, copy the link from the sync tab of the mdbase view, then paste it here. For now, private collections work on the first computer only, so only cloud copy collections can be added here." });
     new Setting(join).setName("Link or ID").addText((text) => {
       text.setPlaceholder("Paste the collection link").setValue(this.joinText).onChange((value) => { this.joinText = value; });
       text.inputEl.setAttr("data-focus-key", "sync-join-link");

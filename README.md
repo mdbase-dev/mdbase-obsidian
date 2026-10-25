@@ -50,14 +50,15 @@ devices arrive in open notes without losing the cursor.
   link** if no browser opens). Sign-in belongs to the computer, not the vault.
 - **Sync this vault** offers **Cloud copy** (recommended: mdbase keeps a copy
   online, so web apps and new devices get notes straight away) or **Private**
-  (end-to-end encrypted; a new device needs approval from one you already use).
+  (end-to-end encrypted; for now it works on the first computer only, because
+  another computer can't be approved yet).
 - **Add a collection you already sync** takes the link copied from another
   device's Sync tab. An empty vault becomes the collection; otherwise it goes
   into a new folder.
 - The first time Obsidian talks to the app, the app asks to allow it.
 
 The status bar and the Sync tab say whether the vault is synced, sending or
-getting changes, offline (changes stay on this computer), waiting for approval,
+getting changes, offline (changes stay on this computer), Private on a second computer,
 or stopped, in plain words with the next step. Files changed in two places at
 once are listed with **Keep this computer's**, **Use the other version** and
 **Keep both**; edits that mdbase merged on its own are listed under "changes to

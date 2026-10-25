@@ -99,10 +99,9 @@ export class MdbaseSettingTab extends PluginSettingTab {
       const signIn = new Setting(containerEl).setName("Account");
       if (account.signed_in) {
         signIn.setDesc(account.computer_name ? `Signed in. This computer is "${account.computer_name}".` : "Signed in.");
-        signIn.addButton((button) => button.setButtonText("Sign out").onClick(async () => {
-          if (!await confirm(this.app, "Sign out of mdbase?", "Every vault on this computer stops syncing until you sign in again. Your notes stay on this computer.", "Sign out")) return;
-          await this.attempt(() => controller.signOut());
-        }));
+        // Sign out is hidden: signing in again on the same computer breaks sync
+        // there until the server fix (mdbase-connect #973) ships. Restore the
+        // button (it called controller.signOut() after a confirm) once it has.
       } else {
         signIn.setDesc("Not signed in.");
         signIn.addButton((button) => button.setButtonText("Sign in").setCta().onClick(async () => {

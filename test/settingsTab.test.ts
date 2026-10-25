@@ -97,8 +97,15 @@ test("Open sync closes settings before showing the workspace", async () => {
   f.dom.window.close();
 });
 
-test("signing out and disconnecting ask first and say what stays", async () => {
-  for (const [label, action, call] of [["Sign out", "Sign out", "signOut"], ["Disconnect…", "Stop syncing", "disconnect"]] as const) {
+test("sign out is hidden until re-sign-in works on the same computer", () => {
+  const f = fixture();
+  assert.match(f.root.textContent!, /Signed in/);
+  assert.equal([...f.root.querySelectorAll("button")].some((b) => b.textContent === "Sign out"), false);
+  f.dom.window.close();
+});
+
+test("disconnecting asks first and says what stays", async () => {
+  for (const [label, action, call] of [["Disconnect…", "Stop syncing", "disconnect"]] as const) {
     const f = fixture();
     button(f.root, label).click();
     assert.match(modal(f).textContent!, /Your notes stay/);
@@ -132,9 +139,9 @@ test("signed out offers sign-in; a missing app offers its location", async () =>
 
 test("failed actions report a human notice", async () => {
   const f = fixture();
-  Object.assign(f.plugin.syncController, { signOut: async () => { throw Object.assign(new Error("x"), { code: "unavailable", message: "x" }); } });
-  button(f.root, "Sign out").click();
-  button(modal(f), "Sign out").click();
+  Object.assign(f.plugin.syncController, { disconnect: async () => { throw Object.assign(new Error("x"), { code: "unavailable", message: "x" }); } });
+  button(f.root, "Disconnect…").click();
+  button(modal(f), "Stop syncing").click();
   await settle();
   assert.deepEqual(f.notices, ["mdbase can't reach the server right now. Check your connection and try again."]);
   f.dom.window.close();

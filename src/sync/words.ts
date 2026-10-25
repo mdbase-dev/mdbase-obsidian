@@ -19,9 +19,13 @@ export function modeName(mode: string | undefined): string {
   return mode === "synced_e2e" ? "Private" : mode === "synced" ? "Cloud copy" : "This computer only";
 }
 
+/** Private works on the first computer only until the mdbase app can approve another one. */
+export const PRIVATE_FIRST_COMPUTER = "Private collections work on the first computer only for now, so this computer can't sync this one yet. Your notes here are untouched. Cloud copy collections have no such limit.";
+
 /** Plain words for incident and notice codes from mdbase. */
 const INCIDENTS: Record<string, string> = {
-  waiting_for_key: "This computer needs approval before it can read this private collection. In the mdbase app on a device that already syncs it, approve this computer.",
+  // A second computer can't be approved yet, so don't promise an approval that never comes.
+  waiting_for_key: PRIVATE_FIRST_COMPUTER,
   foreign_sync_tool: "Another sync tool is also changing these files. Use one sync tool per vault.",
   quota_exceeded: "Your mdbase storage is full. Changes stay on this computer until there's room.",
   access_revoked: "This computer no longer has access to the collection.",
@@ -41,7 +45,7 @@ export function incidentText(kind: string): string {
 const STATE_REASONS: Record<string, string> = {
   folder_missing: "The vault folder moved or was renamed. Re-add it from Sync.",
   runtime_pending: "mdbase is still preparing this collection.",
-  sync_not_eligible: "This computer's mdbase sign-in stopped working. Sign out of mdbase in settings, then sign in again.",
+  sync_not_eligible: "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched.",
 };
 
 export function summarize(s: SyncSnapshot): SyncSummary {
@@ -64,7 +68,7 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     return on("Sync stopped", STATE_REASONS[c.reason ?? ""] ?? "mdbase stopped syncing this vault. Your files are untouched.", "problem");
   }
   if (c.sync?.last_error === "waiting_for_key" || s.live?.incidents.some((i) => i.kind === "waiting_for_key")) {
-    return on("Waiting for approval", incidentText("waiting_for_key"), "attention");
+    return on("Private: first computer only", PRIVATE_FIRST_COMPUTER, "attention");
   }
   if (c.state === "opening") return on("Starting sync", "mdbase is getting this vault ready.", "busy");
   if (c.state === "moving") return on("Setting up sync", "mdbase is uploading this vault for the first time.", "busy");
@@ -108,7 +112,7 @@ export function errorText(error: { code: string; reason?: string; message: strin
     case "keychain_unavailable":
     case "credential_store_unavailable": return "mdbase can't reach this computer's password store. Unlock it, or sign in to your desktop session again.";
     case "not_signed_in":
-    case "registration_mismatch": return "This computer's mdbase sign-in stopped working. Sign out of mdbase in settings, then sign in again.";
+    case "registration_mismatch": return "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched.";
     case "account_changed": return "You signed in to a different account. Try again.";
     case "sign_in_failed": return `Sign-in didn't finish: ${error.message}`;
     case "overlapping_state_dir": return "This folder can't be synced.";

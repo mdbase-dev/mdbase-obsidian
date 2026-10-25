@@ -68,9 +68,9 @@ The mdbase desktop app does the syncing; the Sync destination is a window onto i
 2. Is it healthy, and if not, who has to act?
 3. What can be done now?
 
-The heading is one label and one sentence from the same summary the status bar uses (`src/sync/words.ts`), with a tone (ok, busy, quiet, attention, problem) carried by theme colours. Offline is quiet ("changes are saved here"); a stopped app, a declined link, a signed-out computer and waiting for approval each say what to do and where. Errors from mdbase are translated by code and reason, never shown raw.
+The heading is one label and one sentence from the same summary the status bar uses (`src/sync/words.ts`), with a tone (ok, busy, quiet, attention, problem) carried by theme colours. Offline is quiet ("changes are saved here"); a stopped app, a declined link, a signed-out computer and a Private collection on a second computer each say what to do and where. Errors from mdbase are translated by code and reason, never shown raw.
 
-Setup is two choices on one surface: **Cloud copy** (recommended) or **Private**, and adding a collection from a link copied on another device. Keys, fingerprints, devices and escrow stay out of the plugin: Private is described by what it means for the person (only your devices can read it; a new device needs approval from one you already use).
+Setup is two choices on one surface: **Cloud copy** (recommended) or **Private**, and adding a collection from a link copied on another device. Keys, fingerprints, devices and escrow stay out of the plugin: Private is described by what it means for the person (only your devices can read it; for now it works on the first computer only).
 
 Files changed in two places are listed by path with plain choices. Merges mdbase made on its own are listed as "changes to check" until acknowledged. Sign-out, disconnect and the app location live in the settings tab, each behind a confirmation that says notes stay on this computer.
 
