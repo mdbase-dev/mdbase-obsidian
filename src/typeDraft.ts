@@ -1,4 +1,4 @@
-import type { CollectionContractDescriptor } from "@mdbase-dev/connect-protocol";
+import type { CollectionContractDescriptor } from "./contractTypes";
 import type { TypeEditorModel } from "./typeEditorTypes";
 import { frontmatterFromTypeModel } from "./typeModel";
 import {

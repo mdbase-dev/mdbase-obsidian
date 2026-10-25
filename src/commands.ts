@@ -8,14 +8,9 @@ import {
 } from "./mdbaseCore";
 import { pickType } from "./modals";
 
-/**
- * Commands are deliberately few. Navigation lives in the workspace's own tabs;
- * sync commands appear only when this vault is a mirror, and situational ones
- * (cancel, conflicts, reconnect) only when they can do something.
- */
+/** Commands are deliberately few. Navigation lives in the workspace's own tabs. */
 export function registerCommands(plugin: MdbasePlugin): void {
   const { app } = plugin;
-  const connected = () => plugin.getMirrorProfile() !== null;
 
   plugin.addCommand({
     id: "mdbase-open",
@@ -27,8 +22,8 @@ export function registerCommands(plugin: MdbasePlugin): void {
     id: "mdbase-initialize-collection",
     name: "Initialize collection",
     checkCallback: (checking) => {
-      if (connected() || app.vault.getAbstractFileByPath("mdbase.yaml")) return false;
-      if (!checking) void initializeCollection(plugin);
+      if (app.vault.getAbstractFileByPath("mdbase.yaml")) return false;
+      if (!checking) void plugin.initializeCollection();
       return true;
     },
   });
@@ -69,100 +64,10 @@ export function registerCommands(plugin: MdbasePlugin): void {
   });
 
   plugin.addCommand({
-    id: "mdbase-sync-now",
-    name: "Sync now",
-    checkCallback: (checking) => {
-      if (!connected()) return false;
-      if (!checking) void syncNow(plugin);
-      return true;
-    },
+    id: "mdbase-open-sync",
+    name: "Open sync",
+    callback: () => void plugin.openWorkspace("sync"),
   });
-
-  plugin.addCommand({
-    id: "mdbase-cancel-sync",
-    name: "Cancel current sync",
-    checkCallback: (checking) => {
-      if (!plugin.sync.isSyncing()) return false;
-      if (!checking) plugin.sync.cancel();
-      return true;
-    },
-  });
-
-  plugin.addCommand({
-    id: "mdbase-resolve-conflicts",
-    name: "Resolve sync conflicts",
-    checkCallback: (checking) => {
-      if (!connected() || !plugin.sync.state.status?.conflicts.length) return false;
-      if (!checking) void plugin.openWorkspace("sync").then((view) => view.focusSyncSection("conflicts"));
-      return true;
-    },
-  });
-
-  plugin.addCommand({
-    id: "mdbase-reconnect",
-    name: "Reconnect collection",
-    checkCallback: (checking) => {
-      const problem = plugin.sync.state.problem;
-      if (!connected() || !problem || problem.action !== "reauthorize") return false;
-      if (!checking) void plugin.openWorkspace("sync").then((view) => view.reconnectCollection());
-      return true;
-    },
-  });
-
-  plugin.addCommand({
-    id: "mdbase-copy-sync-diagnostics",
-    name: "Copy sync diagnostics",
-    checkCallback: (checking) => {
-      if (!connected()) return false;
-      if (!checking) void plugin.copySyncDiagnostics();
-      return true;
-    },
-  });
-
-  plugin.addCommand({
-    id: "mdbase-note-sync-history",
-    name: "Show sync history for current note",
-    checkCallback: (checking) => {
-      const file = app.workspace.getActiveFile();
-      if (!file || !connected()) return false;
-      if (!checking) plugin.openNoteSyncHistory(file.path);
-      return true;
-    },
-  });
-
-  plugin.registerEvent(
-    app.workspace.on("file-menu", (menu, file) => {
-      if (!(file instanceof TFile) || !connected()) return;
-      menu.addItem((item) => item
-        .setTitle("Sync history")
-        .setIcon("history")
-        .onClick(() => plugin.openNoteSyncHistory(file.path)));
-    }),
-  );
-}
-
-/** Applies routine changes at once; anything needing consent opens the review. */
-export async function syncNow(plugin: MdbasePlugin): Promise<void> {
-  const result = await plugin.sync.syncNow();
-  const { message, problem } = plugin.sync.state;
-  if (result === "needs_review") {
-    const reasons = plugin.sync.safety()?.reasons ?? [];
-    new Notice(`Review before syncing: ${reasons.join(", ").toLowerCase() || "changes need attention"}.`);
-    await plugin.openWorkspace("sync");
-  } else if (result === "busy") {
-    new Notice("A sync is already running.");
-  } else if (result === "paused") {
-    new Notice("Sync is paused.");
-  } else if (result === "failed") {
-    new Notice(problem?.message ?? (message || "Sync failed."));
-  } else if (message) {
-    new Notice(message);
-  }
-}
-
-async function initializeCollection(plugin: MdbasePlugin): Promise<void> {
-  plugin.connectSync.assertLocalAuthorityWritable();
-  await plugin.initializeCollection();
 }
 
 /** Edits the type of the open note (or the open type file); otherwise asks which type. */
@@ -206,7 +111,6 @@ async function validateCurrentNote(plugin: MdbasePlugin, file: TFile): Promise<v
 }
 
 export async function createNoteFromTypeCommand(plugin: MdbasePlugin, typeName?: string): Promise<void> {
-    plugin.connectSync.assertLocalAuthorityWritable();
     const loaded = await plugin.requireConfigAndTypes();
     if (!loaded) return;
 
@@ -215,13 +119,10 @@ export async function createNoteFromTypeCommand(plugin: MdbasePlugin, typeName?:
       return;
     }
 
-    if (plugin.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
     const chosenType = typeName ? loaded.types.get(typeName) : await pickType(plugin.app, Array.from(loaded.types.values()));
     if (!chosenType) return;
 
     new CreateTypedNoteModal(plugin.app, chosenType, loaded.config, loaded.types, async (path, frontmatter) => {
-      plugin.connectSync.assertLocalAuthorityWritable();
-      if (plugin.getMirrorProfile()?.mode === "read_only") throw new Error("This mirror has read-only access.");
       const file = await plugin.createTypedNote(path, frontmatter);
       await plugin.app.workspace.getLeaf(true).openFile(file);
       await plugin.validateFileAndStore(file, "manual");

@@ -2,13 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 import { CreateTypedNoteModal } from "../src/createTypedNoteModal";
-import { DisconnectMirrorModal } from "../src/modals";
 import { MdbaseWorkspaceView } from "../src/workspaceView";
 import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
 import { Menu } from "obsidian";
-import type { SyncHistoryRun } from "../src/syncHistory";
-import { SyncSession } from "../src/syncSession";
+import type { SyncSnapshot } from "../src/sync/controller";
+import type { CollectionStatus } from "../src/sync/daemon";
 
 type TypeModel = ReturnType<typeof createDefaultTypeModel>;
 
@@ -50,21 +49,12 @@ function fixture(connected = false) {
     scrollIntoView() {},
   });
   const root = window.document.getElementById("view") as HTMLElement;
-  const profile = connected ? { name: "Project notes", collectionId: "hidden-collection-id", mode: "read_write",
-    controlUrl: "https://connect.example", selectiveSync: { file_classes: [], excluded_folders: [] } } : null;
-  const historyRuns: SyncHistoryRun[] = [];
-  const history = {
-    list: () => historyRuns,
-    append: async (run: SyncHistoryRun) => { historyRuns.push(run); },
-    acknowledge: async (id: string) => {
-      const run = historyRuns.find((run) => run.id === id);
-      if (run) run.needsAcknowledgement = false;
-    },
-    clear: async () => { historyRuns.length = 0; },
-  };
+  const sync = fakeSync(connected ? syncedSnapshot() : signedInSnapshot());
   let settingsOpened = 0;
   const host = {
-    getMirrorProfile: () => profile,
+    syncController: sync.controller,
+    legacyConnect: () => null as { name: string; collectionId: string } | null,
+    vaultTopLevelEntries: () => ["Notes.md"],
     getIssues: () => [] as Array<{ path: string; severity: string; code: string; message: string }>,
     saveTypeDraft: async () => undefined,
     loadTypeDraft: () => null,
@@ -79,16 +69,7 @@ function fixture(connected = false) {
     loadCollectionRecords: async () => [] as Array<{ path: string; frontmatter: Record<string, unknown> }>,
     getQuickFixLabel: () => null as string | null,
     openSettings: () => { settingsOpened++; },
-    otherSyncServices: () => [],
-    copySyncDiagnostics: async () => undefined,
-    connectSync: {
-      getAdoptionMarker: () => null,
-      getSelectiveSync: () => ({ file_classes: [] as string[], excluded_folders: [] as string[] }),
-      isSyncing: () => false,
-    } as Record<string, unknown>,
-    sync: null as unknown as SyncSession,
   };
-  host.sync = new SyncSession(host.connectSync as never, () => host.getMirrorProfile() as never, history);
   const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null, getAllLoadedFiles: () => [], createFolder: async () => undefined, create: async () => ({ path: "export.txt" }) } } } as never, host as never);
   const views = view as unknown as {
     types: { dirty: boolean; model: TypeModel; originalModel: TypeModel; selectedPath: string };
@@ -112,14 +93,10 @@ function fixture(connected = false) {
     set originalModel(value: TypeModel) { views.types.originalModel = value; },
     get selectedPath() { return views.types.selectedPath; },
     set selectedPath(value: string) { views.types.selectedPath = value; },
-    set mirrorStatus(value: unknown) { host.sync.update({ status: value as never }); },
-    set mirrorPreview(value: unknown) { host.sync.update({ preview: value as never }); },
-    set adoptionPreview(value: unknown) { views.sync.adoptionPreview = value; },
   };
   state.destination = "sync";
-  state.mirrorStatus = { state: "up_to_date", last_synced_at: new Date().toISOString(), conflicts: [], local_issues: [] };
   const text = () => visibleText(root);
-  return { dom, root, host, state, text, view, historyRuns, settingsOpened: () => settingsOpened };
+  return { dom, root, host, sync, state, text, view, settingsOpened: () => settingsOpened };
 }
 
 function visibleText(node: Node): string {
@@ -135,6 +112,57 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   const result = Array.from(root.querySelectorAll("button")).find(el => el.textContent === label || el.getAttribute("aria-label") === label);
   assert.ok(result, `Missing button: ${label}`);
   return result;
+}
+
+function collectionStatus(overrides: Partial<CollectionStatus> = {}): CollectionStatus {
+  return {
+    id: "0b6f1c1e-6f77-4a4b-9a57-7f2a1d1f0c11", name: "Project notes", root: "/vaults/notes", mode: "synced", state: "ready", log: "hosted",
+    sync: { confirmed_through: 4, head_known: 4, pending: 0, holds: 0, unresolved: 0, connection: "online" }, notices: [], ...overrides,
+  };
+}
+
+function baseSnapshot(): SyncSnapshot {
+  return {
+    daemon: "running", error: null, collection: null, prefix: "", live: null, link: "off", holds: [], approvals: [], merged: [], signingIn: null, busy: null,
+    status: { account: { signed_in: false, online: true }, collections: [] },
+  };
+}
+
+function signedInSnapshot(): SyncSnapshot {
+  const s = baseSnapshot();
+  s.status = { account: { signed_in: true, online: true, computer_name: "Laptop" }, collections: [] };
+  return s;
+}
+
+function syncedSnapshot(overrides: Partial<CollectionStatus> = {}): SyncSnapshot {
+  const s = signedInSnapshot();
+  s.collection = collectionStatus(overrides);
+  s.status!.collections = [s.collection];
+  s.link = "open";
+  return s;
+}
+
+/** A controller double: the pane only reads `snapshot` and calls actions. */
+function fakeSync(initial: SyncSnapshot) {
+  let snapshot = initial;
+  const listeners = new Set<() => void>();
+  const calls: Array<[string, ...unknown[]]> = [];
+  const record = (name: string) => async (...args: unknown[]) => { calls.push([name, ...args]); return name === "join" ? "" : undefined; };
+  const controller = {
+    get snapshot() { return snapshot; },
+    subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
+    refresh: async () => undefined,
+    startApp: record("startApp"), signIn: record("signIn"), signOut: record("signOut"), setUp: record("setUp"), join: record("join"),
+    resolve: record("resolve"), dismissMerged: record("dismissMerged"), useOtherValue: record("useOtherValue"), approve: record("approve"), reject: record("reject"), linkAgain: record("linkAgain"), disconnect: record("disconnect"),
+    cancelSignIn: () => { calls.push(["cancelSignIn"]); },
+  };
+  return {
+    controller, calls,
+    set(next: Partial<SyncSnapshot>) {
+      snapshot = { ...snapshot, ...next };
+      for (const listener of listeners) listener();
+    },
+  };
 }
 
 test("opening waits for the requested destination before scanning collection records", async () => {
@@ -176,249 +204,6 @@ test("Sync and Issues refreshes do not parse all records or run type impact scan
   assert.equal(recordLoads, 1);
   await f.view.onClose();
   f.dom.window.close();
-});
-
-test("transfer notifications coalesce renders, keep completion immediate, and cancel on close", async () => {
-  const f = fixture(true);
-  await f.view.onOpen();
-  let renders = 0;
-  let badgeRenders = 0;
-  f.view.render = () => { renders++; };
-  (f.view as unknown as { renderTopbarOnly(): void }).renderTopbarOnly = () => { badgeRenders++; };
-  const timers = new Map<number, () => void>();
-  let next = 0;
-  f.dom.window.setTimeout = ((callback: () => void) => {
-    timers.set(++next, callback);
-    return next;
-  }) as typeof window.setTimeout;
-  f.dom.window.clearTimeout = (id: number) => { timers.delete(id); };
-  for (let completed = 0; completed < 1_000; completed++) {
-    f.host.sync.update({ progress: { phase: "downloading", completed, total: 1_000, done: false } });
-  }
-  assert.equal(renders, 0, "a fast transfer must not rebuild the pane once per file");
-  assert.equal(timers.size, 1);
-  const [id, callback] = [...timers][0];
-  timers.delete(id);
-  callback();
-  assert.equal(renders, 1);
-  f.host.sync.update({ progress: null, message: "Sync complete." });
-  assert.equal(renders, 2, "completion is visible immediately");
-  f.state.destination = "types";
-  f.host.sync.update({ progress: { phase: "downloading", completed: 0, total: 10, done: false } });
-  assert.equal(badgeRenders, 0, "transfer-only changes cannot affect tab badges");
-  f.state.destination = "sync";
-  f.host.sync.update({ progress: { phase: "downloading", completed: 1, total: 10, done: false } });
-  assert.equal(timers.size, 1);
-  await f.view.onClose();
-  assert.equal(timers.size, 0, "closing the view must cancel a queued render");
-  f.dom.window.close();
-});
-
-test("connected Sync is one status and one primary action; settings live in the settings tab", () => {
-  const f = fixture(true);
-  f.state.render();
-  assert.match(f.text(), /Project notes.*Up to date.*Read and write · Whole vault.*Settings.*Sync now/);
-  assert.ok(f.text().split(" ").length < 30, f.text());
-  assert.doesNotMatch(f.text(), /hidden-collection-id|Attachments|Disconnect|Hosted authority|checkpoint/);
-  assert.equal(f.root.querySelectorAll(".mdbase-sync-actions button").length, 1);
-  assert.equal(f.root.querySelector("[data-disclosure='sync-settings']"), null);
-  button(f.root, "Open sync settings").click();
-  assert.equal(f.settingsOpened(), 1);
-  f.dom.window.close();
-});
-
-test("recovery states have one next action and never show a stale healthy heading", () => {
-  for (const scenario of [
-    { patch: { paused: true }, action: "Resume sync", label: "Paused" },
-    { patch: { status: { state: "up_to_date", recovery_required: true, conflicts: [], local_issues: [] } }, action: "Resume recovery", label: "Needs attention" },
-    { patch: { problem: { code: "stale_mirror_plan", kind: "decision", title: "The collection changed again", message: "Review the newest versions.", action: "review", actionLabel: "Review newest changes" } }, action: "Review newest changes", label: "Needs attention" },
-  ]) {
-    const f = fixture(true);
-    f.host.sync.update(scenario.patch as never);
-    f.state.render();
-    assert.equal(f.root.querySelectorAll(".mod-cta").length, 1, f.text());
-    assert.ok(button(f.root, scenario.action));
-    assert.match(f.root.querySelector(".mdbase-sync-heading")!.textContent!, new RegExp(scenario.label));
-    assert.doesNotMatch(f.text(), /Up to date|Sync now/);
-    f.dom.window.close();
-  }
-});
-
-test("a stale reviewed plan cannot be applied before refreshing the newest changes", () => {
-  const f = fixture(true);
-  f.state.mirrorPreview = {
-    phase: "incremental", plan: { actions: [{ command: "delete_local" }], issues: [], summary: { blocking_issues: 0 } },
-    entries: [{ path: "old.md", direction: "download", action: "delete", detail: "Delete old file" }], collisions: [], local_issues: [],
-  };
-  f.host.sync.reportProblem(Object.assign(new Error("Plan changed"), { code: "stale_mirror_plan" }));
-  f.state.render();
-  assert.equal(f.root.querySelectorAll(".mod-cta").length, 1, f.text());
-  assert.ok(button(f.root, "Review newest changes"));
-  assert.doesNotMatch(f.text(), /Sync 1 change|Refresh review/);
-  f.dom.window.close();
-});
-
-test("a prior sync timestamp does not pretend to date the current approval, recovery or review", () => {
-  const f = fixture(true);
-  const status = { state: "up_to_date", last_synced_at: "2001-01-01T00:00:00Z", conflicts: [], local_issues: [] };
-  const subtitle = () => f.root.querySelector(".mdbase-sync-heading > .mdbase-muted")?.textContent;
-  f.state.mirrorStatus = status;
-  f.state.render();
-  assert.match(subtitle()!, /Up to date ·/);
-  for (const scenario of [
-    { patch: { busy: true }, label: "Checking…" },
-    { patch: { paused: true }, label: "Paused" },
-    { patch: { problem: { kind: "offline", title: "Offline", message: "Changes stay here", action: "retry", actionLabel: "Retry now" } }, label: "Offline" },
-    { patch: { status: { ...status, recovery_required: true } }, label: "Needs attention" },
-    { patch: { preview: { phase: "initial", plan: { kind: "initial", actions: [{ command: "put_remote" }], issues: [], summary: { blocking_issues: 0 } }, entries: [{ direction: "upload", action: "create", kind: "document", path: "note.md" }], local_issues: [], collisions: [] } }, label: "Review needed" },
-  ]) {
-    f.host.sync.update({ busy: false, paused: false, problem: null, preview: null });
-    f.state.mirrorStatus = status;
-    f.host.sync.update(scenario.patch as never);
-    f.state.render();
-    assert.equal(subtitle(), scenario.label);
-  }
-  f.host.sync.update({ busy: false, paused: false, problem: null, preview: null });
-  (f.view as unknown as { sync: { enrollmentAbort: AbortController | null } }).sync.enrollmentAbort = new AbortController();
-  f.state.render();
-  assert.equal(subtitle(), "Waiting for approval");
-  f.dom.window.close();
-});
-
-test("an explicit idle pause supersedes an old offline retry without discarding its diagnostic cause", () => {
-  const f = fixture(true);
-  f.host.sync.reportProblem(Object.assign(new Error("Offline"), { code: "network_timeout" }));
-  f.host.sync.setRetryAt(Date.now() + 30000);
-  f.host.sync.cancel();
-  f.state.render();
-  assert.equal(f.root.querySelector(".mdbase-sync-heading > .mdbase-muted")?.textContent?.split(" · ")[0], "Paused");
-  assert.ok(button(f.root, "Resume sync"));
-  assert.doesNotMatch(f.text(), /Retry now|Trying again|sync automatically/);
-  assert.equal(f.host.sync.state.problem?.kind, "offline", "retain the cause for recovery/diagnostics");
-  f.state.destination = "issues";
-  f.state.render();
-  assert.equal(f.root.querySelector(".mdbase-nav-status")?.textContent, "Paused");
-  f.dom.window.close();
-});
-
-test("a diagnostics copy failure is reported and returns focus instead of an unhandled rejection", async () => {
-  const f = fixture(true);
-  f.host.sync.reportProblem(new Error("Sync stopped"));
-  f.host.copySyncDiagnostics = async () => { throw new Error("Clipboard is unavailable"); };
-  f.state.render();
-  button(f.root, "Copy diagnostics").focus();
-  button(f.root, "Copy diagnostics").click();
-  await settle();
-  assert.match(f.text(), /Clipboard is unavailable/);
-  assert.equal(f.dom.window.document.activeElement, button(f.root, "Copy diagnostics"));
-  assert.equal(button(f.root, "Copy diagnostics").disabled, false);
-  assert.ok(button(f.root, "Try again"));
-  f.dom.window.close();
-});
-
-test("enrollment exposes only essential controls but retains the upload warning and advanced options", () => {
-  const f = fixture();
-  f.state.render();
-  assert.match(f.text(), /Existing notes may upload/);
-  assert.doesNotMatch(f.text(), /Connect URL|Collection ID|Attachments|Choose connection|empty vault/);
-  assert.ok(f.text().split(" ").length < 65, f.text());
-  assert.ok(button(f.root, "Connect"));
-  const advanced = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='enrollment-options']")!;
-  advanced.open = true;
-  f.state.render();
-  assert.match(f.text(), /Connect URL.*Collection ID.*Attachments/);
-  const access = f.root.querySelector<HTMLSelectElement>("#mdbase-enrollment-access")!;
-  access.value = "read_only";
-  access.dispatchEvent(new f.dom.window.Event("change"));
-  assert.match(f.text(), /Downloads only/);
-  assert.doesNotMatch(f.text(), /Existing notes may upload/);
-  f.dom.window.close();
-});
-
-test("signing in again exposes approval and cancellation, then clears the used link", async () => {
-  const f = fixture(true);
-  f.dom.window.open = () => null;
-  Object.assign(f.host.connectSync, {
-    reconnect: async () => { throw Object.assign(new Error("Approval needed"), { code: "mirror_credentials_missing" }); },
-    reauthorize: async (callbacks: { signal: AbortSignal; onVerification(value: { verificationUri: string }): void; onStatus(value: { state: string }): void }) => {
-      callbacks.onVerification({ verificationUri: "https://connect.example/approve/temporary" });
-      callbacks.onStatus({ state: "waiting_for_approval" });
-      await new Promise<void>((_resolve, reject) => callbacks.signal.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError"))));
-    },
-  });
-  const pending = f.view.reconnectCollection();
-  await settle();
-  const link = f.root.querySelector<HTMLAnchorElement>(".mdbase-approval-link a");
-  assert.equal(link?.href, "https://connect.example/approve/temporary");
-  assert.equal(link?.rel, "noopener noreferrer");
-  assert.ok(button(f.root, "Stop waiting"));
-  assert.doesNotMatch(f.text(), /Sign in again|Sync now/);
-  button(f.root, "Stop waiting").click();
-  await pending;
-  assert.equal(f.root.querySelector(".mdbase-approval-link"), null);
-  assert.match(f.text(), /Cancelled/);
-  assert.ok(button(f.root, "Sign in again"));
-  f.dom.window.close();
-});
-
-test("enrollment can be cancelled before verification and never retains a failed approval link", async () => {
-  const f = fixture();
-  f.dom.window.open = () => null;
-  let callbacks: { onVerification(value: { verificationUri: string }): void } | null = null;
-  let rejectEnrollment: (error: Error) => void = () => assert.fail("Enrollment not started");
-  Object.assign(f.host.connectSync, {
-    enroll: async (_input: unknown, cb: NonNullable<typeof callbacks>) => {
-      callbacks = cb;
-      await new Promise<void>((_resolve, reject) => { rejectEnrollment = reject; });
-    },
-  });
-  f.state.render();
-  button(f.root, "Connect").click();
-  assert.ok(button(f.root, "Stop waiting"), "initial request can be stopped too");
-  assert.equal(f.root.querySelector("input[data-focus-key='form-device-name']"), null, "no editable setup while waiting");
-  assert.ok(callbacks);
-  (callbacks as { onVerification(value: { verificationUri: string }): void }).onVerification({ verificationUri: "https://connect.example/approve/expired" });
-  assert.ok(f.root.querySelector(".mdbase-approval-link a"));
-  rejectEnrollment(new Error("Approval expired"));
-  await settle();
-  assert.equal(f.root.querySelector(".mdbase-approval-link"), null);
-  assert.equal(button(f.root, "Connect").disabled, false);
-  assert.match(f.text(), /Approval expired/);
-  f.dom.window.close();
-});
-
-test("connecting starts a download-only first sync but stops before uploading local notes", async () => {
-  for (const command of ["write_local", "put_remote"]) {
-    const f = fixture();
-    let applied = 0;
-    const status = { state: "up_to_date", conflicts: [], local_issues: [] };
-    const firstPreview = {
-      phase: "initial", plan: { kind: "initial", actions: [{ command }], issues: [], summary: { blocking_issues: 0 } },
-      entries: [{ path: "Note.md", direction: command === "write_local" ? "download" : "upload", action: "create", detail: "Transfer note" }], collisions: [], local_issues: [],
-    };
-    Object.assign(f.host.connectSync, {
-      enroll: async () => {
-        f.host.getMirrorProfile = () => ({ name: "Project notes", collectionId: "connected", mode: "read_write", controlUrl: "https://connect.example", selectiveSync: { file_classes: [], excluded_folders: [] } });
-      },
-      inspect: async () => ({ status, preview: applied ? {
-        ...firstPreview, phase: "incremental", entries: [], plan: { ...firstPreview.plan, kind: "incremental", actions: [] },
-      } : firstPreview }),
-      sync: async () => { applied++; return { status: "applied", applied: 1, pending: 0 }; },
-    });
-    f.state.render();
-    button(f.root, "Connect").click();
-    await settle();
-    if (command === "write_local") {
-      assert.equal(applied, 1, "copying from Connect already consents to ordinary downloads");
-      assert.match(f.text(), /Sync complete/);
-      assert.doesNotMatch(f.text(), /Review .* before syncing|Waiting for approval/);
-    } else {
-      assert.equal(applied, 0, "existing local notes must wait for the first-sync review");
-      assert.match(f.text(), /Connected.*Review 1 item.*before syncing/);
-      assert.ok(button(f.root, "Sync 1 change"));
-    }
-    f.dom.window.close();
-  }
 });
 
 test("type editing has one save location, optional sections, and an expandable review", () => {
@@ -524,166 +309,12 @@ test("destination tabs leave modified or already handled keys to Obsidian", () =
   f.dom.window.close();
 });
 
-test("background sync badge updates preserve keyboard focus on the destination tabs", async () => {
-  const f = fixture(true);
-  f.state.destination = "issues";
-  Object.assign(f.host, { loadWorkspaceSchema: async () => null });
-  await f.view.onOpen();
-  await f.view.setState({ destination: "issues" }, {} as never);
-  const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-issues']")!;
-  tab.focus();
-  f.host.sync.update({ status: { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] } as never });
-  assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "destination-issues");
-  assert.notEqual(f.dom.window.document.activeElement, tab, "focus follows the replacement tab");
-  await f.view.onClose();
-  f.dom.window.close();
-});
-
-test("sync problems remain visible from other destinations, where mobile has no status bar", () => {
-  for (const scenario of [
-    { code: "network_timeout", label: "Offline" },
-    { code: "mirror_credentials_missing", label: "Sign in" },
-    { code: "mirror_other_device", label: "Set up" },
-    { code: "sync_failed", label: "Error" },
-  ]) {
-    const f = fixture(true);
-    f.state.destination = "issues";
-    const problem = f.host.sync.reportProblem(Object.assign(new Error("Fixture problem"), { code: scenario.code }));
-    f.host.sync.refreshStatus = async () => f.host.sync.state.status;
-    f.state.render();
-    const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!;
-    assert.equal(tab.querySelector(".mdbase-nav-status")?.textContent, scenario.label);
-    assert.equal(tab.getAttribute("aria-label"), `Sync · ${problem.title}`);
-    tab.click();
-    assert.equal(f.state.destination, "sync");
-    assert.equal(f.root.querySelector(".mdbase-nav-status"), null, "the active pane already explains the problem");
-    assert.match(f.text(), new RegExp(problem.actionLabel));
-    f.dom.window.close();
-  }
-});
-
-test("sync tab counts have descriptive accessible names, not bare badge numbers", () => {
-  const f = fixture(true);
-  f.state.mirrorStatus = { state: "attention", conflicts: [{ path: "note.md" }], local_issues: [] };
-  f.host.getIssues = () => [{ path: "other.md", severity: "error", code: "schema_required", message: "Missing title" }];
-  f.state.destination = "issues";
-  f.state.render();
-  assert.equal(f.root.querySelector("[data-focus-key='destination-sync']")?.getAttribute("aria-label"), "Sync · 1 sync conflict");
-  assert.equal(f.root.querySelector("[data-focus-key='destination-issues']")?.getAttribute("aria-label"), "Issues · 1 validation issue");
-  f.dom.window.close();
-});
-
 test("empty Issues has no redundant filters, counts, or empty panels", () => {
   const f = fixture();
   f.state.destination = "issues";
   f.state.render();
   assert.equal(f.text(), "Types Sync Issues Validation Not checked yet Validate");
   assert.equal(f.root.querySelector(".mdbase-issue-controls"), null);
-  f.dom.window.close();
-});
-
-test("blocking review shows the issue without a misleading apply button or duplicate issue section", () => {
-  const f = fixture(true);
-  const issue = { path: "broken.md", message: "Invalid YAML" };
-  f.state.mirrorStatus = { state: "attention", conflicts: [], local_issues: [issue] };
-  f.state.mirrorPreview = {
-    phase: "incremental", plan: { actions: [], summary: { blocking_issues: 1 } },
-    entries: [{ path: "broken.md", direction: "attention", action: "fix", detail: "Invalid YAML" }],
-    collisions: [], local_issues: [issue],
-  };
-  f.state.render();
-  assert.equal(f.root.querySelectorAll(".mdbase-sync-actions button").length, 1);
-  assert.ok(button(f.root, "Refresh review"));
-  assert.equal((f.text().match(/Invalid YAML/g) ?? []).length, 1);
-  assert.doesNotMatch(f.text(), /Nothing is blocking|Local files needing attention/);
-  f.dom.window.close();
-});
-
-test("opening a local sync issue preserves the path action's focus across redraw", () => {
-  const f = fixture(true);
-  const path = 'Projects/Long review "draft".md';
-  f.state.mirrorStatus = { state: "attention", conflicts: [], local_issues: [{ code: "file_read_failed", path, message: "Could not read this file." }] };
-  const opened: string[] = [];
-  Object.assign(f.host, { openFileByPath: async (path: string) => { opened.push(path); } });
-  f.state.render();
-  button(f.root, "Open file").focus();
-  f.state.render();
-  assert.equal(f.dom.window.document.activeElement, button(f.root, "Open file"));
-  button(f.root, "Open file").click();
-  assert.deepEqual(opened, [path]);
-  f.dom.window.close();
-});
-
-test("conflicts reveal resolution actions only after loading the versions", async () => {
-  const f = fixture(true);
-  f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{
-    entity: "record", object_id: "record", decision_id: "decision", path: "note.md", message: "Both versions changed.",
-  }] };
-  Object.assign(f.host.connectSync, { conflictComparison: async () => ({
-    entity: "record", objectId: "record", decisionId: "decision",
-    local: { state: "exact", document: "Local version" }, remote: { state: "exact", document: "Hosted version" },
-  }) });
-  f.state.render();
-  assert.doesNotMatch(f.text(), /Keep local|Use hosted|Keep both/);
-  button(f.root, "Resolve…").click();
-  await new Promise<void>(resolve => setImmediate(resolve));
-  assert.match(f.text(), /Keep local.*Use hosted.*Keep both/);
-  assert.match(f.text(), /Local version.*Hosted version/);
-  f.dom.window.close();
-});
-
-test("conflict choices respect absent versions and name destructive outcomes", async () => {
-  for (const absent of ["local", "remote"] as const) {
-    const f = fixture(true);
-    f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{
-      entity: "record", object_id: "record", decision_id: "decision", path: "note.md", message: "The versions differ.",
-    }] };
-    Object.assign(f.host.connectSync, { conflictComparison: async () => ({
-      entity: "record", objectId: "record", decisionId: "decision",
-      local: absent === "local" ? { state: "absent" } : { state: "exact", document: "Unsynced local edit" },
-      remote: absent === "remote" ? { state: "absent" } : { state: "exact", document: "Hosted edit" },
-    }) });
-    f.state.render();
-    button(f.root, "Resolve…").click();
-    await settle();
-    if (absent === "local") {
-      assert.match(f.text(), /No local version/);
-      assert.doesNotMatch(f.text(), /Keep both|Keep a local copy/);
-      assert.ok(button(f.root, "Delete from Connect").classList.contains("mod-warning"));
-      assert.ok(button(f.root, "Use hosted"));
-    } else {
-      assert.match(f.text(), /No hosted version.*before moving the original to trash/);
-      assert.ok(button(f.root, "Move local file to trash").classList.contains("mod-warning"));
-      assert.ok(button(f.root, "Keep a local copy"));
-      assert.doesNotMatch(f.text(), /Use hosted|Keep both/);
-    }
-    f.dom.window.close();
-  }
-});
-
-test("conflict decisions wait for active sync while their comparison remains readable", async () => {
-  const f = fixture(true);
-  f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{ entity: "record", object_id: "record", decision_id: "decision", path: "note.md" }] };
-  let syncing = false;
-  Object.assign(f.host.connectSync, {
-    isSyncing: () => syncing,
-    conflictComparison: async () => ({ entity: "record", objectId: "record", decisionId: "decision", local: { state: "exact", document: "Local edit" }, remote: { state: "exact", document: "Hosted edit" } }),
-  });
-  f.state.render();
-  button(f.root, "Resolve…").click();
-  await settle();
-  for (const busySession of [true, false]) {
-    syncing = !busySession;
-    f.host.sync.update({ busy: busySession });
-    f.state.render();
-    for (const label of ["Keep local", "Use hosted", "Keep both"]) assert.equal(button(f.root, label).disabled, true, label);
-    assert.equal(button(f.root, "Hide").disabled, false, "review remains available without committing a stale decision");
-    assert.match(f.text(), /Local edit.*Hosted edit/);
-  }
-  syncing = false;
-  f.host.sync.update({ busy: false });
-  f.state.render();
-  assert.equal(button(f.root, "Keep both").disabled, false);
   f.dom.window.close();
 });
 
@@ -707,124 +338,6 @@ test("the single save bar updates validity while typing without replacing the fo
   assert.equal(f.root.ownerDocument.activeElement, focused);
   assert.equal(f.root.querySelector(".mdbase-dirty"), null, "do not recreate the removed duplicate badge");
   await f.view.onClose();
-  f.dom.window.close();
-});
-
-test("missing adoption authorization offers recovery instead of dead Resume/Cancel actions", () => {
-  for (const recovery of [
-    { canReset: true, canReconnect: false },
-    { canReset: false, canReconnect: false },
-    { canReset: false, canReconnect: true },
-  ]) {
-    const f = fixture();
-    const checkpoint = { phase: recovery.canReconnect ? "activating" : "uploading", session: {
-      controlUrl: "https://connect.example", verificationUri: "https://connect.example/adopt/old",
-      expiresAt: "2026-01-01T00:00:00Z", requested: { collectionId: "collection", mirrorName: "Obsidian" },
-    } };
-    Object.assign(f.host.connectSync, {
-      getAdoptionMarker: () => checkpoint,
-      getAdoptionRecovery: () => recovery,
-    });
-    f.state.render();
-    assert.ok(button(f.root, recovery.canReset ? "Reset setup" : recovery.canReconnect ? "Reconnect collection" : "Check again"));
-    assert.doesNotMatch(f.text(), /Resume upload|Cancel upload|Upload paused/);
-    assert.equal(f.root.querySelector(".mdbase-approval-link"), null, "do not send users to the stale approval link");
-    if (!recovery.canReset && !recovery.canReconnect) {
-      recovery.canReset = true;
-      button(f.root, "Check again").click();
-      assert.ok(button(f.root, "Reset setup"));
-    }
-    f.dom.window.close();
-  }
-});
-
-test("approved moves expose upload progress and keep failures distinct from an intentional pause", async () => {
-  const f = fixture();
-  const checkpoint = { phase: "uploading", session: {
-    controlUrl: "https://connect.example", verificationUri: "https://connect.example/adopt/old",
-    requested: { collectionId: "collection", mirrorName: "Obsidian" },
-  } };
-  let uploading = false;
-  Object.assign(f.host.connectSync, {
-    getAdoptionMarker: () => checkpoint,
-    getAdoptionRecovery: () => null,
-    previewAdoption: async () => ({ records: 19, resources: 2, files: 0, conflicts: [["A.md", "a.md"]] }),
-    resumeAdoption: async (callbacks: { onProgress(progress: { stage: string; records: number }): void }) => {
-      callbacks.onProgress({ stage: "uploading", records: 19 });
-      uploading = /Approval received. Uploading 19 notes/.test(f.text());
-      throw new Error("Import rejected");
-    },
-  });
-  f.state.render();
-  assert.equal(f.root.querySelector(".mdbase-approval-link"), null, "approval already succeeded");
-  button(f.root, "Resume upload").click();
-  await new Promise<void>(resolve => setImmediate(resolve));
-  assert.equal(uploading, true);
-  assert.match(f.text(), /Approval received. Upload stopped/);
-  assert.doesNotMatch(f.text(), /Upload paused/);
-  assert.match(f.text(), /A.md.*a.md/);
-  assert.equal(button(f.root, "Resume upload").disabled, true);
-  assert.equal(button(f.root, "Check files").disabled, false);
-  f.dom.window.close();
-});
-
-test("collision renames require a review and explicit confirmation, and never auto-resume upload", async () => {
-  const f = fixture();
-  let preview = { records: 2, resources: 1, files: 0, conflicts: [["A.md", "a.md"]] };
-  const plan = { renames: [{ from: "a.md", to: "a (2).md" }], manual: [], revision: "review" };
-  let applied = 0;
-  Object.assign(f.host.connectSync, {
-    getAdoptionMarker: () => ({ phase: "uploading", session: { controlUrl: "https://connect.example", requested: { collectionId: "collection" } } }),
-    getAdoptionRecovery: () => null,
-    previewAdoption: async () => preview,
-    planAdoptionRenames: async () => plan,
-    applyAdoptionRenames: async (review: unknown) => {
-      assert.equal(review, plan);
-      applied++;
-      preview = { ...preview, conflicts: [] };
-      return 1;
-    },
-    resumeAdoption: () => assert.fail("renaming must not start an upload"),
-  });
-  Object.assign(f.state, { adoptionPreview: preview });
-  f.state.render();
-  button(f.root, "Review renames…").click();
-  await new Promise<void>(resolve => setImmediate(resolve));
-  assert.match(f.text(), /a.md.*→.*a \(2\).md/);
-  assert.equal(applied, 0);
-  button(f.root, "Cancel").click();
-  assert.equal(applied, 0);
-  button(f.root, "Review renames…").click();
-  await new Promise<void>(resolve => setImmediate(resolve));
-  button(f.root, "Rename 1 file").click();
-  await new Promise<void>(resolve => setImmediate(resolve));
-  assert.equal(applied, 1);
-  assert.match(f.text(), /Renamed 1 file/);
-  assert.equal(button(f.root, "Resume upload").disabled, false);
-  f.dom.window.close();
-});
-
-test("new live-file collisions do not block reconciling an already frozen snapshot", () => {
-  const f = fixture();
-  Object.assign(f.host.connectSync, {
-    getAdoptionMarker: () => ({ phase: "activating", session: { controlUrl: "https://connect.example", requested: { collectionId: "collection" } } }),
-    getAdoptionRecovery: () => null,
-  });
-  Object.assign(f.state, { adoptionPreview: { records: 2, files: 0, conflicts: [["A.md", "a.md"]] } });
-  f.state.render();
-  assert.match(f.text(), /Activation outcome is pending/);
-  assert.equal(button(f.root, "Resume upload").disabled, false);
-  assert.doesNotMatch(f.text(), /Review renames/);
-  f.dom.window.close();
-});
-
-test("status notices can be dismissed without changing connection state", () => {
-  const f = fixture(true);
-  f.state.transientMessage = "Sync complete.";
-  f.state.render();
-  button(f.root, "Dismiss message").click();
-  assert.doesNotMatch(f.text(), /Sync complete/);
-  assert.match(f.text(), /Project notes/);
   f.dom.window.close();
 });
 
@@ -1008,33 +521,6 @@ test("Issues grouped by rule offer one bulk fix and jump to the rule's field", a
   f.dom.window.close();
 });
 
-test("sync actions and filters preserve focus across progress and review renders", () => {
-  const f = fixture(true);
-  f.state.render();
-  button(f.root, "Sync now").focus();
-  f.state.render();
-  assert.equal(f.dom.window.document.activeElement, button(f.root, "Sync now"));
-  f.host.sync.update({ progress: { phase: "uploading", completed: 1, total: 10 } as never });
-  f.state.render();
-  button(f.root, "Stop").focus();
-  f.host.sync.update({ progress: { phase: "uploading", completed: 2, total: 10 } as never });
-  f.state.render();
-  assert.equal(f.dom.window.document.activeElement, button(f.root, "Stop"));
-  assert.equal(f.root.querySelector("progress")?.getAttribute("aria-label"), "Sync progress");
-  f.host.sync.update({ progress: null });
-  f.state.mirrorPreview = {
-    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
-    entries: [{ path: "Plan.md", direction: "download", action: "update", detail: "Download change" }], collisions: [], local_issues: [],
-  };
-  f.state.render();
-  const filter = f.root.querySelector<HTMLSelectElement>("[aria-label='Filter transfers']")!;
-  filter.focus();
-  filter.value = "download";
-  filter.dispatchEvent(new f.dom.window.Event("change"));
-  assert.equal(f.dom.window.document.activeElement?.getAttribute("aria-label"), "Filter transfers");
-  f.dom.window.close();
-});
-
 test("popout inputs retain their selection even when DOM constructors belong to another window", () => {
   const popout = fixture(true);
   // A second realm represents the main window where the plugin module executes.
@@ -1079,240 +565,6 @@ test("moving an existing workspace input to a popout preserves its first redraw 
   popout.dom.window.close();
 });
 
-test("quoted transfer paths cannot break focus restoration while comparing changes", () => {
-  const f = fixture(true);
-  (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
-  f.state.mirrorPreview = {
-    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
-    entries: [{ kind: "document", path: 'Notes/Review "draft".md', direction: "download", action: "update", detail: "Download change", recordId: "r1" }], collisions: [], local_issues: [],
-  };
-  f.state.render();
-  button(f.root, "Compare").focus();
-  assert.doesNotThrow(() => f.state.render());
-  assert.equal(f.dom.window.document.activeElement, button(f.root, "Compare"));
-  f.dom.window.close();
-});
-
-test("pending record updates can be compared before syncing", async () => {
-  const f = fixture(true);
-  Object.assign(f.state, { mirrorStatus: { state: "changes_waiting", conflicts: [], local_issues: [] } });
-  (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
-  Object.assign(f.host.connectSync, { recordComparison: async () => ({
-    entity: "record", objectId: "r1", decisionId: "",
-    local: { state: "exact", document: "Local line" }, remote: { state: "exact", document: "Hosted line" },
-  }) });
-  f.state.mirrorPreview = {
-    phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } },
-    entries: [{ kind: "document", path: "Tasks/Plan.md", direction: "download", action: "update", detail: "Hosted record will write.", recordId: "r1" }],
-    collisions: [], local_issues: [],
-  };
-  f.state.render();
-  button(f.root, "Compare").click();
-  await settle();
-  assert.match(f.text(), /Local line.*Hosted line/);
-  assert.ok(button(f.root, "Hide"));
-  f.dom.window.close();
-});
-
-test("comparison loading returns keyboard focus without stealing it from another control", async () => {
-  for (const conflict of [false, true]) for (const moveFocus of [false, true]) {
-    const f = fixture(true);
-    let finish: (value: unknown) => void = () => assert.fail("Comparison not requested");
-    const request = () => new Promise(resolve => { finish = resolve; });
-    if (conflict) {
-      f.state.mirrorStatus = { state: "attention", local_issues: [], conflicts: [{ entity: "record", object_id: "record", decision_id: "decision", path: "note.md" }] };
-      Object.assign(f.host.connectSync, { conflictComparison: request });
-    } else {
-      f.state.mirrorPreview = { phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } }, entries: [{ kind: "document", path: "note.md", direction: "download", action: "update", detail: "Download change", recordId: "record" }], collisions: [], local_issues: [] };
-      (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
-      Object.assign(f.host.connectSync, { recordComparison: request });
-    }
-    f.state.render();
-    const opener = button(f.root, conflict ? "Resolve…" : "Compare");
-    opener.focus();
-    opener.click();
-    if (moveFocus) f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!.focus();
-    finish({ entity: "record", objectId: "record", decisionId: "decision", local: { state: "exact", document: "Local edit" }, remote: { state: "exact", document: "Hosted edit" } });
-    await settle();
-    assert.equal(f.dom.window.document.activeElement, moveFocus ? f.root.querySelector("[data-focus-key='destination-sync']") : button(f.root, "Hide"));
-    f.dom.window.close();
-  }
-});
-
-test("pending comparisons cannot replace a newer plan's versions or loading state", async () => {
-  for (const concurrent of [false, true]) for (const rejectOld of [false, true]) {
-    const f = fixture(true);
-    const requests: Array<{ resolve(value: unknown): void; reject(error: Error): void }> = [];
-    const preview = () => ({ phase: "incremental", plan: { actions: [{}], issues: [], summary: { blocking_issues: 0 } }, entries: [{ kind: "document", path: "note.md", direction: "download", action: "update", detail: "Download change", recordId: "record" }], collisions: [], local_issues: [] });
-    const comparison = (version: string) => ({ entity: "record", objectId: "record", decisionId: "", local: { state: "exact", document: `${version} local line` }, remote: { state: "exact", document: `${version} hosted line` } });
-    (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
-    Object.assign(f.host.connectSync, { recordComparison: () => new Promise((resolve, reject) => requests.push({ resolve, reject })) });
-    f.state.mirrorPreview = preview();
-    f.state.render();
-    button(f.root, "Compare").click();
-    f.state.mirrorPreview = preview();
-    f.state.render();
-    if (concurrent) button(f.root, "Compare").click();
-    if (rejectOld) requests[0].reject(new Error("Outdated request failed"));
-    else requests[0].resolve(comparison("Outdated"));
-    await settle();
-    assert.doesNotMatch(f.text(), /Outdated local line|Outdated hosted line/, "old results must not appear under the new plan");
-    assert.equal(f.state.transientMessage, "", "obsolete errors must not interrupt the newer review");
-    if (concurrent) {
-      assert.equal(button(f.root, "Loading…").disabled, true, "old cleanup must not enable a newer pending request");
-    } else {
-      assert.equal(button(f.root, "Compare").disabled, false);
-      button(f.root, "Compare").click();
-    }
-    requests[1].resolve(comparison("Newest"));
-    await settle();
-    assert.match(f.text(), /Newest local line.*Newest hosted line/);
-    f.dom.window.close();
-  }
-});
-
-test("collapsed history does not construct hidden transfer ledgers", () => {
-  const f = fixture(true);
-  const at = new Date().toISOString();
-  f.historyRuns.push(...Array.from({ length: 20 }, (_, index) => ({
-    id: `large-${index}`, collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "applied",
-    files: Array.from({ length: 250 }, (_, file) => ({ path: `${index}/${file}.md`, kind: "document" as const,
-      direction: "download" as const, action: "create" as const, status: "completed" as const, at })),
-  })));
-  f.state.render();
-  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 0, "closed History needs only its heading");
-  const history = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!;
-  history.open = true;
-  history.dispatchEvent(new f.dom.window.Event("toggle"));
-  assert.equal(f.root.querySelectorAll(".mdbase-history-run").length, 10);
-  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 0,
-    "closed runs need only summaries, not 2,500 hidden rows");
-  const run = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-run-large-0']")!;
-  run.open = true;
-  run.dispatchEvent(new f.dom.window.Event("toggle"));
-  assert.equal(f.root.querySelectorAll(".mdbase-history-files .mdbase-transfer-row").length, 250);
-  f.dom.window.close();
-});
-
-test("sync history lists runs, expands to their files and filters by path", () => {
-  const f = fixture(true);
-  const at = new Date().toISOString();
-  f.historyRuns.push({
-    id: "run-1", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "applied",
-    files: [
-      { path: "Tasks/Plan.md", kind: "document", direction: "download", action: "update", status: "completed", at },
-      { path: "Archive/Review.md", fromPath: "Tasks/Review.md", kind: "document", direction: "download", action: "rename", status: "completed", at },
-      { path: "Notes/Ideas.md", kind: "document", direction: "upload", action: "create", status: "completed", at },
-    ],
-  });
-  f.state.render();
-  assert.match(f.text(), /History/);
-  assert.doesNotMatch(f.text(), /2 downloaded/, "history starts collapsed");
-  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
-  f.state.render();
-  assert.match(f.text(), /2 downloaded · 1 uploaded.*Today/);
-  assert.doesNotMatch(f.text(), /Tasks\/Plan\.md/, "runs start collapsed");
-  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-run-run-1']")!.open = true;
-  f.state.render();
-  assert.match(f.text(), /update Tasks\/Plan\.md.*rename Archive\/Review\.md From Tasks\/Review\.md.*create Notes\/Ideas\.md/);
-  const search = f.root.querySelector<HTMLInputElement>("[data-focus-key='history-search']")!;
-  search.value = "ideas";
-  search.dispatchEvent(new f.dom.window.Event("input"));
-  assert.match(f.text(), /Notes\/Ideas\.md/);
-  assert.doesNotMatch(f.text(), /Tasks\/Plan\.md/);
-  search.value = "missing";
-  search.dispatchEvent(new f.dom.window.Event("input"));
-  assert.match(f.text(), /No synced files match/);
-  f.dom.window.close();
-});
-
-test("pinned conflict events expose their retained copy without empty history controls", () => {
-  const f = fixture(true);
-  const at = new Date().toISOString();
-  f.historyRuns.push({
-    id: "conflict-event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
-    summary: "Kept both versions of Plan.md", path: "Tasks/Plan.md", needsAcknowledgement: true,
-    message: "This device's version was saved as Tasks/Plan (local conflict copy).md.", tone: "attention",
-  });
-  const opened: string[] = [];
-  Object.assign(f.host, { openFileByPath: async (path: string) => { opened.push(path); } });
-  (f.view as unknown as { app: { vault: { getAbstractFileByPath(path: string): unknown } } }).app.vault.getAbstractFileByPath = () => ({});
-  f.state.render();
-  assert.match(f.text(), /local conflict copy/);
-  assert.equal(f.root.querySelector("[data-focus-key='history-search']"), null);
-  assert.doesNotMatch(f.text(), /No completed syncs|Clear history/);
-  button(f.root, "Tasks/Plan.md").click();
-  assert.deepEqual(opened, ["Tasks/Plan.md"]);
-  const details = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-conflict-event']")!;
-  assert.ok(details.open);
-  details.open = false;
-  f.state.render();
-  assert.doesNotMatch(f.text(), /local conflict copy/);
-  assert.equal(f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-conflict-event']")?.open, false);
-  f.dom.window.close();
-});
-
-test("dismissing a conflict event unpins it without erasing its history", async () => {
-  const f = fixture(true);
-  const at = new Date().toISOString();
-  f.historyRuns.push({
-    id: "conflict-event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
-    summary: "Kept both versions of Plan.md", path: "Tasks/Plan.md", needsAcknowledgement: true,
-    message: "This device's version was saved as Tasks/Plan (local conflict copy).md.", tone: "attention",
-  });
-  f.state.render();
-  button(f.root, "Dismiss").focus();
-  button(f.root, "Dismiss").click();
-  await settle();
-  f.state.render();
-  assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "disclosure-history-event-conflict-event");
-  assert.equal(f.historyRuns.length, 1, "dismiss acknowledges a notice, not deletion of the audit trail");
-  assert.equal(f.historyRuns[0].needsAcknowledgement, false);
-  assert.match(f.text(), /Kept both versions of Plan.md/);
-  assert.doesNotMatch(f.text(), /Dismiss/);
-  assert.ok(button(f.root, "Clear history"), "explicit Clear can remove acknowledged history");
-  f.dom.window.close();
-});
-
-test("history write failures are visible rather than unhandled UI rejections", async () => {
-  const f = fixture(true);
-  const at = new Date().toISOString();
-  f.historyRuns.push({
-    id: "event", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
-    summary: "Collection reconnected", tone: "success",
-  });
-  f.host.sync.clearHistory = async () => { throw new Error("History could not be saved"); };
-  f.state.render();
-  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
-  f.state.render();
-  button(f.root, "Clear history").click();
-  await settle();
-  assert.match(f.text(), /History could not be saved/);
-  assert.equal(button(f.root, "Clear history").disabled, false);
-  f.dom.window.close();
-});
-
-test("ordinary history event details retain disclosure and keyboard focus on redraw", () => {
-  const f = fixture(true);
-  const at = new Date().toISOString();
-  f.historyRuns.push({
-    id: "reconnect", collectionId: "hidden-collection-id", startedAt: at, finishedAt: at, outcome: "event", files: [],
-    summary: "Collection reconnected", message: "Credentials were renewed and the checkpoint was preserved.", tone: "success",
-  });
-  f.state.render();
-  f.root.querySelector<HTMLDetailsElement>("[data-disclosure='sync-activity']")!.open = true;
-  f.state.render();
-  const details = f.root.querySelector<HTMLDetailsElement>("[data-disclosure='history-event-reconnect']")!;
-  assert.ok(details);
-  assert.equal(details.open, false);
-  details.open = true;
-  details.querySelector<HTMLElement>("summary")!.focus();
-  f.state.render();
-  assert.match(f.text(), /Credentials were renewed/);
-  assert.equal(f.dom.window.document.activeElement?.textContent, "Collection reconnected");
-  f.dom.window.close();
-});
-
 test("expanding a field adds a collapse action without inserting a filter above the list", async () => {
   const f = typesFixture();
   await f.view.selectType("_types/task.md");
@@ -1329,68 +581,6 @@ test("expanding a field adds a collapse action without inserting a filter above 
   button(f.root, "title actions").click();
   assert.ok((Menu as unknown as { last: { position?: unknown } }).last.position);
   await f.view.onClose();
-  f.dom.window.close();
-});
-
-test("enrollment names the device after the vault so Connect can tell devices apart", () => {
-  const f = fixture();
-  f.state.render();
-  const device = Array.from(f.root.querySelectorAll<HTMLInputElement>("input")).find((input) => input.value.startsWith("Notes"));
-  assert.equal(device?.value, "Notes · Obsidian");
-  f.dom.window.close();
-});
-
-test("first run asks one question: start a collection here, or copy one from Connect", () => {
-  const f = fixture();
-  f.state.destination = "types";
-  f.state.render();
-  assert.match(f.text(), /Set up mdbase.*Start a collection.*This vault holds the collection.*Copy from Connect.*Connect holds the collection/);
-  assert.ok(button(f.root, "Start a collection").classList.contains("mod-cta"));
-  button(f.root, "Copy from Connect").click();
-  assert.equal(f.state.destination, "sync");
-  assert.match(f.text(), /Copy a collection from Connect/);
-  f.dom.window.close();
-});
-
-test("a plan held for review says why, offers to apply it, and badges the Sync tab", () => {
-  const f = fixture(true);
-  const target = { entity: "record", identity: "r1", path: "Old.md", revision: "x", payload_revision: "x" };
-  f.state.mirrorPreview = {
-    phase: "rebuild",
-    plan: { kind: "rebuild", actions: [{ command: "delete_local", target }], issues: [], summary: { blocking_issues: 0 } },
-    entries: [{ kind: "document", path: "Old.md", direction: "download", action: "delete", detail: "Hosted record will delete." }],
-    collisions: [], local_issues: [],
-  };
-  f.state.render();
-  assert.match(f.root.querySelector(".mdbase-sync-heading")!.textContent!, /Review needed/);
-  assert.doesNotMatch(f.root.querySelector(".mdbase-sync-heading")!.textContent!, /Up to date/);
-  assert.equal(f.root.querySelector(".mdbase-review-reasons")?.textContent, "Mirror rebuild.");
-  assert.ok(button(f.root, "Sync 1 change").classList.contains("mod-cta"));
-  assert.equal(f.root.querySelector(".mdbase-nav-button.is-active .mdbase-count")?.textContent, "1");
-  f.dom.window.close();
-});
-
-test("the transfer ledger exposes all reviewed items and filters never change approval scope", () => {
-  const f = fixture(true);
-  const entries = Array.from({ length: 601 }, (_, index) => ({ path: `Notes/${index}.md`, direction: "download", action: index === 600 ? "delete" : "update", detail: "Reviewed exact bytes" }));
-  const plan = { actions: entries, issues: [], summary: { blocking_issues: 0 } };
-  f.state.mirrorPreview = { phase: "incremental", plan, entries, collisions: [], local_issues: [] };
-  f.state.render();
-  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 250);
-  button(f.root, "Next downloads").click();
-  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 250);
-  assert.match(f.text(), /Showing 251–500 of 601/);
-  button(f.root, "Next downloads").click();
-  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 101);
-  assert.equal(button(f.root, "Next downloads").disabled, true);
-  button(f.root, "Previous downloads").click();
-  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 250);
-  const filter = f.root.querySelector<HTMLSelectElement>("select[aria-label='Filter transfers']")!;
-  filter.value = "delete"; filter.dispatchEvent(new f.dom.window.Event("change"));
-  assert.equal(f.root.querySelectorAll(".mdbase-transfer-row").length, 1);
-  assert.match(f.text(), /Notes\/600.md/);
-  assert.match(f.text(), /entire reviewed plan/);
-  assert.equal(plan.actions.length, 601);
   f.dom.window.close();
 });
 
@@ -1427,20 +617,6 @@ test("empty collections offer contract packs rather than invented starter types"
   assert.match(f.text(), /mdbase-contracts/);
   assert.ok(button(f.root, "Browse ready-made types"));
   assert.ok(button(f.root, "Design a custom type"));
-  f.dom.window.close();
-});
-
-test("disconnect names the trash boundary and retains the safe keep-files default", async () => {
-  const f = fixture();
-  for (const [label, expected] of [["Cancel", null], ["Keep files", "keep"], ["Trash unchanged files", "remove"]] as const) {
-    const modal = new DisconnectMirrorModal({} as never);
-    const choice = modal.choose("Project notes");
-    assert.match(modal.contentEl.textContent!, /move unchanged synced files to trash.*Local edits are kept either way/);
-    assert.ok(button(modal.contentEl, "Keep files").classList.contains("mod-cta"));
-    assert.ok(button(modal.contentEl, "Trash unchanged files").classList.contains("mod-warning"));
-    button(modal.contentEl, label).click();
-    assert.equal(await choice, expected);
-  }
   f.dom.window.close();
 });
 
@@ -1488,5 +664,235 @@ test("restoring a selected path replaces the initially opened type model", async
   assert.equal(f.state.selectedPath, "_types/two.md");
   assert.equal(f.state.model.name, "two");
   await f.view.onClose();
+  f.dom.window.close();
+});
+
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+test("a synced vault says so in one heading and offers only the link and settings", () => {
+  const f = fixture(true);
+  f.state.render();
+  assert.equal(f.root.querySelector(".mdbase-sync-heading h2")?.textContent, "Synced");
+  assert.equal(f.root.querySelector(".mdbase-sync-heading")?.getAttribute("data-tone"), "ok");
+  assert.match(f.text(), /Collection Project notes Kind Cloud copy This computer Laptop/);
+  assert.ok(button(f.root, "Copy link"));
+  button(f.root, "Sync settings").click();
+  assert.equal(f.settingsOpened(), 1);
+  assert.doesNotMatch(f.text(), /Turn on sync|Sign in|key|device ID|server/i);
+  f.dom.window.close();
+});
+
+test("missing or stopped mdbase app offers one next step", async () => {
+  const f = fixture();
+  f.sync.set({ daemon: "not_installed", status: null });
+  f.state.render();
+  assert.match(f.text(), /Install the mdbase app/);
+  assert.ok(button(f.root, "Download mdbase").classList.contains("mod-cta"));
+  assert.ok(button(f.root, "Check again"));
+  f.sync.set({ daemon: "not_running", status: null });
+  f.state.render();
+  button(f.root, "Start mdbase").click();
+  await tick();
+  assert.deepEqual(f.sync.calls, [["startApp"]]);
+  f.dom.window.close();
+});
+
+test("signing in waits in the browser and can be cancelled", async () => {
+  const f = fixture();
+  f.sync.set(baseSnapshot());
+  f.state.render();
+  assert.doesNotMatch(f.text(), /Turn on sync/, "setup waits for sign-in");
+  button(f.root, "Sign in").click();
+  await tick();
+  assert.deepEqual(f.sync.calls, [["signIn"]]);
+  f.sync.set({ signingIn: "https://lab.example/device" });
+  f.state.render();
+  assert.match(f.text(), /Finish signing in in your browser/);
+  assert.ok(button(f.root, "Open the sign-in page again"));
+  button(f.root, "Cancel").click();
+  assert.deepEqual(f.sync.calls.at(-1), ["cancelSignIn"]);
+  f.dom.window.close();
+});
+
+test("setup asks for a name and one choice between Cloud copy and Private", async () => {
+  const f = fixture();
+  f.state.render();
+  const name = f.root.querySelector<HTMLInputElement>(".mdbase-sync-section input[type='text']")!;
+  assert.equal(name.value, "Notes", "named after the vault");
+  const cloud = f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-kind-cloud']")!;
+  const priv = f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-kind-private']")!;
+  assert.equal(cloud.checked, true);
+  assert.match(f.text(), /Cloud copy \(recommended\).*Private.*only your devices can read it/);
+  name.value = "Research";
+  name.dispatchEvent(new f.dom.window.Event("input"));
+  priv.checked = true;
+  priv.dispatchEvent(new f.dom.window.Event("change"));
+  button(f.root, "Turn on sync").click();
+  await tick();
+  assert.deepEqual(f.sync.calls, [["setUp", "private", "Research"]]);
+  f.dom.window.close();
+});
+
+test("adding an existing collection asks for a folder only when the vault has notes", async () => {
+  const f = fixture();
+  f.state.render();
+  assert.ok(f.root.querySelector("[data-focus-key='sync-join-folder']"));
+  const link = f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-join-link']")!;
+  link.value = "obsidian://mdbase-join?collection=0b6f1c1e-6f77-4a4b-9a57-7f2a1d1f0c11";
+  link.dispatchEvent(new f.dom.window.Event("input"));
+  const folder = f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-join-folder']")!;
+  folder.value = "Team";
+  folder.dispatchEvent(new f.dom.window.Event("input"));
+  button(f.root, "Add collection").click();
+  await tick();
+  assert.deepEqual(f.sync.calls, [["join", link.value, "Team"]]);
+  f.host.vaultTopLevelEntries = () => [];
+  f.state.render();
+  assert.equal(f.root.querySelector("[data-focus-key='sync-join-folder']"), null);
+  f.dom.window.close();
+});
+
+test("a vault from the earlier Connect sync explains the change and prefills the collection", () => {
+  const f = fixture();
+  f.host.legacyConnect = () => ({ name: "Old notes", collectionId: "0b6f1c1e-6f77-4a4b-9a57-7f2a1d1f0c11" });
+  f.state.render();
+  assert.match(f.text(), /earlier mdbase Connect sync for "Old notes".*untouched/);
+  assert.equal(f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-join-link']")!.value, "0b6f1c1e-6f77-4a4b-9a57-7f2a1d1f0c11");
+  assert.equal(f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-join-folder']")!.value, "Old notes");
+  f.dom.window.close();
+});
+
+test("held files show both versions and name each outcome", async () => {
+  const f = fixture(true);
+  f.sync.set({
+    prefix: "Team",
+    holds: [
+      { id: "h1", path: "Plan.md", reason: "conflict", hasTheirs: true, mine: "mine", theirs: "theirs" },
+      { id: "h2", path: "Old.md", reason: "deleted_elsewhere", hasTheirs: false, mine: null, theirs: null },
+    ],
+  });
+  f.state.render();
+  assert.equal(f.root.querySelector(".mdbase-sync-heading h2")?.textContent, "2 files need you");
+  assert.match(f.text(), /Team\/Plan\.md Changed here and on another device Compare versions/);
+  assert.match(f.text(), /Team\/Old\.md Deleted on another device, changed here/);
+  const rows = f.root.querySelectorAll<HTMLElement>(".mdbase-hold");
+  assert.deepEqual(Array.from(rows[0].querySelectorAll("button")).map((b) => b.textContent), ["Keep this computer's", "Use the other version", "Keep both"]);
+  assert.deepEqual(Array.from(rows[1].querySelectorAll("button")).map((b) => b.textContent), ["Keep this computer's", "Delete it"]);
+  assert.equal(rows[1].querySelector("details"), null, "nothing to compare");
+  button(rows[0], "Keep both").click();
+  await tick();
+  assert.deepEqual(f.sync.calls, [["resolve", f.sync.controller.snapshot.holds[0], "keep_both"]]);
+  f.dom.window.close();
+});
+
+test("a new device asks for its code before approval", async () => {
+  const f = fixture(true);
+  f.sync.set({ approvals: [{ device: "d1", name: "Work laptop" }] });
+  f.state.render();
+  assert.match(f.text(), /Work laptop wants to join/);
+  const code = f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-code-d1']")!;
+  code.value = "123 456";
+  code.dispatchEvent(new f.dom.window.Event("input"));
+  button(f.root, "Approve").click();
+  await tick();
+  assert.deepEqual(f.sync.calls, [["approve", "d1", "123 456"]]);
+  f.dom.window.close();
+});
+
+test("a declined link explains what still works and can ask again", async () => {
+  const f = fixture(true);
+  f.sync.set({ link: "declined" });
+  f.state.render();
+  assert.match(f.text(), /Sync still runs/);
+  button(f.root, "Allow Obsidian").click();
+  await tick();
+  assert.deepEqual(f.sync.calls, [["linkAgain"]]);
+  f.dom.window.close();
+});
+
+test("sync trouble stays visible from other destinations, where mobile has no status bar", () => {
+  for (const [patch, label] of [
+    [{ status: baseSnapshot().status }, "Check"],
+    [{ collection: collectionStatus({ state: "failed" }) }, "Problem"],
+  ] as const) {
+    const f = fixture(true);
+    f.state.destination = "issues";
+    f.sync.set(patch as Partial<SyncSnapshot>);
+    f.state.render();
+    const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-sync']")!;
+    assert.equal(tab.querySelector(".mdbase-nav-status")?.textContent, label);
+    assert.match(tab.getAttribute("aria-label")!, /^Sync · /);
+    tab.click();
+    assert.equal(f.root.querySelector(".mdbase-nav-status"), null, "the active pane already explains it");
+    f.dom.window.close();
+  }
+});
+
+test("held files badge the Sync tab with a descriptive name", () => {
+  const f = fixture(true);
+  f.state.destination = "issues";
+  f.host.getIssues = () => [{ path: "other.md", severity: "error", code: "schema_required", message: "Missing title" }];
+  f.sync.set({ holds: [{ id: "h1", path: "Plan.md", reason: "conflict", hasTheirs: true, mine: null, theirs: null }] });
+  f.state.render();
+  assert.equal(f.root.querySelector("[data-focus-key='destination-sync']")?.getAttribute("aria-label"), "Sync · 1 file was changed in two places. Choose which version to keep.");
+  assert.equal(f.root.querySelector("[data-focus-key='destination-issues']")?.getAttribute("aria-label"), "Issues · 1 validation issue");
+  f.dom.window.close();
+});
+
+test("background status updates keep focus on tabs and never rebuild Sync while typing", async () => {
+  const f = fixture();
+  Object.assign(f.host, { loadWorkspaceSchema: async () => null });
+  await f.view.onOpen();
+  await f.view.setState({ destination: "issues" }, {} as never);
+  const tab = f.root.querySelector<HTMLButtonElement>("[data-focus-key='destination-issues']")!;
+  tab.focus();
+  f.sync.set({ approvals: [{ device: "d1", name: "Phone" }] });
+  assert.equal(f.dom.window.document.activeElement?.getAttribute("data-focus-key"), "destination-issues");
+  await f.view.setState({ destination: "sync" }, {} as never);
+  const link = f.root.querySelector<HTMLInputElement>("[data-focus-key='sync-join-link']")!;
+  link.focus();
+  f.sync.set({ busy: null });
+  assert.equal(f.dom.window.document.activeElement, link, "the same input survives a status update");
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
+test("first run asks one question: start a collection here, or sync one from another device", () => {
+  const f = fixture();
+  f.state.destination = "types";
+  f.state.render();
+  assert.match(f.text(), /Set up mdbase.*Start a collection.*Sync from another device/);
+  assert.ok(button(f.root, "Start a collection").classList.contains("mod-cta"));
+  button(f.root, "Sync from another device").click();
+  assert.equal(f.state.destination, "sync");
+  assert.match(f.text(), /Add a collection you already sync/);
+  f.dom.window.close();
+});
+
+test("phones and tablets say plainly that sync runs on the computer", () => {
+  const f = fixture();
+  f.sync.set({ daemon: "mobile", status: null });
+  f.state.render();
+  assert.match(f.text(), /Sync isn't available on phones and tablets yet.*Types and validation work here as usual/);
+  assert.equal(f.root.querySelectorAll(".mdbase-sync button").length, 0);
+  f.dom.window.close();
+});
+
+test("changes mdbase settled on its own can be checked, and a property switched", async () => {
+  const f = fixture(true);
+  const entry = (kind: string, field?: string) => ({ mutation: `m-${kind}`, seq: 1, conflict: { kind, id: "r1", field, kept: { form: "text", text: "" }, lost: { form: "text", text: "" } } });
+  f.sync.set({ merged: [
+    { entry: entry("field", "status") as never, path: "Plan.md", kind: "field", field: "status", kept: "\"done\"", lost: "\"open\"", lostValue: "open" },
+    { entry: entry("body") as never, path: "Notes.md", kind: "body", field: null, kept: "a\nB\nc", lost: "a\nb\nc", lostValue: undefined },
+  ] });
+  f.state.render();
+  assert.match(f.text(), /2 changes to check/);
+  assert.match(f.text(), /"status" was set to "done"\. The other device set it to "open"\./);
+  assert.match(f.text(), /The text was changed on two devices\. mdbase kept one version\. Show both versions/);
+  button(f.root, 'Use "open"').click();
+  await tick();
+  button(f.root, "OK").click();
+  await tick();
+  assert.deepEqual(f.sync.calls.map((c) => c[0]), ["useOtherValue", "dismissMerged"]);
   f.dom.window.close();
 });

@@ -11,7 +11,7 @@ import type {
   MdbaseIssue,
   MdbaseTypeDef,
 } from "../mdbaseCore";
-import type { CollectionContractDescriptor, JsonObject } from "@mdbase-dev/connect-protocol";
+import type { CollectionContractDescriptor, JsonObject } from "../contractTypes";
 import { formatMarkdown, parseFrontmatter } from "../mdbaseCore";
 import type { V02MigrationPlan } from "../migration";
 import type { StoredTypeDraft, TypeEditorField, TypeEditorModel } from "../typeEditorTypes";
@@ -284,13 +284,6 @@ export class TypesPane {
    */
   private renderSetup(container: HTMLElement): void {
     const empty = container.createDiv({ cls: "mdbase-empty-state mdbase-setup" });
-    if (this.ctx.host.getMirrorProfile()) {
-      empty.createEl("h2", { text: "Waiting for the first sync" });
-      empty.createEl("p", { text: "Types appear here once the hosted collection has synced." });
-      const open = empty.createEl("button", { text: "Open sync", cls: "mod-cta" });
-      open.onclick = () => this.ctx.showDestination("sync");
-      return;
-    }
     empty.createEl("h2", { text: "Set up mdbase" });
     const choices = empty.createDiv({ cls: "mdbase-setup-choices" });
     const choice = (label: string, detail: string, cta: boolean, onClick: () => void) => {
@@ -302,13 +295,13 @@ export class TypesPane {
       button.disabled = this.ctx.busy;
       button.onclick = onClick;
     };
-    choice("Start a collection", "This vault holds the collection. You can upload it to Connect later.", true, () => {
+    choice("Start a collection", "Describe your notes with types in this vault. You can sync it later.", true, () => {
       void this.ctx.perform(async () => {
         await this.ctx.host.initializeCollection();
         await this.ctx.refresh(true);
       });
     });
-    choice("Copy from Connect", "Connect holds the collection. This vault syncs a copy.", false, () => {
+    choice("Sync from another device", "Bring a collection you already use elsewhere into this vault.", false, () => {
       this.ctx.showDestination("sync");
     });
   }
@@ -329,10 +322,10 @@ export class TypesPane {
       welcome.createEl("p", { text: "Install ready-made types and application contracts from mdbase-contracts, or design your own type." });
       const actions = welcome.createDiv({ cls: "mdbase-actions" });
       const install = actions.createEl("button", { text: "Browse ready-made types", cls: "mod-cta" });
-      install.disabled = this.ctx.busy || this.ctx.schema.config.spec_version.startsWith("0.2.") || this.ctx.host.getMirrorProfile() !== null;
+      install.disabled = this.ctx.busy || this.ctx.schema.config.spec_version.startsWith("0.2.");
       install.onclick = () => void this.ctx.perform(() => this.ctx.host.openContractCatalog());
       const custom = actions.createEl("button", { text: "Design a custom type" });
-      custom.disabled = this.ctx.schema.config.spec_version.startsWith("0.2.") || this.ctx.host.getMirrorProfile()?.mode === "read_only";
+      custom.disabled = this.ctx.schema.config.spec_version.startsWith("0.2.");
       custom.onclick = () => void this.createType();
       return;
     }
@@ -349,16 +342,10 @@ export class TypesPane {
     text.createEl("p", { text: "Migrate to edit types." });
     if (!this.migrationPlan) {
       const button = banner.createEl("button", { text: "Review migration" });
-      button.disabled = this.ctx.busy || this.ctx.host.getMirrorProfile() !== null;
+      button.disabled = this.ctx.busy;
       button.onclick = () => void this.ctx.perform(async () => {
         this.migrationPlan = await this.ctx.host.analyzeMigration();
         this.ctx.render();
-      });
-    }
-    if (this.ctx.host.getMirrorProfile()) {
-      banner.createDiv({
-        cls: "mdbase-form-description",
-        text: "Hosted resources must be migrated at the collection authority.",
       });
     }
     if (this.migrationPlan) this.renderMigrationReview(container, this.migrationPlan);
@@ -426,11 +413,11 @@ export class TypesPane {
     const header = pane.createDiv({ cls: "mdbase-pane-header" });
     header.createEl("h2", { text: "Types" });
     const catalog = this.ctx.iconButton(header, "download", "Browse ready-made types");
-    catalog.disabled = this.ctx.busy || this.ctx.schema?.config.spec_version.startsWith("0.2.") === true || this.ctx.host.getMirrorProfile() !== null;
+    catalog.disabled = this.ctx.busy || this.ctx.schema?.config.spec_version.startsWith("0.2.") === true;
     catalog.onclick = () => void this.ctx.perform(() => this.ctx.host.openContractCatalog());
     const createBlocked = (this.ctx.schema?.config.spec_version.startsWith("0.2.") ?? true)
       ? "Migrate to v0.3 to create types"
-      : this.ctx.host.getMirrorProfile()?.mode === "read_only" ? "Read-only mirror" : "";
+      : "";
     const add = this.ctx.iconButton(header, "plus", createBlocked ? `Create type · ${createBlocked}` : "Create type");
     add.disabled = Boolean(createBlocked);
     add.onclick = () => void this.createType();
@@ -495,12 +482,8 @@ export class TypesPane {
       empty.createEl("p", { text: "Select a type" });
       return;
     }
-    const mirrorReadOnly = this.ctx.host.getMirrorProfile()?.mode === "read_only";
-    const readOnly = this.model.specProfile === "v0.2" || mirrorReadOnly || Boolean(this.model.readOnlyReason);
-    const readOnlyReason = this.model.readOnlyReason
-      ?? (mirrorReadOnly
-        ? "Read-only mirror. Reconnect with write access to edit."
-        : "Migrate this v0.2 collection to edit types.");
+    const readOnly = this.model.specProfile === "v0.2" || Boolean(this.model.readOnlyReason);
+    const readOnlyReason = this.model.readOnlyReason ?? "Migrate this v0.2 collection to edit types.";
     const header = pane.createDiv({ cls: "mdbase-editor-header" });
     const back = this.ctx.iconButton(header, "arrow-left", "Back to type list");
     back.addClass("mdbase-mobile-back");

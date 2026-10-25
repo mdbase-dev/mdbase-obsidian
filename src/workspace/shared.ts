@@ -1,25 +1,14 @@
-import type { SyncSession } from "../syncSession";
-import {
-  type App,
-  Platform,
-  TFile,
-} from "obsidian";
-import type { MirrorStatus } from "@mdbase-dev/connect-sync/mirror";
-import type { ConnectSyncController, MirrorProfile } from "../connectSync";
+import type { App, TFile } from "obsidian";
+import type { SyncController } from "../sync/controller";
 import type {
   CollectionRecord,
   MdbaseConfig,
   MdbaseIssue,
   MdbaseTypeDef,
 } from "../mdbaseCore";
-import type { CollectionContractDescriptor } from "@mdbase-dev/connect-protocol";
+import type { CollectionContractDescriptor } from "../contractTypes";
 import type { V02MigrationPlan } from "../migration";
 import type { StoredTypeDraft, TypeEditorModel } from "../typeEditorTypes";
-
-declare const __MDBASE_CONNECT_CONTROL_URL__: string;
-export const DEFAULT_CONNECT_CONTROL_URL = typeof __MDBASE_CONNECT_CONTROL_URL__ === "string"
-  ? __MDBASE_CONNECT_CONTROL_URL__
-  : "https://connect.mdbase.dev";
 
 export interface MdbaseWorkspaceSchema {
   config: MdbaseConfig;
@@ -28,8 +17,11 @@ export interface MdbaseWorkspaceSchema {
 }
 
 export interface MdbaseWorkspaceHost {
-  readonly connectSync: ConnectSyncController;
-  getMirrorProfile(): MirrorProfile | null;
+  readonly syncController: SyncController;
+  /** The earlier Connect sync this vault used, if any. */
+  legacyConnect(): { name: string; collectionId: string } | null;
+  /** Visible names at the top of the vault (not `.obsidian` and other hidden entries). */
+  vaultTopLevelEntries(): string[];
   loadWorkspaceSchema(forceReload?: boolean): Promise<MdbaseWorkspaceSchema | null>;
   loadTypeModel(path: string): Promise<TypeEditorModel>;
   saveTypeModel(model: TypeEditorModel, existingPath: string | null, expectedSourceRevision?: string): Promise<TFile>;
@@ -53,12 +45,8 @@ export interface MdbaseWorkspaceHost {
   openFileByPath(path: string, field?: string): Promise<void>;
   analyzeMigration(): Promise<V02MigrationPlan>;
   applyMigration(plan: V02MigrationPlan, allowLossy: boolean): Promise<void>;
-  readonly sync: SyncSession;
   /** Opens this plugin's settings, where sync and validation options live. */
   openSettings(): void;
-  /** Other tools detected syncing this vault's files. */
-  otherSyncServices(): string[];
-  copySyncDiagnostics(): Promise<void>;
 }
 
 export interface RenderSnapshot {
@@ -115,16 +103,6 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-export function defaultDeviceName(vaultName: string): string {
-  const platform = Platform.isIosApp ? "iOS"
-    : Platform.isAndroidApp ? "Android"
-      : Platform.isMacOS ? "Mac"
-        : Platform.isWin ? "Windows"
-          : Platform.isLinux ? "Linux"
-            : "Obsidian";
-  return `${vaultName} · ${platform}`;
 }
 
 export function fieldTypeLabel(type: string): string {
@@ -191,48 +169,3 @@ export function compactCount(value: number): string {
   const digits = value < 10_000 ? 1 : 0;
   return `${(value / 1_000).toFixed(digits)}k`;
 }
-
-export const HISTORY_PAGE = 10;
-
-export const HISTORY_OUTCOMES: Record<string, string> = {
-  cancelled: "Paused",
-  stale: "Stopped: changes detected",
-  attention: "Needs attention",
-  blocked: "Stopped",
-  failed: "Failed",
-};
-
-export function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-export function relativeTime(value: string | null | undefined): string {
-  if (!value) return "Never synced";
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return value;
-  const seconds = Math.round((timestamp - Date.now()) / 1_000);
-  const absolute = Math.abs(seconds);
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  if (absolute < 60) return formatter.format(seconds, "second");
-  const minutes = Math.round(seconds / 60);
-  if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
-  const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return formatter.format(hours, "hour");
-  return formatter.format(Math.round(hours / 24), "day");
-}
-
-export function syncStateLabel(status: MirrorStatus | null): string {
-  if (!status) return "Checking connection";
-  if (status.state === "up_to_date") return "Up to date";
-  if (status.state === "changes_waiting") return "Changes waiting";
-  if (["attention", "blocked", "failed", "stale"].includes(status.state) || status.recovery_required) return "Needs attention";
-  if (status.state === "cancelled") return "Paused safely";
-  if (status.state === "applying") return "Synchronizing";
-  if (status.state === "planned") return "Review ready";
-  return "Ready for first sync";
-}
-
-export function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
-}
-

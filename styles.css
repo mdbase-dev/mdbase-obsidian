@@ -35,8 +35,7 @@
 /* v0.3 workspace */
 
 /* Custom buttons drop Obsidian's box shadow, which also carries its focus ring; restore one. */
-.mdbase-workspace :is(button, summary, select, a):focus-visible,
-.mdbase-note-history :is(button, a):focus-visible {
+.mdbase-workspace :is(button, summary, select, a):focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 1px;
   box-shadow: none;
@@ -51,31 +50,12 @@
   outline-offset: 2px;
 }
 
-.mdbase-status-bar[data-state="synced"] { color: var(--text-success); }
-.mdbase-status-bar[data-state="syncing"] { color: var(--interactive-accent); }
-.mdbase-status-bar[data-state="waiting"] { color: var(--text-muted); }
-.mdbase-status-bar[data-state="attention"],
-.mdbase-status-bar[data-state="paused"] { color: var(--text-warning); }
-.mdbase-status-bar[data-state="offline"] { color: var(--text-muted); }
-
-/* Mobile has no status bar: keep trouble discoverable on its existing ribbon. */
-.is-mobile .mdbase-ribbon { position: relative; }
-
-.is-mobile .mdbase-ribbon[data-state="attention"]::after,
-.is-mobile .mdbase-ribbon[data-state="paused"]::after,
-.is-mobile .mdbase-ribbon[data-state="offline"]::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-warning);
-  pointer-events: none;
-}
-
-.is-mobile .mdbase-ribbon[data-state="offline"]::after { background: var(--text-muted); }
+/* Sync status reads by tone; only trouble takes a colour. */
+.mdbase-status-bar[data-tone="ok"],
+.mdbase-status-bar[data-tone="quiet"] { color: var(--text-muted); }
+.mdbase-status-bar[data-tone="busy"] { color: var(--text-accent); }
+.mdbase-status-bar[data-tone="attention"] { color: var(--text-warning); }
+.mdbase-status-bar[data-tone="problem"] { color: var(--text-error); }
 
 .mdbase-note-status {
   cursor: pointer;
@@ -116,7 +96,6 @@
   background: var(--background-primary);
 }
 
-.mdbase-identity,
 .mdbase-editor-title-line,
 .mdbase-section-header,
 .mdbase-document-header,
@@ -126,25 +105,6 @@
 .mdbase-editor-actions {
   display: flex;
   align-items: center;
-}
-
-.mdbase-identity {
-  gap: 8px;
-  font-weight: var(--font-semibold);
-}
-
-.mdbase-mark {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-normal);
-}
-
-.mdbase-mark svg {
-  width: 20px;
-  height: 20px;
 }
 
 .mdbase-icon-accent {
@@ -196,9 +156,8 @@
   white-space: nowrap;
 }
 
-.mdbase-nav-status[data-kind="offline"],
-.mdbase-nav-status[data-kind="paused"] {
-  color: var(--text-muted);
+.mdbase-nav-status[data-kind="problem"] {
+  color: var(--text-error);
 }
 
 .mdbase-workspace-content {
@@ -379,8 +338,7 @@
 
 .mdbase-type-meta,
 .mdbase-editor-path,
-.mdbase-form-description,
-.mdbase-progress-label {
+.mdbase-form-description {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
 }
@@ -428,8 +386,7 @@
   gap: 8px;
 }
 
-.mdbase-spec-badge,
-.mdbase-dirty {
+.mdbase-spec-badge {
   flex: 0 0 auto;
   padding: 2px 6px;
   border: 1px solid var(--background-modifier-border);
@@ -438,12 +395,6 @@
   font-family: var(--font-monospace);
   font-size: 10px;
   font-weight: var(--font-normal);
-}
-
-.mdbase-dirty {
-  border-color: var(--text-accent);
-  color: var(--text-accent);
-  font-family: var(--font-interface);
 }
 
 .mdbase-mobile-back {
@@ -474,7 +425,6 @@
 }
 
 .mdbase-editor-document,
-.mdbase-sync-document,
 .mdbase-issues-document {
   max-width: 760px;
   margin: 0 auto;
@@ -616,11 +566,6 @@
   width: min(240px, 34vw);
 }
 
-.mdbase-field-count {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
 details.mdbase-field-node {
   margin: 0;
   padding: 0;
@@ -728,7 +673,6 @@ details.mdbase-field-node {
   grid-row: 3;
 }
 
-.mdbase-field-remove,
 .mdbase-field-menu {
   grid-column: 3;
   grid-row: 1;
@@ -993,17 +937,14 @@ details.mdbase-field-node {
   width: 100%;
 }
 
-.mdbase-change-review ul,
 .mdbase-review-list {
   margin-bottom: 0;
 }
 
-.mdbase-change-review li[data-risk="high"]::marker,
 .mdbase-diagnostic-item[data-severity="error"] code {
   color: var(--text-error);
 }
 
-.mdbase-change-review li[data-risk="review"]::marker,
 .mdbase-diagnostic-item[data-severity="warning"] code {
   color: var(--text-warning);
 }
@@ -1138,8 +1079,7 @@ button.mdbase-yaml-problem:disabled {
   overflow-wrap: anywhere;
 }
 
-.mdbase-review-item,
-.mdbase-conflict-row {
+.mdbase-review-item {
   padding: 10px 0;
   border-bottom: 1px solid var(--background-modifier-border);
 }
@@ -1154,40 +1094,6 @@ button.mdbase-yaml-problem:disabled {
   color: var(--text-muted);
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
-}
-
-.mdbase-enrollment > button {
-  margin-top: 12px;
-}
-
-.mdbase-adoption-conflicts code {
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.mdbase-approval-link {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 0;
-  color: var(--text-muted);
-}
-
-.mdbase-approval-link button {
-  min-height: 44px;
-  margin-left: auto;
-}
-
-.mdbase-sync-document progress {
-  width: 100%;
-  height: 8px;
-  margin-top: 18px;
-}
-
-.mdbase-progress-label {
-  margin-top: 5px;
-  overflow-wrap: anywhere;
 }
 
 /* Default surfaces are quiet; configuration and diagnostics expand in place. */
@@ -1237,102 +1143,155 @@ button.mdbase-yaml-problem:disabled {
   gap: 12px;
 }
 
-.mdbase-sync-status {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+/* Sync: one heading that says how this vault is, then only what can be done. */
+.mdbase-sync {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 8px 24px calc(32px + var(--status-bar-height, 26px));
 }
 
-.mdbase-sync-heading h2 {
-  margin: 0 0 4px;
-  font-size: var(--font-ui-medium);
-  overflow-wrap: anywhere;
+.mdbase-sync p {
+  margin: 0 0 12px;
+  line-height: var(--line-height-normal);
 }
 
-.mdbase-sync-heading .mdbase-muted {
-  font-size: var(--font-ui-smaller);
-}
-
-.mdbase-sync-status > .mdbase-sync-actions {
-  grid-column: 2;
-  grid-row: 1;
-  margin: 0;
-}
-
-.mdbase-sync-status > .mdbase-sync-progress,
-.mdbase-sync-status > .mdbase-recovery-card,
-.mdbase-sync-status > .mdbase-approval-link,
-.mdbase-sync-status > .mdbase-notice,
-.mdbase-sync-status > .mdbase-review-reasons {
-  grid-column: 1 / -1;
-}
-
-.mdbase-sync-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.mdbase-file-policy > p {
-  max-width: 68ch;
-  margin: -6px 0 14px;
+.mdbase-sync .mdbase-muted {
   color: var(--text-muted);
-}
-
-.mdbase-file-class-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
-  gap: 8px;
-  margin: 0 0 10px;
-}
-
-.mdbase-file-class-grid label {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
   font-size: var(--font-ui-small);
 }
 
-.mdbase-file-class-grid label:hover {
-  border-color: var(--background-modifier-border-hover);
-  background: var(--background-modifier-hover);
+.mdbase-sync > .mdbase-actions {
+  justify-content: flex-start;
+  margin: 4px 0 16px;
 }
 
-.mdbase-file-class-grid input {
-  margin: 0;
+.mdbase-sync-heading {
+  margin: 8px 0 16px;
+  padding-left: 12px;
+  border-left: 3px solid var(--background-modifier-border);
 }
 
-.mdbase-sync-progress {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px 12px;
-  align-items: center;
-  margin-top: 18px;
-  padding: 12px 14px;
-  background: var(--background-secondary);
+.mdbase-sync-heading[data-tone="ok"] { border-left-color: var(--color-green, var(--text-success)); }
+.mdbase-sync-heading[data-tone="busy"] { border-left-color: var(--interactive-accent); }
+.mdbase-sync-heading[data-tone="attention"] { border-left-color: var(--text-warning); }
+.mdbase-sync-heading[data-tone="problem"] { border-left-color: var(--text-error); }
+
+.mdbase-sync-heading h2 {
+  margin: 0 0 2px;
+  font-size: var(--h3-size, var(--font-ui-large));
+  overflow-wrap: anywhere;
 }
 
-.mdbase-sync-progress progress {
-  grid-column: 1 / -1;
-  margin: 0;
-}
-
-.mdbase-sync-progress .mdbase-progress-label {
+.mdbase-sync-heading .mdbase-sync-detail {
   margin: 0;
   color: var(--text-muted);
 }
 
-.mdbase-sync-progress button {
-  min-height: 30px;
+.mdbase-sync-section {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-primary-alt);
+}
+
+.mdbase-sync-section h3 {
+  margin: 0 0 8px;
+  font-size: var(--font-ui-medium);
+}
+
+.mdbase-sync-section .setting-item {
+  padding: 8px 0;
+  border-top: none;
+}
+
+.mdbase-sync-section .mdbase-actions {
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.mdbase-sync-choice {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.mdbase-sync-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-primary);
+  cursor: pointer;
+}
+
+.mdbase-sync-option.is-selected {
+  border-color: var(--interactive-accent);
+}
+
+.mdbase-sync-option input {
+  margin: 3px 0 0;
+}
+
+.mdbase-sync-option-title {
+  font-weight: var(--font-semibold, 600);
+}
+
+.mdbase-sync-notice {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--text-warning);
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-secondary);
+}
+
+.mdbase-sync-notice p:last-child {
+  margin-bottom: 0;
+}
+
+.mdbase-sync .mdbase-status-list {
+  margin-bottom: 12px;
+}
+
+.mdbase-hold-list {
+  display: grid;
+  gap: 12px;
+}
+
+.mdbase-hold {
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mdbase-hold-path {
+  font-weight: var(--font-semibold, 600);
+  overflow-wrap: anywhere;
+}
+
+.mdbase-hold .mdbase-disclosure {
+  margin: 6px 0;
+}
+
+.mdbase-hold-label {
+  margin: 8px 0 4px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.mdbase-hold-text {
+  max-height: 240px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .mdbase-recovery-card {
@@ -1361,312 +1320,6 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-recovery-card[data-kind="offline"],
 .mdbase-recovery-card[data-kind="paused"] {
   border-left-color: var(--text-muted);
-}
-
-.mdbase-recovery-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.mdbase-sync-status > .mdbase-sync-coexistence {
-  grid-column: 1 / -1;
-  margin-top: 14px;
-  border-bottom: 0;
-  border-left: 3px solid var(--text-warning);
-}
-
-.mdbase-transfer-review {
-  margin: 0 0 16px;
-  border-top: 0;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.mdbase-transfer-heading {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 18px 0;
-}
-
-.mdbase-transfer-heading h3,
-.mdbase-transfer-heading p,
-.mdbase-transfer-group-heading h4 {
-  margin: 0;
-}
-
-.mdbase-transfer-heading h3,
-.mdbase-transfer-group-heading h4 {
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-medium);
-}
-
-.mdbase-transfer-heading p {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-}
-
-.mdbase-transfer-total,
-.mdbase-transfer-count {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  font-variant-numeric: tabular-nums;
-}
-
-.mdbase-transfer-total {
-  padding: 0;
-}
-
-.mdbase-transfer-group {
-  border-top: 1px solid var(--background-modifier-border);
-}
-
-.mdbase-transfer-group-heading {
-  display: grid;
-  min-height: 46px;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 9px;
-}
-
-.mdbase-transfer-group-icon {
-  display: inline-flex;
-  color: var(--text-muted);
-}
-
-.mdbase-transfer-group[data-direction="attention"] .mdbase-transfer-group-icon {
-  color: var(--text-warning);
-}
-
-.mdbase-transfer-group-icon svg {
-  width: 16px;
-  height: 16px;
-}
-
-.mdbase-transfer-ledger {
-  border-top: 1px solid var(--background-modifier-border-hover);
-}
-
-.mdbase-transfer-row {
-  display: grid;
-  min-height: 36px;
-  grid-template-columns: 62px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--background-modifier-border-hover);
-}
-
-.mdbase-transfer-action {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-normal);
-}
-
-.mdbase-transfer-action[data-action="delete"],
-.mdbase-transfer-action[data-action="replace"],
-.mdbase-transfer-action[data-action="fix"] {
-  color: var(--text-warning);
-}
-
-.mdbase-transfer-body {
-  min-width: 0;
-}
-
-.mdbase-transfer-body code {
-  display: block;
-  overflow: hidden;
-  color: var(--text-normal);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mdbase-transfer-path {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-}
-
-.mdbase-transfer-path code {
-  min-width: 0;
-}
-
-.mdbase-transfer-kind {
-  flex: 0 0 auto;
-  padding: 1px 5px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  color: var(--text-faint);
-  font-size: 10px;
-  font-weight: var(--font-semibold);
-  letter-spacing: .025em;
-  line-height: 1.35;
-  text-transform: uppercase;
-}
-
-.mdbase-transfer-size {
-  flex: 0 0 auto;
-  color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
-  font-variant-numeric: tabular-nums;
-}
-
-.mdbase-activity .mdbase-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.mdbase-activity-row {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 9px;
-  padding: 10px 0;
-  border-top: 1px solid var(--background-modifier-border-hover);
-}
-
-.mdbase-activity-row > span:first-child { color: var(--text-muted); }
-.mdbase-activity-row[data-tone="success"] > span:first-child { color: var(--text-success); }
-.mdbase-activity-row[data-tone="attention"] > span:first-child { color: var(--text-warning); }
-.mdbase-activity-row[data-tone="error"] > span:first-child { color: var(--text-error); }
-.mdbase-activity-row svg { width: 16px; height: 16px; }
-.mdbase-activity-row strong { display: block; }
-.mdbase-activity-row > div { min-width: 0; overflow-wrap: anywhere; }
-.mdbase-activity-row > div > div { margin: 2px 0; color: var(--text-muted); }
-
-/* Sync history: runs expand to the files they changed. */
-.mdbase-history-controls {
-  padding: 8px 0;
-}
-
-.mdbase-history-controls input[type="search"] {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.mdbase-history-run > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.mdbase-history-run > summary::-webkit-details-marker {
-  display: none;
-}
-
-.mdbase-history-run > summary > div > span {
-  display: block;
-}
-
-.mdbase-history-chevron {
-  align-self: center;
-  color: var(--text-faint);
-}
-
-.mdbase-history-run[open] .mdbase-history-chevron {
-  transform: rotate(90deg);
-}
-
-.mdbase-history-files {
-  margin: 0 0 8px 31px;
-}
-
-.mdbase-history-direction {
-  display: inline-flex;
-  flex: 0 0 auto;
-  color: var(--text-faint);
-}
-
-.mdbase-history-direction svg,
-.mdbase-history-chevron svg {
-  width: 14px;
-  height: 14px;
-}
-
-.mdbase-note-history-row {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--background-modifier-border-hover);
-}
-
-.mdbase-conflict-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 16px;
-}
-
-.mdbase-conflict-summary { min-width: 0; overflow-wrap: anywhere; }
-.mdbase-conflict-comparison { grid-column: 1 / -1; margin-top: 12px; }
-
-.mdbase-conflict-legend {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 6px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
-.mdbase-conflict-legend .is-local { color: var(--text-error); }
-.mdbase-conflict-legend .is-remote { color: var(--text-success); }
-
-.mdbase-conflict-diff {
-  max-height: 360px;
-  margin: 0;
-  padding: 8px 0;
-  overflow: auto;
-  background: var(--code-background);
-  font-size: var(--font-ui-smaller);
-}
-
-.mdbase-conflict-diff > div { display: grid; grid-template-columns: 24px minmax(max-content, 1fr); padding: 0 10px; }
-.mdbase-conflict-diff > .is-local { background: rgba(var(--color-red-rgb), .12); }
-.mdbase-conflict-diff > .is-remote { background: rgba(var(--color-green-rgb), .12); }
-
-.mdbase-conflict-sides {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.mdbase-conflict-side {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-secondary);
-}
-
-.mdbase-conflict-side h4 { margin: 0 0 8px; }
-.mdbase-conflict-side code,
-.mdbase-conflict-digest { overflow-wrap: anywhere; }
-.mdbase-conflict-side > div { margin-top: 5px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
-.mdbase-conflict-image-preview { display: block; max-width: 100%; max-height: 240px; margin-top: 10px; object-fit: contain; }
-
-.mdbase-transfer-body div,
-.mdbase-transfer-empty,
-.mdbase-transfer-more {
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
-.mdbase-transfer-empty,
-.mdbase-transfer-more {
-  margin: 0;
-  padding: 10px 0 14px 33px;
-}
-
-.mdbase-transfer-review > .mdbase-inline-error,
-.mdbase-transfer-review > .mdbase-inline-message {
-  margin: 14px 0;
 }
 
 .mdbase-issue-group {
@@ -1846,7 +1499,6 @@ button.mdbase-issue-file-button:hover {
   min-height: 40px;
   margin: 18px auto;
 }
-
 
 /* Type list counts and unsaved drafts */
 
@@ -2064,48 +1716,6 @@ button.mdbase-match-row:hover {
   padding: 4px 0;
 }
 
-/* Sync scope, enrollment target and review rows */
-
-.mdbase-sync-scope {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  margin-top: 2px;
-  overflow-wrap: anywhere;
-}
-
-.mdbase-review-reasons {
-  margin-top: 6px;
-  font-size: var(--font-ui-small);
-}
-
-.mdbase-sync-target-value {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  font-size: var(--font-ui-small);
-  overflow-wrap: anywhere;
-}
-
-.mdbase-enrollment-actions {
-  justify-content: flex-end;
-  padding-top: 12px;
-}
-
-button.mdbase-transfer-open code {
-  color: var(--text-normal);
-}
-
-button.mdbase-transfer-open:hover code {
-  color: var(--text-accent);
-}
-
-.mdbase-transfer-body .mdbase-conflict-comparison {
-  margin-top: 8px;
-}
-
 /* Issues grouped by rule */
 
 .mdbase-issue-rule-title {
@@ -2135,10 +1745,6 @@ button.mdbase-transfer-open:hover code {
   .mdbase-topbar {
     min-height: 52px;
     padding: 0 8px 0 12px;
-  }
-
-  .mdbase-title {
-    display: none;
   }
 
   .mdbase-nav {
@@ -2213,7 +1819,6 @@ button.mdbase-transfer-open:hover code {
     min-height: 44px;
   }
 
-
   .mdbase-mode-switch {
     width: calc(100% - 24px);
     margin: 12px;
@@ -2225,8 +1830,8 @@ button.mdbase-transfer-open:hover code {
   }
 
   .mdbase-editor-document,
-  .mdbase-sync-document,
-  .mdbase-issues-document {
+  .mdbase-issues-document,
+  .mdbase-sync {
     padding: 4px 14px 48px;
   }
 
@@ -2315,7 +1920,6 @@ button.mdbase-transfer-open:hover code {
     grid-row: 3;
   }
 
-  .mdbase-field-remove,
   .mdbase-field-menu {
     grid-column: 3;
     grid-row: 1;
@@ -2376,71 +1980,21 @@ button.mdbase-transfer-open:hover code {
     min-height: 44px;
   }
 
-  .mdbase-conflict-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-  }
-
   .mdbase-document-header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .mdbase-conflict-sides { grid-template-columns: 1fr; }
   .mdbase-recovery-card { grid-template-columns: 1fr; }
 
   .mdbase-status-row {
     grid-template-columns: 110px minmax(0, 1fr);
   }
 
-  .mdbase-transfer-heading {
-    gap: 8px;
-  }
-
   .mdbase-workspace .mdbase-icon-button,
   .mdbase-disclosure > summary {
     min-height: 44px;
     min-width: 44px;
-  }
-
-  .mdbase-sync-status {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .mdbase-sync-status > .mdbase-sync-actions {
-    grid-column: 1;
-    grid-row: auto;
-    justify-content: flex-start;
-  }
-
-  .mdbase-sync-actions {
-    flex-wrap: wrap;
-  }
-
-  .mdbase-sync-actions button,
-  .mdbase-sync-progress button,
-  .mdbase-transfer-row button,
-  .mdbase-recovery-actions button,
-  .mdbase-activity-row button {
-    min-height: 44px;
-  }
-
-  .mdbase-file-class-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .mdbase-file-class-grid label {
-    min-height: 44px;
-  }
-
-  .mdbase-transfer-row {
-    grid-template-columns: 58px minmax(0, 1fr);
-    gap: 8px;
-  }
-
-  .mdbase-transfer-row > button {
-    grid-column: 2;
-    width: fit-content;
   }
 
   .mdbase-issue-controls {
@@ -2481,9 +2035,6 @@ button.mdbase-transfer-open:hover code {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .mdbase-history-chevron {
-    transition: transform 150ms ease;
-  }
 
   .mdbase-nav-button,
   .mdbase-type-row,
@@ -2492,28 +2043,17 @@ button.mdbase-transfer-open:hover code {
   }
 }
 
-/* Obsidian's developer mobile emulation keeps a desktop-width viewport. */
-.is-mobile .mdbase-title {
-  display: none;
-}
-
 .is-mobile .mdbase-nav-button,
 .is-mobile .mdbase-editor-actions button,
 .is-mobile .mdbase-form-row > input,
 .is-mobile .mdbase-form-row > select,
 .is-mobile .mdbase-actions button,
+.is-mobile .mdbase-sync-option,
+.is-mobile .mdbase-sync input[type="text"],
 .is-mobile .mdbase-section-header button,
 .is-mobile .mdbase-issue-controls input,
 .is-mobile .mdbase-issue-controls select,
 .is-mobile .mdbase-load-more {
-  min-height: 44px;
-}
-
-.is-mobile .mdbase-file-class-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.is-mobile .mdbase-file-class-grid label {
   min-height: 44px;
 }
 
@@ -2576,8 +2116,7 @@ button.mdbase-transfer-open:hover code {
   grid-row: 3;
 }
 
-.is-mobile .mdbase-field-menu,
-.is-mobile .mdbase-field-remove {
+.is-mobile .mdbase-field-menu {
   grid-column: 3;
   grid-row: 1;
   min-height: 44px;
@@ -2674,29 +2213,6 @@ button.mdbase-transfer-open:hover code {
   min-height: 80px;
 }
 
-.mdbase-folder-exclusions {
-  display: grid;
-  min-width: 0;
-  gap: 8px;
-}
-
-.mdbase-folder-exclusions .mdbase-inline-error:empty {
-  display: none;
-}
-
-.mdbase-folder-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.mdbase-folder-chips button {
-  height: auto;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.is-mobile .mdbase-create-note button,
-.is-mobile .mdbase-folder-chips button {
+.is-mobile .mdbase-create-note button {
   min-height: 44px;
 }

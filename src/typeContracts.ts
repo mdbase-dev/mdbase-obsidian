@@ -1,4 +1,4 @@
-import type { CollectionContractDescriptor, JsonObject } from "@mdbase-dev/connect-protocol";
+import type { CollectionContractDescriptor, JsonObject } from "./contractTypes";
 import { schemaFromV03Fields } from "./mdbaseCore";
 import type {
   TypeEditorContractImplementation,

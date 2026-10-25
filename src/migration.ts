@@ -6,7 +6,8 @@ import {
   TFolder,
   Vault,
 } from "obsidian";
-import { portableMirrorRuntime } from "@mdbase-dev/connect-sync/mirror";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import {
   fieldsFromV03Schema,
   formatMarkdown,
@@ -133,7 +134,7 @@ function clone<T>(value: T): T {
 }
 
 function digest(value: string): string {
-  return portableMirrorRuntime.digest(value);
+  return bytesToHex(sha256(utf8ToBytes(value)));
 }
 
 function stableStringify(value: unknown): string {

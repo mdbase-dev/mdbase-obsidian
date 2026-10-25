@@ -12,6 +12,7 @@ import {
 } from "./workspace/shared";
 import { SyncPane } from "./workspace/syncPane";
 import { TypesPane } from "./workspace/typesPane";
+import { summarize } from "./sync/words";
 
 export type { MdbaseWorkspaceHost, MdbaseWorkspaceSchema } from "./workspace/shared";
 
@@ -36,7 +37,6 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   private readonly navigationId = `mdbase-workspace-${++MdbaseWorkspaceView.nextNavigationId}`;
   private refreshVersion = 0;
   private unsubscribeSync: (() => void) | null = null;
-  private syncRenderTimer: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, readonly host: MdbaseWorkspaceHost) {
     super(leaf);
@@ -84,25 +84,12 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
         void this.types.saveCurrentType();
       }
     });
-    // Progress is current in the session immediately, but a burst of transfer
-    // callbacks needs only one presentation update. Decisions/outcomes never wait.
-    let previous = this.host.sync.state;
-    this.unsubscribeSync = this.host.sync.subscribe(() => {
-      const state = this.host.sync.state;
-      const progressOnly = (Object.keys(state) as Array<keyof typeof state>).every((key) =>
-        key === "progress" || key === "fileProgress" || previous[key] === state[key]);
-      previous = state;
-      if (progressOnly && (state.progress || state.fileProgress)) {
-        if (this.destination === "sync" && this.syncRenderTimer === null) {
-          this.syncRenderTimer = window.setTimeout(() => {
-            this.syncRenderTimer = null;
-            if (this.destination === "sync") this.render();
-          }, 100);
-        }
-        return;
-      }
-      this.cancelSyncRender();
-      if (this.destination === "sync") this.render();
+    // Inputs on Sync keep their text across renders; a background status
+    // update rebuilds Sync only when nothing there has focus.
+    this.unsubscribeSync = this.host.syncController.subscribe(() => {
+      const active = this.containerEl.ownerDocument.activeElement;
+      const typing = active !== null && this.containerEl.contains(active) && active.matches("input, textarea");
+      if (this.destination === "sync" && !typing) this.render();
       else this.renderTopbarOnly();
     });
     // Obsidian calls setState after onOpen. Load there, once the restored or
@@ -113,14 +100,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     this.refreshVersion++;
     this.unsubscribeSync?.();
     this.unsubscribeSync = null;
-    this.cancelSyncRender();
     await this.types.dispose();
     this.sync.dispose();
-  }
-
-  private cancelSyncRender(): void {
-    if (this.syncRenderTimer !== null) window.clearTimeout(this.syncRenderTimer);
-    this.syncRenderTimer = null;
   }
 
   async refresh(forceReload = false): Promise<void> {
@@ -177,12 +158,10 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     return this.types.editType(path);
   }
 
-  focusSyncSection(section: "activity" | "conflicts"): void {
-    this.sync.focusSection(section);
-  }
-
-  reconnectCollection(): Promise<void> {
-    return this.sync.reconnectCollection();
+  /** Open Sync with a collection link from another device filled in. */
+  prefillJoin(collection: string, name: string): void {
+    this.sync.prefillJoin(collection, name);
+    this.showDestination("sync");
   }
 
   render(): void {
@@ -215,25 +194,21 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (this.destination === "types") this.types.afterRender(root);
   }
 
-  /** Conflicts, or a plan held for review, deserve a badge on the Sync tab. */
+  /** Files waiting for a choice, or devices waiting for approval, badge the Sync tab. */
   private syncAttention(): { count: number; label: string } | null {
-    const { status, preview } = this.host.sync.state;
-    const conflicts = status?.conflicts.length ?? 0;
-    if (conflicts) return { count: conflicts, label: `${conflicts} sync ${conflicts === 1 ? "conflict" : "conflicts"}` };
-    const safety = this.host.sync.safety();
-    const changes = safety && !safety.safe ? preview?.plan.actions.length ?? 0 : 0;
-    return changes ? { count: changes, label: `${changes} ${changes === 1 ? "change needs" : "changes need"} review` } : null;
+    const { holds, approvals, merged } = this.host.syncController.snapshot;
+    if (holds.length) return { count: holds.length, label: `${holds.length} ${holds.length === 1 ? "file needs" : "files need"} your choice` };
+    if (approvals.length) return { count: approvals.length, label: `${approvals.length} ${approvals.length === 1 ? "device wants" : "devices want"} to join` };
+    if (merged.length) return { count: merged.length, label: `${merged.length} ${merged.length === 1 ? "change" : "changes"} to check` };
+    return null;
   }
 
-  /** Mobile has no status bar; trouble must remain discoverable outside Sync. */
+  /** Mobile has no status bar; sync trouble must remain discoverable outside Sync. */
   private syncTabStatus(): { label: string; detail: string; kind: string } | null {
-    if (this.destination === "sync" || !this.host.getMirrorProfile()) return null;
-    const { problem, paused, status, progress, fileProgress } = this.host.sync.state;
-    if (progress || fileProgress) return null;
-    const kind = paused ? "paused" : problem?.kind ?? (status?.recovery_required ? "recovery" : null);
-    if (!kind || kind === "busy") return null;
-    const labels = { offline: "Offline", auth: "Sign in", device: "Set up", internal: "Error", decision: "Review", recovery: "Review", paused: "Paused" };
-    return { kind, label: labels[kind], detail: paused ? "Sync is paused" : problem?.title ?? "Synchronization needs recovery" };
+    if (this.destination === "sync") return null;
+    const summary = summarize(this.host.syncController.snapshot);
+    if (!summary.syncing || (summary.tone !== "attention" && summary.tone !== "problem")) return null;
+    return { kind: summary.tone, label: summary.tone === "problem" ? "Problem" : "Check", detail: summary.detail };
   }
 
   /** Refresh tab badges without rebuilding the active pane (and losing its focus). */

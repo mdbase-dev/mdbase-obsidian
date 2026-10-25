@@ -1,0 +1,14 @@
+spec_version: 0.3.0
+name: mdbase test vault
+description: A small local collection for trying the plugin by hand.
+settings:
+  types_folder: _types
+  explicit_type_keys:
+    - type
+  default_strict: false
+  include_subfolders: true
+  exclude:
+    - _types
+    - .obsidian
+    - .mdbase
+    - .trash

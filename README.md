@@ -1,18 +1,21 @@
 # mdbase for Obsidian
 
-The Obsidian gateway to mdbase v0.3 collections and mdbase Connect.
+The Obsidian gateway to mdbase v0.3 collections and mdbase sync.
 
 The plugin is deliberately type-first. Its main workspace provides:
 
 - a searchable type workbench with guided and YAML editing;
 - local collection initialization;
 - read-only support for mdbase v0.2.x and reviewed migration to v0.3.x;
-- hosted collection enrollment, sync preview, mirroring, progress, and conflict handling;
+- sync through the mdbase desktop app: sign-in, Private or Cloud copy
+  collections, live status, and decisions about edits made in two places;
 - collection validation with bounded issue rendering for large vaults.
 
-It works through Obsidian's Vault, HTTP, IndexedDB, and SecretStorage APIs. The
-production bundle has no Node filesystem dependency and is checked against a
-mobile bundle budget.
+Types and validation work through Obsidian's Vault APIs on desktop and mobile.
+Sync is desktop-only: the plugin talks to the mdbase desktop app on the same
+computer and never syncs files itself. Node modules and the sync client load
+only when sync is used, so the bundle stays safe on mobile (checked by
+`npm run check:mobile`).
 
 Canonical view files remain ordinary v0.3 records in this adapter. When a
 collection materializes `_types/view.md` (normally referring to
@@ -23,10 +26,9 @@ leaves execution and presentation to query-capable companion tools.
 
 ## Collection roles
 
-On first open, the workspace asks one question: where does the collection
-live? **Start a collection** makes this vault its source. **Copy from Connect**
-makes this vault a synced copy of a hosted collection. A local collection can
-later be uploaded to Connect from the Sync tab.
+On first open, the workspace asks where the collection lives. **Start a
+collection** makes this vault a local mdbase collection. The **Sync** tab turns
+sync on for the vault, or adds a collection you already sync on another device.
 
 ### Local collection
 
@@ -37,74 +39,40 @@ packs with reviewed, digest-verified installation and a portable lockfile;
 it does not invent a starter type. Local starter customizations are preserved.
 Pack upgrades and custom mappings remain in mdbase editor.
 
-### Hosted mirror
+### Sync
 
-**Copy from Connect** enrolls the vault through mdbase Connect. The
-portable directory-mirror engine syncs hosted resources, records, and opt-in
-collection files into the vault. A mirror role marker is stored below
-`.mdbase/`; credentials are stored only in Obsidian SecretStorage.
+Sync needs the mdbase desktop app on the same computer. The app runs a
+background service that watches the vault folder and syncs it; the plugin is a
+window onto it. Obsidian keeps saving files as usual, and edits from other
+devices arrive in open notes without losing the cursor.
 
-The plugin refuses to enroll a directory that contains local collection
-authority metadata. Sync is preflighted, protected by an in-process lease, and
-conservative around conflicts.
+- **Sign in** opens the mdbase sign-in page in the browser (with **Copy sign-in
+  link** if no browser opens). Sign-in belongs to the computer, not the vault.
+- **Sync this vault** offers **Cloud copy** (recommended: mdbase keeps a copy
+  online, so web apps and new devices get notes straight away) or **Private**
+  (end-to-end encrypted; for now it works on the first computer only, because
+  another computer can't be approved yet).
+- **Add a collection you already sync** takes the link copied from another
+  device's Sync tab. An empty vault becomes the collection; otherwise it goes
+  into a new folder.
+- The first time Obsidian talks to the app, the app asks to allow it.
 
-**Sync now** plans the sync and applies it straight away when every change is
-routine: note creates, updates and renames. A plan stops for review when it
-contains the first sync, a rebuild, deletions, conflicts, attachment uploads,
-blocking issues, more than 200 changes, or more than 25 MiB. The review is an
-exact transfer ledger grouped by downloads, uploads, and items needing
-attention, with the reasons it was held. If the hosted head or local changes
-move after review, the plugin stops and asks for a fresh review.
+The status bar and the Sync tab say whether the vault is synced, sending or
+getting changes, offline (changes stay on this computer), Private on a second computer,
+or stopped, in plain words with the next step. Files changed in two places at
+once are listed with **Keep this computer's**, **Use the other version** and
+**Keep both**; edits that mdbase merged on its own are listed under "changes to
+check", with a way to use the other value. **Copy link** shares the collection
+with your other devices.
 
-**Sync automatically** (off by default, in settings) applies routine plans in
-the background after local edits settle and when the periodic status check
-finds changes. Plans that need review are never applied in the background; the
-status bar shows "Review N changes" and the Sync tab carries a badge. Sync
-can be stopped safely after the current request without losing its durable
-checkpoint, and path collisions never overwrite local files silently. Disabling
-the plugin cancels sync/enrollment/adoption and fences subsequent mirror content
-writes; an already-issued Vault write or HTTP request may still finish.
+Settings carry sign-out, disconnecting this vault (notes stay; other devices
+keep syncing) and the app location for unusual installs. Phones and tablets
+show types and validation; sync there is not available yet.
 
-Markdown always syncs. Binary files are an explicit per-device choice in
-settings, grouped
-as images, audio, video, PDFs, and other files, with collection-relative folder
-exclusions. Hidden, reserved, Markdown, and non-portable file paths are never
-materialized. Downloads and uploads are digest-verified; writable uploads are
-staged in a chunked, content-addressed IndexedDB cache so an interrupted sync
-can resume safely. Binary sync and adoption currently enforce a **32 MiB per-file
-limit** on desktop and mobile: Obsidian's Vault APIs require whole-file buffers,
-so chunked network transfer does not imply bounded-memory streaming. Oversized
-files fail explicitly; exclude their folder from file sync before retrying.
-Binary creates, updates, moves, deletes, and conflicts appear
-as files—not Markdown—in the preflight ledger. Local collection adoption uses
-the same policy and stages exact bytes for both warm and fenced snapshots.
-
-The status bar reports whether the mirror is synced, has changes waiting, is
-transferring a named file, is paused, has changes held for review, or needs
-attention. Sync history is one device-local log of transfers and events
-(reconnects, conflict decisions, pauses, failures); events that need
-acknowledgement stay pinned until dismissed. The Sync tab shows byte progress
-for large files,
-and translates expired approval, offline service, stale review, cancellation,
-and durable recovery into explicit next actions. Conflict review provides a
-bounded Markdown diff or binary metadata and a local image preview, with
-**Keep local**, **Use hosted**, and collision-safe **Keep both** decisions.
-
-Connection details, reconnect, attachments, excluded folders and disconnect
-live in the plugin's settings tab.
-
-Disconnecting is explicit: retain the vault as a local unsynced copy, or remove
-only files that still exactly match the last durable checkpoint. Locally
-changed files are always preserved. The plugin removes the connection before
-it starts file deletion, so failed settings persistence cannot turn local
-cleanup into remote deletions.
-
-Commands: **Open workspace**, **Create type definition**, **Edit type
-definition** (the current note's type, or a picker), **Create note from type**,
-**Validate current note**, **Validate collection**, and, for a synced vault,
-**Sync now** and **Show sync history for current note**. **Initialize
-collection**, **Cancel current sync**, **Resolve sync conflicts** and
-**Reconnect collection** appear only when they apply.
+Commands: **Open workspace**, **Open sync**, **Create type definition**, **Edit
+type definition** (the current note's type, or a picker), **Create note from
+type**, **Validate current note** and **Validate collection**. **Initialize
+collection** appears only when it applies.
 
 ## Type workbench
 
@@ -191,43 +159,40 @@ npm test
 npm run build
 ```
 
-Stability regression tests cover interrupted adoption cleanup, unload during
-binary materialization, nested quick fixes, binary size limits, and production
-IndexedDB adapters using `fake-indexeddb` (including aborted transactions and
-mirror restart recovery). These are not a substitute for real Obsidian/mobile
-suspension, quota, and restart acceptance testing.
-
 Additional gates:
 
 ```bash
 npm run check:mobile
 npm run profile:testvault
 npm run build:test
-npm run build:test:staging
 ```
 
-`build:test` copies the production-default build to configured test vaults.
-`build:test:staging` builds the enrollment UI with
-`https://connect-staging.mdbase.dev` as its default and copies that exact bundle.
+`build:test` copies the build to configured test vaults.
 `profile:testvault` scans the registered Obsidian vault named `test` without
 writing it and enforces checked-in schema, migration-analysis, validation, and
 issue-render budgets. Set `OBSIDIAN_TEST_VAULT` to profile another registered
 disposable vault with the exact installed bundle.
 
-The Connect protocol and sync SDKs are pinned to `0.1.0-beta.120`, and mdbase
-interop is pinned to `0.1.0-rc.2`. `npm ci` applies a version-specific sync SDK
-reliability patch (see [`patches/README.md`](patches/README.md)). Update
-`package.json`, regenerate `package-lock.json`, rebase or remove the patch, and
-rerun the binary round-trip, lossless (`npm run test:lossless`, part of
-`npm test`) and mobile gates when advancing them. See
-[SDK consumer qualification](docs/lossless-sdk-acceptance.md).
+`mdbase-test-vault/` is a small committed local collection for trying the
+plugin in a real Obsidian: `book`, `person` and `note` types, valid records,
+one record that breaks every rule of its type, and one typed only by its path.
+Its `Welcome.md` says what each is for, and a unit test keeps the records
+validating as described. Open a copy of it, not the committed folder, so test
+runs don't leave plugin state behind; never enroll it in Connect.
+
+Sync uses `@mdbase-dev/sdk` (its `thin-client` entry, loaded on demand) from
+the tarball in `vendor/`, and the `mdbase` command-line tool that ships with the
+desktop app (`mdbase --json …`) for setup and status. mdbase interop is pinned to
+`0.1.0-rc.2`. To update the SDK, replace the tarball, update `package.json` and
+`package-lock.json`, and rerun the tests and `npm run check:mobile`.
 
 ## Compatibility
 
 - Authoring target: mdbase v0.3.x
 - Read and migration input: mdbase v0.2.x
 - Obsidian minimum version: 1.11.4
-- Desktop and mobile supported
+- Types and validation on desktop and mobile; sync on desktop (Windows, macOS,
+  Linux) with the mdbase desktop app
 
 The plugin is not a general record editor, query dashboard, or Connect server
 administration client.

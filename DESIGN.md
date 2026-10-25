@@ -9,7 +9,7 @@ The plugin should feel like an Obsidian core plugin: quiet lists, compact contro
 Use one first-class workspace view with three destinations, each implemented as its own pane module (`src/workspace/`) behind a small shell:
 
 - Types — searchable type list and editor.
-- Sync — local or hosted collection status and actions.
+- Sync — this vault's sync status, setup and decisions.
 - Issues — validation, migration, and synchronization problems.
 
 Destinations use standard tab-like controls or compact navigation. They are not dashboard cards.
@@ -24,7 +24,7 @@ On mobile, the list and editor become separate navigation states. Controls remai
 ## Information and copy
 
 - Types opens with name, description, and fields. Matching, options, application contracts, and detailed change review expand in place.
-- Sync opens with connection status and one primary action, **Sync now**. It applies routine plans directly and shows the review, with its reasons, only when a plan needs consent (a burst of deletions made on this device, a rebuild, or a first sync that changes Connect). Connection, attachment and disconnect settings live in the plugin settings tab; history is a secondary disclosure. Keep transfer paths, directions, destructive actions, conflicts, and blocking errors visible when relevant.
+- Sync opens with its status sentence and only the actions that apply now. Account, disconnect and app location live in the plugin settings tab.
 - Issues has one count and one validation action. Do not show empty filters, repeated summaries, or a second empty-state panel.
 - Prefer labels to explanations. Remove sentences that merely describe the adjacent control or promise implementation details such as checkpoint precision.
 - Keep concise, explicit warnings at upload, authority-transfer, schema-change, and deletion boundaries. Fewer words must not mean less informed consent.
@@ -62,18 +62,17 @@ The YAML mode uses an ordinary textarea/editor surface with monospace text, clea
 
 ## Synchronization
 
-The Sync destination answers four questions in order:
+The mdbase desktop app does the syncing; the Sync destination is a window onto it for this vault. It answers, in order:
 
-1. What role is this vault in?
-2. Is it connected and safe to sync?
-3. What happened last time?
-4. What action is available now?
+1. Is this vault synced?
+2. Is it healthy, and if not, who has to act?
+3. What can be done now?
 
-Progress is expressed with concise text and a standard progress indicator. Conflicts are settled automatically: merged, restored, or kept as a `(local conflict copy)` beside the hosted version, each recorded in history. Only conflicts Connect refused, or that changed while being settled, remain as a list of paths with explicit resolution actions. Error messages state what was left unchanged.
+The heading is one label and one sentence from the same summary the status bar uses (`src/sync/words.ts`), with a tone (ok, busy, quiet, attention, problem) carried by theme colours. Offline is quiet ("changes are saved here"); a stopped app, a declined link, a signed-out computer and a Private collection on a second computer each say what to do and where. Errors from mdbase are translated by code and reason, never shown raw.
 
-Problems read by who must act. Offline is calm (muted card, "Trying again in …", **Retry now**); Connect approval and a copied vault ask for **Sign in again** / **Set up this device**; a paused sync offers **Resume sync**; an unexpected failure offers **Try again** and **Copy diagnostics**. When another sync service (Obsidian Sync, LiveSync, Remotely Save, Git, or a cloud-drive folder) also manages the vault, a one-line warning says so.
+Setup is two choices on one surface: **Cloud copy** (recommended) or **Private**, and adding a collection from a link copied on another device. Keys, fingerprints, devices and escrow stay out of the plugin: Private is described by what it means for the person (only your devices can read it; for now it works on the first computer only).
 
-The first run asks one question in Types: start a collection here, or copy one from Connect. Enrollment is then an inline setup flow in the Sync destination; a local collection is offered **Upload to Connect** there instead. Enrollment codes and credentials are treated as secrets and disappear from the surface after use.
+Files changed in two places are listed by path with plain choices. Merges mdbase made on its own are listed as "changes to check" until acknowledged. Sign-out, disconnect and the app location live in the settings tab, each behind a confirmation that says notes stay on this computer.
 
 ## Migration
 
