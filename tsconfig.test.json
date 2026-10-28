@@ -25,6 +25,7 @@
     "src/typeEditorTypes.ts",
     "src/trailingDebouncer.ts",
     "src/sync/*.ts",
+    "src/sync/native/embedded.d.ts",
     "test/**/*.ts"
   ]
 }

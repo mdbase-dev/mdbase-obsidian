@@ -2,12 +2,12 @@
 
 ## Product promise
 
-mdbase for Obsidian is the native Obsidian gateway to an mdbase collection. It makes type definitions understandable and safe to edit, and it syncs a vault through the mdbase desktop app without turning Obsidian into a second administration dashboard.
+mdbase for Obsidian is the native Obsidian gateway to an mdbase collection. It makes type definitions understandable and safe to edit, and it syncs a vault without turning Obsidian into a second administration dashboard. When the mdbase desktop app owns the folder, Obsidian connects to it; otherwise the plugin uses the mdbase SDK.
 
 The plugin supports two collection roles:
 
 - A local collection, initialized by writing a canonical mdbase v0.3 `mdbase.yaml`.
-- A synced collection (Cloud copy or Private), kept in sync by the mdbase desktop app on the same computer.
+- A synced collection (Cloud copy or Private), kept in sync by the folder’s owner: mdbase desktop or the plugin’s SDK replica.
 
 The local vault remains useful while offline. Sync should feel like a mature desktop sync client: it runs continuously, edits from other devices arrive in open notes, network failures are ridden out, and no edit is lost. Edits made in two places are merged where possible; otherwise the person chooses, and the plugin says so in plain words.
 
@@ -37,7 +37,7 @@ The local vault remains useful while offline. Sync should feel like a mature des
 
 ### Sync a vault
 
-- Sign in through the browser; the mdbase app holds the credentials, never the plugin or the vault.
+- Sign in through the browser. The SDK keeps its account state in per-vault browser storage; credentials are never written into synced files.
 - Turn sync on as Cloud copy or Private, or add a collection already synced on another device.
 - Tell synced, sending, offline, waiting for approval, stopped and signed-out apart, with the next step.
 - Let the person decide about files changed in two places, and check merges mdbase made on its own.
@@ -66,7 +66,7 @@ The local vault remains useful while offline. Sync should feel like a mature des
 
 - A general-purpose record editor or database dashboard.
 - Automatic background sync that cannot communicate failures to the user. Background sync reports problems in the status bar and Sync destination and backs off rather than failing silently.
-- Syncing files itself, or syncing on phones and tablets (not yet).
+- Syncing on phones and tablets (not yet).
 - Server administration, collection creation, billing, or access-policy management.
 - Silent or automatic v0.2 migration.
 
