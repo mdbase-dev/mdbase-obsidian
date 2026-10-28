@@ -12,6 +12,8 @@ import {
   type DaemonStatus,
   type HoldSummary,
 } from "./daemon";
+import { folderHost } from "./ownership";
+import type NativeSync from "./native/plugin";
 import { EditorFence, type WorkspaceLike } from "./editorFence";
 
 export type SyncKind = "cloud" | "private";
@@ -52,6 +54,7 @@ export interface PendingApproval {
 }
 
 export interface SyncSnapshot {
+  direct?: { text: string; phase: { kind: string; sync?: { kind: string; pending: number }; problem?: unknown } };
   daemon: DaemonState;
   /** The last failure reaching mdbase, for `daemon: "error"`. */
   error: MdbaseError | null;
@@ -80,6 +83,7 @@ export interface SyncHost {
   vaultTopLevel(): string[];
   workspace(): WorkspaceLike;
   binaryOverride(): string;
+  createNative?(changed: (text: string, phase: unknown) => void, collection?: string): Promise<NativeSync>;
   appVersion: string;
   openUrl(url: string): void;
 }
@@ -97,6 +101,8 @@ function holdText(value: unknown): string | null {
  * One instance per vault; views subscribe to its snapshot.
  */
 export class SyncController {
+  native: NativeSync | null = null;
+  private lastDesktopCollection?: string;
   readonly cli: MdbaseCli;
   private snapshotValue: SyncSnapshot = {
     daemon: "checking", error: null, status: null, collection: null, prefix: "", live: null,
@@ -145,6 +151,7 @@ export class SyncController {
     if (this.fenceTimer !== null) window.clearTimeout(this.fenceTimer);
     this.timer = null;
     this.closeLink();
+    this.native?.unload(); this.native = null;
   }
 
   /** Check mdbase now; coalesces with a check already running. */
@@ -162,12 +169,43 @@ export class SyncController {
     if (this.timer !== null) window.clearTimeout(this.timer);
     const s = this.snapshotValue;
     const fast = s.signingIn || s.busy || (s.collection && s.collection.state !== "ready" && s.collection.state !== "paused");
-    const delay = fast ? 2_000 : s.link === "open" ? 30_000 : 10_000;
+    const delay = s.direct ? 2_000 : fast ? 2_000 : s.link === "open" ? 30_000 : 10_000;
     this.timer = window.setTimeout(() => void this.refresh(), delay);
   }
 
   private async check(): Promise<void> {
     const vaultPath = this.host.vaultPath();
+    if (vaultPath && this.host.createNative) {
+      try {
+        const { fs, path } = desktopModules();
+        let marker: unknown = null;
+        try { marker = JSON.parse(fs.readFileSync(path.join(vaultPath, ".mdbase/host.json"), "utf8")); }
+        catch (e) { if ((e as { code?: string }).code !== "ENOENT") throw new Error("Cannot read folder ownership. Sync is waiting; files are untouched."); }
+        const owner = folderHost(marker);
+        if (owner === "wait") throw new Error("This folder is owned by another app. Sync is waiting; files are untouched.");
+        if (owner === "plugin") {
+          this.closeLink();
+          if (!this.native) {
+            this.set({ direct: { text: "Starting sync", phase: { kind: "starting" } }, daemon: "running", error: null });
+            this.native = await this.host.createNative((text, phase) => {
+              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"] } });
+            }, this.lastDesktopCollection);
+            if (this.stopped) { this.native.unload(); this.native = null; return; }
+            this.native.load();
+          }
+          return;
+        }
+        const id = (marker as { collection_id?: string }).collection_id;
+        if (id) this.lastDesktopCollection = id;
+        if (this.native) { this.native.unload(); this.native = null; }
+        this.set({ direct: undefined });
+      } catch (error) {
+        this.native?.unload(); this.native = null;
+        this.closeLink();
+        this.set({ direct: undefined, daemon: "error", error: new MdbaseError("unavailable", (error as Error).message) });
+        return;
+      }
+    }
     let status: DaemonStatus;
     try {
       status = await this.cli.status();

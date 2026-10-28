@@ -63,6 +63,28 @@ export class SyncPane {
     detail.setAttr("role", "status");
     if (s.busy) root.createEl("p", { cls: "mdbase-muted", text: `${s.busy}…` });
 
+    if (s.direct) {
+      const native = this.ctx.host.syncController.native;
+      if (!native) return;
+      const phase = s.direct.phase.kind;
+      if (phase === "signed_out" || phase === "authorizing") {
+        this.actions(root, [["Sign in", true, () => this.run(() => native.signIn())]]);
+      } else if (phase === "choosing") {
+        this.actions(root, [
+          ["Choose collection", true, () => native.choose()],
+          ["Add a collection", false, () => this.run(() => native.addCollection())],
+        ]);
+      } else if (phase === "ready") {
+        root.createEl("p", { text: "Edits made in two places are kept as separate conflict files beside the original." });
+        this.actions(root, [["Check again", false, () => this.run(() => native.enqueue(() => native.reconcileAll(false, undefined, true)))]]);
+        const transfer = new Setting(root).setName("Continue syncing with mdbase")
+          .setDesc("Finish sending changes and stop syncing in Obsidian. Then add this folder to the mdbase app using the same collection. If sending fails, Obsidian keeps ownership.");
+        transfer.addButton(button => button.setButtonText("Finish and stop").onClick(() => this.run(() => native.handover())));
+      } else {
+        this.actions(root, [["Check again", false, () => this.run(() => this.refreshAndRender())]]);
+      }
+      return;
+    }
     switch (s.daemon) {
       case "mobile":
         root.createEl("p", { text: "Sync this vault from Obsidian on your computer, with the mdbase app installed. Types and validation work here as usual." });

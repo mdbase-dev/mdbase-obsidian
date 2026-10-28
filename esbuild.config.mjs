@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from "node:module";
+import { nativeAssets } from "./scripts/native-assets.mjs";
+const packedNativeAssets = await nativeAssets();
 
 const banner =
 `/*
@@ -12,6 +14,10 @@ if you want to view the source, please visit the github repository of this plugi
 const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
+  plugins: [{ name: "embedded-native-assets", setup(b) {
+    b.onResolve({ filter: /^embedded:assets$/ }, () => ({ path: "assets", namespace: "native" }));
+    b.onLoad({ filter: /.*/, namespace: "native" }, () => ({ contents: `export default ${JSON.stringify(packedNativeAssets)};`, loader: "js" }));
+  } }],
   banner: {
     js: banner,
   },

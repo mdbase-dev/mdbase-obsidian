@@ -149,6 +149,10 @@ export default class MdbasePlugin extends Plugin {
       vaultTopLevel: () => this.vaultTopLevelEntries(),
       workspace: () => this.app.workspace,
       binaryOverride: () => this.settings?.mdbaseAppPath ?? "",
+      createNative: async (changed, collection) => {
+        const { default: NativeSync } = await import("./src/sync/native/plugin");
+        return new NativeSync(this.app, manifest, changed, collection);
+      },
       appVersion: manifest.version,
       openUrl: (url) => window.open(url),
     }, Platform.isMobile);
