@@ -50,6 +50,14 @@ const STATE_REASONS: Record<string, string> = {
 
 export function summarize(s: SyncSnapshot): SyncSummary {
   const off = (label: string, detail: string, tone: Tone = "quiet"): SyncSummary => ({ label, detail, tone, syncing: false });
+  if (s.direct) {
+    const { text, phase } = s.direct;
+    const ready = phase.kind === "ready";
+    const problem = phase.kind === "problem" || phase.kind === "blocked" || /blocked|failed|stopped|ownership/i.test(text);
+    const checking = /checking your files|uploading|downloading/i.test(text);
+    const label = problem ? "Sync needs attention" : checking ? "Syncing" : ready ? (phase.sync?.kind === "offline" ? "Offline" : phase.sync?.pending ? "Syncing" : "Synced") : phase.kind === "signed_out" ? "Sync off" : phase.kind === "choosing" ? "Choose collection" : phase.kind === "authorizing" ? "Finish sign-in" : "Starting sync";
+    return { label, detail: text, tone: problem ? "problem" : checking ? "busy" : ready ? "ok" : "quiet", syncing: ready };
+  }
   if (s.daemon === "mobile") return off("Sync on desktop", "Sync isn't available on phones and tablets yet.");
   if (s.daemon === "checking") return off("Checking sync", "Checking mdbase on this computer.");
   if (s.daemon === "not_installed") return off("Sync off", "Install the mdbase app to sync this vault.");

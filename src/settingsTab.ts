@@ -94,6 +94,8 @@ export class MdbaseSettingTab extends PluginSettingTab {
         void plugin.openWorkspace("sync");
       }));
 
+    if (s.direct) return;
+
     if (s.daemon === "running" && s.status) {
       const account = s.status.account;
       const signIn = new Setting(containerEl).setName("Account");
