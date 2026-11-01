@@ -98,7 +98,12 @@ export function releasePlugin(run = execute, environment = process.env) {
   const remoteTag = run("git", "ls-remote", "origin", `refs/tags/${plan.version}`, `refs/tags/${plan.version}^{}`);
   assertCurrent();
   if (remoteTag) {
-    assert.equal(run("git", "rev-parse", `refs/tags/${plan.version}^{}`), sha, "Existing release tag points to a different commit");
+    const references = new Map(remoteTag.split("\n").map((line) => {
+      const [commit, ref] = line.split(/\s+/);
+      return [ref, commit];
+    }));
+    const tagCommit = references.get(`refs/tags/${plan.version}^{}`) ?? references.get(`refs/tags/${plan.version}`);
+    assert.equal(tagCommit, sha, "Existing release tag points to a different commit");
   } else {
     assert.ok(!existing, "Draft release is missing its tag");
     run("git", "tag", "--annotate", plan.version, sha, "--message", `mdbase Obsidian ${plan.version}`);

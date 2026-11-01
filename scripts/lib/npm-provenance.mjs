@@ -100,7 +100,10 @@ export function verifyLockIntegrities(lock, packages) {
     assert.equal(lock.lockfileVersion, 3, "Expected npm lockfile v3");
     const resolution = lock.packages?.[`node_modules/${pkg.name}`];
     assert.equal(resolution?.version, pkg.version, `Lockfile version mismatch for ${pkg.name}`);
-    assert.equal(lock.packages?.[""]?.dependencies?.[pkg.name], pkg.version);
+    const root = lock.packages?.[""];
+    const pins = ["dependencies", "devDependencies", "optionalDependencies"]
+      .map((section) => root?.[section]?.[pkg.name]).filter((pin) => pin !== undefined);
+    assert.ok(pins.length > 0 && pins.every((pin) => pin === pkg.version), `Root lockfile pin mismatch for ${pkg.name}`);
     assert.equal(
       resolution?.integrity,
       pkg.integrity,

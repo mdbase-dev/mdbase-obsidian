@@ -39,7 +39,7 @@ function fixture(options, callback) {
           return `${options.stale && observations > 1 ? "b".repeat(40) : sha}\trefs/heads/main`;
         }
         if (args[3] === "refs/heads/automation/plugin-release") return "";
-        return options.tag ? "existing-tag" : "";
+        return options.tag ? `${"c".repeat(40)}\trefs/tags/${version}\n${options.tagCommit ?? sha}\trefs/tags/${version}^{}` : "";
       }
       if (args[0] === "git" && args[1] === "show") return manifest.trim();
       if (command === "git merge-base --is-ancestor" && options.diverged) throw new Error("release is not an ancestor");

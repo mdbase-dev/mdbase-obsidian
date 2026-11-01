@@ -109,6 +109,10 @@ test("npm lock must match exact version, tarball and integrity", () => {
   const lock = { lockfileVersion: 3, packages: { "": { dependencies: { [name]: version } }, [`node_modules/${name}`]: { version, integrity, resolved: tarball } } };
   const packages = [{ name, version, integrity, tarball }];
   verifyLockIntegrities(lock, packages);
+  const development = structuredClone(lock);
+  development.packages[""].devDependencies = development.packages[""].dependencies;
+  delete development.packages[""].dependencies;
+  verifyLockIntegrities(development, packages);
   for (const field of ["version", "integrity", "resolved"]) {
     const invalid = structuredClone(lock);
     invalid.packages[`node_modules/${name}`][field] = "wrong";
