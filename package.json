@@ -17,9 +17,10 @@
     "build:test": "npm run build && node copy-files.mjs",
     "profile:testvault": "node scripts/profile-testvault.mjs",
     "test": "npm run test:unit",
+    "test:release": "node --test test/release/*.test.mjs",
     "test:unit": "tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test .test-dist/test/**/*.test.js",
     "copy-files": "node copy-files.mjs",
-    "version": "node version-bump.mjs && git add manifest.json versions.json"
+    "version": "node version-bump.mjs && git add manifest.json versions.json package-lock.json"
   },
   "keywords": [
     "obsidian",
@@ -50,6 +51,7 @@
     "obsidian": "latest",
     "postcss-selector-parser": "^7.1.5",
     "prettier": "^3.9.6",
+    "sigstore": "4.1.1",
     "stylelint": "^17.14.1",
     "tslib": "^2.8.1",
     "typescript": "^5.7.2",

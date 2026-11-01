@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   plugin:
     name: Obsidian plugin
@@ -25,6 +28,8 @@ jobs:
         run: npm run lint
       - name: Test
         run: npm test
+      - name: Test release automation
+        run: npm run test:release
       - name: Build and validate mobile bundle
         run: npm run check:mobile
       - name: Validate release assets
@@ -42,3 +47,42 @@ jobs:
             main.js
             manifest.json
             styles.css
+
+  release:
+    name: Prepare or publish plugin release
+    needs: plugin
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: plugin-release
+      cancel-in-progress: false
+    steps:
+      - name: Mint the release automation App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Download this build's validated assets
+        uses: actions/download-artifact@v4
+        with:
+          name: mdbase-obsidian-${{ github.sha }}
+      - name: Prepare version PR or publish complete release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: node scripts/plugin-release.mjs
