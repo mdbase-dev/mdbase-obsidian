@@ -49,7 +49,7 @@ jobs:
             styles.css
 
   release:
-    name: Prepare or publish plugin release
+    name: Publish plugin prerelease
     needs: plugin
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
@@ -67,22 +67,46 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
-          permission-pull-requests: write
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           token: ${{ steps.app.outputs.token }}
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Resolve new publication or resume the original tag
+        id: target
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          cp scripts/plugin-release.mjs "$RUNNER_TEMP/plugin-release.mjs"
+          node "$RUNNER_TEMP/plugin-release.mjs" target
       - name: Download this build's validated assets
-        uses: actions/download-artifact@v4
+        if: steps.target.outputs.ref == github.sha
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: mdbase-obsidian-${{ github.sha }}
-      - name: Prepare version PR or publish complete release
+      - name: Checkout the original tag for interrupted publication
+        if: steps.target.outputs.ref != '' && steps.target.outputs.ref != github.sha
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Rebuild and validate original tagged assets
+        if: steps.target.outputs.ref != '' && steps.target.outputs.ref != github.sha
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run test:release
+          npm run check:mobile
+      - name: Publish or repair complete prerelease
+        if: steps.target.outputs.ref != ''
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
-        run: node scripts/plugin-release.mjs
+          RELEASE_SHA: ${{ steps.target.outputs.ref }}
+        run: node "$RUNNER_TEMP/plugin-release.mjs"

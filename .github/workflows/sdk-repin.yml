@@ -64,6 +64,11 @@ jobs:
         run: |
           npm install --package-lock-only --ignore-scripts --registry=https://registry.npmjs.org
           node scripts/sdk-repin.mjs verify-lock
+      - name: Bump the plugin in the same repin PR
+        if: steps.pins.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: node version-bump.mjs "$(node scripts/plugin-release.mjs next-version)"
       - name: Open or update the single release PR
         if: steps.pins.outputs.changed == 'true'
         env:
@@ -78,12 +83,12 @@ jobs:
           git switch --create "$branch"
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
-          git ls-files -z -- '*package.json' package-lock.json | xargs -0 git add --
+          git ls-files -z -- '*package.json' package-lock.json manifest.json versions.json | xargs -0 git add --
           git diff --cached --quiet && exit 0
           git commit -m "Pin production Connect packages to $CONNECT_RELEASE"
           git push --force-with-lease="refs/heads/$branch:$previous" origin "HEAD:refs/heads/$branch"
           title="Pin production Connect packages to $CONNECT_RELEASE"
-          body=$(printf 'Connect: %s, commit %s.\n\nTrain run: https://github.com/%s/actions/runs/%s\n\nExact provenance-verified npm pins and npm lockfile only. Required Obsidian plugin CI gates auto-merge. After merge, Build prepares a version PR; its merge publishes checked plugin assets.\n' "$CONNECT_RELEASE" "$CONNECT_COMMIT" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          body=$(printf 'Connect: %s, commit %s.\n\nTrain run: https://github.com/%s/actions/runs/%s\n\nExact provenance-verified npm pins, npm lockfile and plugin version bump in this PR. Required Obsidian plugin CI gates auto-merge. After merge, Build tags and publishes the checked assets once as a prerelease; no second version PR.\n' "$CONNECT_RELEASE" "$CONNECT_COMMIT" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
           pull=$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // empty')
           if [ -n "$pull" ]; then
             gh pr edit "$pull" --title "$title" --body "$body"

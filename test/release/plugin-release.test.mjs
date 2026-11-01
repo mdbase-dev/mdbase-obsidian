@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { releasePlan, releasePlugin } from "../../scripts/plugin-release.mjs";
+import { nextVersion, releasePlugin, releaseState, releaseTarget, sameAssets } from "../../scripts/plugin-release.mjs";
 
 const sha = "a".repeat(40);
+const older = "b".repeat(40);
 const baseline = { tag_name: "0.4.2", draft: false, prerelease: true };
 const environment = { GITHUB_REPOSITORY: "mdbase-dev/mdbase-obsidian", GITHUB_SHA: sha, GITHUB_REF: "refs/heads/main", GITHUB_EVENT_NAME: "push", APP_SLUG: "fixture" };
+const tagsFor = (version, commit = sha) => `${"c".repeat(40)}\trefs/tags/${version}\n${commit}\trefs/tags/${version}^{}`;
+const mutations = (calls) => calls.filter((args) => (args[0] === "gh" && args[1] === "release" && ["create", "upload", "edit"].includes(args[2])) || (args[0] === "git" && ["push", "tag"].includes(args[1])));
 
 function fixture(options, callback) {
   const directory = mkdtempSync(join(tmpdir(), "obsidian-release-test-"));
@@ -26,32 +29,27 @@ function fixture(options, callback) {
     writeFileSync("versions.json", JSON.stringify({ [version]: "1.11.4" }));
     writeFileSync("main.js", "fixture bundle");
     writeFileSync("styles.css", "fixture styles");
-    copyFileSync(fileURLToPath(new URL("../../version-bump.mjs", import.meta.url)), "version-bump.mjs");
     const run = (...args) => {
       calls.push(args);
       const command = args.slice(0, 3).join(" ");
-      if (args[0] === "node") return execFileSync(args[0], args.slice(1), { encoding: "utf8" });
-      if (command === "git rev-parse HEAD") return sha;
-      if (args[0] === "git" && args[1] === "rev-parse") return options.tagCommit ?? sha;
+      if (command === "git rev-parse HEAD") return options.head ?? sha;
+      if (command === "git ls-remote --tags") return options.tags ?? (options.tag ? tagsFor(version, options.tagCommit ?? sha) : "");
       if (command === "git ls-remote origin") {
-        if (args[3] === "refs/heads/main") {
-          observations += 1;
-          return `${options.stale && observations > 1 ? "b".repeat(40) : sha}\trefs/heads/main`;
-        }
-        if (args[3] === "refs/heads/automation/plugin-release") return "";
-        return options.tag ? `${"c".repeat(40)}\trefs/tags/${version}\n${options.tagCommit ?? sha}\trefs/tags/${version}^{}` : "";
+        observations += 1;
+        return `${observations >= (options.staleAt ?? Infinity) ? older : sha}\trefs/heads/main`;
       }
       if (args[0] === "git" && args[1] === "show") return manifest.trim();
       if (command === "git merge-base --is-ancestor" && options.diverged) throw new Error("release is not an ancestor");
-      if (command === "git diff --name-only") return options.changed === false ? "" : "src/example.ts";
-      if (command === "gh api --paginate") return JSON.stringify([[baseline, ...(options.draft ? [{ tag_name: version, draft: true }] : [])]]);
-      if (command === "gh pr list") return options.existingPull ? "99" : "";
-      if (command === "gh pr create") return "https://github.com/fixture/pull/99";
+      if (command === "gh api --paginate") return JSON.stringify([[baseline, ...(options.published ? [{ tag_name: version, draft: false }] : []), ...(options.draft ? [{ tag_name: version, draft: true, target_commitish: options.draftTarget ?? sha }] : [])]]);
       if (command === "gh release upload" && options.uploadFailure) throw new Error("upload interrupted");
       if (command === "gh release download") {
+        if (options.downloadFailure) throw new Error("asset download failed");
         const destination = args[args.indexOf("--dir") + 1];
         for (const file of ["main.js", "manifest.json", "styles.css"]) copyFileSync(file, join(destination, file));
-        if (options.corrupt) writeFileSync(join(destination, "main.js"), "wrong bytes");
+        if (args[3] === "0.4.2") {
+          if (!options.unchanged) writeFileSync(join(destination, "main.js"), "previous bundle");
+          writeFileSync(join(destination, "manifest.json"), JSON.stringify({ minAppVersion: "1.11.4", version: "0.4.2", id: "mdbase-obsidian" }));
+        } else if (options.corrupt) writeFileSync(join(destination, "main.js"), "wrong bytes");
       }
       return "";
     };
@@ -62,71 +60,115 @@ function fixture(options, callback) {
   }
 }
 
-test("plans patch bump, publication, rerun and docs-only no-op from actual released tag", () => {
-  assert.equal(releasePlan([baseline], "0.4.2", true).version, "0.4.3");
-  assert.equal(releasePlan([baseline], "0.4.2", true).action, "bump");
-  assert.equal(releasePlan([baseline], "0.4.3", true).action, "publish");
-  assert.equal(releasePlan([baseline], "0.4.2", false).action, "none");
-  assert.equal(releasePlan([baseline, { tag_name: "0.4.3", draft: false }], "0.4.3", false).action, "none");
-  assert.equal(releasePlan([baseline, { tag_name: "0.4.3", draft: true }], "0.4.3", true).baseline, "0.4.2");
-  assert.throws(() => releasePlan([], "0.4.3", true), /baseline/);
-  assert.throws(() => releasePlan([baseline], "0.4.1", true), /behind/);
-  assert.throws(() => releasePlan([baseline], "v0.4.3", true));
+test("next version is selected in the repin PR, reusing an untagged version", () => {
+  assert.equal(nextVersion(releaseState([baseline], "", "0.4.2"), "0.4.2"), "0.4.3");
+  assert.equal(nextVersion(releaseState([baseline], "", "0.4.3"), "0.4.3"), "0.4.3");
+  assert.throws(() => nextVersion(releaseState([baseline], tagsFor("0.4.3"), "0.4.3"), "0.4.3"), /stuck publication/);
+  assert.throws(() => nextVersion(releaseState([baseline], "", "0.4.1"), "0.4.1"), /behind/);
+  assert.throws(() => releaseState([], "", "0.4.3"), /baseline/);
+  assert.throws(() => releaseState([baseline], "", "v0.4.3"));
 });
 
-test("bumps all version files through existing version-bump and opens one protected PR", () => {
-  fixture({ version: "0.4.2" }, ({ run, calls }) => {
-    assert.equal(releasePlugin(run, environment).action, "bump");
+test("existing version-bump updates all four version files in one sandbox", () => {
+  fixture({ version: "0.4.2" }, () => {
+    execFileSync("node", [fileURLToPath(new URL("../../version-bump.mjs", import.meta.url)), "0.4.3"]);
     for (const file of ["manifest.json", "package.json", "package-lock.json"]) assert.equal(JSON.parse(readFileSync(file, "utf8")).version, "0.4.3");
     assert.equal(JSON.parse(readFileSync("versions.json", "utf8"))["0.4.3"], "1.11.4");
-    assert.ok(calls.some((args) => args[0] === "git" && args[1] === "push" && args.some((arg) => arg.startsWith("--force-with-lease="))));
-    assert.ok(calls.some((args) => args.join(" ").includes("--auto --squash")));
-    assert.ok(!calls.some((args) => args[1] === "release"));
-  });
-  fixture({ version: "0.4.2", existingPull: true }, ({ run, calls }) => {
-    releasePlugin(run, environment);
-    assert.ok(calls.some((args) => args.slice(0, 3).join(" ") === "gh pr edit"));
-    assert.ok(!calls.some((args) => args.slice(0, 3).join(" ") === "gh pr create"));
   });
 });
 
-test("draft is made public only after all three asset downloads match", () => {
+test("ordinary merges with a published manifest version do not release or bump", () => {
+  fixture({ version: "0.4.2" }, ({ run, calls }) => {
+    assert.equal(releaseTarget(run, environment).reason, "published");
+    assert.equal(releasePlugin(run, environment).reason, "published");
+    assert.equal(mutations(calls).length, 0);
+    assert.ok(!calls.some((args) => args[1] === "pr"));
+  });
+});
+
+test("asset equality ignores only manifest version, not source paths", () => {
+  fixture({ unchanged: true }, ({ run, calls }) => {
+    assert.equal(releasePlugin(run, environment).reason, "unchanged-assets");
+    assert.equal(mutations(calls).length, 0);
+  });
+  fixture({}, ({ directory }) => {
+    const previous = join(directory, "previous");
+    mkdirSync(previous);
+    for (const file of ["main.js", "manifest.json", "styles.css"]) copyFileSync(file, join(previous, file));
+    assert.ok(sameAssets(previous));
+    writeFileSync("styles.css", "changed styles");
+    assert.ok(!sameAssets(previous));
+    copyFileSync(join(previous, "styles.css"), "styles.css");
+    const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
+    manifest.minAppVersion = "1.12.0";
+    writeFileSync("manifest.json", JSON.stringify(manifest));
+    assert.ok(!sameAssets(previous));
+  });
+});
+
+test("publishes once as a prerelease only after all asset downloads match", () => {
   fixture({}, ({ run, calls }) => {
+    assert.equal(releaseTarget(run, environment).sha, sha);
     assert.equal(releasePlugin(run, environment).action, "publish");
     const tag = calls.find((args) => args.slice(0, 3).join(" ") === "git tag --annotate");
-    assert.equal(tag[3], "0.4.3");
-    assert.equal(tag[4], sha);
+    assert.deepEqual(tag.slice(3, 5), ["0.4.3", sha]);
     const upload = calls.findIndex((args) => args.slice(0, 3).join(" ") === "gh release upload");
-    const download = calls.findIndex((args) => args.slice(0, 3).join(" ") === "gh release download");
     const publish = calls.findIndex((args) => args.slice(0, 3).join(" ") === "gh release edit");
-    assert.ok(upload < download && download < publish);
-    assert.ok(calls[publish].includes("--prerelease=false"));
+    assert.ok(upload < publish);
+    assert.ok(calls[publish].includes("--prerelease=true"));
+    assert.ok(calls[publish].includes("--latest=false"));
+  });
+  fixture({ published: true }, ({ run, calls }) => {
+    assert.equal(releasePlugin(run, environment).reason, "published");
+    assert.equal(mutations(calls).length, 0);
   });
 });
 
-test("reuses exact tag and draft after interruption without recreating either", () => {
+test("tag-only and draft retries resume without recreating or moving the tag", () => {
   for (const draft of [true, false]) fixture({ tag: true, draft }, ({ run, calls }) => {
     releasePlugin(run, environment);
-    assert.ok(!calls.some((args) => args[0] === "git" && args[1] === "tag"));
+    assert.ok(!calls.some((args) => args[0] === "git" && ["tag", "push"].includes(args[1])));
     assert.equal(calls.some((args) => args.slice(0, 3).join(" ") === "gh release create"), !draft);
   });
 });
 
-test("no tag or release writes for unchanged content", () => {
-  fixture({ version: "0.4.2", changed: false }, ({ run, calls }) => {
-    assert.equal(releasePlugin(run, environment).action, "none");
-    assert.ok(!calls.some((args) => args[0] === "gh" && args[1] === "release"));
+test("same version on newer main selects and rebuilds the original tagged commit", () => {
+  fixture({ tag: true, tagCommit: older }, ({ run }) => {
+    assert.deepEqual(releaseTarget(run, environment), { action: "publish", version: "0.4.3", sha: older });
+  });
+  fixture({ tag: true, tagCommit: older, head: older, draft: true }, ({ run, calls }) => {
+    assert.equal(releasePlugin(run, { ...environment, RELEASE_SHA: older }).sha, older);
+    assert.ok(!calls.some((args) => args[0] === "git" && args[1] === "tag"));
   });
 });
 
-test("refuses divergent baseline, mismatched tag and unsafe event", () => {
-  fixture({ diverged: true }, ({ run, calls }) => {
-    assert.throws(() => releasePlugin(run, environment), /ancestor/);
-    assert.ok(!calls.some((args) => args[1] === "release"));
+test("draft-only recovery restores its recorded commit, not newer main", () => {
+  fixture({ draft: true, draftTarget: older }, ({ run }) => {
+    assert.equal(releaseTarget(run, environment).sha, older);
   });
-  fixture({ tag: true, tagCommit: "b".repeat(40) }, ({ run, calls }) => {
-    assert.throws(() => releasePlugin(run, environment), /different commit/);
-    assert.ok(!calls.some((args) => args[1] === "release"));
+  fixture({ draft: true, draftTarget: older, head: older }, ({ run, calls }) => {
+    assert.equal(releasePlugin(run, { ...environment, RELEASE_SHA: older }).sha, older);
+    assert.ok(calls.some((args) => args[0] === "git" && args[1] === "tag" && args[4] === older));
+    assert.ok(!calls.some((args) => args.slice(0, 3).join(" ") === "gh release create"));
+  });
+});
+
+test("stuck tag or draft blocks later release versions and version bumps", () => {
+  for (const tags of [tagsFor("0.4.3"), ""]) {
+    const releases = [baseline, ...(tags ? [] : [{ tag_name: "0.4.3", draft: true }])];
+    assert.throws(() => releaseState(releases, tags, "0.4.4"), /Stuck publication/);
+  }
+  fixture({ version: "0.4.4", tags: tagsFor("0.4.3") }, ({ run, calls }) => {
+    assert.throws(() => releaseTarget(run, environment), /Stuck publication/);
+    assert.equal(mutations(calls).length, 0);
+  });
+  assert.throws(() => releaseState([baseline], tagsFor("0.4.1"), "0.4.4"), /Stuck publication/);
+});
+
+test("refuses ambiguous draft target, wrong tag SHA, divergent history and PR events", () => {
+  for (const options of [{ draft: true, draftTarget: "main" }, { tag: true, tagCommit: older }, { diverged: true }]) fixture(options, ({ run, calls }) => {
+    assert.throws(() => releasePlugin(run, environment));
+    assert.equal(mutations(calls).length, 0);
   });
   fixture({}, ({ run, calls }) => {
     assert.throws(() => releasePlugin(run, { ...environment, GITHUB_EVENT_NAME: "pull_request" }));
@@ -134,8 +176,20 @@ test("refuses divergent baseline, mismatched tag and unsafe event", () => {
   });
 });
 
-test("failed upload, corrupt download or advanced main never publishes", () => {
-  for (const options of [{ uploadFailure: true }, { corrupt: true }, { stale: true }]) fixture(options, ({ run, calls }) => {
+test("stale jobs are successful no-ops at every mutation boundary", () => {
+  fixture({ staleAt: 1 }, ({ run, calls }) => {
+    assert.equal(releaseTarget(run, environment).reason, "stale");
+    assert.equal(mutations(calls).length, 0);
+  });
+  for (const staleAt of [1, 2, 3, 4]) fixture({ staleAt }, ({ run, calls }) => {
+    assert.equal(releasePlugin(run, environment).reason, "stale");
+    assert.ok(!calls.some((args) => args.slice(0, 3).join(" ") === "gh release edit"));
+    if (staleAt <= 2) assert.equal(mutations(calls).length, 0);
+  });
+});
+
+test("failed downloads, uploads and corrupt bytes never make a draft public", () => {
+  for (const options of [{ uploadFailure: true }, { corrupt: true }, { downloadFailure: true }]) fixture(options, ({ run, calls }) => {
     assert.throws(() => releasePlugin(run, environment));
     assert.ok(!calls.some((args) => args.slice(0, 3).join(" ") === "gh release edit"));
   });
