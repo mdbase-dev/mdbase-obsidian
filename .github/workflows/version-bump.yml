@@ -1,0 +1,54 @@
+name: Prepare a plugin version PR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-repin
+  cancel-in-progress: false
+
+jobs:
+  version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Mint the release automation App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Open a human-requested version PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          version=$(node scripts/plugin-release.mjs next-version)
+          branch="release/$version"
+          pull=$(gh pr list --head "$branch" --base main --state open --json url --jq '.[0].url // empty')
+          if [ -n "$pull" ]; then echo "$pull"; exit 0; fi
+          node version-bump.mjs "$version"
+          git diff --quiet && exit 0
+          git switch --create "$branch"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+          git add manifest.json versions.json package.json package-lock.json
+          git commit -m "Release Obsidian plugin $version"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base main --head "$branch" --title "Release Obsidian plugin $version" --body "Human-requested version bump. Required CI and normal PR review apply. Merge publishes changed plugin assets as a prerelease. No auto-merge requested."
