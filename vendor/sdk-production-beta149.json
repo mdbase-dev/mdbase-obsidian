@@ -42,7 +42,5 @@
       "bytes": 106404,
       "sha256": "e901144b8d93dc96fcf71d9d8f85dddbf647e9908913be21191c484e9224bb98"
     }
-  ],
-  "artifactFacts": "sdk-4443fd15-production-beta149.facts.json",
-  "artifactFactsSha256": "94d97793fdaec112c3aacbf4ea50c7cbf0b2bbc6d2487bca1624afa026d63e57"
+  ]
 }

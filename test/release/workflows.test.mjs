@@ -30,25 +30,6 @@ test("release is main-only, serialized and gated by complete plugin CI", () => {
   assert.ok(!JSON.stringify(jobs.release).includes("permission-pull-requests"));
 });
 
-test("repin preserves the ops dispatch contract and verifies before lock update or PR", () => {
-  const definition = workflow("sdk-repin");
-  assert.deepEqual(Object.keys(definition.on.workflow_dispatch.inputs), ["connect_release"]);
-  assert.deepEqual(definition.on.workflow_dispatch.inputs.connect_release, { description: "Production-verified Connect tag (v0.1.0-beta.N)", required: true, type: "string" });
-  assert.equal(definition.jobs.repin.if, "github.ref == 'refs/heads/main'");
-  const steps = definition.jobs.repin.steps;
-  const pins = steps.findIndex((step) => step.id === "pins");
-  const lock = steps.findIndex((step) => step.run?.includes("--package-lock-only"));
-  const pull = steps.findIndex((step) => step.run?.includes("gh pr create"));
-  const bump = steps.findIndex((step) => step.run?.includes("node version-bump.mjs"));
-  assert.ok(pins < lock && lock < bump && bump < pull);
-  assert.equal(steps[bump].if, "steps.pins.outputs.changed == 'true'");
-  assert.match(steps[pull].run, /package-lock.json manifest.json versions.json/);
-  assert.match(steps[lock].run, /node scripts\/sdk-repin.mjs verify-lock/);
-  assert.equal(steps[pins].env.GH_TOKEN, "${{ steps.ops.outputs.token }}");
-  assert.equal(steps[pull].env.GH_TOKEN, "${{ steps.app.outputs.token }}");
-  assert.match(steps[pull].run, /gh pr merge "\$pull" --auto --squash/);
-});
-
 test("manual version dispatch creates a normal PR without a merge-time bot branch", () => {
   const definition = workflow("version-bump");
   assert.deepEqual(Object.keys(definition.on), ["workflow_dispatch"]);
@@ -58,5 +39,5 @@ test("manual version dispatch creates a normal PR without a merge-time bot branc
   assert.match(runs, /gh pr create/);
   assert.ok(!runs.includes("--force"));
   assert.ok(!runs.includes("gh pr merge"));
-  for (const name of ["build", "sdk-repin", "version-bump"]) assert.ok(!JSON.stringify(workflow(name)).includes("automation/plugin-release"));
+  for (const name of ["build", "version-bump"]) assert.ok(!JSON.stringify(workflow(name)).includes("automation/plugin-release"));
 });

@@ -1,24 +1,23 @@
-# Weekly SDK intake and plugin publication
+# SDK intake and plugin publication
 
-The ops train dispatches `sdk-repin.yml` on main with one exact
-`connect_release`. Intake compares it with ops main's production record and the
-annotated Connect tag's peeled commit. For every npm package it cryptographically
-verifies Sigstore provenance: GitHub OIDC issuer, repository, publisher workflow,
-tag, source commit, package version and tarball digest. It refreshes the npm lock
-and checks the exact version, registry URL and integrity. Peer ranges and
-unrelated local packages remain unchanged. Missing versions or invalid provenance
-fail before any manifest is written; there is no latest/LAB/registry fallback.
+The ops [continuous SDK repin train](https://github.com/mdbase-dev/mdbase-cloud-ops/blob/main/docs/continuous-sdk-repins.md)
+owns SDK intake for this plugin. It polls npm for the highest published
+`@mdbase-dev/sdk`, whose version is independent of the Connect release. It
+verifies Sigstore provenance and the signed source, vendors the exact archive and
+its metadata under `vendor/`, refreshes the npm lock and checks the exact pin,
+version and integrity. A trust rotation, invalid provenance or stuck plugin
+release refuses before any PR. Ops holds the updater and its tests.
 
 ## One release PR, one publication
 
-The **same** `automation/sdk-repin` PR contains the npm pins and plugin version
+The **same** `automation/sdk-repin` PR contains the archive pin and plugin version
 bump, using `version-bump.mjs` to update `manifest.json`, `versions.json`,
 `package.json` and the root npm lock versions. The next patch is selected from
 the existing plugin version, not the Connect version. An already bumped but
 untagged version is reused, not incremented again. A stuck tag/draft blocks a
-new bump. The release App requests squash auto-merge of this one PR through
-required, up-to-date **Obsidian plugin** CI. There is no merge-time version PR,
-second automatic bot branch or branch-protection bypass.
+new bump. The train merges this one PR after a later poll sees required,
+up-to-date **Obsidian plugin** CI pass on its reproduced bytes. There is no
+merge-time version PR, second automatic bot branch or branch-protection bypass.
 
 Ordinary human merges **do not release** when the manifest version already has
 a published release. A human preparing a release runs, in their own PR:
@@ -51,8 +50,7 @@ After all main Build checks pass, publication:
 
 The release job is main-only, serialized without cancellation, and SHA-pins all
 actions. Only Contents write is needed for publication, not Pull requests write.
-PR CI never runs the publisher. The SDK's existing vendor dependency remains in
-this tooling PR: the actual repin PR performs the production dependency switch.
+PR CI never runs the publisher.
 
 ## Stuck publication and recovery
 
@@ -89,10 +87,9 @@ assets, not an accepted command or a green stale no-op.
 
 ## Setup and qualification
 
-- Enable repository auto-merge and require up-to-date **Obsidian plugin** CI on
-  main. Require PRs, zero human approvals for automatic repins, no App bypass.
+- Require up-to-date **Obsidian plugin** CI on main. Require PRs, zero human approvals for automatic repins, no App bypass.
 - Install **mdbase release automation** on this repo (Contents write, Pull
-  requests write, Actions write for ops dispatch), with read-only ops access.
+  requests write, Actions read).
   Provide `RELEASE_AUTOMATION_CLIENT_ID` and
   `RELEASE_AUTOMATION_APP_PRIVATE_KEY`. No workflow-token fallback or environment
   reviewer is used. Credential availability must be verified before adoption.
@@ -101,31 +98,5 @@ assets, not an accepted command or a green stale no-op.
   Clearing its old missing-asset guard does not replace its native sync code or
   complete the outstanding LAB acceptance.
 
-Run `npm run test:release` for fixture/provenance/byte-comparison/recovery/workflow
-tests. A live intake dry run uses an isolated temporary source copy, runs the
-real repin verifier and lock checks, and builds/tests there without pushing or
-creating a PR, tag or release. Fixture success is not live SDK compatibility.
-
-### November 2 beta.149 dry-run evidence
-
-The real repin verifier accepted `v0.1.0-beta.149`, matching ops main and the
-annotated tag at `4443fd15c4a591e46538eae24cf8425708e6a7f0`. Sigstore signature,
-publisher identity, SLSA source and downloaded tarball verification passed. In an
-isolated source copy, the exact npm lock verification, same-PR bump to `0.4.3`,
-lint, 124 unit tests and mobile build all passed. SDK integrity was
-`sha512-hoX+/4KYTbR+qN/gViUbvzX5s7f6lSOg9AOmQVE3USrtJ+9fpnb+4q8YBX9AWRcE43hkXysJH6gPqwgDfIE5Rg==`.
-The beta.149 bundle was 691506 bytes raw / 213863 gzip. No PR, tag or release was
-created by this dry run; this branch's production dependency is still unchanged.
-
-The npm package is production-packaged and now includes
-`dist/application/storage-scope.js` with `bundle-storage:` isolation. Thus it
-clears PR 31's original guard. But testing the unchanged PR 31 head
-`958863a4128652d090be9f7193fc753c4407b539` against that same verified SDK fails
-the production build at `scripts/native-assets.mjs:31`: npm's
-`dist/application/asset-pins.json` declares `sqlite.asyncProxy` (32505 bytes,
-SHA-256 `9f1970e05ee07a79332498858740b705eeb1dcee03bc150f6f690bc0fb5f0a06`),
-but `dist/native/sqlite3-opfs-async-proxy.js` is absent. Its 124 existing unit
-tests and 69 native tests pass, but it is not build-qualified. PR 31 cannot be
-closed in favour of a repin: its native sync implementation is not supplied by
-changing the package pin, and missing-asset remediation plus LAB acceptance
-remain separate. No PR 31 code or guards were changed.
+Run `npm run test:release` for fixture, byte-comparison, recovery and workflow
+tests.
