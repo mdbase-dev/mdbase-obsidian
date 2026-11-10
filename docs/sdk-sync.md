@@ -43,13 +43,15 @@ atomic publication; failure removes staging and leaves the vault file untouched.
 
 ## Moving ownership
 
-To continue in desktop, choose **Finish and stop** in Sync. Obsidian stops
+To continue in desktop, choose **Move to mdbase app** in Sync (under Advanced). Obsidian stops
 admitting sends, finishes admitted work, scans once more, waits for confirmed
 receipts with pending/holds/unresolved all zero, stops the SDK and only then
 removes its own marker. If any step fails it retains ownership and recovery
 state. Avoid editing during this transfer. Then add the existing folder to
 mdbase using the **same collection**; ordinary enrollment/approval still applies.
-When desktop publishes its marker, Obsidian connects to desktop automatically.
+Until then Sync and the status bar say **Moved to mdbase app**, in a neutral tone,
+with that next step. When desktop publishes its marker, Obsidian connects to
+desktop automatically.
 
 After desktop gracefully stops/pause/removal and releases its marker and OS lock,
 Obsidian resumes its SDK host and reconciles before sending. A leftover desktop
@@ -58,12 +60,38 @@ needs explicit recovery, not a timeout. The inherited OS-lock probe currently
 uses Linux `flock`; other systems fail closed if a desktop lock file exists.
 Mobile and Android shared-localhost support are not part of this implementation.
 
+## Signing in
+
+**Sign in** opens the approval page in the system browser; the SDK runs with a
+sign-in opener, so no browser user gesture is needed inside the iframe. When an
+approval isn't finished (cancelled, closed, refused, say at a collection limit),
+the SDK reports a problem with `action: "sign_in"` and Sync offers **Sign in
+again**, which calls the same SDK `signIn()`. The SDK itself renews the expired
+or refused approval window, keeping the original installation and account.
+
+Because that renewal keeps the account first chosen, signing in again as a
+different account can't continue. While no collection is bound and nothing is
+waiting to be sent (no synced paths, cursor, uploads, pending paths or
+preservation journals), Sync also offers **Start over**. It calls the SDK's
+`signOut()` without `discard`, which erases only this vault's SDK sign-in data
+(installation, keys) and refuses by itself if writes are unsent. The plugin's
+journal and its own marker are kept; no other marker is ever removed. Once a
+collection is bound, Start over is not offered.
+
+Other SDK problem actions: `approve` offers **Request access again** (for a
+named collection); `retry`, `check_connection`, `reload`, `wait`,
+`resolve_outcome` and unknown actions offer **Try again**, which calls the SDK's
+`start()`; `choose_collection`, `set_up`, `update_app`, `free_space`,
+`contact_support` and `none` offer no button, and the message says what to do.
+
 ## Private collections
 
 The app declaration asks for the optional `offline.replica` capability. When the
 server has Private app devices switched on, the sign-in page in mdbase offers,
 per collection, to let this device keep that collection's key. A Private
-collection is listed in the plugin only if that was allowed.
+collection is listed in the plugin only if that was allowed. The SDK doesn't say
+whether the server offers this, so the plugin's hints are worded to hold either
+way and don't send people looking for the choice.
 
 - With its key, a Private collection syncs like any other.
 - Without it, Sync shows **Locked** and an unlock form for the encryption

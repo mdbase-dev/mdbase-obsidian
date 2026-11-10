@@ -12,7 +12,7 @@ const { spawnSync } = nativeModule<typeof import("node:child_process")>("child_p
 const { brotliDecompressSync } = nativeModule<typeof import("node:zlib")>("zlib");
 import packedAssets from "embedded:assets";
 import { validVaultPort } from "../ownership";
-import { PRIVATE_COLLECTIONS_HINT, stoppedText } from "../words";
+import { HANDED_OVER, PRIVATE_COLLECTIONS_HINT, failedText, stoppedText } from "../words";
 import { stageDownload } from "./download";
 import { retryUpload, type UploadIdentity } from "./upload";
 import { conflictPath, reconcileDecision, remoteMoveDecision, localMovePairs, Synced } from "./reconcile";
@@ -391,8 +391,10 @@ export default class NativeSync extends Component {
       fs.unlinkSync(this.markerPath);
       this.log("handover: SDK stopped; own marker removed");
       if (this.markerTimer) window.clearInterval(this.markerTimer);
-      this.setStatus("Sync stopped here. Add this folder to mdbase using the same collection.");
-      new Notice("mdbase: drained and stopped. Desktop may now join this folder's existing collection.");
+      // Stopped on purpose: a state of its own, so it reads as done, not as a fault.
+      this.phase = { kind: "handed_over" };
+      this.setStatus(HANDED_OVER);
+      new Notice("mdbase: everything is sent. Add this folder in the mdbase app to keep syncing it.", 10000);
     } catch (e) { this.mirroring = false; this.fail("handover (marker retained)", e); }
   }
 
@@ -443,6 +445,8 @@ export default class NativeSync extends Component {
   }
   async select(id: string) { this.claim(id); await this.call("select", id); }
   async onPhase(phase: any) {
+    // After a handover the SDK is stopped; its closing notices change nothing here.
+    if (this.phase.kind === "handed_over") return;
     const was = this.phase; this.phase = phase;
     // Apply the transition before awaiting select/watch. A ready notification
     // can arrive while the earlier choosing handler is still awaiting select;
@@ -580,8 +584,40 @@ export default class NativeSync extends Component {
    */
   async requestAccess() {
     const phase = this.phase;
-    if (phase.problem?.action !== "approve" || !phase.collectionId) return;
+    if ((phase.problem?.action !== "approve" && phase.kind !== "needs_approval") || !phase.collectionId) return;
     await this.call("approve", phase.collectionId);
+  }
+  /**
+   * Ask the sync engine to try again after a stop: its start() restarts a
+   * blocked sign-in and reopens a blocked collection. Nothing is reset.
+   */
+  async retry() {
+    if (this.phase.kind !== "problem") return;
+    await this.call("start");
+  }
+  /**
+   * Whether signing this vault out of mdbase loses nothing: no collection is
+   * bound, nothing has synced, and nothing is waiting to be sent or preserved.
+   * Only then can a stuck sign-in be abandoned (see startOver).
+   */
+  get canStartOver(): boolean {
+    const d = this.data;
+    if (!d || this.phase.kind !== "problem" || this.mirroring || this.merge !== null) return false;
+    const empty = (o?: object) => !o || Object.keys(o).length === 0;
+    return !d.collectionId && d.cursor === undefined && empty(d.paths) && empty(d.uploads) && empty(d.pendingPaths)
+      && empty(d.sending) && empty(d.handledRejections) && empty(d.conflictCopies) && empty(d.pathFailures);
+  }
+  /**
+   * Abandon an unfinished sign-in: the SDK's signOut erases this vault's own
+   * sign-in data (installation, keys) so the next Sign in starts a new one, with
+   * any account. It refuses by itself if writes are unsent. This vault's journal
+   * and its own ownership marker stay as they are; no other app's is touched.
+   */
+  async startOver() {
+    if (!this.canStartOver) return;
+    this.signInUrl = null;
+    this.log("start over: signing out of an unfinished sign-in (nothing bound)");
+    await this.call("signOut");
   }
   openSignIn(url: string) {
     this.signInUrl = url;
@@ -1602,7 +1638,11 @@ export default class NativeSync extends Component {
     // Do not log arbitrary mutation error bodies: they can contain documents.
     const detail = [e?.code, e?.reason].filter(Boolean).join(" ") || (what === "startup" || what === "ownership" || what === "start" ? this.safeText(e?.message ?? "error") : "operation failed; local state retained");
     if (e?.code === "collection_bound") userMessage = "This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing.";
-    this.setStatus(whole && userMessage ? userMessage : `Sync stopped: ${userMessage ?? detail}. Check Sync and reload after resolving the problem.`);
+    if (what === "ownership" && !userMessage) userMessage = "Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.";
+    // Plain words for the status; the code stays for support, and the log keeps the detail.
+    const code = [e?.code, e?.reason].filter(Boolean).join(" ");
+    const reason = userMessage ?? (what === "startup" || what === "start" ? detail : `Something went wrong${code ? ` (${code})` : ""}. Your files here are untouched`);
+    this.setStatus(whole && userMessage ? userMessage : failedText(reason));
     this.log(`FAILED ${what}: ${detail}`); new Notice(`mdbase: ${userMessage ?? `${what}: ${detail}`}`, 10000);
   }
 }

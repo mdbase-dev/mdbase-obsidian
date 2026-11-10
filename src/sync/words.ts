@@ -43,10 +43,15 @@ export function unlockProblemText(problem: unknown): string | null {
 /**
  * Shown where collections are chosen. mdbase lists a Private collection only
  * when this device may hold its key, so the plugin can't know one is missing.
+ * The SDK doesn't say whether the server offers that choice (production
+ * doesn't yet), so the words must hold either way and promise no option.
  */
-export const PRIVATE_COLLECTIONS_HINT = "Private collections are listed only if you allowed this device to keep their key when you signed in. To add one, sign in again and allow it.";
+export const PRIVATE_COLLECTIONS_HINT = "Private collections are listed only if mdbase let this device keep their key when you signed in. mdbase doesn't offer that everywhere yet.";
 /** The same, before signing in, where the collection is chosen in the browser. */
-export const PRIVATE_SIGN_IN_HINT = "To sync a Private collection, allow this device to keep its key when you sign in.";
+export const PRIVATE_SIGN_IN_HINT = "Private collections sync here only if mdbase offers to let this device keep their key when you sign in.";
+
+/** After "Move to mdbase app": Obsidian stopped on purpose. Not an error. */
+export const HANDED_OVER = "Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection.";
 
 /**
  * Why sync stopped, by the sync engine's problem key. Anything else uses the
@@ -56,10 +61,17 @@ const STOP_PROBLEMS: Record<string, string> = {
   installation_scope_removed: "Access to this collection was removed in mdbase. Your notes here are untouched. To sync again, choose Request access again and approve it in your browser.",
 };
 export function stoppedText(problem: unknown): string {
-  const p = (problem && typeof problem === "object" ? problem : {}) as { key?: unknown; title?: unknown; message?: unknown };
+  const p = (problem && typeof problem === "object" ? problem : {}) as { key?: unknown; title?: unknown; message?: unknown; action?: unknown };
   const known = typeof p.key === "string" ? STOP_PROBLEMS[p.key] : undefined;
   const words = known ?? [p.title, p.message].filter((x): x is string => typeof x === "string" && x.trim() !== "").map(sentence).join(" ");
+  // An unfinished sign-in didn't stop anything: say what happened, not "Sync stopped".
+  if (p.action === "sign_in" && words) return words;
   return `Sync stopped. ${words || "Your files are kept on this computer."}`;
+}
+
+/** The status sentence for a stop the plugin itself noticed (not the sync engine). */
+export function failedText(reason: string): string {
+  return `Sync stopped. ${sentence(reason)}`;
 }
 
 /** Plain words for incident and notice codes from mdbase. */
@@ -107,6 +119,12 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     const { text, phase } = s.direct;
     const ready = phase.kind === "ready";
     if (s.direct.merge) return { label: "Waiting for you", detail: `This vault and “${s.direct.merge.name}” both have notes. Open Sync to choose what happens.`, tone: "attention", syncing: false };
+    // Moved to the mdbase app on purpose: say what happened and what's next, calmly.
+    if (phase.kind === "handed_over") return { label: "Moved to mdbase app", detail: HANDED_OVER, tone: "quiet", syncing: true };
+    // Sign-in that wasn't approved: one step for the person, not a fault.
+    if (phase.kind === "problem" && (phase.problem as { action?: unknown } | null | undefined)?.action === "sign_in") {
+      return { label: "Sign in again", detail: text, tone: "attention", syncing: true };
+    }
     const problem = phase.kind === "problem" || phase.kind === "blocked" || /blocked|failed|stopped|ownership/i.test(text);
     // Locked and stopped are states of a vault that syncs here: the status bar
     // must say so rather than hide, or it would keep its last words ("Synced").

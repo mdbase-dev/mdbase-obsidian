@@ -138,11 +138,23 @@ export class SyncPane {
         const transfer = new Setting(advanced).setName("Move sync to the mdbase app")
           .setDesc("Obsidian is syncing this vault itself. To let the mdbase desktop app do it instead, Obsidian sends any remaining changes and stops. Then add this folder in the mdbase app and pick the same collection. If anything can't be sent, Obsidian carries on syncing.");
         transfer.addButton(button => button.setButtonText("Move to mdbase app").onClick(() => this.run(() => native.handover())));
-      } else {
-        // A stop the sync engine can undo by asking mdbase again (access removed).
+      } else if (phase === "handed_over") {
+        // Done on purpose; the heading says what's next.
+        this.actions(root, [["Get the mdbase app", false, () => window.open(DOWNLOAD_URL)]]);
+      } else if (phase === "needs_approval") {
+        this.actions(root, [["Request access again", true, () => this.run(() => native.requestAccess())]]);
+      } else if (phase === "problem") {
         const problem = s.direct.phase.problem as { action?: unknown } | null | undefined;
-        const again: [string, boolean, () => void][] = problem?.action === "approve" ? [["Request access again", true, () => this.run(() => native.requestAccess())]] : [];
-        this.actions(root, [...again, ["Check again", false, () => this.run(() => this.refreshAndRender())]]);
+        const step = problemStep(problem?.action, Boolean((s.direct.phase as { collectionId?: unknown }).collectionId));
+        const buttons: [string, boolean, () => void][] = [];
+        if (step === "sign_in") buttons.push(["Sign in again", true, () => this.run(() => native.signIn())]);
+        else if (step === "approve") buttons.push(["Request access again", true, () => this.run(() => native.requestAccess())]);
+        else if (step === "retry") buttons.push(["Try again", false, () => this.run(() => native.retry())]);
+        // Nothing synced and nothing waiting: signing out can't lose anything.
+        const startOver = native.canStartOver;
+        if (startOver) buttons.push(["Start over", false, () => this.run(() => native.startOver())]);
+        if (buttons.length) this.actions(root, buttons);
+        if (startOver) root.createEl("p", { cls: "mdbase-muted", text: START_OVER_HINT });
       }
       return;
     }
@@ -649,6 +661,25 @@ export class SyncPane {
       }],
       ["Sync settings", false, () => this.ctx.host.openSettings()],
     ]);
+  }
+}
+
+export const START_OVER_HINT = "Start over signs this vault out of mdbase, so you can sign in again with any account. Nothing has synced yet, so your notes aren't affected.";
+
+/**
+ * The one button a stop gets, by the sync engine's suggested action
+ * (describeError's MdbaseErrorAction). Actions the plugin can't carry out here
+ * (update, free space, set up, contact support) get none: the words say what to do.
+ */
+export function problemStep(action: unknown, hasCollection: boolean): "sign_in" | "approve" | "retry" | null {
+  switch (action) {
+    case "sign_in": return "sign_in";
+    // Approval is per collection; without one there is nothing to approve.
+    case "approve": return hasCollection ? "approve" : null;
+    // Ask the engine to start again: it restarts a blocked sign-in or reopens the collection.
+    case "retry": case "check_connection": case "reload": case "wait": case "resolve_outcome": return "retry";
+    case "choose_collection": case "set_up": case "update_app": case "free_space": case "contact_support": case "none": return null;
+    default: return "retry";
   }
 }
 

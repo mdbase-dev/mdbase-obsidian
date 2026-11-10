@@ -144,6 +144,72 @@ test("handover removes only its own marker after reconcile, drain and stop", asy
   await f.native.handover();
   assert.deepEqual(order, ["reconcile", "unwatch", "drain", "stop"]); assert.equal(fs.existsSync(f.native.markerPath), false);
 });
+test("a finished handover is its own calm state, which later SDK notices don't replace (prod F5)", async t => {
+  const f = fixture(t), seen = []; f.native.data.collectionId = "collection";
+  f.native.data.markerSince = 1; f.native.writeMarker();
+  f.native.changed = (text, phase) => seen.push([text, phase.kind]);
+  f.native.reconcileAll = async () => true;
+  f.native.call = async () => {};
+  await f.native.handover();
+  assert.deepEqual(seen.at(-1), ["Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection.", "handed_over"]);
+  await f.native.onPhase({ kind: "closed" });
+  assert.equal(f.native.phase.kind, "handed_over");
+  assert.equal(seen.at(-1)[1], "handed_over");
+});
+test("start over signs out of an unfinished sign-in only when nothing can be lost (prod F1)", async t => {
+  const f = fixture(t), calls = [];
+  f.native.mirroring = false;
+  f.native.data.markerSince = 1; f.native.writeMarker();
+  const marker = fs.readFileSync(f.native.markerPath, "utf8");
+  f.native.call = async (method, ...args) => { calls.push([method, ...args]); return {}; };
+  f.native.phase = { kind: "problem", collectionId: null, problem: { key: "recovery_required", action: "reload" } };
+  assert.equal(f.native.canStartOver, true);
+  await f.native.startOver();
+  assert.deepEqual(calls, [["signOut"]], "the SDK's own sign-out, never with discard");
+  assert.equal(fs.readFileSync(f.native.markerPath, "utf8"), marker, "this vault's marker is kept as it was");
+  assert.equal(f.native.data.vaultId, "test-vault", "the journal is kept");
+  // Anything bound, synced or waiting rules it out.
+  const unsafe = [
+    d => { d.collectionId = "c"; }, d => { d.cursor = "9"; }, d => { d.paths["a.md"] = { id: "x", kind: "record", revision: "r", hash: "h" }; },
+    d => { d.uploads = { "a.png": { transferId: "t", mutationId: "m", hash: "h" } }; }, d => { d.pendingPaths = { "a.md": 1 }; },
+    d => { d.sending = { "a.md": "h" }; }, d => { d.handledRejections = { m: { path: "a.md", hash: "h", kind: "record" } }; },
+    d => { d.conflictCopies = { k: { path: "a.md", hash: "h", copy: "b.md", kind: "record" } }; }, d => { d.pathFailures = { "a.md": { signature: "s" } }; },
+  ];
+  for (const change of unsafe) {
+    const saved = JSON.parse(JSON.stringify(f.native.data));
+    change(f.native.data);
+    assert.equal(f.native.canStartOver, false, String(change));
+    await f.native.startOver();
+    f.native.data = saved;
+  }
+  f.native.phase = { kind: "ready", collectionId: "c" };
+  assert.equal(f.native.canStartOver, false, "only from a stop");
+  f.native.phase = { kind: "problem", collectionId: null, problem: {} }; f.native.mirroring = true;
+  assert.equal(f.native.canStartOver, false);
+  assert.equal(calls.length, 1);
+});
+test("sign in again and try again go to the SDK's own calls (prod F1)", async t => {
+  const f = fixture(t), calls = [];
+  f.native.call = async (method, ...args) => { calls.push([method, ...args]); return {}; };
+  f.native.phase = { kind: "problem", collectionId: null, problem: { key: "refused", action: "sign_in" } };
+  await f.native.signIn();
+  await f.native.retry();
+  f.native.phase = { kind: "needs_approval", collectionId: "c" };
+  await f.native.requestAccess();
+  await f.native.retry();
+  assert.deepEqual(calls, [["signIn"], ["start"], ["approve", "c"]], "retry only from a stop");
+});
+test("a stop the plugin noticed reads plainly, without the old 'Check Sync' tail (prod F4)", async t => {
+  const f = fixture(t), seen = [];
+  f.native.changed = text => seen.push(text);
+  f.native.fail("ownership", new Error("Folder owned elsewhere (or ownership marker missing); waiting. Never remove another host's marker."));
+  assert.equal(seen.at(-1), "Sync stopped. Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.");
+  f.native.fail("sync", { code: "conflict", reason: "revision" });
+  assert.equal(seen.at(-1), "Sync stopped. Something went wrong (conflict revision). Your files here are untouched.");
+  f.native.fail("sync", new Error("boom"));
+  assert.equal(seen.at(-1), "Sync stopped. Something went wrong. Your files here are untouched.");
+  for (const text of seen) assert.doesNotMatch(text, /: |\.\.|Check Sync/);
+});
 test("failed drain retains the marker and all local files", async t => {
   const f = fixture(t); f.native.data.collectionId = "collection"; f.native.data.markerSince = 1; f.native.writeMarker(); f.put("note.md", "unsent");
   f.native.reconcileAll = async () => true;

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { safeFolderName, type SyncSnapshot } from "../src/sync/controller";
 import { candidateBinaries, collectionIdFrom, stateDir, vaultCollection, type CollectionStatus, type DaemonStatus } from "../src/sync/daemon";
 import { applyScalarEdits, EditorFence, hashText, minimalChange, scalarToUtf16 } from "../src/sync/editorFence";
-import { errorText, modeName, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
+import { HANDED_OVER, errorText, failedText, modeName, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
 import { describeFailure } from "../src/sync/native/failures";
 import { differingLines, nameFromLink, syncNowSummary } from "../src/workspace/syncPane";
 import type { ActivityKind } from "../src/sync/native/device";
@@ -205,6 +205,31 @@ test("a stop explained by the sync engine reads as plain sentences (LAB F4)", ()
     assert.match(text, /^Sync stopped\. \S.*\.$/);
   }
   assert.equal(stoppedText({ title: "Something broke", message: "try later" }), "Sync stopped. Something broke. Try later.");
+});
+
+test("an unfinished sign-in reads as a step to take, not a stopped sync (prod F1)", () => {
+  const problem = { key: "refused", code: "refused", action: "sign_in", title: "Sign-in wasn't finished", message: "Access wasn't approved. Sign in again when you're ready." };
+  const text = stoppedText(problem);
+  assert.equal(text, "Sign-in wasn't finished. Access wasn't approved. Sign in again when you're ready.");
+  const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
+  const summary = summarize({ ...base, direct: { text, phase: { kind: "problem", problem } } } as SyncSnapshot);
+  assert.deepEqual([summary.label, summary.tone, summary.syncing, summary.detail], ["Sign in again", "attention", true, text]);
+});
+
+test("after Move to mdbase app the status bar is neutral and says what's next (prod F5)", () => {
+  const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
+  const summary = summarize({ ...base, direct: { text: HANDED_OVER, phase: { kind: "handed_over" } } } as SyncSnapshot);
+  assert.equal(summary.label, "Moved to mdbase app");
+  assert.equal(summary.tone, "quiet");
+  assert.match(summary.detail, /add this folder in the mdbase app/);
+  assert.doesNotMatch(`${summary.label} ${summary.detail}`, /attention|problem|error/i);
+});
+
+test("a stop the plugin noticed reads as one plain sentence (prod F4)", () => {
+  assert.equal(failedText("Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched."),
+    "Sync stopped. Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.");
+  assert.equal(failedText("something went wrong (conflict revision). Your files here are untouched"), "Sync stopped. Something went wrong (conflict revision). Your files here are untouched.");
+  assert.doesNotMatch(failedText("x."), /\.\.|Check Sync/);
 });
 
 test("a failed unlock says what to do, in the plugin's words where it has them", () => {
