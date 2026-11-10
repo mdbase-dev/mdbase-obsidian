@@ -12,6 +12,9 @@
         "records.create",
         "records.edit",
         "records.delete"
+      ],
+      "optional": [
+        "offline.replica"
       ]
     },
     "files": {

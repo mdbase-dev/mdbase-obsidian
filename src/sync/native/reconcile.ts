@@ -3,12 +3,12 @@
 export interface DiskIdentity { dev: number; ino: number; birthtimeMs?: number }
 export interface Synced {
   id: string;
-  kind: "record" | "file";
+  kind: "record" | "file" | "resource";
   revision: string;
   hash: string;
   disk?: DiskIdentity;
 }
-export interface RemoteVersion { id: string; kind: "record" | "file"; revision: string; hash?: string }
+export interface RemoteVersion { id: string; kind: "record" | "file" | "resource"; revision: string; hash?: string }
 export type Decision = "none" | "remember" | "push" | "pull" | "deleteRemote" | "deleteLocal" | "forget" | "conflict";
 export function reconcileDecision(known: Synced | undefined, localHash: string | undefined, remote: RemoteVersion | undefined): Decision {
   if (!known) {

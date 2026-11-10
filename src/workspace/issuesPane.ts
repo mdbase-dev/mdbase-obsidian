@@ -59,7 +59,7 @@ export class IssuesPane {
     });
     if (!allIssues.length) return;
     const controls = document.createDiv({ cls: "mdbase-issue-controls" });
-    const severity = controls.createEl("select");
+    const severity = controls.createEl("select", { cls: "dropdown" });
     severity.setAttr("aria-label", "Issue severity");
     severity.createEl("option", { value: "all", text: "All severities" });
     severity.createEl("option", { value: "error", text: "Errors" });
@@ -70,7 +70,7 @@ export class IssuesPane {
       this.issueLimit = 250;
       this.ctx.render();
     };
-    const groupBy = controls.createEl("select");
+    const groupBy = controls.createEl("select", { cls: "dropdown" });
     groupBy.setAttr("aria-label", "Group issues");
     groupBy.createEl("option", { value: "file", text: "By file" });
     groupBy.createEl("option", { value: "rule", text: "By rule" });
@@ -79,7 +79,9 @@ export class IssuesPane {
       this.issueGroupBy = groupBy.value === "rule" ? "rule" : "file";
       this.ctx.render();
     };
-    const query = controls.createEl("input", { type: "search" });
+    // Obsidian's own search field markup, so it gets the magnifier and clear button.
+    const searchBox = controls.createDiv({ cls: "search-input-container mdbase-issue-search" });
+    const query = searchBox.createEl("input", { type: "search" });
     query.setAttr("aria-label", "Filter issues");
     query.setAttr("data-focus-key", "issue-search");
     query.placeholder = "Filter issues";
@@ -92,6 +94,12 @@ export class IssuesPane {
       next?.focus();
       next?.setSelectionRange(next.value.length, next.value.length);
     };
+    const clear = searchBox.createDiv({ cls: "search-input-clear-button" });
+    clear.setAttr("aria-label", "Clear filter");
+    clear.onclick = () => {
+      query.value = "";
+      query.dispatchEvent(new Event("input"));
+    };
     const normalizedQuery = this.issueQuery.trim().toLowerCase();
     const filtered = allIssues.filter((issue) => {
       if (this.issueSeverity !== "all" && issue.severity !== this.issueSeverity) return false;
@@ -100,7 +108,7 @@ export class IssuesPane {
     });
     const filteredFiles = new Set(filtered.map((issue) => issue.path)).size;
     if (filtered.length !== allIssues.length || filtered.length > this.issueLimit) {
-      document.createDiv({ cls: "mdbase-issues-summary", text:
+      document.createDiv({ cls: "search-results-info mdbase-issues-summary", text:
         `${Math.min(filtered.length, this.issueLimit).toLocaleString()} of ${filtered.length.toLocaleString()} issues · ${filteredFiles.toLocaleString()} files`,
       });
     }
@@ -127,19 +135,21 @@ export class IssuesPane {
     const groups = new Map<string, MdbaseIssue[]>();
     for (const issue of issues) groups.set(issue.path, [...(groups.get(issue.path) ?? []), issue]);
     for (const [path, fileIssues] of groups) {
-      const group = document.createEl("section", { cls: "mdbase-issue-group" });
-      const groupHeader = group.createDiv({ cls: "mdbase-issue-group-header" });
-      const fileButton = groupHeader.createEl("button", { cls: "mdbase-issue-file-button" });
-      setIcon(fileButton.createSpan({ cls: "mdbase-issue-file-icon" }), "file-text");
-      fileButton.createSpan({ cls: "mdbase-issue-file-path", text: path });
-      fileButton.setAttr("title", `Open ${path}`);
-      fileButton.onclick = () => void this.ctx.host.openFileByPath(path);
-      groupHeader.createSpan({
-        cls: "mdbase-issue-file-count",
-        text: `${fileIssues.length} ${fileIssues.length === 1 ? "issue" : "issues"}`,
-      });
+      const { group, header, name, flair } = this.resultGroup(document);
+      header.addClass("is-clickable");
+      header.setAttr("role", "button");
+      header.tabIndex = 0;
+      header.setAttr("title", `Open ${path}`);
+      setIcon(name.createSpan({ cls: "mdbase-issue-file-icon" }), "file-text");
+      name.createSpan({ cls: "mdbase-issue-file-path", text: path });
+      const open = () => void this.ctx.host.openFileByPath(path);
+      header.onclick = open;
+      header.onkeydown = (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } };
+      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: `${fileIssues.length}` })
+        .setAttr("aria-label", `${fileIssues.length} ${fileIssues.length === 1 ? "issue" : "issues"}`);
+      const matches = group.createDiv({ cls: "search-result-file-matches" });
       for (const issue of fileIssues) {
-        const row = group.createDiv({ cls: "mdbase-issue-row" });
+        const row = matches.createDiv({ cls: "search-result-file-match mdbase-issue-row" });
         this.fillIssueRow(row, issue, `${issue.severity === "warn" ? "Warning" : "Error"}${issue.field ? ` · ${issue.field}` : ""}`);
       }
     }
@@ -149,17 +159,14 @@ export class IssuesPane {
   private renderIssuesByRule(document: HTMLElement, issues: MdbaseIssue[]): void {
     for (const rule of groupIssuesByRule(issues)) {
       const first = rule.issues[0];
-      const group = document.createEl("section", { cls: "mdbase-issue-group" });
-      const groupHeader = group.createDiv({ cls: "mdbase-issue-group-header" });
-      const title = groupHeader.createDiv({ cls: "mdbase-issue-rule-title" });
+      const { group, name: title, flair } = this.resultGroup(document);
+      title.addClass("mdbase-issue-rule-title");
       title.createSpan({ cls: "mdbase-issue-indicator", attr: { "data-severity": first.severity, "aria-hidden": "true" } });
       title.createSpan({ cls: "mdbase-issue-file-path", text: issueRuleLabel(first) });
       const files = new Set(rule.issues.map((issue) => issue.path)).size;
-      groupHeader.createSpan({
-        cls: "mdbase-issue-file-count",
-        text: `${files.toLocaleString()} ${files === 1 ? "note" : "notes"}`,
-      });
-      const actions = groupHeader.createDiv({ cls: "mdbase-issue-row-actions" });
+      const actions = flair.createDiv({ cls: "mdbase-issue-row-actions" });
+      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: files.toLocaleString() })
+        .setAttr("aria-label", `${files.toLocaleString()} ${files === 1 ? "note" : "notes"}`);
       this.renderEditRuleButton(actions, first);
       const fixLabel = this.ctx.host.getQuickFixLabel(first);
       const fixable = fixLabel ? rule.issues.filter((issue) => this.ctx.host.getQuickFixLabel(issue) === fixLabel) : [];
@@ -169,11 +176,21 @@ export class IssuesPane {
         bulk.disabled = this.ctx.busy;
         bulk.onclick = () => void this.applyBulkQuickFix(fixLabel, fixable);
       }
+      const matches = group.createDiv({ cls: "search-result-file-matches" });
       for (const issue of rule.issues) {
-        const row = group.createDiv({ cls: "mdbase-issue-row" });
+        const row = matches.createDiv({ cls: "search-result-file-match mdbase-issue-row" });
         this.fillIssueRow(row, issue, issue.path, true);
       }
     }
+  }
+
+  /** One group, as Obsidian's search shows a file and its matches. */
+  private resultGroup(document: HTMLElement): { group: HTMLElement; header: HTMLElement; name: HTMLElement; flair: HTMLElement } {
+    const group = document.createDiv({ cls: "tree-item search-result mdbase-issue-group" });
+    const header = group.createDiv({ cls: "tree-item-self search-result-file-title mdbase-issue-group-header" });
+    const name = header.createDiv({ cls: "tree-item-inner" });
+    const flair = header.createDiv({ cls: "tree-item-flair-outer" });
+    return { group, header, name, flair };
   }
 
   private fillIssueRow(row: HTMLElement, issue: MdbaseIssue, context: string, contextOpensFile = false): void {

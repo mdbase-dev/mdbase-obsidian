@@ -294,13 +294,14 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
 
   private renderTopbar(container: HTMLElement): void {
     const topbar = container.createDiv({ cls: "mdbase-topbar" });
-    const nav = topbar.createDiv({ cls: "mdbase-nav" });
+    const nav = topbar.createDiv({ cls: "nav-buttons-container mdbase-nav" });
     nav.setAttr("role", "tablist");
     nav.setAttr("aria-label", "mdbase destinations");
-    const destinations = [["types", "Types"], ["sync", "Sync"], ["issues", "Issues"]] as const;
-    for (const [index, [destination, label]] of destinations.entries()) {
-      const button = nav.createEl("button", { text: label, cls: "clickable-icon" });
-      button.addClass("mdbase-nav-button");
+    const destinations = [["types", "Types", "shapes"], ["sync", "Sync", "refresh-cw"], ["issues", "Issues", "alert-triangle"]] as const;
+    for (const [index, [destination, label, icon]] of destinations.entries()) {
+      const button = nav.createEl("button", { cls: "clickable-icon nav-action-button mdbase-nav-button" });
+      setIcon(button.createSpan({ cls: "mdbase-nav-icon" }), icon);
+      button.createSpan({ cls: "mdbase-nav-label", text: label });
       button.setAttr("role", "tab");
       button.id = `${this.navigationId}-${destination}-tab`;
       if (this.destination === destination) button.setAttr("aria-controls", `${this.navigationId}-${destination}-panel`);

@@ -6,6 +6,11 @@ import { createMdbase } from "@mdbase-dev/sdk";
 import template from "./mdbase-app.json";
 import { DownloadPull } from "./downloadPull";
 import { RetryUploads } from "./upload";
+// Sync carries files, and spec 04 never rejects those for validity: an invalid
+// note syncs and its issues are reported on read. `validation` needs an SDK and
+// replica with the submit validation param; older ones ignore it and refuse
+// invalid notes as invalid_record.
+const SYNC_WRITE: { validation?: "off" | "warn" | "error" } = { validation: "warn" };
 const manifest = { ...template, homepage: `${location.origin}/`, redirect_uris: [`${location.origin}/auth/mdbase/callback`] };
 const namespace = new URL(location.href).searchParams.get("vault");
 if (!namespace) throw new Error("Missing stable vault storage namespace");
@@ -37,15 +42,32 @@ const confirmed = async (w: any) => {
   return w;
 };
 
+// The record a confirmed write produced. An applied receipt carries it with the
+// revision a read-back returns (checked against production; the view's own
+// `state` is the stale optimistic one), which saves that read. The caller keeps
+// only identity and revision.
+const written = async (ws: any[], id: string) => {
+  for (const w of ws) {
+    const receipt: any = await w.confirmed;
+    const r = receipt?.state === "confirmed" && receipt.status === "applied" ? receipt.records?.find((x: any) => x.id === id) : undefined;
+    if (r && typeof r.revision === "string" && typeof r.path === "string") return { id: r.id, path: r.path, revision: r.revision, via: "receipt" };
+  }
+  return plain(await records().get(id, { document: true }));
+};
+
 function phaseSummary() {
   const s: any = mdbase.getSnapshot();
   const p: any = s.phase;
   return {
     kind: p.kind,
     collectionId: p.collectionId ?? null,
-    sync: s.sync ? { kind: s.sync.kind, text: s.sync.text, pending: s.sync.pending, health: s.sync.health } : null,
-    problem: p.problem ? { code: p.problem.code, reason: p.problem.reason, title: p.problem.title, message: p.problem.message } : null,
-    collections: (s.collections ?? []).map((c: any) => ({ id: c.collectionId, name: c.displayName ?? c.name ?? c.collectionId, availability: c.availability?.kind ?? c.availability ?? null })),
+    sync: s.sync ? { kind: s.sync.kind, text: s.sync.text, pending: s.sync.pending, health: s.sync.health, live: s.sync.live ?? null, holds: s.sync.holds ?? 0, conflicts: s.sync.conflicts ?? 0 } : null,
+    // `action` is the SDK's suggested next step ("approve" to request access again).
+    problem: p.problem ? { code: p.problem.code, reason: p.problem.reason, key: p.problem.key ?? null, title: p.problem.title, message: p.problem.message, action: p.problem.action ?? null } : null,
+    // A Private collection without its key on this device: how the account
+    // unlocks it, and whether an attempt is running. Never the secret.
+    unlock: p.kind === "needs_unlock" ? { mode: p.mode, unlocking: !!p.unlocking, name: p.displayName ?? null } : null,
+    collections: (s.collections ?? []).map((c: any) => ({ id: c.collectionId, name: c.displayName ?? c.name ?? c.collectionId, availability: c.availability?.kind ?? c.availability ?? null, private: c.mode === "private" })),
   };
 }
 let last = "";
@@ -64,6 +86,9 @@ const files = (): any => { records(); return (mdbase.getSnapshot().phase as any)
 const fplain = (f: any) => ({ id: f.id, path: f.path, size: f.size, digest: f.digest, state: f.state, media: f.media, confirmed: f.confirmedSeq > 0 && f.state !== "pending_upload" && !f.hold });
 const plain = (r: any) => ({ id: r.id, path: r.path, revision: r.revision, document: r.document, state: r.state?.kind ?? r.state, confirmed: r.state?.state === "confirmed" && !r.state?.hold && !r.state?.unresolved });
 
+// A resource has no UUID; its path is its identity.
+const rplain = (r: any) => ({ id: r.path, path: r.path, revision: r.revision, document: r.text, confirmed: r.state === "confirmed" });
+
 const downloads = new Map<string, DownloadPull>();
 const uploads = new RetryUploads();
 let watch: { close?: () => void; stop?: () => void; ready?: Promise<void> } | null = null;
@@ -76,6 +101,9 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   configure: async () => { await mdbase.configure(); return phaseSummary(); },
   approve: async (id?: string | null) => { await mdbase.approve(id ?? null); return phaseSummary(); },
   select: async (id: string) => { await mdbase.select(id); return phaseSummary(); },
+  // The secret is used for this one call. A wrong one resolves, still locked,
+  // with the problem on the phase; nothing here keeps or logs it.
+  unlock: async (id: string, secret: { password: string } | { recoveryKey: string }) => { await (mdbase as any).unlock(id, secret); return phaseSummary(); },
   // Every record with its exact source.
   all: async () => {
     // Native QUERY budgets hydrated source bytes as well as row count. Even a
@@ -119,13 +147,46 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     return true;
   },
   create: async (path: string, document: string) => {
-    const w: any = await confirmed(await records().create({ path, document }));
-    return plain(await records().get(w.recordId, { document: true }));
+    const w: any = await confirmed(await records().create({ path, document }, SYNC_WRITE));
+    return written([w], w.recordId);
   },
   replace: async (id: string, base: { path: string; doc: string }, next: { path: string; doc: string }, revision: string) => {
-    const ws: any[] = await records().submit([{ kind: "document", id, base, new: next, ifRevision: revision }]);
+    const ws: any[] = await records().submit([{ kind: "document", id, base, new: next, ifRevision: revision }], SYNC_WRITE);
     await Promise.all(ws.map(confirmed));
-    return plain(await records().get(id, { document: true }));
+    return written(ws, id);
+  },
+  // The collection's file policy (which attachments sync, for every device).
+  inclusion: async () => {
+    const i: any = (await records().describe()).inclusion;
+    return i ? { include: [...(i.include ?? [])], exclude: i.exclude ? [...i.exclude] : undefined, maxSize: typeof i.maxSize === "bigint" ? Number(i.maxSize) : i.maxSize ?? undefined } : null;
+  },
+  // ---- definitions: mdbase.yaml, type and contract files (resources, §4.1) ----
+  // They are not records, so the record change stream never reports them; the
+  // plugin lists them on every pass. Revision is the CAS token for put/delete.
+  resourcesAll: async () => {
+    const out: any[] = []; let cursor: string | undefined;
+    do {
+      const page: any = await records().resources.list({ text: true, limit: 128, ...(cursor ? { cursor } : {}) });
+      for (const r of page.resources) {
+        // A listing may omit a large text; read that one resource on its own.
+        const full: any = typeof r.text === "string" ? r : await records().resources.get(r.path);
+        if (typeof full.text !== "string") throw Object.assign(new Error("Resource text unavailable"), { code: "unavailable" });
+        out.push(rplain(full));
+      }
+      cursor = page.complete ? undefined : page.cursor;
+      if (!page.complete && !cursor) throw Object.assign(new Error("Incomplete resource listing"), { code: "unavailable" });
+    } while (cursor);
+    return out;
+  },
+  resourcePut: async (path: string, doc: string, baseRevision?: string) => {
+    await confirmed(await records().resources.put(path, doc, baseRevision ? { baseRevision } : { mustNotExist: true }));
+    const got: any = await records().resources.get(path);
+    // An empty document must never stand in for text a single read omits.
+    if (typeof got.text !== "string") return { ...rplain(got), document: doc };
+    return rplain(got);
+  },
+  resourceDelete: async (path: string, baseRevision: string) => {
+    await confirmed(await records().resources.delete(path, { baseRevision })); return true;
   },
   // ---- files (attachments and anything not a record) ----
   filesAll: async () => { const out: any[] = []; for await (const f of files().list({})) out.push(fplain(f)); return out; },
@@ -216,7 +277,10 @@ async function receive(e: MessageEvent) {
     const value: any = await fn(...(args ?? []));
     post({ type: "result", id, ok: true, value }, method === "downloadNext" && value.bytes ? [value.bytes.buffer] : []);
   } catch (err: any) {
-    post({ type: "result", id, ok: false, error: { code: err?.code ?? null, reason: err?.reason ?? null, mutationId: err?.mutationId ?? null, message: String(err?.message ?? err) } });
+    // Validation issues say why a write was refused ("missing required field
+    // title"). They go to the plugin's Sync tab, never to the log.
+    const issues = Array.isArray(err?.issues) ? err.issues.slice(0, 5).map((i: any) => ({ code: String(i?.code ?? ""), severity: String(i?.severity ?? ""), message: String(i?.message ?? ""), ...(typeof i?.location === "string" && i.location ? { location: i.location } : {}) })) : null;
+    post({ type: "result", id, ok: false, error: { code: err?.code ?? null, reason: err?.reason ?? null, mutationId: err?.mutationId ?? null, issues, message: String(err?.message ?? err) } });
   }
 }
 window.addEventListener("message", e => {

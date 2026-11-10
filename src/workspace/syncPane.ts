@@ -1,10 +1,45 @@
-import { Notice, Setting } from "obsidian";
+import { Notice, Setting, SuggestModal, TFolder, setIcon, type App } from "obsidian";
 import type { HeldFile, HoldChoice, SyncKind, SyncSnapshot } from "../sync/controller";
-import { errorText, holdReasonText, modeName, summarize } from "../sync/words";
+import type { DirectFailure, MergePrompt, SyncTotals } from "../sync/native/plugin";
+import { MEDIA_CLASSES, type ActivityEntry, type ActivityKind, type CollectionInclusion, type DeviceFilter, type MediaClass } from "../sync/native/device";
+import { PRIVATE_COLLECTIONS_HINT, PRIVATE_SIGN_IN_HINT, errorText, holdReasonText, modeName, summarize, unlockProblemText } from "../sync/words";
 import { renderStatus, type WorkspaceContext } from "./shared";
 
 export const DOWNLOAD_URL = "https://mdbase.dev/downloads";
 
+const MAX_FAILURES_SHOWN = 50;
+const TONE_ICONS: Record<string, string> = {
+  ok: "check-circle-2",
+  busy: "refresh-cw",
+  attention: "alert-triangle",
+  problem: "alert-circle",
+  quiet: "cloud",
+};
+const MEDIA_NAMES: Record<MediaClass, [string, string]> = {
+  image: ["Images", "png, jpg, gif, svg, webp and other pictures"],
+  audio: ["Audio", "mp3, m4a, wav, ogg and other recordings"],
+  video: ["Videos", "mp4, mov, webm and other video"],
+  pdf: ["PDFs", "PDF documents"],
+  other: ["Other files", "Any other attachment, such as canvas, zip or csv files"],
+};
+const ACTIVITY: Record<ActivityKind, [string, string]> = {
+  uploaded: ["upload", "Sent"],
+  downloaded: ["download", "Received"],
+  deleted_here: ["trash-2", "Deleted here (removed on another device)"],
+  deleted_remote: ["trash-2", "Deleted everywhere"],
+  moved: ["folder-input", "Moved"],
+  conflict: ["copy", "Both versions kept"],
+  not_synced: ["alert-triangle", "Couldn't sync"],
+};
+type ActivityFilter = "all" | "sent" | "received" | "deleted" | "problems";
+const FILTERS: [ActivityFilter, string, ActivityKind[]][] = [
+  ["all", "All", []],
+  ["sent", "Sent", ["uploaded"]],
+  ["received", "Received", ["downloaded"]],
+  ["deleted", "Deleted and moved", ["deleted_here", "deleted_remote", "moved"]],
+  ["problems", "Problems", ["conflict", "not_synced"]],
+];
+const ACTIVITY_PAGE = 25;
 const HANDLED_NOTICES = new Set(["holds_pending", "devices_waiting_for_approval"]);
 
 /**
@@ -18,6 +53,14 @@ export class SyncPane {
   private joinText = "";
   private joinFolder = "";
   private codes = new Map<string, string>();
+  private activityFilter: ActivityFilter = "all";
+  private activityShown = ACTIVITY_PAGE;
+  /** Sync now: running, then what it did (kept until the next press). */
+  /** Typed into the unlock form. Dropped the moment it is sent, and whenever the form goes away. */
+  private unlockSecret = "";
+  private unlockWith: "password" | "recovery" = "password";
+  private syncingNow = false;
+  private syncNowResult: { at: number; text: string; tone: "ok" | "attention" } | null = null;
 
   constructor(private readonly ctx: WorkspaceContext) {}
 
@@ -58,8 +101,10 @@ export class SyncPane {
     const root = container.createDiv({ cls: "mdbase-sync" });
     const heading = root.createDiv({ cls: "mdbase-sync-heading" });
     heading.setAttr("data-tone", summary.tone);
-    heading.createEl("h2", { text: summary.syncing ? summary.label : "Sync" });
-    const detail = heading.createEl("p", { cls: "mdbase-sync-detail", text: summary.detail });
+    setIcon(heading.createDiv({ cls: "mdbase-sync-heading-icon" }), TONE_ICONS[summary.tone] ?? "cloud");
+    const headingText = heading.createDiv({ cls: "mdbase-sync-heading-text" });
+    headingText.createEl("h2", { text: summary.syncing ? summary.label : "Sync" });
+    const detail = headingText.createEl("p", { cls: "mdbase-sync-detail", text: summary.detail });
     detail.setAttr("role", "status");
     if (s.busy) root.createEl("p", { cls: "mdbase-muted", text: `${s.busy}…` });
 
@@ -67,21 +112,37 @@ export class SyncPane {
       const native = this.ctx.host.syncController.native;
       if (!native) return;
       const phase = s.direct.phase.kind;
-      if (phase === "signed_out" || phase === "authorizing") {
+      if (phase !== "needs_unlock") this.unlockSecret = "";
+      if (s.direct.merge) {
+        this.renderMerge(root, s.direct.merge);
+      } else if (phase === "signed_out" || phase === "authorizing") {
         this.actions(root, [["Sign in", true, () => this.run(() => native.signIn())]]);
+        root.createEl("p", { cls: "mdbase-muted", text: PRIVATE_SIGN_IN_HINT });
+      } else if (phase === "needs_unlock") {
+        this.renderUnlock(root, s.direct.phase);
       } else if (phase === "choosing") {
         this.actions(root, [
           ["Choose collection", true, () => native.choose()],
           ["Add a collection", false, () => this.run(() => native.addCollection())],
         ]);
+        root.createEl("p", { cls: "mdbase-muted", text: PRIVATE_COLLECTIONS_HINT });
       } else if (phase === "ready") {
-        root.createEl("p", { text: "Edits made in two places are kept as separate conflict files beside the original." });
-        this.actions(root, [["Check again", false, () => this.run(() => native.enqueue(() => native.reconcileAll(false, undefined, true)))]]);
-        const transfer = new Setting(root).setName("Continue syncing with mdbase")
-          .setDesc("Finish sending changes and stop syncing in Obsidian. Then add this folder to the mdbase app using the same collection. If sending fails, Obsidian keeps ownership.");
-        transfer.addButton(button => button.setButtonText("Finish and stop").onClick(() => this.run(() => native.handover())));
+        this.renderSyncNow(root, () => native.enqueue(() => native.reconcileAll(false, undefined, true)));
+        this.renderDirectFailures(root, s.direct.failures ?? []);
+        this.renderOverview(root, s.direct.lastSynced ?? null, s.direct.totals ?? null, s.direct.phase.sync);
+        this.renderDevice(root, s.direct.device ?? { skip: [], folders: [] }, s.direct.inclusion ?? null, (next) => this.run(() => native.setDevice(next)));
+        this.renderActivity(root, s.direct.activity ?? []);
+        const advanced = this.group(root, "Advanced", undefined, true);
+        new Setting(advanced).setName("Edits on two devices at once")
+          .setDesc("Both versions are kept: the other one as a conflict file beside the original.");
+        const transfer = new Setting(advanced).setName("Move sync to the mdbase app")
+          .setDesc("Obsidian is syncing this vault itself. To let the mdbase desktop app do it instead, Obsidian sends any remaining changes and stops. Then add this folder in the mdbase app and pick the same collection. If anything can't be sent, Obsidian carries on syncing.");
+        transfer.addButton(button => button.setButtonText("Move to mdbase app").onClick(() => this.run(() => native.handover())));
       } else {
-        this.actions(root, [["Check again", false, () => this.run(() => this.refreshAndRender())]]);
+        // A stop the sync engine can undo by asking mdbase again (access removed).
+        const problem = s.direct.phase.problem as { action?: unknown } | null | undefined;
+        const again: [string, boolean, () => void][] = problem?.action === "approve" ? [["Request access again", true, () => this.run(() => native.requestAccess())]] : [];
+        this.actions(root, [...again, ["Check again", false, () => this.run(() => this.refreshAndRender())]]);
       }
       return;
     }
@@ -116,7 +177,7 @@ export class SyncPane {
     this.renderHolds(root);
     this.renderMerged(root);
     for (const notice of collection.notices) {
-      if (!HANDLED_NOTICES.has(notice.code)) root.createEl("p", { cls: "mdbase-sync-notice", text: notice.message });
+      if (!HANDLED_NOTICES.has(notice.code)) this.callout(root).createEl("p", { text: notice.message });
     }
     this.renderDetails(root);
   }
@@ -134,6 +195,150 @@ export class SyncPane {
       button.disabled = this.s.busy !== null;
       button.onclick = onClick;
     }
+  }
+
+  /** A settings-style group: an optional heading above a bordered list, as in Obsidian's settings. */
+  /** `list` groups hold setting rows and keep Obsidian's own row dividers and padding. */
+  private group(root: HTMLElement, title?: string, cls?: string, list = false): HTMLElement {
+    const group = root.createDiv({ cls: "setting-group mdbase-sync-group" });
+    if (title) {
+      const heading = group.createDiv({ cls: "setting-item setting-item-heading" });
+      heading.createDiv({ cls: "setting-item-info" }).createDiv({ cls: "setting-item-name", text: title });
+    }
+    const body = group.createDiv({ cls: list ? "setting-items mdbase-sync-list" : "setting-items mdbase-sync-section" });
+    if (cls) body.addClass(cls);
+    return body;
+  }
+
+  private renderSyncNow(root: HTMLElement, sync: () => Promise<unknown>): void {
+    const row = root.createDiv({ cls: "mdbase-actions mdbase-sync-now" });
+    const button = row.createEl("button", { cls: "mdbase-sync-now-button" });
+    button.setAttr("data-focus-key", "sync-now");
+    setIcon(button.createSpan({ cls: "mdbase-sync-now-icon" }), "refresh-cw");
+    button.createSpan({ text: this.syncingNow ? "Syncing…" : "Sync now" });
+    button.toggleClass("is-syncing", this.syncingNow);
+    button.disabled = this.syncingNow || this.s.busy !== null;
+    button.setAttr("aria-busy", String(this.syncingNow));
+    const result = row.createSpan({ cls: "mdbase-sync-now-result" });
+    result.setAttr("role", "status");
+    if (this.syncingNow) result.setText("Checking every file against the collection…");
+    else if (this.syncNowResult) {
+      result.setText(`${this.syncNowResult.text} · ${ago(this.syncNowResult.at).toLowerCase()}`);
+      result.setAttr("data-tone", this.syncNowResult.tone);
+    }
+    button.onclick = () => {
+      const started = Date.now();
+      const failedBefore = this.s.direct?.failures?.length ?? 0;
+      this.syncingNow = true;
+      this.syncNowResult = null;
+      this.ctx.render();
+      void sync().finally(() => {
+        const direct = this.s.direct;
+        const done = (direct?.activity ?? []).filter((e) => e.at >= started);
+        const failed = direct?.failures?.length ?? 0;
+        this.syncingNow = false;
+        this.syncNowResult = syncNowSummary(done, failed, failedBefore, direct?.phase.kind === "ready" && !/stopped/i.test(direct.text));
+        this.ctx.render();
+      });
+    };
+  }
+
+  private renderOverview(root: HTMLElement, lastSynced: number | null, totals: SyncTotals | null, sync?: { pending: number; live?: boolean | null; holds?: number; conflicts?: number }): void {
+    const list = this.group(root, "Overview", "mdbase-sync-overview", true);
+    const row = (name: string, value: string, desc?: string) => {
+      const setting = new Setting(list).setName(name);
+      if (desc) setting.setDesc(desc);
+      setting.controlEl.createSpan({ cls: "mdbase-sync-value", text: value });
+    };
+    row("Last synced", lastSynced ? ago(lastSynced) : "Not yet");
+    if (sync?.pending) row("Waiting to send", count(sync.pending, "change"));
+    if (sync?.live === false) row("Live updates", "Paused", "Changes from other devices arrive when Obsidian is in front, or when you choose Sync now.");
+    if (!totals) {
+      row("Synced here", "Counting…");
+      return;
+    }
+    row("Notes", totals.notes.toLocaleString());
+    row("Attachments", totals.attachments.toLocaleString(), totals.attachments ? `${size(totals.attachmentBytes)} in total` : undefined);
+    row("Types and settings", totals.definitions.toLocaleString(), "Type definitions and mdbase.yaml");
+    if (totals.notHere) row("Not on this device", count(totals.notHere, "file"), totals.byCollection === totals.notHere ? "In the collection, but its own file settings leave them out." : "In the collection, but left out here by your choices below or the collection's file settings.");
+  }
+
+  private renderDevice(root: HTMLElement, device: DeviceFilter, inclusion: CollectionInclusion | null, save: (next: DeviceFilter) => void): void {
+    const list = this.group(root, "On this device", "mdbase-sync-device", true);
+    new Setting(list).setName("Notes and types").setDesc("Always synced, apart from the folders you leave out below.");
+    for (const media of MEDIA_CLASSES) {
+      const [name, desc] = MEDIA_NAMES[media];
+      // The collection's own setting wins: a kind it doesn't sync is off on every device.
+      const collectionOff = inclusion !== null && !inclusion.include.includes(media);
+      new Setting(list).setName(name)
+        .setDesc(collectionOff ? "Not synced in this collection. Change this in the mdbase app." : desc)
+        .addToggle((toggle) => toggle
+          .setValue(!collectionOff && !device.skip.includes(media))
+          .setDisabled(collectionOff)
+          .onChange((on) => save({ ...device, skip: on ? device.skip.filter((m) => m !== media) : [...device.skip, media] })));
+    }
+    const limits = collectionLimits(inclusion);
+    if (limits) new Setting(list).setName("Collection limits").setDesc(`${limits} Set for every device in the mdbase app.`);
+    const folders = new Setting(list).setName("Folders left out")
+      .setDesc(device.folders.length ? "Nothing in these folders syncs to or from this device." : "Choose folders whose notes and files stay off this device.");
+    folders.addButton((button) => button.setButtonText("Add folder").onClick(() => {
+      new FolderPicker(this.ctx.app, device.folders, (folder) => save({ ...device, folders: [...device.folders, folder] })).open();
+    }));
+    for (const folder of device.folders) {
+      const row = new Setting(list).setName(folder);
+      row.settingEl.addClass("mdbase-sync-folder");
+      row.addExtraButton((button) => button
+        .setIcon("x").setTooltip(`Sync ${folder} again`)
+        .onClick(() => save({ ...device, folders: device.folders.filter((f) => f !== folder) })));
+    }
+    list.createDiv({ cls: "setting-item mdbase-sync-device-note", text: "These choices apply to this device only. Turning something off never deletes it, here or anywhere else; turning it back on brings it here again." });
+  }
+
+  private renderActivity(root: HTMLElement, activity: ActivityEntry[]): void {
+    const group = root.createDiv({ cls: "setting-group mdbase-sync-group" });
+    const heading = group.createDiv({ cls: "setting-item setting-item-heading" });
+    heading.createDiv({ cls: "setting-item-info" }).createDiv({ cls: "setting-item-name", text: "Activity" });
+    const filters = heading.createDiv({ cls: "setting-item-control mdbase-activity-filters" });
+    filters.setAttr("role", "radiogroup");
+    filters.setAttr("aria-label", "Show activity");
+    for (const [key, label] of FILTERS) {
+      const button = filters.createEl("button", { cls: "mdbase-activity-filter", text: label });
+      button.setAttr("role", "radio");
+      button.setAttr("aria-checked", String(this.activityFilter === key));
+      button.toggleClass("is-active", this.activityFilter === key);
+      button.onclick = () => { this.activityFilter = key; this.activityShown = ACTIVITY_PAGE; this.ctx.render(); };
+    }
+    const kinds = FILTERS.find(([key]) => key === this.activityFilter)?.[2] ?? [];
+    const entries = kinds.length ? activity.filter((e) => kinds.includes(e.kind)) : activity;
+    const list = group.createDiv({ cls: "setting-items mdbase-activity" });
+    if (!entries.length) {
+      list.createDiv({ cls: "mdbase-activity-empty", text: activity.length ? "Nothing of this kind yet." : "Files sent and received appear here." });
+      return;
+    }
+    for (const entry of entries.slice(0, this.activityShown)) {
+      const row = list.createDiv({ cls: "mdbase-activity-row" });
+      row.setAttr("data-kind", entry.kind);
+      const [icon, verb] = ACTIVITY[entry.kind] ?? ["dot", entry.kind];
+      setIcon(row.createSpan({ cls: "mdbase-activity-icon" }), icon);
+      const text = row.createDiv({ cls: "mdbase-activity-text" });
+      const target = entry.to ?? entry.path;
+      const name = text.createEl("a", { cls: "mdbase-activity-path", text: target, href: "#" });
+      name.onclick = (event) => { event.preventDefault(); void this.ctx.host.openFileByPath(target); };
+      text.createDiv({ cls: "mdbase-activity-detail", text: entry.kind === "moved" ? `Moved from ${entry.path}${entry.from === "remote" ? " on another device" : ""}` : verb });
+      const time = row.createSpan({ cls: "mdbase-activity-time", text: ago(entry.at) });
+      time.setAttr("title", new Date(entry.at).toLocaleString());
+    }
+    if (entries.length > this.activityShown) {
+      const more = group.createEl("button", { cls: "mdbase-load-more", text: `Show more (${(entries.length - this.activityShown).toLocaleString()})` });
+      more.onclick = () => { this.activityShown += ACTIVITY_PAGE * 4; this.ctx.render(); };
+    }
+  }
+
+  /** A warning callout, using Obsidian's callout markup and colours. */
+  private callout(root: HTMLElement): HTMLElement {
+    const callout = root.createDiv({ cls: "callout mdbase-sync-notice" });
+    callout.setAttr("data-callout", "warning");
+    return callout.createDiv({ cls: "callout-content" });
   }
 
   private renderInstall(root: HTMLElement): void {
@@ -170,15 +375,14 @@ export class SyncPane {
     if (!this.name) this.name = this.ctx.app.vault.getName();
     const legacy = this.ctx.host.legacyConnect();
     if (legacy) {
-      const note = root.createDiv({ cls: "mdbase-sync-notice" });
+      const note = this.callout(root);
       note.createEl("p", { text: `This vault used the earlier mdbase Connect sync for "${legacy.name}", which has been replaced. Your notes here are untouched.` });
       note.createEl("p", { text: `To keep working on "${legacy.name}", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it.` });
       if (!this.joinText) this.joinText = legacy.collectionId;
       if (!this.joinFolder) this.joinFolder = legacy.name;
     }
 
-    const section = root.createDiv({ cls: "mdbase-sync-section" });
-    section.createEl("h3", { text: isCollection ? "Turn on sync" : "Sync this vault" });
+    const section = this.group(root, isCollection ? "Turn on sync" : "Sync this vault");
     if (!isCollection) {
       new Setting(section).setName("Name").setDesc("How this vault appears on your other devices.").addText((text) => text
         .setValue(this.name)
@@ -209,8 +413,7 @@ export class SyncPane {
     })]]);
 
     if (isCollection) return;
-    const join = root.createDiv({ cls: "mdbase-sync-section" });
-    join.createEl("h3", { text: "Add a collection you already sync" });
+    const join = this.group(root, "Add a collection you already sync");
     join.createEl("p", { cls: "mdbase-muted", text: "On a device that already syncs it, copy the link from the sync tab of the mdbase view, then paste it here. For now, private collections work on the first computer only, so only cloud copy collections can be added here." });
     new Setting(join).setName("Link or ID").addText((text) => {
       text.setPlaceholder("Paste the collection link").setValue(this.joinText).onChange((value) => { this.joinText = value; });
@@ -244,8 +447,7 @@ export class SyncPane {
   private renderApprovals(root: HTMLElement): void {
     const controller = this.ctx.host.syncController;
     for (const approval of this.s.approvals) {
-      const section = root.createDiv({ cls: "mdbase-sync-section" });
-      section.createEl("h3", { text: `${approval.name} wants to join` });
+      const section = this.group(root, `${approval.name} wants to join`);
       section.createEl("p", { text: "If you're setting up a new device, type the six-digit code it shows. Only approve devices you own." });
       new Setting(section).setName("Code").addText((text) => {
         text.setPlaceholder("123456").setValue(this.codes.get(approval.device) ?? "").onChange((value) => this.codes.set(approval.device, value));
@@ -263,10 +465,45 @@ export class SyncPane {
     }
   }
 
+  /** First sync of a vault that has notes into a collection that has items. */
+  private renderMerge(root: HTMLElement, merge: MergePrompt): void {
+    const native = this.ctx.host.syncController.native;
+    if (!native) return;
+    const section = this.group(root, `Combine this vault with “${merge.name}”?`);
+    const files = (n: number) => n === 1 ? "1 file" : `${n} files`;
+    section.createEl("p", { text: `This vault has ${files(merge.local)} and “${merge.name}” has ${files(merge.remote)}. Nothing has synced yet.` });
+    section.createEl("p", { cls: "mdbase-muted", text: "Combining copies the collection's notes into this vault and this vault's notes into the collection. Nothing is deleted. If the same file differs on each side, both versions are kept." });
+    this.actions(section, [
+      ["Combine and sync", true, () => this.run(() => native.confirmMerge())],
+      ["Use a different collection", false, () => native.chooseAnother()],
+    ]);
+  }
+
+  /** Paths in-plugin sync couldn't send or receive, each with its reason. */
+  private renderDirectFailures(root: HTMLElement, failures: DirectFailure[]): void {
+    if (!failures.length) return;
+    const native = this.ctx.host.syncController.native;
+    const section = this.group(root, failures.length === 1 ? "1 file not synced" : `${failures.length} files not synced`);
+    section.createEl("p", { cls: "mdbase-muted", text: "Everything else is in sync. These stay as they are on this computer until they're fixed; sync tries them again when they change." });
+    const list = section.createDiv({ cls: "mdbase-hold-list" });
+    for (const failure of failures.slice(0, MAX_FAILURES_SHOWN)) {
+      const row = list.createDiv({ cls: "mdbase-hold" });
+      const name = row.createEl("a", { cls: "mdbase-hold-path", text: failure.path, href: "#" });
+      name.onclick = (event) => { event.preventDefault(); void this.ctx.host.openFileByPath(failure.path); };
+      row.createDiv({ text: failure.title });
+      row.createDiv({ cls: "mdbase-muted", text: failure.detail });
+      if (failure.choose && native) this.actions(row, [
+        ["Keep this vault's", false, () => this.run(() => native.resolveDefinition(failure.path, "local"))],
+        ["Keep the collection's", false, () => this.run(() => native.resolveDefinition(failure.path, "remote"))],
+      ]);
+    }
+    if (failures.length > MAX_FAILURES_SHOWN) section.createEl("p", { cls: "mdbase-muted", text: `And ${failures.length - MAX_FAILURES_SHOWN} more.` });
+  }
+
   private renderHolds(root: HTMLElement): void {
     const holds = this.s.holds;
     if (!holds.length) return;
-    const section = root.createDiv({ cls: "mdbase-sync-section" });
+    const section = this.group(root);
     section.createEl("p", { cls: "mdbase-muted", text: "mdbase didn't overwrite anything. Until you choose, the version on this computer stays as it is." });
     const list = section.createDiv({ cls: "mdbase-hold-list" });
     for (const hold of holds) this.renderHold(list, hold);
@@ -300,12 +537,75 @@ export class SyncPane {
     body.createEl("pre", { cls: "mdbase-hold-text", text: y });
   }
 
+  /**
+   * A Private collection keeps its key on the user's own devices, so this vault
+   * has to be given it once: with the encryption password or the recovery key.
+   */
+  private renderUnlock(root: HTMLElement, phase: NonNullable<SyncSnapshot["direct"]>["phase"]): void {
+    const native = this.ctx.host.syncController.native;
+    if (!native) return;
+    const lock = phase.unlock ?? { mode: "password" as const, unlocking: false, name: null };
+    const name = lock.name ? `“${lock.name}”` : "This collection";
+    const section = this.group(root, lock.name ? `Unlock “${lock.name}”` : "Unlock this collection");
+    const other: [string, boolean, () => void][] = native.canChooseAnother ? [["Use a different collection", false, () => native.chooseAnother()]] : [];
+    if (lock.mode !== "password") {
+      this.unlockSecret = "";
+      section.createEl("p", { text: lock.mode === "strict"
+        ? `${name} is Private, and your account approves each new device from one you already use instead of with an encryption password. Obsidian can't be approved that way yet.`
+        : `${name} is Private, and your account has no encryption password yet. Set one in the mdbase app on a computer that already has this collection.` });
+      section.createEl("p", { cls: "mdbase-muted", text: lock.mode === "strict"
+        ? "To sync this vault, add its folder in the mdbase app on this computer. Your notes here are untouched."
+        : "Then come back and check again. Your notes here are untouched." });
+      this.actions(section, [["Check again", lock.mode === "none", () => this.run(() => native.recheckLock())], ...other]);
+      return;
+    }
+    const recovery = this.unlockWith === "recovery";
+    section.createEl("p", { text: `${name} is Private: only your own devices can read it. To open it in this vault, enter your ${recovery ? "recovery key" : "encryption password"}.` });
+    const form = section.createEl("form", { cls: "mdbase-unlock" });
+    const label = form.createEl("label", { cls: "mdbase-unlock-label", text: recovery ? "Recovery key" : "Encryption password" });
+    const input = form.createEl("input", { cls: "mdbase-unlock-input" });
+    input.type = recovery ? "text" : "password";
+    input.id = "mdbase-unlock-secret"; label.htmlFor = input.id;
+    input.autocomplete = recovery ? "off" : "current-password";
+    input.spellcheck = false;
+    input.value = this.unlockSecret;
+    input.disabled = lock.unlocking;
+    input.setAttr("data-focus-key", "sync-unlock-secret");
+    input.oninput = () => { this.unlockSecret = input.value; submit.disabled = lock.unlocking || !input.value.trim(); };
+    const problem = lock.unlocking ? null : unlockProblemText(phase.problem);
+    if (problem) {
+      const error = form.createEl("p", { cls: "mdbase-unlock-problem", text: problem });
+      error.id = "mdbase-unlock-problem"; error.setAttr("role", "alert");
+      input.setAttr("aria-describedby", error.id); input.setAttr("aria-invalid", "true");
+    }
+    const row = form.createDiv({ cls: "mdbase-actions" });
+    const submit = row.createEl("button", { cls: "mod-cta", text: lock.unlocking ? "Unlocking…" : "Unlock" });
+    submit.type = "submit";
+    submit.setAttr("data-focus-key", "sync-unlock");
+    submit.disabled = lock.unlocking || !this.unlockSecret.trim();
+    const swap = row.createEl("button", { cls: "mdbase-link-button", text: recovery ? "Use your encryption password instead" : "Use your recovery key instead" });
+    swap.type = "button";
+    swap.setAttr("data-focus-key", "sync-unlock-swap");
+    swap.disabled = lock.unlocking;
+    swap.onclick = () => { this.unlockWith = recovery ? "password" : "recovery"; this.unlockSecret = ""; this.ctx.render(); };
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const typed = this.unlockSecret;
+      if (lock.unlocking || !typed.trim()) return;
+      // Nothing here keeps it: the field and this pane's copy are emptied as it is sent.
+      this.unlockSecret = ""; input.value = "";
+      this.run(() => native.unlock(recovery ? { recoveryKey: typed.trim() } : { password: typed }));
+    };
+    section.createEl("p", { cls: "mdbase-muted mdbase-unlock-note", text: recovery
+      ? "It's used once and isn't saved. The recovery key is the one mdbase showed when you set your encryption password."
+      : "It's used once and isn't saved." });
+    if (other.length) this.actions(section, other);
+  }
   private renderMerged(root: HTMLElement): void {
     const merged = this.s.merged;
     if (!merged.length) return;
     const controller = this.ctx.host.syncController;
-    const section = root.createDiv({ cls: "mdbase-sync-section" });
-    section.createEl("h3", { text: merged.length === 1 ? "1 change to check" : `${merged.length} changes to check` });
+    const section = this.group(root, merged.length === 1 ? "1 change to check" : `${merged.length} changes to check`);
     section.createEl("p", { cls: "mdbase-muted", text: "These were edited on two devices at once. mdbase kept one side so sync could carry on; check that it kept what you want." });
     const list = section.createDiv({ cls: "mdbase-hold-list" });
     for (const change of merged) {
@@ -336,7 +636,7 @@ export class SyncPane {
     const s = this.s;
     const collection = s.collection;
     if (!collection) return;
-    const details = root.createDiv({ cls: "mdbase-sync-section mdbase-status-list" });
+    const details = this.group(root, undefined, "mdbase-status-list");
     const row = (label: string, value: string) => renderStatus(details, label, value);
     row("Collection", collection.name);
     row("Kind", modeName(collection.mode));
@@ -390,4 +690,76 @@ export function differingLines(a: string, b: string): [string, string] {
     return `${more(lines.slice(0, from)) ? "…\n" : ""}${lines.slice(from, to).join("\n")}${more(lines.slice(to)) ? "\n…" : ""}`;
   };
   return [cut(x), cut(y)];
+}
+
+class FolderPicker extends SuggestModal<string> {
+  constructor(app: App, private readonly taken: string[], private readonly pick: (folder: string) => void) {
+    super(app);
+    this.setPlaceholder("Folder to leave off this device");
+  }
+  getSuggestions(query: string): string[] {
+    const q = query.toLowerCase();
+    return this.app.vault.getAllLoadedFiles()
+      .filter((f): f is TFolder => f instanceof TFolder && !f.isRoot() && !f.path.split("/").some((part) => part.startsWith(".")))
+      .map((f) => f.path)
+      .filter((p) => !this.taken.includes(p) && p.toLowerCase().includes(q))
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 100);
+  }
+  renderSuggestion(folder: string, el: HTMLElement): void { el.setText(folder); }
+  onChooseSuggestion(folder: string): void { this.pick(folder); }
+}
+
+const count = (n: number, noun: string) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
+
+function size(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024, unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+/** "just now", "5 minutes ago", "yesterday at 14:02", then a date. */
+export function ago(at: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - at) / 1000));
+  if (s < 45) return "Just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"} ago`;
+  const h = Math.round(m / 60);
+  const time = new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (h < 12) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const day = new Date(at), today = new Date(now);
+  const yesterday = new Date(now); yesterday.setDate(today.getDate() - 1);
+  if (day.toDateString() === today.toDateString()) return `Today at ${time}`;
+  if (day.toDateString() === yesterday.toDateString()) return `Yesterday at ${time}`;
+  return day.toLocaleDateString(undefined, { day: "numeric", month: "short", year: day.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+}
+
+/** The collection's size and folder limits on attachments, in a sentence, or "" when none. */
+export function collectionLimits(inclusion: CollectionInclusion | null): string {
+  if (!inclusion) return "";
+  const parts: string[] = [];
+  if (typeof inclusion.maxSize === "number") parts.push(`Attachments over ${size(inclusion.maxSize)} don't sync.`);
+  const folders = (inclusion.exclude ?? []).map((f) => f.replace(/\/+$/, "")).filter(Boolean);
+  if (folders.length) parts.push(`Attachments in ${folders.join(", ")} don't sync.`);
+  return parts.join(" ");
+}
+
+/** What a Sync now press did, in one line. */
+export function syncNowSummary(done: ActivityEntry[], failed: number, failedBefore: number, healthy: boolean): { at: number; text: string; tone: "ok" | "attention" } {
+  const at = Date.now();
+  if (!healthy) return { at, text: "Sync stopped. See above", tone: "attention" };
+  const n = (kinds: ActivityKind[]) => done.filter((e) => kinds.includes(e.kind)).length;
+  const parts = [
+    [n(["uploaded"]), "sent"],
+    [n(["downloaded"]), "received"],
+    [n(["deleted_here", "deleted_remote"]), "deleted"],
+    [n(["moved"]), "moved"],
+    [n(["conflict"]), "kept as two versions"],
+  ].filter(([k]) => k).map(([k, verb]) => `${count(k as number, "file")} ${verb}`);
+  const problems = failed ? `${count(failed, "file")} couldn't sync` : "";
+  if (!parts.length && !problems) return { at, text: "Already up to date", tone: "ok" };
+  const text = [...parts, problems].filter(Boolean).join(", ");
+  return { at, text: text[0].toUpperCase() + text.slice(1), tone: failed > failedBefore || (failed && !parts.length) ? "attention" : "ok" };
 }

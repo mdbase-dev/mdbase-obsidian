@@ -14,6 +14,8 @@ import {
 } from "./daemon";
 import { folderHost } from "./ownership";
 import type NativeSync from "./native/plugin";
+import type { DirectFailure, MergePrompt, NativeView, SyncTotals } from "./native/plugin";
+import type { ActivityEntry, CollectionInclusion, DeviceFilter } from "./native/device";
 import { EditorFence, type WorkspaceLike } from "./editorFence";
 
 export type SyncKind = "cloud" | "private";
@@ -54,7 +56,24 @@ export interface PendingApproval {
 }
 
 export interface SyncSnapshot {
-  direct?: { text: string; phase: { kind: string; sync?: { kind: string; pending: number }; problem?: unknown } };
+  direct?: {
+    text: string;
+    phase: {
+      kind: string; sync?: { kind: string; pending: number; health?: string | null; live?: boolean | null; holds?: number; conflicts?: number }; problem?: unknown;
+      /** A Private collection waiting for its key: how the account unlocks it. */
+      unlock?: { mode: "password" | "strict" | "none"; unlocking: boolean; name: string | null } | null;
+    };
+    /** Paths that didn't sync, and why. Everything else is in sync. */
+    failures?: DirectFailure[];
+    /** Waiting for the user before combining a vault and collection that both have notes. */
+    merge?: MergePrompt | null;
+    /** What sync did here, most recent first. */
+    activity?: ActivityEntry[];
+    lastSynced?: number | null;
+    totals?: SyncTotals | null;
+    device?: DeviceFilter;
+    inclusion?: CollectionInclusion | null;
+  };
   daemon: DaemonState;
   /** The last failure reaching mdbase, for `daemon: "error"`. */
   error: MdbaseError | null;
@@ -83,7 +102,7 @@ export interface SyncHost {
   vaultTopLevel(): string[];
   workspace(): WorkspaceLike;
   binaryOverride(): string;
-  createNative?(changed: (text: string, phase: unknown) => void, collection?: string): Promise<NativeSync>;
+  createNative?(changed: (text: string, phase: unknown, view?: NativeView) => void, collection?: string): Promise<NativeSync>;
   appVersion: string;
   openUrl(url: string): void;
 }
@@ -187,8 +206,8 @@ export class SyncController {
           this.closeLink();
           if (!this.native) {
             this.set({ direct: { text: "Starting sync", phase: { kind: "starting" } }, daemon: "running", error: null });
-            this.native = await this.host.createNative((text, phase) => {
-              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"] } });
+            this.native = await this.host.createNative((text, phase, view) => {
+              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion } });
             }, this.lastDesktopCollection);
             if (this.stopped) { this.native.unload(); this.native = null; return; }
             this.native.load();

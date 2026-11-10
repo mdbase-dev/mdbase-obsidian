@@ -43,6 +43,20 @@
 
 .mdbase-status-bar {
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1, 4px);
+}
+
+.mdbase-status-bar-icon {
+  display: inline-flex;
+  --icon-size: var(--icon-xs, 14px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mdbase-status-bar[data-tone="busy"] .mdbase-status-bar-icon {
+    animation: mdbase-spin 1.5s linear infinite;
+  }
 }
 
 .mdbase-status-bar:focus-visible {
@@ -111,35 +125,26 @@
   fill: var(--interactive-accent, currentColor);
 }
 
+/* Obsidian's nav buttons (clickable-icon) carry hover and active colours. */
 .mdbase-nav {
   display: flex;
-  align-self: stretch;
-  gap: 4px;
-}
-
-.mdbase-nav-button {
-  display: flex;
-  min-width: 68px;
-  min-height: 36px;
+  flex-wrap: nowrap;
   align-items: center;
-  justify-content: center;
-  align-self: center;
-  gap: 6px;
-  border: 0;
-  border-radius: var(--button-radius);
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
 }
 
-.mdbase-nav-button:hover,
+.mdbase-nav-button.clickable-icon {
+  gap: var(--size-4-1, 4px);
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  font-size: var(--font-ui-small);
+}
+
 .mdbase-nav-button.is-active {
-  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.mdbase-nav-button.is-active {
-  font-weight: var(--font-semibold);
+.mdbase-nav-icon {
+  display: inline-flex;
+  --icon-size: var(--icon-s, 16px);
 }
 
 .mdbase-count {
@@ -273,9 +278,15 @@
 }
 
 .mdbase-pane-header {
-  min-height: 52px;
-  justify-content: space-between;
-  padding: 0 12px 0 16px;
+  min-height: var(--header-height, 40px);
+  gap: var(--size-2-1, 2px);
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.mdbase-pane-header h2 {
+  flex: 1;
+  color: var(--text-muted);
+  font-weight: var(--font-semibold);
 }
 
 .mdbase-pane-header h2,
@@ -285,53 +296,35 @@
   font-size: var(--font-ui-medium);
 }
 
-.mdbase-pane-header button,
 .mdbase-mobile-back,
 .mdbase-editor-actions button {
   min-width: 34px;
   min-height: 34px;
 }
 
-.mdbase-type-search {
-  width: auto;
-  margin: 0 12px 10px;
+.mdbase-type-search-box {
+  margin: var(--size-4-1, 4px) var(--size-4-2, 8px) var(--size-4-2, 8px);
+}
+
+.mdbase-type-search-box .mdbase-type-search {
+  width: 100%;
 }
 
 .mdbase-type-list {
   min-height: 0;
   flex: 1;
   overflow: auto;
+  padding: 0 var(--size-4-2, 8px) var(--size-4-3, 12px);
 }
 
-.mdbase-type-row {
-  display: flex;
-  width: 100%;
-  min-height: 32px;
-  height: auto;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  gap: 1px;
-  padding: 5px 12px;
-  border: 0;
-  border-radius: var(--radius-s);
-  background: transparent;
-  box-shadow: none;
-  text-align: left;
-}
-
-.mdbase-type-row:hover {
-  background: var(--background-modifier-hover);
-}
-
-.mdbase-type-row.is-active {
-  background: var(--background-modifier-active-hover);
+/* Rows use Obsidian's tree-item markup; this only trims the file-tree indent. */
+.mdbase-type-row.tree-item-self {
+  align-items: center;
+  padding-inline-start: var(--size-4-2, 8px);
 }
 
 .mdbase-type-name {
   overflow: hidden;
-  color: var(--text-normal);
-  font-weight: var(--font-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1166,19 +1159,32 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-sync-heading {
-  margin: 8px 0 16px;
-  padding-left: 12px;
-  border-left: 3px solid var(--background-modifier-border);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-4-3, 12px);
+  margin: var(--size-4-4, 16px) 0 var(--size-4-6, 24px);
 }
 
-.mdbase-sync-heading[data-tone="ok"] { border-left-color: var(--color-green, var(--text-success)); }
-.mdbase-sync-heading[data-tone="busy"] { border-left-color: var(--interactive-accent); }
-.mdbase-sync-heading[data-tone="attention"] { border-left-color: var(--text-warning); }
-.mdbase-sync-heading[data-tone="problem"] { border-left-color: var(--text-error); }
+.mdbase-sync-heading-icon {
+  display: flex;
+  padding-top: 2px;
+  color: var(--text-muted);
+  --icon-size: var(--icon-l, 20px);
+  --icon-stroke: var(--icon-l-stroke-width, 1.75px);
+}
+
+.mdbase-sync-heading[data-tone="ok"] .mdbase-sync-heading-icon { color: var(--text-success); }
+.mdbase-sync-heading[data-tone="busy"] .mdbase-sync-heading-icon { color: var(--text-accent); }
+.mdbase-sync-heading[data-tone="attention"] .mdbase-sync-heading-icon { color: var(--text-warning); }
+.mdbase-sync-heading[data-tone="problem"] .mdbase-sync-heading-icon { color: var(--text-error); }
+
+.mdbase-sync-heading-text {
+  min-width: 0;
+}
 
 .mdbase-sync-heading h2 {
   margin: 0 0 2px;
-  font-size: var(--h3-size, var(--font-ui-large));
+  font-size: var(--font-ui-large);
   overflow-wrap: anywhere;
 }
 
@@ -1187,27 +1193,174 @@ button.mdbase-yaml-problem:disabled {
   color: var(--text-muted);
 }
 
+/* Sections are Obsidian settings groups: heading above, theme's setting-items card below. */
+.mdbase-sync-group {
+  margin: 0 0 var(--size-4-6, 24px);
+}
+
+.mdbase-sync-group > .setting-item-heading {
+  padding-top: 0;
+}
+
 .mdbase-sync-section {
-  margin: 0 0 20px;
-  padding: 14px 16px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
-  background: var(--background-primary-alt);
+  padding: var(--size-4-3, 12px) var(--size-4-4, 16px);
 }
 
-.mdbase-sync-section h3 {
-  margin: 0 0 8px;
-  font-size: var(--font-ui-medium);
+.mdbase-sync-section > p:last-child {
+  margin-bottom: 0;
 }
 
-.mdbase-sync-section .setting-item {
-  padding: 8px 0;
+.mdbase-sync .mdbase-sync-section .setting-item {
+  padding: var(--size-4-2, 8px) 0;
   border-top: none;
+}
+
+.mdbase-sync .mdbase-sync-section .setting-item::before {
+  display: none;
 }
 
 .mdbase-sync-section .mdbase-actions {
   justify-content: flex-start;
   margin-top: 8px;
+}
+
+.mdbase-sync-now {
+  flex-wrap: wrap;
+  gap: var(--size-4-3, 12px);
+}
+
+.mdbase-sync-now-button {
+  gap: var(--size-4-2, 8px);
+}
+
+.mdbase-sync-now-icon {
+  display: inline-flex;
+  --icon-size: var(--icon-s, 16px);
+}
+
+.mdbase-sync-now-result {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.mdbase-sync-now-result[data-tone="attention"] {
+  color: var(--text-warning);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mdbase-sync-now-button.is-syncing .mdbase-sync-now-icon {
+    animation: mdbase-spin 1s linear infinite;
+  }
+}
+
+@keyframes mdbase-spin {
+  to { transform: rotate(360deg); }
+}
+
+.mdbase-sync-value {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mdbase-sync-folder .setting-item-name {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.mdbase-sync-device-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.mdbase-activity-filters {
+  flex-wrap: wrap;
+  gap: var(--size-2-1, 2px);
+}
+
+/* Obsidian's flat nav-item look rather than filled buttons. */
+.mdbase-activity-filters button.mdbase-activity-filter {
+  height: auto;
+  padding: var(--size-2-1, 2px) var(--size-4-2, 8px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.mdbase-activity-filters button.mdbase-activity-filter:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.mdbase-activity-filters button.mdbase-activity-filter.is-active {
+  background: var(--background-modifier-active-hover);
+  color: var(--text-normal);
+}
+
+.mdbase-activity {
+  padding: var(--size-4-1, 4px) 0;
+}
+
+.mdbase-activity-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--size-4-3, 12px);
+  padding: var(--size-4-2, 8px) var(--size-4-4, 16px);
+}
+
+.mdbase-activity-row + .mdbase-activity-row {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mdbase-activity-icon {
+  display: flex;
+  color: var(--text-faint);
+  --icon-size: var(--icon-s, 16px);
+}
+
+.mdbase-activity-row[data-kind="not_synced"] .mdbase-activity-icon,
+.mdbase-activity-row[data-kind="conflict"] .mdbase-activity-icon {
+  color: var(--text-warning);
+}
+
+.mdbase-activity-text {
+  min-width: 0;
+}
+
+.mdbase-activity-path {
+  display: block;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdbase-activity-path:hover {
+  text-decoration: underline;
+}
+
+.mdbase-activity-detail,
+.mdbase-activity-time,
+.mdbase-activity-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.mdbase-activity-time {
+  white-space: nowrap;
+}
+
+.mdbase-activity-empty {
+  padding: var(--size-4-3, 12px) var(--size-4-4, 16px);
+}
+
+.mdbase-sync-group > .mdbase-load-more {
+  margin-top: var(--size-4-2, 8px);
 }
 
 .mdbase-sync-choice {
@@ -1222,14 +1375,16 @@ button.mdbase-yaml-problem:disabled {
   align-items: start;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-s, 4px);
-  background: var(--background-primary);
   cursor: pointer;
 }
 
+.mdbase-sync-option:hover {
+  background: var(--background-modifier-hover);
+}
+
 .mdbase-sync-option.is-selected {
-  border-color: var(--interactive-accent);
+  background: var(--background-modifier-active-hover);
 }
 
 .mdbase-sync-option input {
@@ -1240,12 +1395,13 @@ button.mdbase-yaml-problem:disabled {
   font-weight: var(--font-semibold, 600);
 }
 
-.mdbase-sync-notice {
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  border-left: 3px solid var(--text-warning);
-  border-radius: var(--radius-s, 4px);
-  background: var(--background-secondary);
+.mdbase-sync-notice.callout {
+  margin: 0 0 var(--size-4-4, 16px);
+}
+
+.mdbase-sync-notice p:last-child,
+.mdbase-sync-notice p:first-child {
+  margin-top: 0;
 }
 
 .mdbase-sync-notice p:last-child {
@@ -1322,90 +1478,53 @@ button.mdbase-yaml-problem:disabled {
   border-left-color: var(--text-muted);
 }
 
+/* Issues use Obsidian's search-result markup: a tree item per file or rule,
+   and a bordered list of matches beneath it. */
 .mdbase-issue-group {
-  padding: 0 0 22px;
+  margin-bottom: var(--size-4-2, 8px);
 }
 
-.mdbase-issue-group + .mdbase-issue-group {
-  padding-top: 2px;
-}
-
-.mdbase-issue-group-header {
-  display: flex;
-  min-height: 38px;
+.mdbase-issue-group-header.tree-item-self {
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding-inline-start: var(--size-4-2, 8px);
 }
 
-button.mdbase-issue-file-button {
+.mdbase-issue-group-header .tree-item-inner {
   display: flex;
   min-width: 0;
-  min-height: 36px;
-  flex: 1;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-normal);
-  text-align: left;
+  gap: var(--size-4-2, 8px);
 }
 
-button.mdbase-issue-file-button:hover {
-  background: transparent;
-  color: var(--text-accent);
+.mdbase-issue-group-header .tree-item-flair-outer {
+  gap: var(--size-4-2, 8px);
 }
 
 .mdbase-issue-file-icon {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
   flex: 0 0 auto;
-  color: var(--text-muted);
-}
-
-.mdbase-issue-file-icon svg {
-  width: 16px;
-  height: 16px;
+  color: var(--icon-color);
+  --icon-size: var(--icon-s, 16px);
 }
 
 .mdbase-issue-file-path {
   overflow: hidden;
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mdbase-issue-file-count {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
-.mdbase-issue-row {
+.search-result-file-match.mdbase-issue-row {
   display: grid;
-  width: 100%;
-  min-height: 50px;
-  grid-template-columns: 8px minmax(130px, 190px) minmax(0, 1fr) auto;
+  grid-template-columns: 8px minmax(110px, 170px) minmax(0, 1fr) auto;
   align-items: start;
-  gap: 10px;
-  padding: 9px 8px;
-  border: 0;
-  border-bottom: 1px solid var(--background-modifier-border);
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-normal);
-  text-align: left;
+  gap: var(--size-4-2, 8px);
+  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  cursor: default;
+  white-space: normal;
 }
 
-.mdbase-issue-row:hover,
-.mdbase-issue-row:focus-within {
+.search-result-file-match.mdbase-issue-row:hover,
+.search-result-file-match.mdbase-issue-row:focus-within {
   background: var(--background-modifier-hover);
 }
 
@@ -1478,20 +1597,19 @@ button.mdbase-issue-file-button:hover {
 
 .mdbase-issue-controls {
   display: grid;
-  grid-template-columns: 150px 120px minmax(200px, 1fr);
-  gap: 8px;
-  padding: 16px 0 7px;
+  grid-template-columns: max-content max-content minmax(180px, 1fr);
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  padding: var(--size-4-4, 16px) 0 var(--size-4-3, 12px);
 }
 
-.mdbase-issue-controls input,
-.mdbase-issue-controls select {
+.mdbase-issue-search.search-input-container {
   width: 100%;
+  margin: 0;
 }
 
-.mdbase-issues-summary {
-  padding: 0 0 18px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
+.mdbase-issues-summary.search-results-info {
+  padding: 0 0 var(--size-4-2, 8px);
 }
 
 .mdbase-load-more {
@@ -1505,17 +1623,27 @@ button.mdbase-issue-file-button:hover {
 .mdbase-type-name-line {
   display: flex;
   min-width: 0;
+  flex: 1;
   align-items: center;
   gap: 6px;
 }
 
-.mdbase-type-row .mdbase-type-meta {
+.mdbase-type-meta {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: var(--size-4-1, 4px);
 }
 
 .mdbase-type-issues {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   color: var(--text-warning);
+}
+
+.mdbase-type-issues-icon {
+  display: inline-flex;
+  --icon-size: var(--icon-xs, 12px);
 }
 
 .mdbase-unsaved-dot {
@@ -1718,14 +1846,6 @@ button.mdbase-match-row:hover {
 
 /* Issues grouped by rule */
 
-.mdbase-issue-rule-title {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-}
-
 .mdbase-issue-rule-title .mdbase-issue-indicator {
   flex: 0 0 auto;
   margin-top: 0;
@@ -1888,7 +2008,7 @@ button.mdbase-match-row:hover {
     grid-column: 1 / -1;
   }
 
-  .mdbase-issue-controls input[type="search"] {
+  .mdbase-issue-search.search-input-container {
     grid-column: 1 / -1;
   }
 
@@ -2007,7 +2127,7 @@ button.mdbase-match-row:hover {
     min-height: 44px;
   }
 
-  .mdbase-issue-row {
+  .search-result-file-match.mdbase-issue-row {
     min-height: 60px;
     grid-template-columns: 8px minmax(0, 1fr);
   }
@@ -2215,4 +2335,48 @@ button.mdbase-match-row:hover {
 
 .is-mobile .mdbase-create-note button {
   min-height: 44px;
+}
+
+/* Unlocking a Private collection */
+
+.mdbase-unlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+  max-width: 420px;
+}
+
+.mdbase-unlock-label {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.mdbase-unlock input.mdbase-unlock-input {
+  width: 100%;
+}
+
+.mdbase-unlock-problem {
+  margin: 0;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+.mdbase-unlock .mdbase-actions {
+  align-items: center;
+  gap: var(--size-4-3);
+}
+
+.mdbase-sync .mdbase-unlock-note {
+  margin-top: var(--size-4-3);
+}
+
+/* Private collections in the collection chooser */
+
+.mdbase-choice-tag {
+  margin-left: var(--size-4-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }

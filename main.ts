@@ -13,6 +13,7 @@ import {
   TFile,
   TFolder,
   normalizePath,
+  setIcon,
 } from "obsidian";
 import { ObsidianInteropBridge, type MdbaseObsidianInteropApi } from "./src/interopBridge";
 import {
@@ -97,6 +98,10 @@ export interface MdbaseObsidianApiV1 {
     profileVersion: "0.1";
   };
 }
+
+const STATUS_ICONS: Record<ReturnType<typeof summarize>["tone"], string> = {
+  ok: "cloud", quiet: "cloud", busy: "refresh-cw", attention: "alert-triangle", problem: "cloud-off",
+};
 
 export default class MdbasePlugin extends Plugin {
   readonly api: MdbaseObsidianApiV1;
@@ -547,10 +552,20 @@ export default class MdbasePlugin extends Plugin {
     if (!this.statusBarEl) return;
     const summary = summarize(this.syncController.snapshot);
     if (!summary.syncing) {
+      // Hidden keeps no earlier words: a stale "Synced" must not linger in the item.
       this.statusBarEl.hide();
+      this.statusBarEl.empty();
+      for (const name of ["aria-label", "title", "data-tone"]) this.statusBarEl.removeAttribute(name);
     } else {
       this.statusBarEl.show();
-      this.statusBarEl.setText(summary.label);
+      // Icon plus words, like Obsidian's own sync item. The icon only changes
+      // with the tone, so it isn't redrawn on every count update.
+      if (this.statusBarEl.dataset.tone !== summary.tone || !this.statusBarEl.firstElementChild) {
+        this.statusBarEl.empty();
+        setIcon(this.statusBarEl.createSpan({ cls: "mdbase-status-bar-icon" }), STATUS_ICONS[summary.tone]);
+        this.statusBarEl.createSpan({ cls: "mdbase-status-bar-label" });
+      }
+      this.statusBarEl.querySelector(".mdbase-status-bar-label")?.setText(summary.label);
       this.statusBarEl.setAttr("aria-label", `${summary.detail} Open mdbase sync.`);
       this.statusBarEl.setAttr("title", summary.detail);
       this.statusBarEl.setAttr("data-tone", summary.tone);

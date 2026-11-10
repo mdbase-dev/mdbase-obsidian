@@ -422,9 +422,12 @@ export class TypesPane {
     add.disabled = Boolean(createBlocked);
     add.onclick = () => void this.createType();
 
-    const search = pane.createEl("input", { type: "search" });
+    // Obsidian's own search field markup, so it gets the magnifier and clear button.
+    const searchBox = pane.createDiv({ cls: "search-input-container mdbase-type-search-box" });
+    const search = searchBox.createEl("input", { type: "search" });
     search.addClass("mdbase-type-search");
     search.placeholder = "Search types";
+    search.spellcheck = false;
     search.setAttr("aria-label", "Search types");
     search.setAttr("data-focus-key", "type-search");
     search.value = this.query;
@@ -434,6 +437,12 @@ export class TypesPane {
       const next = this.ctx.containerEl.querySelector<HTMLInputElement>(".mdbase-type-search");
       next?.focus();
       next?.setSelectionRange(next.value.length, next.value.length);
+    };
+    const clear = searchBox.createDiv({ cls: "search-input-clear-button" });
+    clear.setAttr("aria-label", "Clear search");
+    clear.onclick = () => {
+      search.value = "";
+      search.dispatchEvent(new Event("input"));
     };
 
     const list = pane.createDiv({ cls: "mdbase-type-list" });
@@ -447,30 +456,47 @@ export class TypesPane {
     }
     const { stats } = this.currentStats();
     for (const type of entries) {
-      const button = list.createEl("button", { cls: "mdbase-type-row" });
-      if (type.filePath === this.selectedPath) button.addClass("is-active");
-      button.setAttr("aria-current", type.filePath === this.selectedPath ? "true" : "false");
-      const nameLine = button.createDiv({ cls: "mdbase-type-name-line" });
-      nameLine.createSpan({ cls: "mdbase-type-name", text: type.name });
-      const unsaved = type.filePath === this.selectedPath ? this.dirty : this.ctx.host.loadTypeDraft(type.filePath) !== null;
+      // The file explorer's row markup (tree-item-self, tree-item-inner, tree-item-flair),
+      // so rows take the theme's nav-item padding, hover and selection.
+      const item = list.createDiv({ cls: "tree-item mdbase-type-item" });
+      const row = item.createDiv({ cls: "tree-item-self is-clickable mdbase-type-row" });
+      const active = type.filePath === this.selectedPath;
+      row.toggleClass("is-active", active);
+      row.setAttr("role", "button");
+      row.tabIndex = 0;
+      row.setAttr("aria-current", active ? "true" : "false");
+      row.setAttr("data-focus-key", `type-${type.filePath}`);
+      const inner = row.createDiv({ cls: "tree-item-inner mdbase-type-name-line" });
+      inner.createSpan({ cls: "mdbase-type-name", text: type.name });
+      const unsaved = active ? this.dirty : this.ctx.host.loadTypeDraft(type.filePath) !== null;
       if (unsaved) {
-        const dot = nameLine.createSpan({ cls: "mdbase-unsaved-dot" });
+        const dot = inner.createSpan({ cls: "mdbase-unsaved-dot" });
         dot.setAttr("aria-label", "Unsaved changes");
         dot.setAttr("title", "Unsaved changes");
       }
       const typeStat = stats.get(type.name);
       if (this.ctx.records) {
-        const meta = button.createDiv({ cls: "mdbase-type-meta" });
+        const flairs = row.createDiv({ cls: "tree-item-flair-outer mdbase-type-meta" });
         const notes = typeStat?.notes ?? 0;
-        meta.createSpan({ text: `${notes.toLocaleString()} ${notes === 1 ? "note" : "notes"}` });
+        const notesLabel = `${notes.toLocaleString()} ${notes === 1 ? "note" : "notes"}`;
         if (typeStat?.issues) {
-          meta.createSpan({
-            cls: "mdbase-type-issues",
-            text: `${typeStat.issues.toLocaleString()} ${typeStat.issues === 1 ? "issue" : "issues"}`,
-          });
+          const issuesLabel = `${typeStat.issues.toLocaleString()} ${typeStat.issues === 1 ? "issue" : "issues"}`;
+          const issues = flairs.createSpan({ cls: "tree-item-flair mdbase-type-issues" });
+          setIcon(issues.createSpan({ cls: "mdbase-type-issues-icon" }), "alert-triangle");
+          issues.createSpan({ text: typeStat.issues.toLocaleString() });
+          issues.setAttr("aria-label", issuesLabel);
+          issues.setAttr("title", issuesLabel);
         }
+        const count = flairs.createSpan({ cls: "tree-item-flair mdbase-type-count", text: notes.toLocaleString() });
+        count.setAttr("aria-label", notesLabel);
+        count.setAttr("title", notesLabel);
       }
-      button.onclick = () => void this.selectType(type.filePath);
+      row.onclick = () => void this.selectType(type.filePath);
+      row.onkeydown = (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        void this.selectType(type.filePath);
+      };
     }
   }
 

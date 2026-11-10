@@ -419,8 +419,9 @@ test("the type list shows note and issue counts, and field rows show their const
   const f = typesFixture();
   f.host.getIssues = () => [{ path: "tasks/a.md", severity: "error", code: "schema_required", message: "", type: "task" }] as never;
   await f.view.selectType("_types/task.md");
-  const rows = Array.from(f.root.querySelectorAll(".mdbase-type-row")).map((row) => visibleText(row));
-  assert.deepEqual(rows, ["note 1 note", "task 2 notes 1 issue"]);
+  const rows = Array.from(f.root.querySelectorAll(".mdbase-type-row")).map((row) =>
+    [row.querySelector(".mdbase-type-name")?.textContent, ...Array.from(row.querySelectorAll(".tree-item-flair")).map((flair) => flair.getAttribute("aria-label"))].join(" "));
+  assert.deepEqual(rows, ["note 1 note", "task 1 issue 2 notes"]);
   assert.match(visibleText(fieldNode(f.root, "priority").querySelector("summary")!), /priority Integer ≤ 3/);
   assert.match(visibleText(fieldNode(f.root, "status").querySelector("summary")!), /status Enum 1, 2, done, later/);
   f.dom.window.close();
@@ -508,7 +509,8 @@ test("Issues grouped by rule offer one bulk fix and jump to the rule's field", a
   const groupBy = f.root.querySelector<HTMLSelectElement>("[aria-label='Group issues']")!;
   groupBy.value = "rule";
   groupBy.dispatchEvent(new f.dom.window.Event("change"));
-  assert.match(f.text(), /task · title · missing 2 notes/);
+  assert.match(f.text(), /task · title · missing/);
+  assert.equal(f.root.querySelector(".mdbase-issue-file-count")!.getAttribute("aria-label"), "2 notes");
   assert.ok(button(f.root, "Add placeholder · 2 notes"));
   assert.equal(f.root.querySelector(".mdbase-issue-row")!.getAttribute("title"), "schema_required: JSON Schema required failed");
   button(f.root, "Edit title in task").click();
@@ -867,6 +869,44 @@ test("first run asks one question: start a collection here, or sync one from ano
   assert.equal(f.state.destination, "sync");
   assert.match(f.text(), /Add a collection you already sync/);
   f.dom.window.close();
+});
+
+/** In-plugin sync: the pane reads `direct` and calls the native host. */
+function directFixture(phase: Record<string, unknown>, text: string) {
+  const f = fixture();
+  const calls: string[] = [];
+  const record = (name: string) => () => { calls.push(name); return Promise.resolve(); };
+  (f.sync.controller as unknown as { native: unknown }).native = {
+    signIn: record("signIn"), choose: record("choose"), addCollection: record("addCollection"), requestAccess: record("requestAccess"),
+  };
+  f.sync.set({ direct: { text, phase } as SyncSnapshot["direct"] });
+  f.state.render();
+  return { ...f, calls };
+}
+
+test("where collections are chosen, a quiet line says when Private ones are listed (LAB F3)", () => {
+  const choosing = directFixture({ kind: "choosing", collections: [{ id: "c", name: "Notes", private: false }] }, "Choose the collection to sync with this vault.");
+  const hint = Array.from(choosing.root.querySelectorAll("p.mdbase-muted")).map((p) => p.textContent ?? "").find((t) => /Private collections/.test(t));
+  assert.equal(hint, "Private collections are listed only if you allowed this device to keep their key when you signed in. To add one, sign in again and allow it.");
+  choosing.dom.window.close();
+  const signedOut = directFixture({ kind: "signed_out" }, "Sign in to sync this vault.");
+  assert.match(signedOut.text(), /Sign in To sync a Private collection, allow this device to keep its key when you sign in\./);
+  signedOut.dom.window.close();
+});
+
+test("access removed offers Request access again, which starts the approval flow (LAB F4)", async () => {
+  const text = "Sync stopped. Access to this collection was removed in mdbase. Your notes here are untouched. To sync again, choose Request access again and approve it in your browser.";
+  const f = directFixture({ kind: "problem", collectionId: "c", problem: { key: "installation_scope_removed", action: "approve" } }, text);
+  assert.match(f.text(), /Access to this collection was removed/);
+  const again = button(f.root, "Request access again");
+  assert.ok(again.classList.contains("mod-cta"));
+  again.click();
+  await tick();
+  assert.deepEqual(f.calls, ["requestAccess"]);
+  f.dom.window.close();
+  const other = directFixture({ kind: "problem", collectionId: "c", problem: { key: "unknown", action: "retry" } }, "Sync stopped. Something went wrong.");
+  assert.equal(Array.from(other.root.querySelectorAll("button")).some((b) => b.textContent === "Request access again"), false, "no promise without the action");
+  other.dom.window.close();
 });
 
 test("phones and tablets say plainly that sync runs on the computer", () => {
