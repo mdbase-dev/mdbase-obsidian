@@ -161,11 +161,14 @@ test("start over signs out of an unfinished sign-in only when nothing can be los
   f.native.mirroring = false;
   f.native.data.markerSince = 1; f.native.writeMarker();
   const marker = fs.readFileSync(f.native.markerPath, "utf8");
-  f.native.call = async (method, ...args) => { calls.push([method, ...args]); return {}; };
-  f.native.phase = { kind: "problem", collectionId: null, problem: { key: "recovery_required", action: "reload" } };
+  const stuck = { kind: "problem", collectionId: null, problem: { key: "recovery_required", action: "reload" } };
+  // The SDK's sign-out ends the stop (it publishes signed_out before replying).
+  f.native.call = async (method, ...args) => { calls.push([method, ...args]); if (method === "signOut") f.native.phase = { kind: "signed_out" }; return {}; };
+  f.native.phase = stuck;
   assert.equal(f.native.canStartOver, true);
   await f.native.startOver();
   assert.deepEqual(calls, [["signOut"]], "the SDK's own sign-out, never with discard");
+  f.native.phase = stuck;
   assert.equal(fs.readFileSync(f.native.markerPath, "utf8"), marker, "this vault's marker is kept as it was");
   assert.equal(f.native.data.vaultId, "test-vault", "the journal is kept");
   // Anything bound, synced or waiting rules it out.
@@ -193,7 +196,8 @@ test("sign in again and try again go to the SDK's own calls (prod F1)", async t 
   f.native.call = async (method, ...args) => { calls.push([method, ...args]); return {}; };
   f.native.phase = { kind: "problem", collectionId: null, problem: { key: "refused", action: "sign_in" } };
   await f.native.signIn();
-  await f.native.retry();
+  // The SDK started but stayed in the same stop: the press must not look like it did nothing.
+  await assert.rejects(f.native.retry(), /Tried again, but sync still can't continue\./);
   f.native.phase = { kind: "needs_approval", collectionId: "c" };
   await f.native.requestAccess();
   await f.native.retry();
@@ -668,4 +672,133 @@ test("sync stopping mid-batch starts no further sends, and a restart finishes wi
   assert.equal(f.remote.get("n0.md").document, "note 0 edited");
   assert.deepEqual(fs.readdirSync(f.root).filter(n => /conflict/.test(n)), [], "no conflict copies");
   assert.equal(new Set([...f.remote.values()].map(r => r.id)).size, 60, "no note was created twice");
+});
+
+// ---- Restart sync (prod F1): a host whose SDK can't stop is still taken down and rebuilt ----
+/** A host as Obsidian would load it, with Obsidian's registration calls stubbed and a fake iframe. */
+function host(f, frames) {
+  const app = { ...f.native.app, workspace: { ...f.native.app.workspace, containerEl: { createEl: (_tag, { attr }) => {
+    const frame = { attr, style: {}, removed: false, contentWindow: { postMessage() {} }, remove() { frame.removed = true; } };
+    frames.push(frame); return frame;
+  } } }, vault: { ...f.native.app.vault, on: () => ({}) } };
+  const native = new NativeSync(app, { dir: ".plugin" }, () => {});
+  native.registerDomEvent = () => {}; native.registerEvent = () => {}; native.checkOwnership = () => {}; native.log = () => {};
+  return native;
+}
+test("a host whose SDK can't stop is still fully torn down, and a new one starts in its place (prod F1)", async t => {
+  const f = fixture(t), frames = [];
+  const old = host(f, frames);
+  await old.initialize();
+  t.after(() => { if (old.server) old.server.close(); });
+  assert.equal(frames.length, 1); const port = old.data.port, vaultId = old.data.vaultId;
+  assert.ok(fs.existsSync(old.markerPath), "the host claimed the folder");
+  // The SDK's Worker quarantined itself: every call hangs or fails, stop included.
+  old.phase = { kind: "problem", collectionId: null, problem: { key: "application_failed", action: "reload", code: "application_worker_binding" } };
+  assert.equal(old.workerGone, true); assert.equal(old.needsRestart, true);
+  const { port1 } = new MessageChannel(); old.bridge = port1;
+  const stopping = old.call("stop");
+  assert.equal((await fetch(old.origin)).status, 403);
+  old.onunload();
+  await assert.rejects(stopping, /unloaded/, "a call the SDK will never answer ends with the host");
+  assert.equal(frames[0].removed, true, "the SDK's page (and with it its Worker) is gone");
+  for (const k of ["server", "markerTimer", "stallTimer", "bridge", "frame"]) assert.equal(old[k], null, k);
+  await old.released;
+  assert.throws(() => old.persist(), /not written/, "the old host writes no more state");
+  old.onMessage({ origin: old.origin, source: undefined, data: { type: "hello" } });
+  assert.equal(old.bridge, null, "a late hello from the old page starts nothing");
+  // The new host takes the same port and journal at once.
+  const fresh = host(f, frames);
+  await fresh.initialize();
+  t.after(() => { fresh.onunload(); });
+  assert.equal(fresh.data.port, port); assert.equal(fresh.data.vaultId, vaultId);
+  assert.equal(frames.length, 2); assert.equal(frames[1].removed, false);
+  assert.notEqual(frames[1].attr.src, frames[0].attr.src, "a fresh page, with a fresh capability");
+  assert.equal((await fetch(fresh.origin)).status, 403, "the new server answers");
+  assert.ok(fs.existsSync(fresh.markerPath), "the ownership marker was kept throughout");
+});
+test("unloading while a host is still starting leaves no page or listener behind", async t => {
+  const f = fixture(t), frames = [];
+  const native = host(f, frames);
+  const starting = native.initialize();
+  native.onunload();
+  await starting;
+  assert.equal(frames.length, 0); assert.equal(native.server, null);
+  await native.released;
+  const port = native.data.port;
+  if (port) { const again = host(f, frames); again.data = { port }; again.persist = () => {}; await again.startServer(); again.closeServer(); await again.released; }
+});
+test("starting that takes too long says so and offers Restart sync; any other state ends the wait", async t => {
+  const f = fixture(t), seen = [];
+  f.native.changed = (text, phase) => seen.push([text, phase]);
+  f.native.stallMs = 5;
+  f.native.phase = { kind: "starting" }; f.native.watchStart();
+  assert.equal(f.native.stalled, false);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(f.native.stalled, true); assert.equal(f.native.needsRestart, true);
+  assert.equal(seen.at(-1)[0], "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again.");
+  assert.equal(seen.at(-1)[1].stalled, true);
+  f.native.endStartWatch();
+  assert.equal(f.native.stalled, false); assert.equal(f.native.needsRestart, false);
+  f.native.stallMs = 5; f.native.watchStart(); f.native.phase = { kind: "signed_out" };
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(f.native.stalled, false, "only a host still starting stalls");
+});
+test("only a reload request, a gone Worker or a stalled start needs a restart", t => {
+  const f = fixture(t);
+  const stop = problem => { f.native.phase = { kind: "problem", collectionId: null, problem }; };
+  stop({ action: "retry", code: "application_worker_fenced" }); assert.equal(f.native.workerGone, true); assert.equal(f.native.needsRestart, true);
+  stop({ action: "reload", code: "response" }); assert.equal(f.native.workerGone, false); assert.equal(f.native.needsRestart, true);
+  stop({ action: "sign_in", code: "refused" }); assert.equal(f.native.needsRestart, false);
+  f.native.phase = { kind: "starting" }; assert.equal(f.native.needsRestart, false);
+});
+test("a Start over the SDK couldn't finish says so", async t => {
+  const f = fixture(t); f.native.mirroring = false;
+  f.native.phase = { kind: "problem", collectionId: null, problem: { action: "reload", code: "application_worker_binding" } };
+  f.native.call = async () => ({});
+  await assert.rejects(f.native.startOver(), /Start over didn't finish\. Choose Restart sync, then Start over again\./);
+});
+function fakeHost(events, name, phase = { kind: "starting" }) {
+  let release;
+  const h = { name, phase, canStartOver: true, workerGone: false, released: new Promise(r => { release = r; }),
+    load() { events.push(`load ${name}`); }, unload() { events.push(`unload ${name}`); setTimeout(release, 10); throw new Error("SDK can't stop"); },
+    async startOver() { events.push(`startOver ${name}`); } };
+  return h;
+}
+function restartController(t, f, events, phases) {
+  const callbacks = [];
+  const controller = new SyncController({ vaultPath: () => f.root, vaultTopLevel: () => [], workspace: () => ({}), binaryOverride: () => "", appVersion: "test", openUrl() {},
+    createNative: async changed => {
+      const n = callbacks.length; events.push(`create ${n}`); callbacks.push(changed);
+      return fakeHost(events, n, phases[n]);
+    },
+  }, false);
+  controller.stopped = false;
+  controller.cli.status = async () => { throw new Error("Desktop unreachable"); };
+  t.after(() => controller.stop());
+  return { controller, callbacks };
+}
+test("Restart sync takes the old host down before building a new one, and the old one is ignored after", async t => {
+  const f = fixture(t), events = [];
+  const { controller, callbacks } = restartController(t, f, events, []);
+  const warn = console.warn; console.warn = () => {}; t.after(() => { console.warn = warn; });
+  await controller.refresh();
+  assert.deepEqual(events, ["create 0", "load 0"]);
+  await controller.restartNative();
+  assert.deepEqual(events, ["create 0", "load 0", "unload 0", "create 1", "load 1"], "an unload that throws still lets go before the new host starts");
+  callbacks[0]("Old host speaking", { kind: "problem" });
+  assert.notEqual(controller.snapshot.direct.text, "Old host speaking");
+  callbacks[1]("Synced", { kind: "ready" });
+  assert.equal(controller.snapshot.direct.text, "Synced");
+});
+test("Start over with the Worker gone restarts sync, then signs out on the new host", async t => {
+  const f = fixture(t), events = [];
+  const { controller } = restartController(t, f, events, [undefined, { kind: "problem", problem: { action: "reload" } }]);
+  const warn = console.warn; console.warn = () => {}; t.after(() => { console.warn = warn; });
+  await controller.refresh();
+  controller.native.workerGone = true;
+  await controller.startOver();
+  assert.deepEqual(events, ["create 0", "load 0", "unload 0", "create 1", "load 1", "startOver 1"], "never on the broken host");
+  // Without a gone Worker, Start over runs on the host as it is.
+  events.length = 0; await controller.startOver();
+  assert.deepEqual(events, ["startOver 1"]);
 });

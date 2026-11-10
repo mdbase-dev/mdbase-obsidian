@@ -154,6 +154,7 @@ function fakeSync(initial: SyncSnapshot) {
     refresh: async () => undefined,
     startApp: record("startApp"), signIn: record("signIn"), signOut: record("signOut"), setUp: record("setUp"), join: record("join"),
     resolve: record("resolve"), dismissMerged: record("dismissMerged"), useOtherValue: record("useOtherValue"), approve: record("approve"), reject: record("reject"), linkAgain: record("linkAgain"), disconnect: record("disconnect"),
+    restartNative: record("restartNative"), startOver: record("startOver"),
     cancelSignIn: () => { calls.push(["cancelSignIn"]); },
   };
   return {
@@ -872,7 +873,7 @@ test("first run asks one question: start a collection here, or sync one from ano
 });
 
 /** In-plugin sync: the pane reads `direct` and calls the native host. */
-function directFixture(phase: Record<string, unknown>, text: string, canStartOver = false) {
+function directFixture(phase: Record<string, unknown>, text: string, canStartOver = false, bound = false) {
   const f = fixture();
   const calls: string[] = [];
   const record = (name: string) => () => { calls.push(name); return Promise.resolve(); };
@@ -880,7 +881,7 @@ function directFixture(phase: Record<string, unknown>, text: string, canStartOve
     signIn: record("signIn"), choose: record("choose"), addCollection: record("addCollection"), requestAccess: record("requestAccess"),
     retry: record("retry"), startOver: record("startOver"), canStartOver,
   };
-  f.sync.set({ direct: { text, phase } as SyncSnapshot["direct"] });
+  f.sync.set({ direct: { text, phase, bound } as SyncSnapshot["direct"] });
   f.state.render();
   return { ...f, calls };
 }
@@ -915,11 +916,15 @@ test("a stuck sign-in with nothing synced offers Start over; a bound vault doesn
   const stuck = { kind: "problem", collectionId: null, problem: { key: "recovery_required", action: "reload", title: "Reload required", message: "The app stopped to keep your data safe. Reload to continue." } };
   const f = directFixture(stuck, "Sync stopped. Reload required. The app stopped to keep your data safe. Reload to continue.", true);
   assert.match(f.text(), /Start over signs this vault out of mdbase, so you can sign in again with any account\. Nothing has synced yet/);
+  // Start over goes through the controller, which restarts the host first when the SDK's Worker is gone.
   button(f.root, "Start over").click();
   await tick();
-  button(f.root, "Try again").click();
+  // The SDK asks for a reload: Restart sync, not a Try again that can't help (prod F1, second run).
+  assert.equal(Array.from(f.root.querySelectorAll("button")).some((b) => b.textContent === "Try again"), false);
+  button(f.root, "Restart sync").click();
   await tick();
-  assert.deepEqual(f.calls, ["startOver", "retry"]);
+  assert.deepEqual(f.sync.calls.map((c) => c[0]), ["startOver", "restartNative"]);
+  assert.deepEqual(f.calls, [], "neither goes straight to the SDK host");
   f.dom.window.close();
   const bound = directFixture(stuck, "Sync stopped.", false);
   assert.equal(Array.from(bound.root.querySelectorAll("button")).some((b) => b.textContent === "Start over"), false);
@@ -937,8 +942,66 @@ test("each sync engine action gets a fitting button, or none", () => {
   assert.deepEqual(labels({ action: "sign_in" }), ["Sign in again"]);
   assert.deepEqual(labels({ action: "approve" }), ["Request access again"]);
   assert.deepEqual(labels({ action: "approve" }, null), [], "nothing to approve without a collection");
-  for (const action of ["retry", "check_connection", "reload", "wait", "resolve_outcome", "something_new"]) assert.deepEqual(labels({ action }), ["Try again"], action);
+  for (const action of ["retry", "check_connection", "wait", "resolve_outcome", "something_new"]) assert.deepEqual(labels({ action }), ["Try again"], action);
+  // A page reload, for a web app; and whatever the action, a Worker that quarantined itself.
+  assert.deepEqual(labels({ action: "reload" }), ["Restart sync"]);
+  assert.deepEqual(labels({ action: "retry", code: "application_worker_binding" }), ["Restart sync"]);
   for (const action of ["update_app", "free_space", "set_up", "contact_support", "choose_collection", "none"]) assert.deepEqual(labels({ action }), [], action);
+});
+
+test("when the SDK's Worker stopped, Sync offers Restart sync and a Start over that works (prod F1, second run)", async () => {
+  // As reported after Sign in again from a refused approval.
+  const problem = { code: "application_worker_binding", key: "application_failed", title: "The app stopped", message: "Something inside the app stopped working. Your data is safe. Reload to continue.", action: "reload" };
+  const f = directFixture({ kind: "problem", collectionId: null, problem }, "Sync stopped. Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.", true);
+  const labels = Array.from(f.root.querySelectorAll(".mdbase-sync button")).map((b) => b.textContent);
+  assert.deepEqual(labels, ["Restart sync", "Start over"], "no Try again: the Worker refuses every call");
+  assert.ok(button(f.root, "Restart sync").classList.contains("mod-cta"), "the primary step");
+  assert.doesNotMatch(f.text(), /Reload to continue/);
+  button(f.root, "Restart sync").click();
+  await tick();
+  button(f.root, "Start over").click();
+  await tick();
+  assert.deepEqual(f.sync.calls.map((c) => c[0]), ["restartNative", "startOver"]);
+  f.dom.window.close();
+});
+
+test("an action that fails says so in the message bar", async () => {
+  const problem = { code: "response", key: "application_failed", action: "reload" };
+  const f = directFixture({ kind: "problem", collectionId: null, problem }, "Sync stopped.", true);
+  (f.sync.controller as unknown as { startOver: () => Promise<void> }).startOver = () => Promise.reject(Object.assign(new Error("Start over didn't finish. Choose Restart sync, then Start over again."), { code: "still_stopped" }));
+  button(f.root, "Start over").click();
+  await tick();
+  await tick();
+  assert.match(f.text(), /Start over didn't finish\. Choose Restart sync, then Start over again\./);
+  f.dom.window.close();
+});
+
+test("starting that doesn't finish offers Restart sync; ordinary starting offers nothing (prod F1, second run)", async () => {
+  const quiet = directFixture({ kind: "starting" }, "Starting sync");
+  assert.equal(quiet.root.querySelectorAll(".mdbase-sync button").length, 0);
+  quiet.dom.window.close();
+  const stalled = directFixture({ kind: "starting", stalled: true }, "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again.");
+  assert.match(stalled.text(), /Sync not starting/);
+  assert.match(stalled.text(), /Choose Restart sync to try again/);
+  button(stalled.root, "Restart sync").click();
+  await tick();
+  assert.deepEqual(stalled.sync.calls.map((c) => c[0]), ["restartNative"]);
+  stalled.dom.window.close();
+});
+
+test("waiting for a bound collection's approval says so, and reopens the approval page (prod O3)", async () => {
+  const f = directFixture({ kind: "authorizing", collectionId: "c" }, "Waiting for you to approve access in your browser. Your notes here are untouched.", false, true);
+  assert.match(f.text(), /Waiting for approval/);
+  assert.match(f.text(), /approve access in your browser/);
+  assert.equal(Array.from(f.root.querySelectorAll("button")).some((b) => b.textContent === "Sign in"), false, "not a plain Sign in");
+  assert.doesNotMatch(f.text(), /Private collections sync here only/);
+  button(f.root, "Open approval page").click();
+  await tick();
+  assert.deepEqual(f.calls, ["signIn"], "reopens the pending link");
+  f.dom.window.close();
+  const first = directFixture({ kind: "authorizing" }, "Finish signing in in your browser.");
+  assert.ok(button(first.root, "Sign in"), "a first sign-in is unchanged");
+  first.dom.window.close();
 });
 
 test("after Move to mdbase app, Sync says what happened and what's next, without alarm (prod F5)", () => {

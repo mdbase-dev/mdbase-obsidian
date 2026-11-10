@@ -78,11 +78,43 @@ preservation journals), Sync also offers **Start over**. It calls the SDK's
 journal and its own marker are kept; no other marker is ever removed. Once a
 collection is bound, Start over is not offered.
 
+While a vault that already has a collection waits for approval in the browser
+(the SDK's `authorizing` phase with a bound collection), Sync and the status bar
+say **Waiting for approval** and offer **Open approval page**, which calls
+`signIn()` again. The SDK carries no refusal reason, so none is shown.
+
 Other SDK problem actions: `approve` offers **Request access again** (for a
-named collection); `retry`, `check_connection`, `reload`, `wait`,
-`resolve_outcome` and unknown actions offer **Try again**, which calls the SDK's
-`start()`; `choose_collection`, `set_up`, `update_app`, `free_space`,
+named collection); `retry`, `check_connection`, `wait`, `resolve_outcome` and
+unknown actions offer **Try again**, which calls the SDK's `start()`. If the SDK
+then reports the same stop, Sync says "Tried again, but sync still can't
+continue." `choose_collection`, `set_up`, `update_app`, `free_space`,
 `contact_support` and `none` offer no button, and the message says what to do.
+
+## Restart sync
+
+`reload`, and any problem whose code starts with `application_worker_`, offer
+**Restart sync** instead. The SDK's application Worker quarantines itself on
+those codes: it neither stops nor answers, every later call fails, and `stop()`
+throws. A web app recovers by reloading the page; Restart sync does the same.
+It unloads the SDK host without waiting for the SDK. Removing the iframe ends its
+document, which runs the SDK's own pagehide path and releases its Worker, Web
+Locks, BroadcastChannels and OPFS handles. Then it builds a new host.
+
+Teardown runs every step even if an earlier one throws: timers, a final journal
+write, the RPC port, the iframe, then the loopback server with all of its open
+connections. Pending RPCs are rejected. After unload the old host never writes
+`sync-state.json` again, and its late messages and status callbacks are
+ignored. The new host starts only once the old server has closed (at most 5 s),
+and it retries its saved port for up to 2 s, so it keeps the same origin and
+SDK storage. The journal and the ownership marker are kept throughout, as across
+a plugin reload. An unload while the host is still starting leaves no iframe or
+listener behind.
+
+When the Worker is gone, **Start over** first restarts sync, waits up to 60 s
+for the new host, and then signs out there. If that can't finish, Sync shows why.
+
+If the SDK stays in `starting` for 30 s, Sync and the status bar say "Sync
+hasn't started" and offer Restart sync.
 
 ## Private collections
 

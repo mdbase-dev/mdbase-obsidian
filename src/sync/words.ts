@@ -56,17 +56,27 @@ export const HANDED_OVER = "Obsidian has stopped syncing this vault. To keep it 
 /** This vault's collection is waiting to be approved in mdbase again. */
 export const NEEDS_APPROVAL = "This vault's collection needs approving in mdbase before it can sync. Your notes here are untouched. Choose Request access again and approve it in your browser.";
 
+/** A bound collection waiting for the person to approve it again in the browser. */
+export const AWAITING_APPROVAL = "Waiting for you to approve access in your browser. Your notes here are untouched.";
+
+/** Sync has been starting for too long; Restart sync builds the sync host afresh. */
+export const STARTING_STALLED = "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again.";
+
 /**
  * Why sync stopped, by the sync engine's problem key. Anything else uses the
  * engine's own title and message.
  */
 const STOP_PROBLEMS: Record<string, string> = {
   installation_scope_removed: "Access to this collection was removed in mdbase. Your notes here are untouched. To sync again, choose Request access again and approve it in your browser.",
+  // The engine says "Reload"; in Obsidian that is Restart sync.
+  application_failed: "Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.",
+  recovery_required: "It stopped to keep your data safe. Your notes here are untouched. Choose Restart sync to continue.",
 };
 export function stoppedText(problem: unknown): string {
   const p = (problem && typeof problem === "object" ? problem : {}) as { key?: unknown; title?: unknown; message?: unknown; action?: unknown };
   const known = typeof p.key === "string" ? STOP_PROBLEMS[p.key] : undefined;
-  const words = known ?? [p.title, p.message].filter((x): x is string => typeof x === "string" && x.trim() !== "").map(sentence).join(" ");
+  let words = known ?? [p.title, p.message].filter((x): x is string => typeof x === "string" && x.trim() !== "").map(sentence).join(" ");
+  if (!known && p.action === "reload") words = `${words ? `${words} ` : ""}Choose Restart sync to continue.`;
   // An unfinished sign-in didn't stop anything: say what happened, not "Sync stopped".
   if (p.action === "sign_in" && words) return words;
   return `Sync stopped. ${words || "Your files are kept on this computer."}`;
@@ -130,6 +140,10 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     }
     // Waiting for approval is a vault that syncs here and has stopped: show it.
     if (phase.kind === "needs_approval") return { label: "Needs approval", detail: text, tone: "attention", syncing: true };
+    // Request access again was chosen: the vault still syncs here, once approved.
+    if (phase.kind === "authorizing" && s.direct.bound) return { label: "Waiting for approval", detail: text, tone: "attention", syncing: true };
+    // Starting that never finishes must not look like nothing is wrong.
+    if (phase.kind === "starting" && phase.stalled) return { label: "Sync not starting", detail: text, tone: "attention", syncing: true };
     const problem = phase.kind === "problem" || phase.kind === "blocked" || /blocked|failed|stopped|ownership/i.test(text);
     // Locked and stopped are states of a vault that syncs here: the status bar
     // must say so rather than hide, or it would keep its last words ("Synced").

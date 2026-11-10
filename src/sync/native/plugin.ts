@@ -12,7 +12,7 @@ const { spawnSync } = nativeModule<typeof import("node:child_process")>("child_p
 const { brotliDecompressSync } = nativeModule<typeof import("node:zlib")>("zlib");
 import packedAssets from "embedded:assets";
 import { validVaultPort } from "../ownership";
-import { HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, failedText, stoppedText } from "../words";
+import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, STARTING_STALLED, failedText, stoppedText } from "../words";
 import { stageDownload } from "./download";
 import { retryUpload, type UploadIdentity } from "./upload";
 import { conflictPath, reconcileDecision, remoteMoveDecision, localMovePairs, Synced } from "./reconcile";
@@ -52,6 +52,8 @@ export interface NativeView {
   device: DeviceFilter;
   /** The collection's file policy, when it has one. */
   inclusion: CollectionInclusion | null;
+  /** Bound to a collection: waiting for approval is this vault's own collection. */
+  bound: boolean;
 }
 // Refusals of this exact input. Retrying unchanged bytes gets the same answer,
 // so they become per-path failures instead of stopping every other path.
@@ -97,6 +99,10 @@ const CATCHING_UP = "Checking your files: catching up with changes from other de
 /** How many plain note sends run at once. The SDK confirms them in batches. */
 const SEND_CONCURRENCY = 16;
 const isConflict = (e: any) => /conflict|revision/.test(`${e?.code} ${e?.reason}`);
+/** How long starting may take before Sync offers Restart sync. */
+export const START_STALL_MS = 30_000;
+/** How long a saved port may stay busy while a previous host lets go of it. */
+const PORT_WAIT_MS = 2_000;
 
 export default class NativeSync extends Component {
   constructor(readonly app: App, readonly manifest: PluginManifest, readonly changed: (text: string, phase: any, view?: NativeView) => void, readonly previousCollection?: string) { super(); }
@@ -145,6 +151,14 @@ export default class NativeSync extends Component {
   commitWaiters: { resolve: () => void; reject: (e: unknown) => void }[] = [];
   /** The collection's file policy; undefined until read, null when it has none. */
   inclusion: CollectionInclusion | null | undefined = undefined;
+  /** Starting has taken longer than START_STALL_MS. */
+  stalled = false;
+  stallTimer: number | null = null;
+  stallMs = START_STALL_MS;
+  /** After unload: this host writes nothing more, so a new one owns the journal. */
+  retired = false;
+  /** Resolves once the loopback server has closed (its port is free again). */
+  released: Promise<void> = Promise.resolve();
 
   onload(): void { void this.initialize(); }
 
@@ -166,14 +180,17 @@ export default class NativeSync extends Component {
       this.checkOwnership();
       this.persist();
       await this.startServer();
+      // Unloaded while the port opened: never leave a frame or listener behind.
+      if (this.unloaded) { this.closeServer(); return; }
       // Reserve even on first sign-in, before the SDK can auto-open anything.
       // collection_id is null only until the SDK first identifies a collection;
       // the daemon refuses host:"obsidian" regardless of that optional field.
       this.claim(this.data.collectionId);
-    } catch (e) { this.server?.close(); this.phase = { kind: "blocked" }; this.fail("startup", e); return; }
+    } catch (e) { this.closeServer(); this.phase = { kind: "blocked" }; this.fail("startup", e); return; }
     this.registerDomEvent(window, "message", (e: MessageEvent) => this.onMessage(e));
     this.frame = this.app.workspace.containerEl.createEl("iframe", { attr: { src: this.pageUrl(), "data-mdbase-native": "1" } });
     Object.assign(this.frame.style, { position: "fixed", width: "1px", height: "1px", border: "0", left: "-10px", top: "-10px" });
+    this.watchStart();
     this.markerTimer = window.setInterval(() => {
       try {
         this.checkOwnership();
@@ -203,18 +220,50 @@ export default class NativeSync extends Component {
 
   // Obsidian does not await onunload. Abrupt exit/reload MUST retain ownership:
   // only the explicit drain/stop command is allowed to remove the descriptor.
+  //
+  // Nothing here waits for the SDK: a broken SDK (its Worker quarantined) can't
+  // stop gracefully. Removing the iframe ends its document, which is the SDK's
+  // own page-reload path: pagehide abandons the runtime and terminates the
+  // Worker, and with the document go its Web Locks, BroadcastChannels and OPFS
+  // handles. Every step runs even if an earlier one throws.
   onunload() {
     this.unloaded = true; this.admitting = false; this.mirroring = false;
-    if (this.markerTimer) window.clearInterval(this.markerTimer);
-    if (this.settleTimer) window.clearTimeout(this.settleTimer);
-    if (this.reconcileRetryTimer) window.clearTimeout(this.reconcileRetryTimer);
-    this.reconcileRetryTimer = null;
-    // Memory is the truth; anything persistSoon() deferred goes to disk now.
-    this.flush(true);
-    this.bridge?.close(); this.bridge = null;
-    this.frame?.remove(); this.server?.close();
+    const steps: (() => void)[] = [
+      () => { for (const t of [this.settleTimer, this.reconcileRetryTimer, this.stallTimer]) if (t !== null) window.clearTimeout(t); },
+      () => { if (this.markerTimer !== null) window.clearInterval(this.markerTimer); },
+      // Memory is the truth; anything persistSoon() or durable() deferred goes to disk now.
+      () => { if (this.data && (this.dirty || this.commitTimer !== null)) this.persist(); },
+      () => { if (this.activityTimer !== null) { window.clearTimeout(this.activityTimer); this.writeActivity(); } },
+      () => { this.bridge?.close(); },
+      () => { this.frame?.remove(); },
+      () => this.closeServer(),
+    ];
+    for (const step of steps) {
+      try { step(); } catch (e: any) { this.log(`unload step failed: ${e?.code ?? "error"}`); }
+    }
+    this.markerTimer = this.settleTimer = this.reconcileRetryTimer = this.stallTimer = this.activityTimer = null;
+    this.bridge = null; this.frame = null;
+    // From here on a new host may own sync-state.json; this one must not write it.
+    this.retired = true;
+    for (const t of [this.persistTimer, this.commitTimer]) if (t !== null) window.clearTimeout(t);
+    this.persistTimer = this.commitTimer = null;
+    const waiting = this.commitWaiters; this.commitWaiters = [];
+    for (const w of waiting) w.reject(Object.assign(new Error("unloaded"), { code: "unloaded" }));
     for (const c of this.calls.values()) { window.clearTimeout(c.timer); c.reject(new Error("unloaded")); }
     this.calls.clear();
+  }
+  /** Close the loopback server and every connection to it; `released` says when the port is free. */
+  closeServer() {
+    const server = this.server;
+    this.server = null;
+    if (!server) return;
+    this.released = new Promise<void>(resolve => {
+      const timer = window.setTimeout(resolve, 3000);
+      try { server.close(() => { window.clearTimeout(timer); resolve(); }); }
+      catch { window.clearTimeout(timer); resolve(); }
+      // A kept-alive connection must not serve a later page with this host's handler.
+      try { server.closeAllConnections(); } catch { /* older Node: close() alone */ }
+    });
   }
   bindVault() {
     const location = `${os.hostname()}:${fs.realpathSync(this.root)}`;
@@ -247,6 +296,7 @@ export default class NativeSync extends Component {
   //  - persistSoon(): shortly, and at the end of every pass. Only for facts a
   //    restart can work out again (what was synced; see `sending`).
   persist() {
+    if (this.retired) throw Object.assign(new Error("Sync host stopped; state not written"), { code: "unloaded" });
     const started = Date.now();
     const file = path.join(this.pluginDir, "sync-state.json"), temp = file + ".tmp";
     fs.writeFileSync(temp, JSON.stringify(this.data, null, 2), { mode: 0o600 }); fs.renameSync(temp, file);
@@ -257,6 +307,7 @@ export default class NativeSync extends Component {
     for (const w of waiting) w.resolve();
   }
   persistSoon() {
+    if (this.retired) return; // a restart works these facts out again
     this.dirty = true;
     // A large state file takes longer to write, so it is written less often.
     if (this.persistTimer === null) this.persistTimer = window.setTimeout(() => { this.persistTimer = null; this.flush(true); }, Math.min(2000, Math.max(250, this.persistCost * 20)));
@@ -268,6 +319,7 @@ export default class NativeSync extends Component {
     catch (e: any) { if (!quiet) throw e; this.log(`saving sync state failed: ${e?.code ?? "error"}`); }
   }
   durable(): Promise<void> {
+    if (this.retired) return Promise.reject(Object.assign(new Error("Sync host stopped; state not written"), { code: "unloaded" }));
     return new Promise((resolve, reject) => {
       this.commitWaiters.push({ resolve, reject });
       if (this.commitTimer === null) this.commitTimer = window.setTimeout(() => {
@@ -287,7 +339,9 @@ export default class NativeSync extends Component {
 
   // ---- in-memory loopback assets -------------------------------------------
   async startServer() {
-    this.server = http.createServer((req, res) => {
+    const server = this.server = http.createServer((req, res) => {
+      // A stopped host serves nothing, even on a connection still open to it.
+      if (this.unloaded) { res.writeHead(503, { connection: "close" }).end(); return; }
       let request: URL;
       try { request = new URL(req.url ?? "/", this.origin); } catch { res.writeHead(400).end(); return; }
       let rel = request.pathname;
@@ -305,24 +359,45 @@ export default class NativeSync extends Component {
       res.end(bytes);
     });
     const listen = (port: number) => new Promise<void>((resolve, reject) => {
-      const failed = (e: Error) => { this.server!.off("listening", ready); reject(e); };
-      const ready = () => { this.server!.off("error", failed); resolve(); };
-      this.server!.once("error", failed); this.server!.once("listening", ready);
-      this.origin = `http://127.0.0.1:${port}`; this.server!.listen(port, "127.0.0.1");
+      // Unloaded meanwhile: this server is nobody's, so it must not open a port.
+      if (this.unloaded) { reject(Object.assign(new Error("Sync host stopped"), { code: "unloaded" })); return; }
+      const done = () => { server.off("error", failed); server.off("listening", ready); server.off("close", closed); };
+      const failed = (e: Error) => { done(); reject(e); };
+      const ready = () => { done(); resolve(); };
+      // Closed (by unload) before the port opened: Node then reports neither listening nor error.
+      const closed = () => { done(); reject(Object.assign(new Error("Sync host stopped"), { code: "unloaded" })); };
+      server.once("error", failed); server.once("listening", ready); server.once("close", closed);
+      this.origin = `http://127.0.0.1:${port}`; server.listen(port, "127.0.0.1");
     });
+    // Unloaded while the port opened (listening completes asynchronously): close it again.
+    const abandoned = () => {
+      if (!this.unloaded) return;
+      try { server.close(); server.closeAllConnections(); } catch { /* not listening */ }
+      throw Object.assign(new Error("Sync host stopped"), { code: "unloaded" });
+    };
     if (this.data.port !== undefined) {
       if (!validVaultPort(this.data.port)) throw new Error("Invalid saved native port");
-      try { await listen(this.data.port); }
-      catch (e: any) { throw new Error(`Saved port ${this.data.port} unavailable (${e.code}); not switching origins. Close the other listener and reload.`); }
+      // A host that just stopped (Restart sync, plugin reload) may still be letting go of it.
+      for (const until = Date.now() + PORT_WAIT_MS; ;) {
+        try { await listen(this.data.port); break; }
+        catch (e: any) {
+          if (e.code === "unloaded") throw e;
+          if (e.code !== "EADDRINUSE" || Date.now() >= until)
+            throw new Error(`Saved port ${this.data.port} unavailable (${e.code}); not switching origins. Close the other listener and reload.`);
+          await new Promise(resolve => window.setTimeout(resolve, 100));
+        }
+      }
     } else {
       const first = Math.floor(Math.random() * 100);
       for (let n = 0; n < 100; n++) {
         const port = 48300 + ((first + n) % 100);
-        try { await listen(port); this.data.port = port; this.persist(); break; }
-        catch (e: any) { if (e.code !== "EADDRINUSE") throw e; }
+        try { await listen(port); }
+        catch (e: any) { if (e.code !== "EADDRINUSE") throw e; continue; }
+        abandoned(); this.data.port = port; this.persist(); break;
       }
       if (!this.data.port) throw new Error("No free native port in 48300–48399");
     }
+    abandoned();
     this.log(`native host ${this.origin}; assets embedded in main.js`);
   }
 
@@ -409,6 +484,7 @@ export default class NativeSync extends Component {
     });
   }
   onMessage(e: MessageEvent) {
+    if (this.unloaded) return;
     if (e.origin !== this.origin || e.source !== this.frame?.contentWindow || !e.data) return;
     const m = e.data;
     switch (m.type) {
@@ -448,13 +524,16 @@ export default class NativeSync extends Component {
     // After a handover the SDK is stopped; its closing notices change nothing here.
     if (this.phase.kind === "handed_over") return;
     const was = this.phase; this.phase = phase;
+    if (phase.kind !== "starting") this.endStartWatch();
+    else if (was.kind !== "starting") this.watchStart();
     // Apply the transition before awaiting select/watch. A ready notification
     // can arrive while the earlier choosing handler is still awaiting select;
     // that older handler must not turn mirroring off again after ready wins.
     if (phase.kind !== "ready") this.mirroring = false;
     if (["ready", "signed_out", "problem", "closed"].includes(phase.kind)) this.signInUrl = null;
     const phaseText: Record<string, string> = {
-      starting: "Starting sync", signed_out: "Sign in to sync this vault.", authorizing: "Finish signing in in your browser.",
+      starting: this.stalled ? STARTING_STALLED : "Starting sync", signed_out: "Sign in to sync this vault.",
+      authorizing: this.data?.collectionId ? AWAITING_APPROVAL : "Finish signing in in your browser.",
       choosing: "Choose the collection to sync with this vault.", opening: "Getting your collection ready.",
       needs_unlock: phase.unlock?.unlocking ? "Unlocking your collection." : LOCKED_TEXT[phase.unlock?.mode ?? "password"],
       needs_approval: NEEDS_APPROVAL,
@@ -594,7 +673,38 @@ export default class NativeSync extends Component {
    */
   async retry() {
     if (this.phase.kind !== "problem") return;
+    const before = JSON.stringify(this.phase.problem);
     await this.call("start");
+    // Phase notices arrive before the call's reply. The same stop means nothing changed: say so.
+    if (this.phase.kind === "problem" && JSON.stringify(this.phase.problem) === before)
+      throw Object.assign(new Error("Tried again, but sync still can't continue."), { code: "still_stopped" });
+  }
+  /**
+   * The SDK's Worker is gone: it quarantined itself (`application_worker_*`)
+   * and refuses every call, so only a fresh host (Restart sync) can go on.
+   */
+  get workerGone(): boolean {
+    return this.phase.kind === "problem" && /^application_worker_/.test(String(this.phase.problem?.code ?? ""));
+  }
+  /** Only a fresh host can go on: the SDK asks for a reload, its Worker is gone, or starting stalled. */
+  get needsRestart(): boolean {
+    return (this.phase.kind === "problem" && (this.phase.problem?.action === "reload" || this.workerGone)) || (this.phase.kind === "starting" && this.stalled);
+  }
+  /** Starting gets START_STALL_MS before Sync says so and offers Restart sync. */
+  watchStart() {
+    this.endStartWatch();
+    if (this.unloaded) return;
+    this.stallTimer = window.setTimeout(() => {
+      this.stallTimer = null;
+      if (this.unloaded || this.phase.kind !== "starting") return;
+      this.stalled = true;
+      this.log(`still starting after ${this.stallMs / 1000} s`);
+      this.setStatus(STARTING_STALLED);
+    }, this.stallMs);
+  }
+  endStartWatch() {
+    if (this.stallTimer !== null) window.clearTimeout(this.stallTimer);
+    this.stallTimer = null; this.stalled = false;
   }
   /**
    * Whether signing this vault out of mdbase loses nothing: no collection is
@@ -619,6 +729,8 @@ export default class NativeSync extends Component {
     this.signInUrl = null;
     this.log("start over: signing out of an unfinished sign-in (nothing bound)");
     await this.call("signOut");
+    if (this.phase.kind === "problem")
+      throw Object.assign(new Error("Start over didn't finish. Choose Restart sync, then Start over again."), { code: "still_stopped" });
   }
   openSignIn(url: string) {
     this.signInUrl = url;
@@ -1617,7 +1729,7 @@ export default class NativeSync extends Component {
     await this.reconcileAll(true);
   }
 
-  setStatus(text: string) { this.statusText = text; this.changed(text, this.phase, this.view()); }
+  setStatus(text: string) { this.statusText = text; this.changed(text, this.stalled && this.phase.kind === "starting" ? { ...this.phase, stalled: true } : this.phase, this.view()); }
   /**
    * Progress from a pass. A pass still running when sync stops (access removed,
    * say) must not put "Synced" back over the words saying why; its counts still go out.
@@ -1625,7 +1737,7 @@ export default class NativeSync extends Component {
   passStatus(text: string) { this.setStatus(this.phase.kind === "ready" ? text : this.statusText); }
   view(): NativeView {
     const failures = Object.entries(this.data?.pathFailures ?? {}).map(([p, f]) => ({ path: p, ...describeFailure({ ...f, kind: this.data.paths[p]?.kind }) }));
-    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null };
+    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
   }
   safeText(text: string) { return String(text).replace(/https?:\/\/[^\s"<>]+/g, value => { try { const u = new URL(value); return u.origin + u.pathname; } catch { return "[url]"; } }); }
   log(text: string) {

@@ -62,7 +62,11 @@ export interface SyncSnapshot {
       kind: string; sync?: { kind: string; pending: number; health?: string | null; live?: boolean | null; holds?: number; conflicts?: number }; problem?: unknown;
       /** A Private collection waiting for its key: how the account unlocks it. */
       unlock?: { mode: "password" | "strict" | "none"; unlocking: boolean; name: string | null } | null;
+      /** Still starting after the plugin stopped waiting: offer Restart sync. */
+      stalled?: boolean;
     };
+    /** This vault is bound to a collection (it has synced, or is about to). */
+    bound?: boolean;
     /** Paths that didn't sync, and why. Everything else is in sync. */
     failures?: DirectFailure[];
     /** Waiting for the user before combining a vault and collection that both have notes. */
@@ -138,6 +142,8 @@ export class SyncController {
   private fence: EditorFence | null = null;
   private fenceTimer: number | null = null;
   private signInDeadline = 0;
+  /** An SDK host being torn down; no new one starts until it has let go. */
+  private releasing: Promise<void> | null = null;
 
   constructor(private readonly host: SyncHost, readonly mobile: boolean) {
     this.cli = new MdbaseCli(() => (this.mobile ? null : findBinary(host.binaryOverride())));
@@ -169,8 +175,64 @@ export class SyncController {
     if (this.timer !== null) window.clearTimeout(this.timer);
     if (this.fenceTimer !== null) window.clearTimeout(this.fenceTimer);
     this.timer = null;
-    this.closeLink();
-    this.native?.unload(); this.native = null;
+    // The SDK host first: nothing else may keep it (and its port and Worker) alive.
+    try { void this.dropNative(); } finally { this.closeLink(); }
+  }
+
+  /** Stop the SDK host, if any; a new one waits until it has let go. */
+  private dropNative(): Promise<void> {
+    const native = this.native;
+    if (!native) return Promise.resolve();
+    this.native = null;
+    const releasing = releaseNative(native).finally(() => { if (this.releasing === releasing) this.releasing = null; });
+    this.releasing = releasing;
+    return releasing;
+  }
+
+  /**
+   * What a page reload does for a web app: take the SDK host down completely
+   * (its iframe, and with it the SDK's Worker, locks and storage handles, and
+   * its loopback server) and build a fresh one. The journal is saved and the
+   * ownership marker kept, exactly as across a plugin reload; the new host
+   * starts only once the old one has let go, so one vault never has two.
+   */
+  async restartNative(): Promise<void> {
+    const old = this.native;
+    if (!old || this.releasing) return;
+    this.set({ direct: { text: "Restarting sync", phase: { kind: "starting" } }, error: null });
+    await this.dropNative();
+    if (this.stopped) return;
+    await this.refresh();
+    // A check already running when the old host went may not have started the new one.
+    if (!this.native) await this.refresh();
+  }
+
+  /**
+   * Start over from a stop. When the SDK's Worker is gone (it can't sign out),
+   * restart the host first and sign out on the fresh one, as a page reload
+   * then Start over would. Throws, so the person sees it, if it can't finish.
+   */
+  async startOver(): Promise<void> {
+    const native = this.native;
+    if (!native?.canStartOver) return;
+    if (!native.workerGone) return native.startOver();
+    await this.restartNative();
+    const fresh = await this.whenStarted(60_000);
+    if (!fresh) throw new MdbaseError("internal", "Sync didn't restart in time, so Start over didn't run. Choose Restart sync, then Start over.");
+    if (fresh.phase.kind === "signed_out") return;
+    if (!fresh.canStartOver) throw new MdbaseError("internal", "Sync restarted, but Start over couldn't run yet. Try Start over again.");
+    await fresh.startOver();
+  }
+
+  /** The host once its SDK reported a state other than starting, or null on time-out. */
+  private async whenStarted(timeoutMs: number): Promise<NativeSync | null> {
+    const until = Date.now() + timeoutMs;
+    while (!this.stopped && Date.now() < until) {
+      const native = this.native;
+      if (native && native.phase.kind !== "starting") return native;
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+    return null;
   }
 
   /** Check mdbase now; coalesces with a check already running. */
@@ -204,22 +266,27 @@ export class SyncController {
         if (owner === "wait") throw new Error("This folder is owned by another app. Sync is waiting; files are untouched.");
         if (owner === "plugin") {
           this.closeLink();
-          if (!this.native) {
+          // A host being torn down still holds the port and the SDK's storage.
+          if (!this.native && this.releasing) await this.releasing;
+          if (!this.native && !this.stopped) {
             this.set({ direct: { text: "Starting sync", phase: { kind: "starting" } }, daemon: "running", error: null });
-            this.native = await this.host.createNative((text, phase, view) => {
-              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion } });
+            const native: NativeSync = await this.host.createNative((text, phase, view) => {
+              // A host already replaced or stopped says nothing more.
+              if (this.native !== native) return;
+              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound } });
             }, this.lastDesktopCollection);
-            if (this.stopped) { this.native.unload(); this.native = null; return; }
-            this.native.load();
+            if (this.stopped || this.native) { native.unload(); return; }
+            this.native = native;
+            native.load();
           }
           return;
         }
         const id = (marker as { collection_id?: string }).collection_id;
         if (id) this.lastDesktopCollection = id;
-        if (this.native) { this.native.unload(); this.native = null; }
+        void this.dropNative();
         this.set({ direct: undefined });
       } catch (error) {
-        this.native?.unload(); this.native = null;
+        void this.dropNative();
         this.closeLink();
         this.set({ direct: undefined, daemon: "error", error: new MdbaseError("unavailable", (error as Error).message) });
         return;
@@ -570,6 +637,21 @@ export class SyncController {
       await this.cli.run(["device", "reject", collection.id, device], { yes: true });
     });
   }
+}
+
+/**
+ * Unload a host and wait until it has let go of its port. Unloading never waits
+ * for the SDK: a broken SDK can't stop gracefully, and removing its page is what
+ * stops it (the SDK's own pagehide path). Bounded, so a restart never hangs.
+ */
+async function releaseNative(native: NativeSync): Promise<void> {
+  try { native.unload(); } catch (error) { console.warn("mdbase: stopping the sync host failed", error); }
+  let timer: number | undefined;
+  await Promise.race([
+    native.released ?? Promise.resolve(),
+    new Promise<void>((resolve) => { timer = window.setTimeout(resolve, 5_000); }),
+  ]);
+  window.clearTimeout(timer);
 }
 
 function heldFile(hold: Hold): HeldFile {

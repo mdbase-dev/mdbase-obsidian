@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { safeFolderName, type SyncSnapshot } from "../src/sync/controller";
 import { candidateBinaries, collectionIdFrom, stateDir, vaultCollection, type CollectionStatus, type DaemonStatus } from "../src/sync/daemon";
 import { applyScalarEdits, EditorFence, hashText, minimalChange, scalarToUtf16 } from "../src/sync/editorFence";
-import { HANDED_OVER, NEEDS_APPROVAL, errorText, failedText, modeName, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
+import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, STARTING_STALLED, errorText, failedText, modeName, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
 import { describeFailure } from "../src/sync/native/failures";
 import { differingLines, nameFromLink, syncNowSummary } from "../src/workspace/syncPane";
 import type { ActivityKind } from "../src/sync/native/device";
@@ -221,6 +221,33 @@ test("a collection waiting for approval shows in the status bar and says what to
   const summary = summarize({ ...base, direct: { text: NEEDS_APPROVAL, phase: { kind: "needs_approval" } } } as SyncSnapshot);
   assert.deepEqual([summary.label, summary.tone, summary.syncing], ["Needs approval", "attention", true]);
   assert.match(summary.detail, /Request access again/);
+});
+
+test("waiting for a bound collection's approval keeps the status bar, saying so (prod O3)", () => {
+  const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
+  const waiting = summarize({ ...base, direct: { text: AWAITING_APPROVAL, phase: { kind: "authorizing" }, bound: true } } as SyncSnapshot);
+  assert.deepEqual([waiting.label, waiting.tone, waiting.syncing, waiting.detail], ["Waiting for approval", "attention", true, AWAITING_APPROVAL]);
+  // A first sign-in (nothing bound) isn't a vault that syncs yet.
+  const first = summarize({ ...base, direct: { text: "Finish signing in in your browser.", phase: { kind: "authorizing" } } } as SyncSnapshot);
+  assert.equal(first.syncing, false);
+});
+
+test("starting that doesn't finish shows in the status bar; ordinary starting doesn't (prod F1, second run)", () => {
+  const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
+  const starting = summarize({ ...base, direct: { text: "Starting sync", phase: { kind: "starting" } } } as SyncSnapshot);
+  assert.equal(starting.syncing, false);
+  const stalled = summarize({ ...base, direct: { text: STARTING_STALLED, phase: { kind: "starting", stalled: true } } } as SyncSnapshot);
+  assert.deepEqual([stalled.label, stalled.tone, stalled.syncing], ["Sync not starting", "attention", true]);
+  assert.match(stalled.detail, /Restart sync/);
+});
+
+test("a stop the engine says needs a reload names Restart sync instead (prod F1, second run)", () => {
+  const stopped = stoppedText({ code: "application_worker_binding", key: "application_failed", title: "The app stopped", message: "Something inside the app stopped working. Your data is safe. Reload to continue.", action: "reload" });
+  assert.equal(stopped, "Sync stopped. Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.");
+  assert.equal(stoppedText({ key: "open_failed", title: "Couldn't open your collection", message: "Something went wrong", action: "reload" }),
+    "Sync stopped. Couldn't open your collection. Something went wrong. Choose Restart sync to continue.");
+  assert.equal(stoppedText({ action: "reload" }), "Sync stopped. Choose Restart sync to continue.");
+  assert.match(stoppedText({ key: "recovery_required", action: "reload" }), /^Sync stopped\. It stopped to keep your data safe\./);
 });
 
 test("after Move to mdbase app the status bar is neutral and says what's next (prod F5)", () => {

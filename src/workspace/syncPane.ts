@@ -109,15 +109,21 @@ export class SyncPane {
     if (s.busy) root.createEl("p", { cls: "mdbase-muted", text: `${s.busy}…` });
 
     if (s.direct) {
-      const native = this.ctx.host.syncController.native;
+      const controller = this.ctx.host.syncController;
+      const native = controller.native;
       if (!native) return;
       const phase = s.direct.phase.kind;
       if (phase !== "needs_unlock") this.unlockSecret = "";
       if (s.direct.merge) {
         this.renderMerge(root, s.direct.merge);
+      } else if (phase === "authorizing" && s.direct.bound) {
+        // Request access again is waiting in the browser; this reopens that page.
+        this.actions(root, [["Open approval page", true, () => this.run(() => native.signIn())]]);
       } else if (phase === "signed_out" || phase === "authorizing") {
         this.actions(root, [["Sign in", true, () => this.run(() => native.signIn())]]);
         root.createEl("p", { cls: "mdbase-muted", text: PRIVATE_SIGN_IN_HINT });
+      } else if (phase === "starting" && s.direct.phase.stalled) {
+        this.actions(root, [[RESTART_SYNC, true, () => this.run(() => controller.restartNative())]]);
       } else if (phase === "needs_unlock") {
         this.renderUnlock(root, s.direct.phase);
       } else if (phase === "choosing") {
@@ -144,15 +150,17 @@ export class SyncPane {
       } else if (phase === "needs_approval") {
         this.actions(root, [["Request access again", true, () => this.run(() => native.requestAccess())]]);
       } else if (phase === "problem") {
-        const problem = s.direct.phase.problem as { action?: unknown } | null | undefined;
-        const step = problemStep(problem?.action, Boolean((s.direct.phase as { collectionId?: unknown }).collectionId));
+        const problem = s.direct.phase.problem as { action?: unknown; code?: unknown } | null | undefined;
+        const step = problemStep(problem?.action, Boolean((s.direct.phase as { collectionId?: unknown }).collectionId), problem?.code);
         const buttons: [string, boolean, () => void][] = [];
         if (step === "sign_in") buttons.push(["Sign in again", true, () => this.run(() => native.signIn())]);
         else if (step === "approve") buttons.push(["Request access again", true, () => this.run(() => native.requestAccess())]);
+        else if (step === "restart") buttons.push([RESTART_SYNC, true, () => this.run(() => controller.restartNative())]);
         else if (step === "retry") buttons.push(["Try again", false, () => this.run(() => native.retry())]);
         // Nothing synced and nothing waiting: signing out can't lose anything.
+        // With the SDK's Worker gone, the controller restarts the host first.
         const startOver = native.canStartOver;
-        if (startOver) buttons.push(["Start over", false, () => this.run(() => native.startOver())]);
+        if (startOver) buttons.push(["Start over", false, () => this.run(() => controller.startOver())]);
         if (buttons.length) this.actions(root, buttons);
         if (startOver) root.createEl("p", { cls: "mdbase-muted", text: START_OVER_HINT });
       }
@@ -664,6 +672,9 @@ export class SyncPane {
   }
 }
 
+/** The button for a stop only a fresh sync host can get past (a page reload, for a web app). */
+export const RESTART_SYNC = "Restart sync";
+
 export const START_OVER_HINT = "Start over signs this vault out of mdbase, so you can sign in again with any account. Nothing has synced yet, so your notes aren't affected.";
 
 /**
@@ -671,13 +682,17 @@ export const START_OVER_HINT = "Start over signs this vault out of mdbase, so yo
  * (describeError's MdbaseErrorAction). Actions the plugin can't carry out here
  * (update, free space, set up, contact support) get none: the words say what to do.
  */
-export function problemStep(action: unknown, hasCollection: boolean): "sign_in" | "approve" | "retry" | null {
+export function problemStep(action: unknown, hasCollection: boolean, code?: unknown): "sign_in" | "approve" | "restart" | "retry" | null {
+  // The SDK's Worker quarantined itself and refuses every call: only a fresh host helps.
+  if (typeof code === "string" && /^application_worker_/.test(code)) return "restart";
   switch (action) {
     case "sign_in": return "sign_in";
     // Approval is per collection; without one there is nothing to approve.
     case "approve": return hasCollection ? "approve" : null;
+    // What a web app does by reloading the page: tear the SDK host down and build a new one.
+    case "reload": return "restart";
     // Ask the engine to start again: it restarts a blocked sign-in or reopens the collection.
-    case "retry": case "check_connection": case "reload": case "wait": case "resolve_outcome": return "retry";
+    case "retry": case "check_connection": case "wait": case "resolve_outcome": return "retry";
     case "choose_collection": case "set_up": case "update_app": case "free_space": case "contact_support": case "none": return null;
     default: return "retry";
   }
