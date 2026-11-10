@@ -26,9 +26,12 @@ export async function nativeAssets() {
     if (bytes.length !== pin.bytes || createHash("sha256").update(bytes).digest("hex") !== pin.sha256) throw new Error(`SDK integrity mismatch: ${name}`);
     assets[`/sdk/native/${name}`] = bytes;
   }
-  // Newer SDKs may package the official OPFS async proxy too.
-  if (pins.sqlite.asyncProxy) {
-    const bytes = readFileSync(resolve(sdk, "dist/native/sqlite3-opfs-async-proxy.js"));
+  // The SDK pins the official OPFS async proxy but turns that storage backend
+  // off, so it never loads the file, and the published package leaves it out.
+  // Embed it only when the package ships it, and check it against its pin.
+  const proxyPath = resolve(sdk, "dist/native/sqlite3-opfs-async-proxy.js");
+  if (pins.sqlite.asyncProxy && existsSync(proxyPath)) {
+    const bytes = readFileSync(proxyPath);
     if (bytes.length !== pins.sqlite.asyncProxy.bytes || createHash("sha256").update(bytes).digest("hex") !== pins.sqlite.asyncProxy.sha256) throw new Error("SDK proxy integrity mismatch");
     assets["/sdk/native/sqlite3-opfs-async-proxy.js"] = bytes;
   }
