@@ -58,29 +58,38 @@ needs explicit recovery, not a timeout. The inherited OS-lock probe currently
 uses Linux `flock`; other systems fail closed if a desktop lock file exists.
 Mobile and Android shared-localhost support are not part of this implementation.
 
-## Build and acceptance status
+## Private collections
 
-The production dependency must be replaced with an authenticated production SDK
-bundle containing native-platform and complete vault-namespace support. The
-currently pinned beta.141-era SDK does not contain the namespace implementation;
-production builds intentionally refuse rather than silently omitting safety or
-retargeting a LAB trust bundle. This integration is not release-ready until that
-intake and live acceptance are complete.
+The app declaration asks for the optional `offline.replica` capability. When the
+server has Private app devices switched on, the sign-in page in mdbase offers,
+per collection, to let this device keep that collection's key. A Private
+collection is listed in the plugin only if that was allowed.
 
-For development against an already authenticated LAB SDK package:
+- With its key, a Private collection syncs like any other.
+- Without it, Sync shows **Locked** and an unlock form for the encryption
+  password or recovery key.
+- When access is removed in mdbase, sync stops and the notes stay as they are.
+  **Request access again** reopens the approval page.
+
+Needs SDK 0.1.0-beta.173 or later. On a server with the switch off, Private
+collections are not offered and nothing else changes.
+
+## Build
+
+`npm run build` builds against the vendored production SDK. The native asset
+packer refuses an SDK that is not packaged for the environment being built, and
+checks every embedded SDK asset against the SDK's own pins. The SDK pins the
+official OPFS proxy but never loads it, and the published package leaves it out;
+the packer embeds it only when the supplied package has it.
+
+To build against an authenticated LAB SDK package:
 
 ```sh
 npm ci
-npm test
-npm run lint
 node esbuild.config.mjs production --lab --native-sdk /absolute/path/to/sdk/package
-node scripts/check-mobile.mjs
 ```
 
-Do not publish that LAB build. Ordinary production build remains `npm run build`.
-The native asset packer checks SDK asset hashes and sizes and preserves SDK-owned
-Worker/WASM URL relationships; it includes the official OPFS proxy when pinned
-by the supplied SDK.
+Do not publish a LAB build.
 
 Unit tests exercise real vault IO for concurrent edits, renames, deletes,
 conflict-publication recovery, upload recovery, ownership transitions and fixed
