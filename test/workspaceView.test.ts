@@ -154,6 +154,7 @@ function fakeSync(initial: SyncSnapshot) {
     refresh: async () => undefined,
     startApp: record("startApp"), signIn: record("signIn"), signOut: record("signOut"), setUp: record("setUp"), join: record("join"),
     resolve: record("resolve"), dismissMerged: record("dismissMerged"), useOtherValue: record("useOtherValue"), approve: record("approve"), reject: record("reject"), linkAgain: record("linkAgain"), disconnect: record("disconnect"),
+    restartNative: record("restartNative"), startOver: record("startOver"),
     cancelSignIn: () => { calls.push(["cancelSignIn"]); },
   };
   return {
@@ -419,8 +420,9 @@ test("the type list shows note and issue counts, and field rows show their const
   const f = typesFixture();
   f.host.getIssues = () => [{ path: "tasks/a.md", severity: "error", code: "schema_required", message: "", type: "task" }] as never;
   await f.view.selectType("_types/task.md");
-  const rows = Array.from(f.root.querySelectorAll(".mdbase-type-row")).map((row) => visibleText(row));
-  assert.deepEqual(rows, ["note 1 note", "task 2 notes 1 issue"]);
+  const rows = Array.from(f.root.querySelectorAll(".mdbase-type-row")).map((row) =>
+    [row.querySelector(".mdbase-type-name")?.textContent, ...Array.from(row.querySelectorAll(".tree-item-flair")).map((flair) => flair.getAttribute("aria-label"))].join(" "));
+  assert.deepEqual(rows, ["note 1 note", "task 1 issue 2 notes"]);
   assert.match(visibleText(fieldNode(f.root, "priority").querySelector("summary")!), /priority Integer ≤ 3/);
   assert.match(visibleText(fieldNode(f.root, "status").querySelector("summary")!), /status Enum 1, 2, done, later/);
   f.dom.window.close();
@@ -508,7 +510,8 @@ test("Issues grouped by rule offer one bulk fix and jump to the rule's field", a
   const groupBy = f.root.querySelector<HTMLSelectElement>("[aria-label='Group issues']")!;
   groupBy.value = "rule";
   groupBy.dispatchEvent(new f.dom.window.Event("change"));
-  assert.match(f.text(), /task · title · missing 2 notes/);
+  assert.match(f.text(), /task · title · missing/);
+  assert.equal(f.root.querySelector(".mdbase-issue-file-count")!.getAttribute("aria-label"), "2 notes");
   assert.ok(button(f.root, "Add placeholder · 2 notes"));
   assert.equal(f.root.querySelector(".mdbase-issue-row")!.getAttribute("title"), "schema_required: JSON Schema required failed");
   button(f.root, "Edit title in task").click();
@@ -867,6 +870,169 @@ test("first run asks one question: start a collection here, or sync one from ano
   assert.equal(f.state.destination, "sync");
   assert.match(f.text(), /Add a collection you already sync/);
   f.dom.window.close();
+});
+
+/** In-plugin sync: the pane reads `direct` and calls the native host. */
+function directFixture(phase: Record<string, unknown>, text: string, canStartOver = false, bound = false) {
+  const f = fixture();
+  const calls: string[] = [];
+  const record = (name: string) => () => { calls.push(name); return Promise.resolve(); };
+  (f.sync.controller as unknown as { native: unknown }).native = {
+    signIn: record("signIn"), choose: record("choose"), addCollection: record("addCollection"), requestAccess: record("requestAccess"),
+    retry: record("retry"), startOver: record("startOver"), canStartOver,
+  };
+  f.sync.set({ direct: { text, phase, bound } as SyncSnapshot["direct"] });
+  f.state.render();
+  return { ...f, calls };
+}
+
+test("where collections are chosen, a quiet line says when Private ones are listed (LAB F3)", () => {
+  const choosing = directFixture({ kind: "choosing", collections: [{ id: "c", name: "Notes", private: false }] }, "Choose the collection to sync with this vault.");
+  const hint = Array.from(choosing.root.querySelectorAll("p.mdbase-muted")).map((p) => p.textContent ?? "").find((t) => /Private collections/.test(t));
+  assert.equal(hint, "Private collections are listed only if mdbase let this device keep their key when you signed in. mdbase doesn't offer that everywhere yet.");
+  choosing.dom.window.close();
+  const signedOut = directFixture({ kind: "signed_out" }, "Sign in to sync this vault.");
+  assert.match(signedOut.text(), /Sign in Private collections sync here only if mdbase offers to let this device keep their key when you sign in\./);
+  // Production doesn't offer the choice yet: never send people looking for it (prod F2).
+  for (const t of [hint ?? "", signedOut.text()]) assert.doesNotMatch(t, /sign in again and allow|allow this device/i);
+  signedOut.dom.window.close();
+});
+
+test("an unfinished sign-in offers Sign in again, which signs in through the SDK (prod F1)", async () => {
+  // As the SDK reports it after a cancelled or refused approval, and again after a restart.
+  const problem = { key: "refused", action: "sign_in", title: "Sign-in wasn't finished", message: "Access wasn't approved. Sign in again when you're ready." };
+  const f = directFixture({ kind: "problem", collectionId: null, problem }, "Sign-in wasn't finished. Access wasn't approved. Sign in again when you're ready.");
+  assert.match(f.text(), /Access wasn't approved/);
+  const again = button(f.root, "Sign in again");
+  assert.ok(again.classList.contains("mod-cta"), "the primary step");
+  assert.equal(Array.from(f.root.querySelectorAll("button")).some((b) => b.textContent === "Check again"), false, "no button that does nothing");
+  again.click();
+  await tick();
+  assert.deepEqual(f.calls, ["signIn"]);
+  f.dom.window.close();
+});
+
+test("a stuck sign-in with nothing synced offers Start over; a bound vault doesn't (prod F1)", async () => {
+  const stuck = { kind: "problem", collectionId: null, problem: { key: "recovery_required", action: "reload", title: "Reload required", message: "The app stopped to keep your data safe. Reload to continue." } };
+  const f = directFixture(stuck, "Sync stopped. Reload required. The app stopped to keep your data safe. Reload to continue.", true);
+  assert.match(f.text(), /Start over signs this vault out of mdbase, so you can sign in again with any account\. Nothing has synced yet/);
+  // Start over goes through the controller, which restarts the host first when the SDK's Worker is gone.
+  button(f.root, "Start over").click();
+  await tick();
+  // The SDK asks for a reload: Restart sync, not a Try again that can't help (prod F1, second run).
+  assert.equal(Array.from(f.root.querySelectorAll("button")).some((b) => b.textContent === "Try again"), false);
+  button(f.root, "Restart sync").click();
+  await tick();
+  assert.deepEqual(f.sync.calls.map((c) => c[0]), ["startOver", "restartNative"]);
+  assert.deepEqual(f.calls, [], "neither goes straight to the SDK host");
+  f.dom.window.close();
+  const bound = directFixture(stuck, "Sync stopped.", false);
+  assert.equal(Array.from(bound.root.querySelectorAll("button")).some((b) => b.textContent === "Start over"), false);
+  assert.doesNotMatch(bound.text(), /Start over/);
+  bound.dom.window.close();
+});
+
+test("each sync engine action gets a fitting button, or none", () => {
+  const labels = (problem: Record<string, unknown>, collectionId: string | null = "c") => {
+    const f = directFixture({ kind: "problem", collectionId, problem }, "Sync stopped. Words.");
+    const out = Array.from(f.root.querySelectorAll(".mdbase-sync button")).map((b) => b.textContent);
+    f.dom.window.close();
+    return out;
+  };
+  assert.deepEqual(labels({ action: "sign_in" }), ["Sign in again"]);
+  assert.deepEqual(labels({ action: "approve" }), ["Request access again"]);
+  assert.deepEqual(labels({ action: "approve" }, null), [], "nothing to approve without a collection");
+  for (const action of ["retry", "check_connection", "wait", "resolve_outcome", "something_new"]) assert.deepEqual(labels({ action }), ["Try again"], action);
+  // A page reload, for a web app; and whatever the action, a Worker that quarantined itself.
+  assert.deepEqual(labels({ action: "reload" }), ["Restart sync"]);
+  assert.deepEqual(labels({ action: "retry", code: "application_worker_binding" }), ["Restart sync"]);
+  for (const action of ["update_app", "free_space", "set_up", "contact_support", "choose_collection", "none"]) assert.deepEqual(labels({ action }), [], action);
+});
+
+test("when sign-in broke before anything was bound, Start over is the primary step and Restart sync the lesser one (prod retest 2)", async () => {
+  // As reported after Sign in again from a refused approval. A fresh host
+  // resumes the same sign-in and stops again, so Restart sync alone loops.
+  const problem = { code: "application_worker_binding", key: "application_failed", title: "The app stopped", message: "Something inside the app stopped working. Your data is safe. Reload to continue.", action: "reload" };
+  const f = directFixture({ kind: "problem", collectionId: null, problem }, "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again.", true);
+  const labels = Array.from(f.root.querySelectorAll(".mdbase-sync button")).map((b) => b.textContent);
+  assert.deepEqual(labels, ["Start over", "Restart sync"], "no Try again: the Worker refuses every call");
+  assert.ok(button(f.root, "Start over").classList.contains("mod-cta"), "the primary step");
+  assert.ok(!button(f.root, "Restart sync").classList.contains("mod-cta"));
+  assert.doesNotMatch(f.text(), /Reload to continue/);
+  button(f.root, "Restart sync").click();
+  await tick();
+  button(f.root, "Start over").click();
+  await tick();
+  assert.deepEqual(f.sync.calls.map((c) => c[0]), ["restartNative", "startOver"]);
+  f.dom.window.close();
+  // A bound vault can't start over: Restart sync stays the one, primary step.
+  const bound = directFixture({ kind: "problem", collectionId: "c1", problem }, "Sync stopped. Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.");
+  assert.deepEqual(Array.from(bound.root.querySelectorAll(".mdbase-sync button")).map((b) => b.textContent), ["Restart sync"]);
+  assert.ok(button(bound.root, "Restart sync").classList.contains("mod-cta"));
+  bound.dom.window.close();
+});
+
+test("an action that fails says so in the message bar", async () => {
+  const problem = { code: "response", key: "application_failed", action: "reload" };
+  const f = directFixture({ kind: "problem", collectionId: null, problem }, "Sync stopped.", true);
+  (f.sync.controller as unknown as { startOver: () => Promise<void> }).startOver = () => Promise.reject(Object.assign(new Error("Start over didn't finish. Choose Restart sync, then Start over again."), { code: "still_stopped" }));
+  button(f.root, "Start over").click();
+  await tick();
+  await tick();
+  assert.match(f.text(), /Start over didn't finish\. Choose Restart sync, then Start over again\./);
+  f.dom.window.close();
+});
+
+test("starting that doesn't finish offers Restart sync; ordinary starting offers nothing (prod F1, second run)", async () => {
+  const quiet = directFixture({ kind: "starting" }, "Starting sync");
+  assert.equal(quiet.root.querySelectorAll(".mdbase-sync button").length, 0);
+  quiet.dom.window.close();
+  const stalled = directFixture({ kind: "starting", stalled: true }, "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again.");
+  assert.match(stalled.text(), /Sync not starting/);
+  assert.match(stalled.text(), /Choose Restart sync to try again/);
+  button(stalled.root, "Restart sync").click();
+  await tick();
+  assert.deepEqual(stalled.sync.calls.map((c) => c[0]), ["restartNative"]);
+  stalled.dom.window.close();
+});
+
+test("waiting for a bound collection's approval says so, and reopens the approval page (prod O3)", async () => {
+  const f = directFixture({ kind: "authorizing", collectionId: "c" }, "Waiting for you to approve access in your browser. Your notes here are untouched.", false, true);
+  assert.match(f.text(), /Waiting for approval/);
+  assert.match(f.text(), /approve access in your browser/);
+  assert.equal(Array.from(f.root.querySelectorAll("button")).some((b) => b.textContent === "Sign in"), false, "not a plain Sign in");
+  assert.doesNotMatch(f.text(), /Private collections sync here only/);
+  button(f.root, "Open approval page").click();
+  await tick();
+  assert.deepEqual(f.calls, ["signIn"], "reopens the pending link");
+  f.dom.window.close();
+  const first = directFixture({ kind: "authorizing" }, "Finish signing in in your browser.");
+  assert.ok(button(first.root, "Sign in"), "a first sign-in is unchanged");
+  first.dom.window.close();
+});
+
+test("after Move to mdbase app, Sync says what happened and what's next, without alarm (prod F5)", () => {
+  const f = directFixture({ kind: "handed_over" }, "Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection.");
+  assert.equal(f.root.querySelector(".mdbase-sync-heading")?.getAttribute("data-tone"), "quiet");
+  assert.match(f.text(), /add this folder in the mdbase app and pick the same collection/);
+  assert.ok(button(f.root, "Get the mdbase app"));
+  assert.doesNotMatch(f.text(), /needs attention|Check again/);
+  f.dom.window.close();
+});
+
+test("access removed offers Request access again, which starts the approval flow (LAB F4)", async () => {
+  const text = "Sync stopped. Access to this collection was removed in mdbase. Your notes here are untouched. To sync again, choose Request access again and approve it in your browser.";
+  const f = directFixture({ kind: "problem", collectionId: "c", problem: { key: "installation_scope_removed", action: "approve" } }, text);
+  assert.match(f.text(), /Access to this collection was removed/);
+  const again = button(f.root, "Request access again");
+  assert.ok(again.classList.contains("mod-cta"));
+  again.click();
+  await tick();
+  assert.deepEqual(f.calls, ["requestAccess"]);
+  f.dom.window.close();
+  const other = directFixture({ kind: "problem", collectionId: "c", problem: { key: "unknown", action: "retry" } }, "Sync stopped. Something went wrong.");
+  assert.equal(Array.from(other.root.querySelectorAll("button")).some((b) => b.textContent === "Request access again"), false, "no promise without the action");
+  other.dom.window.close();
 });
 
 test("phones and tablets say plainly that sync runs on the computer", () => {

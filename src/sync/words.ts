@@ -22,6 +22,77 @@ export function modeName(mode: string | undefined): string {
 /** Private works on the first computer only until the mdbase app can approve another one. */
 export const PRIVATE_FIRST_COMPUTER = "Private collections work on the first computer only for now, so this computer can't sync this one yet. Your notes here are untouched. Cloud copy collections have no such limit.";
 
+/**
+ * Why an unlock didn't work, by the sync engine's problem key. Anything else
+ * falls back to the engine's own sentence.
+ */
+const UNLOCK_PROBLEMS: Record<string, string> = {
+  wrong_secret: "That password or recovery key doesn't match. Check it and try again.",
+  invalid_recovery_key: "That doesn't look like a recovery key. Check for missing or mistyped characters.",
+  rate_limited: "Too many tries. Wait a few minutes, then try again.",
+  unavailable: "Couldn't reach mdbase. Check your connection and try again.",
+  unlock_unavailable: "This version of the plugin can't unlock Private collections. Update it, then try again.",
+  unlock_failed: "That was right, but this collection didn't hand over its key. Try again. If it keeps happening, open the mdbase app on a computer that has this collection.",
+};
+export function unlockProblemText(problem: unknown): string | null {
+  if (!problem || typeof problem !== "object") return null;
+  const p = problem as { key?: unknown; message?: unknown };
+  return (typeof p.key === "string" && UNLOCK_PROBLEMS[p.key]) || (typeof p.message === "string" && p.message) || "Couldn't unlock this collection. Try again.";
+}
+
+/**
+ * Shown where collections are chosen. mdbase lists a Private collection only
+ * when this device may hold its key, so the plugin can't know one is missing.
+ * The SDK doesn't say whether the server offers that choice (production
+ * doesn't yet), so the words must hold either way and promise no option.
+ */
+export const PRIVATE_COLLECTIONS_HINT = "Private collections are listed only if mdbase let this device keep their key when you signed in. mdbase doesn't offer that everywhere yet.";
+/** The same, before signing in, where the collection is chosen in the browser. */
+export const PRIVATE_SIGN_IN_HINT = "Private collections sync here only if mdbase offers to let this device keep their key when you sign in.";
+
+/** After "Move to mdbase app": Obsidian stopped on purpose. Not an error. */
+export const HANDED_OVER = "Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection.";
+
+/** This vault's collection is waiting to be approved in mdbase again. */
+export const NEEDS_APPROVAL = "This vault's collection needs approving in mdbase before it can sync. Your notes here are untouched. Choose Request access again and approve it in your browser.";
+
+/** A bound collection waiting for the person to approve it again in the browser. */
+export const AWAITING_APPROVAL = "Waiting for you to approve access in your browser. Your notes here are untouched.";
+
+/** Sync has been starting for too long; Restart sync builds the sync host afresh. */
+export const STARTING_STALLED = "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again.";
+
+/**
+ * Sign-in broke before any collection was chosen. Restarting sync resumes the
+ * same broken sign-in, so the way on is Start over.
+ */
+export const SIGN_IN_STOPPED = "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again.";
+
+/**
+ * Why sync stopped, by the sync engine's problem key. Anything else uses the
+ * engine's own title and message.
+ */
+const STOP_PROBLEMS: Record<string, string> = {
+  installation_scope_removed: "Access to this collection was removed in mdbase. Your notes here are untouched. To sync again, choose Request access again and approve it in your browser.",
+  // The engine says "Reload"; in Obsidian that is Restart sync.
+  application_failed: "Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.",
+  recovery_required: "It stopped to keep your data safe. Your notes here are untouched. Choose Restart sync to continue.",
+};
+export function stoppedText(problem: unknown): string {
+  const p = (problem && typeof problem === "object" ? problem : {}) as { key?: unknown; title?: unknown; message?: unknown; action?: unknown };
+  const known = typeof p.key === "string" ? STOP_PROBLEMS[p.key] : undefined;
+  let words = known ?? [p.title, p.message].filter((x): x is string => typeof x === "string" && x.trim() !== "").map(sentence).join(" ");
+  if (!known && p.action === "reload") words = `${words ? `${words} ` : ""}Choose Restart sync to continue.`;
+  // An unfinished sign-in didn't stop anything: say what happened, not "Sync stopped".
+  if (p.action === "sign_in" && words) return words;
+  return `Sync stopped. ${words || "Your files are kept on this computer."}`;
+}
+
+/** The status sentence for a stop the plugin itself noticed (not the sync engine). */
+export function failedText(reason: string): string {
+  return `Sync stopped. ${sentence(reason)}`;
+}
+
 /** Plain words for incident and notice codes from mdbase. */
 const INCIDENTS: Record<string, string> = {
   // A second computer can't be approved yet, so don't promise an approval that never comes.
@@ -48,8 +119,59 @@ const STATE_REASONS: Record<string, string> = {
   sync_not_eligible: "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched.",
 };
 
+/** The ready state in words (the SDK's own text is "Synced through <log position>"). */
+export function readyText(sync: { kind: string; pending: number; health?: string | null } | undefined): string {
+  const waiting = sync?.pending ? `${sync.pending === 1 ? "1 change" : `${sync.pending.toLocaleString()} changes`} waiting to send.` : "";
+  switch (sync?.kind) {
+    case "offline": return `Offline. Changes are saved here and sync when the connection returns.${waiting ? ` ${waiting}` : ""}`;
+    case "catching_up": return "Getting the latest changes from your other devices.";
+    case "installing": return "Downloading the collection.";
+    default:
+      if (sync?.health === "server_busy" || sync?.health === "rate_limited") return "mdbase is busy. Sync carries on shortly.";
+      return waiting || "Everything is up to date.";
+  }
+}
+
 export function summarize(s: SyncSnapshot): SyncSummary {
   const off = (label: string, detail: string, tone: Tone = "quiet"): SyncSummary => ({ label, detail, tone, syncing: false });
+  if (s.direct) {
+    const { text, phase } = s.direct;
+    const ready = phase.kind === "ready";
+    if (s.direct.merge) return { label: "Waiting for you", detail: `This vault and “${s.direct.merge.name}” both have notes. Open Sync to choose what happens.`, tone: "attention", syncing: false };
+    // Moved to the mdbase app on purpose: say what happened and what's next, calmly.
+    if (phase.kind === "handed_over") return { label: "Moved to mdbase app", detail: HANDED_OVER, tone: "quiet", syncing: true };
+    // Sign-in that wasn't approved: one step for the person, not a fault.
+    if (phase.kind === "problem" && (phase.problem as { action?: unknown } | null | undefined)?.action === "sign_in") {
+      return { label: "Sign in again", detail: text, tone: "attention", syncing: true };
+    }
+    // Waiting for approval is a vault that syncs here and has stopped: show it.
+    if (phase.kind === "needs_approval") return { label: "Needs approval", detail: text, tone: "attention", syncing: true };
+    // Request access again was chosen: the vault still syncs here, once approved.
+    if (phase.kind === "authorizing" && s.direct.bound) return { label: "Waiting for approval", detail: text, tone: "attention", syncing: true };
+    // Starting that never finishes must not look like nothing is wrong.
+    if (phase.kind === "starting" && phase.stalled) return { label: "Sync not starting", detail: text, tone: "attention", syncing: true };
+    const problem = phase.kind === "problem" || phase.kind === "blocked" || /blocked|failed|stopped|ownership/i.test(text);
+    // Locked and stopped are states of a vault that syncs here: the status bar
+    // must say so rather than hide, or it would keep its last words ("Synced").
+    if (phase.kind === "needs_unlock" && !problem) {
+      return phase.unlock?.unlocking
+        ? { label: "Unlocking", detail: text, tone: "busy", syncing: true }
+        : { label: "Locked", detail: text, tone: "attention", syncing: true };
+    }
+    const failed = s.direct.failures?.length ?? 0;
+    if (ready && !problem && failed) {
+      const files = failed === 1 ? "1 file" : `${failed} files`;
+      return { label: `${files} not synced`, detail: "Everything else is in sync.", tone: "attention", syncing: true };
+    }
+    // Offline outranks progress text: an upload that can't reach mdbase isn't
+    // progressing, and the offline notice alone disappears (QA-3).
+    const offline = ready && !problem && phase.sync?.kind === "offline";
+    if (offline) return { label: "Offline", detail: readyText(phase.sync), tone: "attention", syncing: true };
+    const checking = /checking your files|uploading|downloading/i.test(text);
+    const label = problem ? "Sync needs attention" : checking ? "Syncing" : ready ? (phase.sync?.kind === "offline" ? "Offline" : phase.sync?.pending ? "Syncing" : "Synced") : phase.kind === "signed_out" ? "Sync off" : phase.kind === "choosing" ? "Choose collection" : phase.kind === "authorizing" ? "Finish sign-in" : "Starting sync";
+    const detail = ready && !problem && !checking ? readyText(phase.sync) : text;
+    return { label, detail, tone: problem ? "problem" : checking ? "busy" : ready ? "ok" : "quiet", syncing: ready || problem };
+  }
   if (s.daemon === "mobile") return off("Sync on desktop", "Sync isn't available on phones and tablets yet.");
   if (s.daemon === "checking") return off("Checking sync", "Checking mdbase on this computer.");
   if (s.daemon === "not_installed") return off("Sync off", "Install the mdbase app to sync this vault.");

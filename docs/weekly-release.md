@@ -94,9 +94,7 @@ assets, not an accepted command or a green stale no-op.
   `RELEASE_AUTOMATION_APP_PRIVATE_KEY`. No workflow-token fallback or environment
   reviewer is used. Credential availability must be verified before adoption.
 - Community-directory submission/approval is separate from GitHub prereleases.
-- SDK-owned native sync PR 31 is a separate feature, not merely a package pin.
-  Clearing its old missing-asset guard does not replace its native sync code or
-  complete the outstanding LAB acceptance.
+- SDK-owned native sync is described in [sdk-sync.md](sdk-sync.md).
 
 Run `npm run test:release` for fixture, byte-comparison, recovery and workflow
 tests.

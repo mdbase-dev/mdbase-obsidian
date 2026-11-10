@@ -62,7 +62,7 @@ The YAML mode uses an ordinary textarea/editor surface with monospace text, clea
 
 ## Synchronization
 
-The mdbase desktop app does the syncing; the Sync destination is a window onto it for this vault. It answers, in order:
+The Sync destination presents one status, regardless of which app owns the folder. A desktop ownership marker means Obsidian connects to desktop; without one, the plugin syncs through the SDK. Ownership details are not a user-selectable mode. It answers, in order:
 
 1. Is this vault synced?
 2. Is it healthy, and if not, who has to act?
@@ -72,7 +72,7 @@ The heading is one label and one sentence from the same summary the status bar u
 
 Setup is two choices on one surface: **Cloud copy** (recommended) or **Private**, and adding a collection from a link copied on another device. Keys, fingerprints, devices and escrow stay out of the plugin: Private is described by what it means for the person (only your devices can read it; for now it works on the first computer only).
 
-Files changed in two places are listed by path with plain choices. Merges mdbase made on its own are listed as "changes to check" until acknowledged. Sign-out, disconnect and the app location live in the settings tab, each behind a confirmation that says notes stay on this computer.
+When desktop owns the folder, files changed in two places are listed by path with plain choices. When the plugin owns it, both versions are retained as ordinary conflict files beside the original. Merges mdbase made on its own are listed as "changes to check" until acknowledged. Sign-out, disconnect and the app location live in the settings tab, each behind a confirmation that says notes stay on this computer.
 
 ## Migration
 

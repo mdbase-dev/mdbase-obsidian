@@ -1,0 +1,35 @@
+{
+  "manifest_version": 1,
+  "id": "dev.mdbase.obsidian",
+  "name": "mdbase for Obsidian",
+  "platform": "native",
+  "requirements": {
+    "access": "full_collection",
+    "capabilities": {
+      "contract_version": 2,
+      "required": [
+        "collection.read",
+        "records.create",
+        "records.edit",
+        "records.delete"
+      ],
+      "optional": [
+        "offline.replica"
+      ]
+    },
+    "files": {
+      "required": [
+        "list",
+        "read",
+        "add",
+        "replace",
+        "move",
+        "delete"
+      ],
+      "scope": {
+        "kind": "collection"
+      }
+    },
+    "contracts": []
+  }
+}
