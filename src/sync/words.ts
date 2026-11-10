@@ -53,6 +53,9 @@ export const PRIVATE_SIGN_IN_HINT = "Private collections sync here only if mdbas
 /** After "Move to mdbase app": Obsidian stopped on purpose. Not an error. */
 export const HANDED_OVER = "Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection.";
 
+/** This vault's collection is waiting to be approved in mdbase again. */
+export const NEEDS_APPROVAL = "This vault's collection needs approving in mdbase before it can sync. Your notes here are untouched. Choose Request access again and approve it in your browser.";
+
 /**
  * Why sync stopped, by the sync engine's problem key. Anything else uses the
  * engine's own title and message.
@@ -125,6 +128,8 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     if (phase.kind === "problem" && (phase.problem as { action?: unknown } | null | undefined)?.action === "sign_in") {
       return { label: "Sign in again", detail: text, tone: "attention", syncing: true };
     }
+    // Waiting for approval is a vault that syncs here and has stopped: show it.
+    if (phase.kind === "needs_approval") return { label: "Needs approval", detail: text, tone: "attention", syncing: true };
     const problem = phase.kind === "problem" || phase.kind === "blocked" || /blocked|failed|stopped|ownership/i.test(text);
     // Locked and stopped are states of a vault that syncs here: the status bar
     // must say so rather than hide, or it would keep its last words ("Synced").

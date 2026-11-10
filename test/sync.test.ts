@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { safeFolderName, type SyncSnapshot } from "../src/sync/controller";
 import { candidateBinaries, collectionIdFrom, stateDir, vaultCollection, type CollectionStatus, type DaemonStatus } from "../src/sync/daemon";
 import { applyScalarEdits, EditorFence, hashText, minimalChange, scalarToUtf16 } from "../src/sync/editorFence";
-import { HANDED_OVER, errorText, failedText, modeName, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
+import { HANDED_OVER, NEEDS_APPROVAL, errorText, failedText, modeName, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
 import { describeFailure } from "../src/sync/native/failures";
 import { differingLines, nameFromLink, syncNowSummary } from "../src/workspace/syncPane";
 import type { ActivityKind } from "../src/sync/native/device";
@@ -214,6 +214,13 @@ test("an unfinished sign-in reads as a step to take, not a stopped sync (prod F1
   const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
   const summary = summarize({ ...base, direct: { text, phase: { kind: "problem", problem } } } as SyncSnapshot);
   assert.deepEqual([summary.label, summary.tone, summary.syncing, summary.detail], ["Sign in again", "attention", true, text]);
+});
+
+test("a collection waiting for approval shows in the status bar and says what to do (LAB F-1)", () => {
+  const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
+  const summary = summarize({ ...base, direct: { text: NEEDS_APPROVAL, phase: { kind: "needs_approval" } } } as SyncSnapshot);
+  assert.deepEqual([summary.label, summary.tone, summary.syncing], ["Needs approval", "attention", true]);
+  assert.match(summary.detail, /Request access again/);
 });
 
 test("after Move to mdbase app the status bar is neutral and says what's next (prod F5)", () => {

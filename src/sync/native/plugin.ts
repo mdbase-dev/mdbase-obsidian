@@ -12,7 +12,7 @@ const { spawnSync } = nativeModule<typeof import("node:child_process")>("child_p
 const { brotliDecompressSync } = nativeModule<typeof import("node:zlib")>("zlib");
 import packedAssets from "embedded:assets";
 import { validVaultPort } from "../ownership";
-import { HANDED_OVER, PRIVATE_COLLECTIONS_HINT, failedText, stoppedText } from "../words";
+import { HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, failedText, stoppedText } from "../words";
 import { stageDownload } from "./download";
 import { retryUpload, type UploadIdentity } from "./upload";
 import { conflictPath, reconcileDecision, remoteMoveDecision, localMovePairs, Synced } from "./reconcile";
@@ -457,6 +457,7 @@ export default class NativeSync extends Component {
       starting: "Starting sync", signed_out: "Sign in to sync this vault.", authorizing: "Finish signing in in your browser.",
       choosing: "Choose the collection to sync with this vault.", opening: "Getting your collection ready.",
       needs_unlock: phase.unlock?.unlocking ? "Unlocking your collection." : LOCKED_TEXT[phase.unlock?.mode ?? "password"],
+      needs_approval: NEEDS_APPROVAL,
       problem: "Sync needs attention. Your files are kept on this computer.", closed: "Sync stopped. Your files stay here.",
     };
     // A later notice of the same stop (its sync counts or collection list
