@@ -160,7 +160,12 @@ export class SyncPane {
         // Nothing synced and nothing waiting: signing out can't lose anything.
         // With the SDK's Worker gone, the controller restarts the host first.
         const startOver = native.canStartOver;
-        if (startOver) buttons.push(["Start over", false, () => this.run(() => controller.startOver())]);
+        // A sign-in that broke before anything was bound: a fresh host resumes
+        // the same sign-in and stops again (production retest 2), so Start over
+        // is the step that works and Restart sync the lesser one.
+        const brokenSignIn = startOver && step === "restart";
+        if (brokenSignIn) for (const button of buttons) button[1] = false;
+        if (startOver) buttons[brokenSignIn ? "unshift" : "push"](["Start over", brokenSignIn, () => this.run(() => controller.startOver())]);
         if (buttons.length) this.actions(root, buttons);
         if (startOver) root.createEl("p", { cls: "mdbase-muted", text: START_OVER_HINT });
       }

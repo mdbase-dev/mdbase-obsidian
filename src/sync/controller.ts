@@ -212,24 +212,36 @@ export class SyncController {
    * restart the host first and sign out on the fresh one, as a page reload
    * then Start over would. Throws, so the person sees it, if it can't finish.
    */
+  startOverSettleMs = 15_000;
   async startOver(): Promise<void> {
     const native = this.native;
     if (!native?.canStartOver) return;
     if (!native.workerGone) return native.startOver();
     await this.restartNative();
-    const fresh = await this.whenStarted(60_000);
+    const fresh = await this.whenStartOverReady(60_000);
     if (!fresh) throw new MdbaseError("internal", "Sync didn't restart in time, so Start over didn't run. Choose Restart sync, then Start over.");
     if (fresh.phase.kind === "signed_out") return;
     if (!fresh.canStartOver) throw new MdbaseError("internal", "Sync restarted, but Start over couldn't run yet. Try Start over again.");
     await fresh.startOver();
   }
 
-  /** The host once its SDK reported a state other than starting, or null on time-out. */
-  private async whenStarted(timeoutMs: number): Promise<NativeSync | null> {
+  /**
+   * The fresh host once Start over can run on it (signed out, or stopped with
+   * nothing bound), or null if it never started. A fresh host first resumes the
+   * sign-in left waiting in the browser and only then stops again (seen on
+   * production, 1.3 to 1.7 s later), so a started host that isn't ready yet
+   * gets `settleMs` to get there before it is returned as it is.
+   */
+  private async whenStartOverReady(timeoutMs: number, settleMs = this.startOverSettleMs): Promise<NativeSync | null> {
     const until = Date.now() + timeoutMs;
+    let started: number | null = null;
     while (!this.stopped && Date.now() < until) {
       const native = this.native;
-      if (native && native.phase.kind !== "starting") return native;
+      if (native && native.phase.kind !== "starting") {
+        if (native.phase.kind === "signed_out" || native.canStartOver) return native;
+        started ??= Date.now();
+        if (Date.now() - started >= settleMs) return native;
+      }
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
     return null;

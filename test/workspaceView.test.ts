@@ -949,13 +949,15 @@ test("each sync engine action gets a fitting button, or none", () => {
   for (const action of ["update_app", "free_space", "set_up", "contact_support", "choose_collection", "none"]) assert.deepEqual(labels({ action }), [], action);
 });
 
-test("when the SDK's Worker stopped, Sync offers Restart sync and a Start over that works (prod F1, second run)", async () => {
-  // As reported after Sign in again from a refused approval.
+test("when sign-in broke before anything was bound, Start over is the primary step and Restart sync the lesser one (prod retest 2)", async () => {
+  // As reported after Sign in again from a refused approval. A fresh host
+  // resumes the same sign-in and stops again, so Restart sync alone loops.
   const problem = { code: "application_worker_binding", key: "application_failed", title: "The app stopped", message: "Something inside the app stopped working. Your data is safe. Reload to continue.", action: "reload" };
-  const f = directFixture({ kind: "problem", collectionId: null, problem }, "Sync stopped. Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.", true);
+  const f = directFixture({ kind: "problem", collectionId: null, problem }, "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again.", true);
   const labels = Array.from(f.root.querySelectorAll(".mdbase-sync button")).map((b) => b.textContent);
-  assert.deepEqual(labels, ["Restart sync", "Start over"], "no Try again: the Worker refuses every call");
-  assert.ok(button(f.root, "Restart sync").classList.contains("mod-cta"), "the primary step");
+  assert.deepEqual(labels, ["Start over", "Restart sync"], "no Try again: the Worker refuses every call");
+  assert.ok(button(f.root, "Start over").classList.contains("mod-cta"), "the primary step");
+  assert.ok(!button(f.root, "Restart sync").classList.contains("mod-cta"));
   assert.doesNotMatch(f.text(), /Reload to continue/);
   button(f.root, "Restart sync").click();
   await tick();
@@ -963,6 +965,11 @@ test("when the SDK's Worker stopped, Sync offers Restart sync and a Start over t
   await tick();
   assert.deepEqual(f.sync.calls.map((c) => c[0]), ["restartNative", "startOver"]);
   f.dom.window.close();
+  // A bound vault can't start over: Restart sync stays the one, primary step.
+  const bound = directFixture({ kind: "problem", collectionId: "c1", problem }, "Sync stopped. Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.");
+  assert.deepEqual(Array.from(bound.root.querySelectorAll(".mdbase-sync button")).map((b) => b.textContent), ["Restart sync"]);
+  assert.ok(button(bound.root, "Restart sync").classList.contains("mod-cta"));
+  bound.dom.window.close();
 });
 
 test("an action that fails says so in the message bar", async () => {

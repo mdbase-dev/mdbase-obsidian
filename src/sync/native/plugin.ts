@@ -12,7 +12,7 @@ const { spawnSync } = nativeModule<typeof import("node:child_process")>("child_p
 const { brotliDecompressSync } = nativeModule<typeof import("node:zlib")>("zlib");
 import packedAssets from "embedded:assets";
 import { validVaultPort } from "../ownership";
-import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, STARTING_STALLED, failedText, stoppedText } from "../words";
+import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, SIGN_IN_STOPPED, STARTING_STALLED, failedText, stoppedText } from "../words";
 import { stageDownload } from "./download";
 import { retryUpload, type UploadIdentity } from "./upload";
 import { conflictPath, reconcileDecision, remoteMoveDecision, localMovePairs, Synced } from "./reconcile";
@@ -553,7 +553,7 @@ export default class NativeSync extends Component {
     this.log(`phase ${phase.kind}${phase.problem ? ` ${phase.problem.code ?? ""} ${phase.problem.reason ?? ""}` : ""}${phase.sync ? ` sync=${phase.sync.kind} pending=${phase.sync.pending}` : ""}`);
     // A wrong password is shown beside the form; it doesn't stop sync.
     if (this.admitting && phase.kind !== "needs_unlock" && phase.problem && JSON.stringify(phase.problem) !== JSON.stringify(was.problem))
-      this.fail("sync", phase.problem, stoppedText(phase.problem), true);
+      this.fail("sync", phase.problem, this.needsRestart && this.canStartOver ? SIGN_IN_STOPPED : stoppedText(phase.problem), true);
     if (phase.sync?.kind === "offline" && was.sync?.kind !== "offline")
       new Notice("mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns.", 10000);
     if (this.admitting && (phase.kind === "opening" || phase.kind === "needs_unlock") && phase.collectionId) {

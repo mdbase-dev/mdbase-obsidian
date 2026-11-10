@@ -751,6 +751,19 @@ test("only a reload request, a gone Worker or a stalled start needs a restart", 
   stop({ action: "sign_in", code: "refused" }); assert.equal(f.native.needsRestart, false);
   f.native.phase = { kind: "starting" }; assert.equal(f.native.needsRestart, false);
 });
+test("a sign-in that breaks with nothing bound says Start over; a bound vault says Restart sync (prod retest 2)", async t => {
+  const f = fixture(t), seen = [];
+  f.native.changed = text => seen.push(text);
+  f.native.admitting = true; f.native.mirroring = false;
+  const warn = console.warn; console.warn = () => {}; t.after(() => { console.warn = warn; });
+  const problem = { key: "application_failed", action: "reload", code: "response" };
+  await f.native.onPhase({ kind: "problem", collectionId: null, problem });
+  assert.equal(f.native.canStartOver, true);
+  assert.equal(seen.at(-1), "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again.");
+  f.native.data.collectionId = "c1";
+  await f.native.onPhase({ kind: "problem", collectionId: "c1", problem: { ...problem, code: "application_worker_binding" } });
+  assert.equal(seen.at(-1), "Sync stopped. Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue.");
+});
 test("a Start over the SDK couldn't finish says so", async t => {
   const f = fixture(t); f.native.mirroring = false;
   f.native.phase = { kind: "problem", collectionId: null, problem: { action: "reload", code: "application_worker_binding" } };
@@ -759,7 +772,8 @@ test("a Start over the SDK couldn't finish says so", async t => {
 });
 function fakeHost(events, name, phase = { kind: "starting" }) {
   let release;
-  const h = { name, phase, canStartOver: true, workerGone: false, released: new Promise(r => { release = r; }),
+  // As on the real host, a sign-in in progress is not a stop to start over from.
+  const h = { name, phase, canStartOver: phase.kind !== "authorizing", workerGone: false, released: new Promise(r => { release = r; }),
     load() { events.push(`load ${name}`); }, unload() { events.push(`unload ${name}`); setTimeout(release, 10); throw new Error("SDK can't stop"); },
     async startOver() { events.push(`startOver ${name}`); } };
   return h;
@@ -801,4 +815,24 @@ test("Start over with the Worker gone restarts sync, then signs out on the new h
   // Without a gone Worker, Start over runs on the host as it is.
   events.length = 0; await controller.startOver();
   assert.deepEqual(events, ["startOver 1"]);
+});
+test("Start over waits for a fresh host that first resumes the old sign-in, and says so if it never gets there (prod retest 2)", async t => {
+  const f = fixture(t), events = [];
+  // Host 1 comes up resuming the sign-in left in the browser, as on production.
+  const { controller } = restartController(t, f, events, [undefined, { kind: "authorizing" }, { kind: "authorizing" }]);
+  const warn = console.warn; console.warn = () => {}; t.after(() => { console.warn = warn; });
+  await controller.refresh();
+  controller.native.workerGone = true;
+  const stopsAgain = setInterval(() => {
+    const n = controller.native;
+    if (n?.name === 1) { setTimeout(() => { n.phase = { kind: "problem", problem: { action: "reload" } }; n.canStartOver = true; }, 400); clearInterval(stopsAgain); }
+  }, 5);
+  t.after(() => clearInterval(stopsAgain));
+  await controller.startOver();
+  assert.deepEqual(events, ["create 0", "load 0", "unload 0", "create 1", "load 1", "startOver 1"], "one press is enough");
+  // A fresh host that stays in the resumed sign-in: say so, don't sign out under it.
+  events.length = 0; controller.startOverSettleMs = 300;
+  controller.native.workerGone = true; controller.native.phase = { kind: "problem", problem: { action: "reload" } };
+  await assert.rejects(controller.startOver(), /Sync restarted, but Start over couldn't run yet\. Try Start over again\./);
+  assert.deepEqual(events, ["unload 1", "create 2", "load 2"]);
 });

@@ -111,7 +111,18 @@ a plugin reload. An unload while the host is still starting leaves no iframe or
 listener behind.
 
 When the Worker is gone, **Start over** first restarts sync, waits up to 60 s
-for the new host, and then signs out there. If that can't finish, Sync shows why.
+for the new host, and then signs out there. A new host first resumes the sign-in
+left waiting in the browser and may stop again a second or two later, so Start
+over gives it up to 15 s to reach a state it can sign out from. If that can't
+finish, Sync shows why.
+
+A fresh host resumes an unfinished sign-in, so Restart sync alone does not get
+past a sign-in that is itself broken: on production (SDK beta.173) it stopped
+again each time until the approval page was cancelled or expired. While nothing
+is bound and nothing has synced, Sync therefore says "Sign-in stopped working"
+and makes Start over the primary button, with Restart sync beside it. Connect
+PR 1412 fixes the two SDK faults behind that stop; this stays as the way out of
+any later one.
 
 If the SDK stays in `starting` for 30 s, Sync and the status bar say "Sync
 hasn't started" and offer Restart sync.

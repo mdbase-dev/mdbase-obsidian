@@ -63,6 +63,12 @@ export const AWAITING_APPROVAL = "Waiting for you to approve access in your brow
 export const STARTING_STALLED = "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again.";
 
 /**
+ * Sign-in broke before any collection was chosen. Restarting sync resumes the
+ * same broken sign-in, so the way on is Start over.
+ */
+export const SIGN_IN_STOPPED = "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again.";
+
+/**
  * Why sync stopped, by the sync engine's problem key. Anything else uses the
  * engine's own title and message.
  */
