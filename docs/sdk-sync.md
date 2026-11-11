@@ -153,14 +153,15 @@ checks every embedded SDK asset against the SDK's own pins. The SDK pins the
 official OPFS proxy but never loads it, and the published package leaves it out;
 the packer embeds it only when the supplied package has it.
 
-To build against an authenticated LAB SDK package:
+To build against an authenticated LAB or staging SDK package:
 
 ```sh
 npm ci
 node esbuild.config.mjs production --lab --native-sdk /absolute/path/to/sdk/package
+node esbuild.config.mjs production --staging --native-sdk /absolute/path/to/sdk/package
 ```
 
-Do not publish a LAB build.
+Do not publish a LAB or staging build.
 
 Unit tests exercise real vault IO for concurrent edits, renames, deletes,
 conflict-publication recovery, upload recovery, ownership transitions and fixed

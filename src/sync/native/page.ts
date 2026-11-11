@@ -15,7 +15,7 @@ const manifest = { ...template, homepage: `${location.origin}/`, redirect_uris: 
 const namespace = new URL(location.href).searchParams.get("vault");
 if (!namespace) throw new Error("Missing stable vault storage namespace");
 
-declare const __MDBASE_ENVIRONMENT__: "lab" | "production";
+declare const __MDBASE_ENVIRONMENT__: "lab" | "staging" | "production";
 let bridge: MessagePort | null = null;
 const queued: any[] = [];
 if (parent === window) throw new Error("Native SDK must run inside its owning vault");
