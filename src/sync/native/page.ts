@@ -59,7 +59,9 @@ function phaseSummary() {
   return {
     kind: p.kind,
     collectionId: p.collectionId ?? null,
-    sync: s.sync ? { state: s.sync.state, connection: s.sync.connection, pending: s.sync.pending, health: s.sync.health, live: s.sync.live, holds: s.sync.holds, conflicts: s.sync.conflicts } : null,
+    sync: s.sync ? { state: s.sync.state, connection: s.sync.connection, pending: s.sync.pending, health: s.sync.health, live: s.sync.live, holds: s.sync.holds, conflicts: s.sync.conflicts,
+      // The SDK reads a first download as catching up; the replica says which it is.
+      installing: p.connection?.records?.status?.installing !== undefined } : null,
     // `action` is the SDK's suggested next step ("approve" to request access again).
     problem: p.problem ? { code: p.problem.code, reason: p.problem.reason, key: p.problem.key ?? null, title: p.problem.title, message: p.problem.message, action: p.problem.action ?? null } : null,
     // A Private collection without its key on this device: how the account

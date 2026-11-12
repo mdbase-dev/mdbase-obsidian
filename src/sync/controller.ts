@@ -59,7 +59,7 @@ export interface SyncSnapshot {
   direct?: {
     text: string;
     phase: {
-      kind: string; sync?: Pick<MdbaseSync, "state" | "connection" | "pending" | "health" | "live" | "holds" | "conflicts">; problem?: unknown;
+      kind: string; sync?: Pick<MdbaseSync, "state" | "connection" | "pending" | "health" | "live" | "holds" | "conflicts"> & { installing?: boolean }; problem?: unknown;
       /** A Private collection waiting for its key: how the account unlocks it. */
       unlock?: { mode: "password" | "strict" | "none"; unlocking: boolean; name: string | null } | null;
       /** Still starting after the plugin stopped waiting: offer Restart sync. */

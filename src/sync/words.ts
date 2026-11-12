@@ -120,21 +120,21 @@ const STATE_REASONS: Record<string, string> = {
   sync_not_eligible: "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched.",
 };
 
-type ReadySync = Pick<MdbaseSync, "state" | "connection" | "pending" | "health">;
+type ReadySync = Pick<MdbaseSync, "state" | "connection" | "pending" | "health"> & { installing?: boolean };
 
 /**
- * Sync can't reach mdbase from here. The SDK reads a busy, rate-limited or
- * signed-out service as reconnecting too; those are not offline.
+ * Sync can't reach mdbase from here: no network, or the service did not answer.
+ * A busy or rate-limited service, or a replica still connecting, is not offline.
  */
 export function syncOffline(sync: ReadySync | null | undefined): boolean {
-  return (sync?.connection === "offline" || sync?.connection === "reconnecting") && (sync.health === null || sync.health === "offline" || sync.health === "unreachable");
+  return sync?.connection === "offline" || sync?.health === "unreachable";
 }
 
 /** The ready state in words. */
 export function readyText(sync: ReadySync | null | undefined): string {
   const waiting = sync?.pending ? `${sync.pending === 1 ? "1 change" : `${sync.pending.toLocaleString()} changes`} waiting to send.` : "";
   if (syncOffline(sync)) return `Offline. Changes are saved here and sync when the connection returns.${waiting ? ` ${waiting}` : ""}`;
-  if (sync?.state === "catching_up") return "Getting the latest changes from your other devices.";
+  if (sync?.state === "catching_up") return sync.installing ? "Downloading the collection." : "Getting the latest changes from your other devices.";
   if (sync?.health === "server_busy" || sync?.health === "rate_limited") return "mdbase is busy. Sync carries on shortly.";
   return waiting || "Everything is up to date.";
 }
