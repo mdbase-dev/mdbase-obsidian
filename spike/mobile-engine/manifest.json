@@ -1,0 +1,9 @@
+{
+	"id": "mdbase-mobile-engine",
+	"name": "mdbase mobile engine (spike)",
+	"version": "0.0.1",
+	"minAppVersion": "1.11.4",
+	"description": "Spike only. Runs the mdbase SDK engine without Node.",
+	"author": "mdbase spike",
+	"isDesktopOnly": false
+}
