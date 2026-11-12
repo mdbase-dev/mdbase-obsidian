@@ -46,13 +46,11 @@ const confirmed = async (w: any) => {
 // revision a read-back returns (checked against production; the view's own
 // `state` is the stale optimistic one), which saves that read. The caller keeps
 // only identity and revision.
-const written = async (ws: any[], id: string) => {
-  for (const w of ws) {
-    const receipt: any = await w.confirmed;
-    const r = receipt?.state === "confirmed" && receipt.status === "applied" ? receipt.records?.find((x: any) => x.id === id) : undefined;
-    if (r && typeof r.revision === "string" && typeof r.path === "string") return { id: r.id, path: r.path, revision: r.revision, via: "receipt" };
-  }
-  return plain(await records().get(id, { document: true }));
+const written = async (w: any, id: string) => {
+  const receipt: any = await w.confirmed;
+  const r = receipt?.state === "confirmed" && receipt.status === "applied" ? receipt.records?.find((x: any) => x.id === id) : undefined;
+  if (r && typeof r.revision === "string" && typeof r.path === "string") return { id: r.id, path: r.path, revision: r.revision, via: "receipt" };
+  return plain(await records().get(id, { include: { document: true } }));
 };
 
 function phaseSummary() {
@@ -61,7 +59,7 @@ function phaseSummary() {
   return {
     kind: p.kind,
     collectionId: p.collectionId ?? null,
-    sync: s.sync ? { kind: s.sync.kind, text: s.sync.text, pending: s.sync.pending, health: s.sync.health, live: s.sync.live ?? null, holds: s.sync.holds ?? 0, conflicts: s.sync.conflicts ?? 0 } : null,
+    sync: s.sync ? { state: s.sync.state, connection: s.sync.connection, pending: s.sync.pending, health: s.sync.health, live: s.sync.live, holds: s.sync.holds, conflicts: s.sync.conflicts } : null,
     // `action` is the SDK's suggested next step ("approve" to request access again).
     problem: p.problem ? { code: p.problem.code, reason: p.problem.reason, key: p.problem.key ?? null, title: p.problem.title, message: p.problem.message, action: p.problem.action ?? null } : null,
     // A Private collection without its key on this device: how the account
@@ -112,7 +110,7 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     for (let limit = 64; ; limit = Math.max(1, Math.floor(limit / 2))) {
       const out: any[] = [];
       try {
-        for await (const page of records().queryPages({ limit }, { document: true }, undefined, { onReset: () => { out.length = 0; } }))
+        for await (const page of records().queryPages({ limit }, { include: { document: true }, onReset: () => { out.length = 0; } }))
           for (const r of page.records) out.push(plain(r));
         return out;
       } catch (e: any) {
@@ -120,13 +118,13 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
       }
     }
   },
-  get: async (id: string) => plain(await records().get(id, { document: true })),
+  get: async (id: string) => plain(await records().get(id, { include: { document: true } })),
   // Bounded ordinary reads for an event's affected paths. Only not_found means
   // absent: permission, budget and transient errors must never look like deletes.
   at: async (paths: string[]) => {
     const out: any[] = []; let next = 0;
     const read = async (path: string) => {
-      try { return { ...plain(await records().get({ path }, { document: true })), kind: "record" }; }
+      try { return { ...plain(await records().get({ path }, { include: { document: true } })), kind: "record" }; }
       catch (e: any) { if (e?.code !== "not_found") throw e; }
       try { return { ...fplain(await files().get({ path })), kind: "file" }; }
       catch (e: any) { if (e?.code !== "not_found") throw e; }
@@ -139,8 +137,8 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   },
   watch: async (cursor?: string) => {
     watch?.close?.(); watch?.stop?.();
-    watch = records().watchChanges(cursor, (batch: any) =>
-      post({ type: "changes", batch: { cursor: batch.cursor, reset: batch.reset, changes: batch.changes.map((c: any) => ({ id: c.id, path: c.path, kind: c.kind, entity: c.entity ?? null })) } }));
+    watch = records().watchChanges((batch: any) =>
+      post({ type: "changes", batch: { cursor: batch.cursor, reset: batch.reset, changes: batch.changes.map((c: any) => ({ id: c.id, path: c.path, kind: c.kind, entity: c.entity ?? null })) } }), { cursor });
     // The ACK is delivered only after the initial reset/replay callback. Keep
     // startup's barrier closed until that callback has reached the parent.
     await watch!.ready;
@@ -148,12 +146,11 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   },
   create: async (path: string, document: string) => {
     const w: any = await confirmed(await records().create({ path, document }, SYNC_WRITE));
-    return written([w], w.recordId);
+    return written(w, w.recordId);
   },
   replace: async (id: string, base: { path: string; doc: string }, next: { path: string; doc: string }, revision: string) => {
-    const ws: any[] = await records().submit([{ kind: "document", id, base, new: next, ifRevision: revision }], SYNC_WRITE);
-    await Promise.all(ws.map(confirmed));
-    return written(ws, id);
+    const w = await confirmed(await records().submit([{ kind: "document", id, base, new: next, ifRevision: revision }], SYNC_WRITE));
+    return written(w, id);
   },
   // The collection's file policy (which attachments sync, for every device).
   inclusion: async () => {
@@ -245,7 +242,7 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     const until = Date.now() + 120_000;
     while (true) {
       const status = await records().getStatus();
-      const writes: any = mdbase.getSnapshot().writes;
+      const writes: any = mdbase.getSnapshot().sync?.writes;
       if (writes?.rejected?.length || status.holds > 0 || status.unresolved > 0) {
         log(`drain blocked: rejected=${writes?.rejected?.length ?? 0} holds=${status.holds} unresolved=${status.unresolved} pending=${status.pending}`);
         throw new Error("Unresolved writes/holds; ownership retained");

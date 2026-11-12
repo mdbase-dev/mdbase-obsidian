@@ -1,4 +1,4 @@
-import type { ConflictEntry, ConflictValue, Hold, MdbaseClient, SyncStatus } from "@mdbase-dev/sdk/thin-client";
+import type { ConflictEntry, ConflictValue, Hold, MdbaseClient, MdbaseSync, SyncStatus } from "@mdbase-dev/sdk/thin-client";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import {
   collectionIdFrom,
@@ -59,7 +59,7 @@ export interface SyncSnapshot {
   direct?: {
     text: string;
     phase: {
-      kind: string; sync?: { kind: string; pending: number; health?: string | null; live?: boolean | null; holds?: number; conflicts?: number }; problem?: unknown;
+      kind: string; sync?: Pick<MdbaseSync, "state" | "connection" | "pending" | "health" | "live" | "holds" | "conflicts">; problem?: unknown;
       /** A Private collection waiting for its key: how the account unlocks it. */
       unlock?: { mode: "password" | "strict" | "none"; unlocking: boolean; name: string | null } | null;
       /** Still starting after the plugin stopped waiting: offer Restart sync. */
@@ -452,7 +452,6 @@ export class SyncController {
   private readonly decided = new Set<string>();
 
   private async showMerged(client: MdbaseClient, entries: ConflictEntry[]): Promise<void> {
-    const sdk = await import("@mdbase-dev/sdk/thin-client");
     // Choosing a held version also records the conflict it settled; the person
     // already decided, so don't ask again.
     const already = entries.filter((entry) => this.decided.has(entry.conflict.id));
@@ -466,14 +465,14 @@ export class SyncController {
       const text = (value: ConflictValue | undefined): string => {
         if (!value) return "";
         if (value.form === "text") return value.text;
-        if (value.form === "value") return JSON.stringify(sdk.toPlain(value.value));
+        if (value.form === "value") return JSON.stringify(value.value);
         return value.form === "deleted" ? "(deleted)" : "(a file)";
       };
       const lost = entry.conflict.lost;
       return {
         entry, path: this.paths.get(id) ?? "", kind: entry.conflict.kind, field: entry.conflict.field ?? null,
         kept: text(entry.conflict.kept), lost: text(lost),
-        lostValue: lost.form === "value" ? sdk.toPlain(lost.value) : undefined,
+        lostValue: lost.form === "value" ? lost.value : undefined,
       };
     }));
     if (this.client === client) this.set({ merged });

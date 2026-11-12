@@ -12,7 +12,7 @@ const { spawnSync } = nativeModule<typeof import("node:child_process")>("child_p
 const { brotliDecompressSync } = nativeModule<typeof import("node:zlib")>("zlib");
 import packedAssets from "embedded:assets";
 import { validVaultPort } from "../ownership";
-import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, SIGN_IN_STOPPED, STARTING_STALLED, failedText, stoppedText } from "../words";
+import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, SIGN_IN_STOPPED, STARTING_STALLED, failedText, readyText, stoppedText, syncOffline } from "../words";
 import { stageDownload } from "./download";
 import { retryUpload, type UploadIdentity } from "./upload";
 import { conflictPath, reconcileDecision, remoteMoveDecision, localMovePairs, Synced } from "./reconcile";
@@ -544,17 +544,17 @@ export default class NativeSync extends Component {
     const sameStop = phase.kind !== "ready" && phase.kind !== "needs_unlock" && phase.kind === was.kind && phase.problem && JSON.stringify(phase.problem) === JSON.stringify(was.problem);
     if (this.admitting && sameStop) this.setStatus(this.statusText);
     else if (this.admitting && !(phase.kind === "ready" && (this.syncingFiles || this.startingMirror || this.reconcileRetryTimer !== null)))
-      this.setStatus(phase.kind === "ready" ? phase.sync?.text ?? "Checking your files" : phaseText[phase.kind] ?? "Starting sync");
+      this.setStatus(phase.kind === "ready" ? phase.sync ? readyText(phase.sync) : "Checking your files" : phaseText[phase.kind] ?? "Starting sync");
     // A pass in progress keeps its own progress text, but going offline or
     // coming back must still reach the UI; "Uploading 83 of 500" would
     // otherwise stay up for as long as the connection is down (QA2-1).
-    else if (this.admitting && phase.sync?.kind !== was.sync?.kind) this.setStatus(this.statusText);
+    else if (this.admitting && phase.sync?.state !== was.sync?.state) this.setStatus(this.statusText);
     // Names/documents never belong in this log.
-    this.log(`phase ${phase.kind}${phase.problem ? ` ${phase.problem.code ?? ""} ${phase.problem.reason ?? ""}` : ""}${phase.sync ? ` sync=${phase.sync.kind} pending=${phase.sync.pending}` : ""}`);
+    this.log(`phase ${phase.kind}${phase.problem ? ` ${phase.problem.code ?? ""} ${phase.problem.reason ?? ""}` : ""}${phase.sync ? ` sync=${phase.sync.state} pending=${phase.sync.pending}` : ""}`);
     // A wrong password is shown beside the form; it doesn't stop sync.
     if (this.admitting && phase.kind !== "needs_unlock" && phase.problem && JSON.stringify(phase.problem) !== JSON.stringify(was.problem))
       this.fail("sync", phase.problem, this.needsRestart && this.canStartOver ? SIGN_IN_STOPPED : stoppedText(phase.problem), true);
-    if (phase.sync?.kind === "offline" && was.sync?.kind !== "offline")
+    if (syncOffline(phase.sync) && !syncOffline(was.sync))
       new Notice("mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns.", 10000);
     if (this.admitting && (phase.kind === "opening" || phase.kind === "needs_unlock") && phase.collectionId) {
       try { this.claim(phase.collectionId); } catch (e) { this.pauseForOwnership(e); return; }
@@ -1273,7 +1273,7 @@ export default class NativeSync extends Component {
       this.lastSynced = Date.now();
       if (this.activityTimer === null) this.activityTimer = window.setTimeout(() => { this.activityTimer = null; this.writeActivity(); }, 2000);
     }
-    this.passStatus(this.phase.sync?.text ?? "Synced");
+    this.passStatus(this.phase.sync ? readyText(this.phase.sync) : "Synced");
     // Notes refused under the old definitions get another chance now.
     if (definitionsChanged && failed.length) window.setTimeout(() => this.requestReconcile(), 0);
     return failed.length === 0;

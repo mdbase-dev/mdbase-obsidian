@@ -500,20 +500,20 @@ test("a pending full-scan retry keeps the status busy when the SDK reports synce
   f.native.admitting = true; f.native.syncingFiles = false;
   f.native.phase = { kind: "ready", collectionId: "c" };
   f.native.reconcileRetryTimer = 1;
-  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { kind: "synced", text: "Synced through 9", pending: 0 } });
-  assert.ok(!seen.includes("Synced through 9"));
+  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { state: "saved", connection: "online", health: null, pending: 0 } });
+  assert.ok(!seen.includes("Everything is up to date."));
 });
 test("going offline during an upload reaches the UI without replacing the progress text (QA2-1)", async t => {
   const f = fixture(t); const seen = [];
-  f.native.changed = (text, phase) => seen.push([text, phase.sync?.kind]);
+  f.native.changed = (text, phase) => seen.push([text, phase.sync?.state]);
   f.native.admitting = true; f.native.syncingFiles = true;
   f.native.statusText = "Uploading 83 of 500 notes";
-  f.native.phase = { kind: "ready", collectionId: "c", sync: { kind: "synced", text: "Synced through 9, 16 changes waiting", pending: 16 } };
-  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { kind: "synced", text: "Synced through 10, 15 changes waiting", pending: 15 } });
+  f.native.phase = { kind: "ready", collectionId: "c", sync: { state: "saving", connection: "online", health: null, pending: 16 } };
+  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { state: "saving", connection: "online", health: null, pending: 15 } });
   assert.deepEqual(seen, [], "routine progress during a pass is not republished");
-  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { kind: "offline", text: "Can't reach the sync service.", pending: 16 } });
-  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { kind: "synced", text: "Synced through 11", pending: 14 } });
-  assert.deepEqual(seen, [["Uploading 83 of 500 notes", "offline"], ["Uploading 83 of 500 notes", "synced"]]);
+  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { state: "saved_on_device", connection: "reconnecting", health: "unreachable", pending: 16 } });
+  await f.native.onPhase({ kind: "ready", collectionId: "c", sync: { state: "saving", connection: "online", health: null, pending: 14 } });
+  assert.deepEqual(seen, [["Uploading 83 of 500 notes", "saved_on_device"], ["Uploading 83 of 500 notes", "saving"]]);
 });
 test("a locked Private collection waits for its key instead of stopping sync", async t => {
   const f = fixture(t); const seen = [], calls = [];
@@ -544,10 +544,10 @@ test("access removed: one clean sentence that later notices and a finishing pass
   const f = fixture(t); const seen = [], calls = [];
   f.native.changed = (text, phase) => seen.push([text, phase.kind]);
   f.native.admitting = true; f.native.mirroring = true;
-  f.native.phase = { kind: "ready", collectionId: "c", sync: { kind: "synced", text: "Synced through 9", pending: 0 } };
+  f.native.phase = { kind: "ready", collectionId: "c", sync: { state: "saved", connection: "online", health: null, pending: 0 } };
   const problem = { code: "access_removed", reason: null, key: "installation_scope_removed", action: "approve", title: "Access was removed",
     message: "This app's previous installation cannot regain access to this collection. Request access again to approve a new installation for this collection. Your other collections keep their access." };
-  const stopped = { kind: "problem", collectionId: "c", sync: { kind: "synced", text: "Synced through 9", pending: 0 }, problem };
+  const stopped = { kind: "problem", collectionId: "c", sync: { state: "saved", connection: "online", health: null, pending: 0 }, problem };
   await f.native.onPhase(stopped);
   const [text, kind] = seen.at(-1);
   assert.equal(kind, "problem");
@@ -557,7 +557,7 @@ test("access removed: one clean sentence that later notices and a finishing pass
   await f.native.onPhase({ ...stopped, sync: { ...stopped.sync, pending: 1 }, collections: [] });
   assert.deepEqual(seen.at(-1), [text, "problem"], "a later notice keeps the reason");
   // A pass that was running when access went keeps its counts but not "Synced".
-  f.native.passStatus("Synced through 9");
+  f.native.passStatus("Everything is up to date.");
   f.native.passStatus("Checking your files");
   assert.deepEqual(seen.at(-1), [text, "problem"]);
   // Request access again uses the SDK's approve for this collection.

@@ -165,11 +165,11 @@ test("Sync now says what the press did", () => {
 
 test("offline outranks upload progress in the sync status (QA-3)", () => {
   const s = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null,
-    direct: { text: "Syncing: uploading 100% (0 MiB)", phase: { kind: "ready", sync: { kind: "offline", pending: 3, health: "unreachable" } } } } as unknown as SyncSnapshot;
+    direct: { text: "Syncing: uploading 100% (0 MiB)", phase: { kind: "ready", sync: { state: "saved_on_device", connection: "reconnecting", pending: 3, health: "unreachable" } } } } as unknown as SyncSnapshot;
   const summary = summarize(s);
   assert.equal(summary.label, "Offline");
   assert.match(summary.detail, /Offline\. Changes are saved here/);
-  const catching = { ...s, direct: { text: "Checking your files: catching up with changes from other devices", phase: { kind: "ready", sync: { kind: "synced", pending: 0 } } } } as unknown as SyncSnapshot;
+  const catching = { ...s, direct: { text: "Checking your files: catching up with changes from other devices", phase: { kind: "ready", sync: { state: "saved", connection: "online", health: null, pending: 0 } } } } as unknown as SyncSnapshot;
   assert.equal(summarize(catching).label, "Syncing", "a pending full-scan retry isn't 'Synced' (QA-2)");
   assert.doesNotMatch(summarize(catching).detail, /up to date/);
 });
@@ -186,11 +186,11 @@ test("a Private collection waiting for its key reads as locked, not as a problem
 
 test("a vault whose sync stopped keeps the status bar, saying it stopped (LAB F1)", () => {
   const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
-  const synced = summarize({ ...base, direct: { text: "Synced through 9", phase: { kind: "ready", sync: { kind: "synced", pending: 0 } } } } as SyncSnapshot);
+  const synced = summarize({ ...base, direct: { text: "Everything is up to date.", phase: { kind: "ready", sync: { state: "saved", connection: "online", health: null, pending: 0 } } } } as unknown as SyncSnapshot);
   assert.deepEqual([synced.label, synced.syncing], ["Synced", true]);
   // The SDK keeps its last sync summary on the problem phase.
   const text = stoppedText({ key: "installation_scope_removed", title: "Access was removed", message: "Engine words." });
-  const stopped = summarize({ ...base, direct: { text, phase: { kind: "problem", sync: { kind: "synced", pending: 0 }, problem: { key: "installation_scope_removed" } } } } as SyncSnapshot);
+  const stopped = summarize({ ...base, direct: { text, phase: { kind: "problem", sync: { state: "saved", connection: "online", health: null, pending: 0 }, problem: { key: "installation_scope_removed" } } } } as unknown as SyncSnapshot);
   assert.deepEqual([stopped.label, stopped.tone, stopped.syncing], ["Sync needs attention", "problem", true], "shown, not hidden with its old words");
   assert.equal(stopped.detail, text);
 });
