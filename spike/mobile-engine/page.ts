@@ -295,4 +295,11 @@ window.addEventListener("message", e => {
 // Error messages can include submitted documents or URLs; log only identifiers.
 window.addEventListener("error", (e: any) => log("page error:", e?.message ?? "", e?.filename ?? "", e?.lineno ?? ""));
 window.addEventListener("unhandledrejection", (e: any) => log("page rejection:", e.reason?.code ?? "unknown", e.reason?.reason ?? ""));
+// SPIKE B4: forward SDK trace events (page + Worker) and ping the Worker.
+try {
+  const traceChannel = new BroadcastChannel("mdbase-spike-trace");
+  traceChannel.onmessage = (e: MessageEvent) => { if (e.data && typeof e.data.tag === "string") post({ type: "trace", ev: e.data }); };
+  let ping = 0;
+  setInterval(() => { ping++; post({ type: "trace", ev: { t: new Date().toISOString(), ctx: "spike-page", tag: "ping", ping } }); traceChannel.postMessage({ ping }); }, 10_000);
+} catch (e) { log("trace channel failed", String(e)); }
 parent.postMessage({ type: "hello", origin: location.origin, opfs: !!navigator.storage?.getDirectory, isSecureContext }, "*");

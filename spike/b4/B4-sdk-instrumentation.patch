@@ -1,0 +1,331 @@
+diff --git a/runtime/packages/sdk/src/app-host/installation-sign-in.ts b/runtime/packages/sdk/src/app-host/installation-sign-in.ts
+index ca10c91..14cfe41 100644
+--- a/runtime/packages/sdk/src/app-host/installation-sign-in.ts
++++ b/runtime/packages/sdk/src/app-host/installation-sign-in.ts
+@@ -5,6 +5,7 @@ import { boundNativeCompletion, type AppNativeAuthorizationContext, type AppNati
+ import type { NativeCompletion } from "../app-grant/native-completion.js";
+ import { parseCollectionAvailability, type CollectionAvailability } from "../collection-availability.js";
+ import { uuidToBytes } from "../codec.js";
++import { spikeTrace, spikePath } from "../spike-trace.js";
+ import { LOCAL_APPLICATION_BUILD, localApplicationEnvironment, localApplicationHttpOrigin } from "../application/local-build.js";
+ import { collectionDisplayName } from "./collection-display-name.js";
+ import { isAppEnvironmentSelection, type AppEnvironmentSelection } from "./app-environment.js";
+@@ -342,7 +343,7 @@ export class AppProtectedInstallationSignIn {
+       });
+       const state = this.decode(opened.plaintext, p);
+       return new AppProtectedInstallationSignIn(opened.store, state, p);
+-    } catch (e) { await opened?.store.close(); if (e instanceof AppInstallationSignInError) throw e; if (e instanceof AppInstallationStorageError && e.reason === "busy") throw fail("open_in_another_tab"); throw fail("recovery_required"); }
++    } catch (e) { spikeTrace("signin.open.error", {name: (e as {name?: string})?.name ?? null, reason: (e as {reason?: string})?.reason ?? null, message: String((e as {message?: string})?.message ?? e).slice(0, 160)}); await opened?.store.close(); if (e instanceof AppInstallationSignInError) throw e; if (e instanceof AppInstallationStorageError && e.reason === "busy") throw fail("open_in_another_tab"); throw fail("recovery_required"); }
+     finally { opened?.plaintext.fill(0); }
+   }
+   private static decode(bytes: Uint8Array, p: Readonly<AppInstallationSignInOptions>): State {
+@@ -473,7 +474,8 @@ export class AppProtectedInstallationSignIn {
+    * A network failure may have committed: only explicit SAME-request reconcile. */
+   private async json(path: string, secret: boolean, body?: unknown, auth?: {bearer: string; get?: boolean; patch?: boolean; delete?: boolean}): Promise<{status: number; value: Record<string, unknown>}> {
+     this.check(); this.wrongAccountRequestId = null;
+-    const ctrl = new AbortController(), abort = () => ctrl.abort(), timer = setTimeout(abort, 15000);
++    const spikeStarted = Date.now(), spikeTag = spikePath(path); let spikeTimedOut = false; spikeTrace("http.start", {path: spikeTag});
++    const ctrl = new AbortController(), abort = () => ctrl.abort(), timer = setTimeout(() => { spikeTimedOut = true; spikeTrace("http.timeout", {path: spikeTag, ms: Date.now() - spikeStarted}); abort(); }, 15000);
+     this.lifetime.signal.addEventListener("abort", abort, {once: true});
+     let response: Response | null = null, reader: ReadableStreamDefaultReader<Uint8Array> | null = null, drained = false, decoding = false;
+     // Scoped metadata may contain 1000 UUIDs; discovery additionally contains
+@@ -512,8 +514,10 @@ export class AppProtectedInstallationSignIn {
+         if (path === "/v1/pairing-requests" && unknownPrivateDeviceField(response.status, error)) privateDeviceFieldRefused.add(refusal);
+         throw refusal;
+       }
++      spikeTrace("http.settle", {path: spikeTag, status: response.status, ms: Date.now() - spikeStarted, state: typeof (value as Record<string, unknown>).status === "string" ? (value as Record<string, string>).status : null});
+       return {status: response.status, value: value as Record<string, unknown>};
+     } catch (e) {
++      spikeTrace("http.error", {path: spikeTag, ms: Date.now() - spikeStarted, status: response?.status ?? null, timedOut: spikeTimedOut, name: (e as {name?: string})?.name ?? null, reason: (e as {reason?: string})?.reason ?? null});
+       this.check();
+       const error = e instanceof AppInstallationSignInError ? e : fail(auth?.get && !ctrl.signal.aborted && !(e instanceof DOMException && e.name === "AbortError") ? decoding ? "response" : !response || response.ok ? "unavailable" : "refused" : "outcome_unknown");
+       if (response && !response.ok) nonOkResponses.add(error);
+diff --git a/runtime/packages/sdk/src/app-host/installation-store.ts b/runtime/packages/sdk/src/app-host/installation-store.ts
+index 7a5e241..a699f52 100644
+--- a/runtime/packages/sdk/src/app-host/installation-store.ts
++++ b/runtime/packages/sdk/src/app-host/installation-store.ts
+@@ -4,6 +4,7 @@
+ import { loopbackHttpOrigin } from "../application/local-build.js";
+ import { currentAppOrigin, isAppOrigin } from "./app-origin.js";
+ import { acquireAppSignInLease, isAppInstallationId, isInstallationOwner, AppReplicaOwnerError, type AppLockPort, type AppReplicaLease } from "./owner.js";
++import { spikeTrace } from "../spike-trace.js";
+ const STORE = "installation-sign-in", KEY = "original", MAX = 128 * 1024; // bounded original + additive consent receipts (<=1000 IDs each)
+ export class AppInstallationStorageError extends Error {
+   constructor(readonly reason: "busy" | "unavailable") { super(`app installation storage ${reason}; preserve storage and reopen`); }
+@@ -58,7 +59,7 @@ export class AppInstallationStore {
+   static async open(options: AppInstallationStoreOptions, initial: () => Uint8Array): Promise<{store: AppInstallationStore; plaintext: Uint8Array}> {
+     // Snapshot before any ownership/platform wait. No account ID is invented.
+     const p = Object.freeze({ origin: options.origin, cpOrigin: options.cpOrigin, appId: options.appId, ...(options.owner === undefined ? {} : {owner: options.owner}), ...(options.storageNamespace === undefined ? {} : {storageNamespace: options.storageNamespace}), mode: options.mode, signal: options.signal, locks: options.locks, allowLoopbackHttp: options.allowLoopbackHttp === true });
+-    let out: AppInstallationStore | null = null, plain: Uint8Array | null = null, fresh: Stored | null = null;
++    let out: AppInstallationStore | null = null, plain: Uint8Array | null = null, fresh: Stored | null = null; let spikeStep = "checks";
+     try {
+       if (!isAppOrigin(p.origin)) throw fail();
+       {
+@@ -67,8 +68,8 @@ export class AppInstallationStore {
+       }
+       if (p.owner !== undefined && !isInstallationOwner(p.owner)) throw fail();
+       if (!["fresh", "existing", "open"].includes(p.mode) || !isAppInstallationId(p.appId) || p.signal.aborted || currentAppOrigin() !== p.origin || !globalThis.indexedDB || !globalThis.crypto?.subtle || typeof CryptoKey !== "function") throw fail();
+-      const lease = await acquireAppSignInLease(p.locks, p, p.signal);
+-      out = new AppInstallationStore(p, lease); out.check();
++      spikeStep = "lease"; const lease = await acquireAppSignInLease(p.locks, p, p.signal);
++      spikeStep = "init"; out = new AppInstallationStore(p, lease); out.check();
+       if (p.mode !== "existing") {
+         // Ownership precedes randomness/crypto; commit initial tuple, secret and
+         // handle atomically in the upgrade transaction, never an empty fresh DB.
+@@ -77,12 +78,12 @@ export class AppInstallationStore {
+         fresh = {version: 1, revision: 0, key, encrypted: await out.encrypt(key, 0, plain)};
+         plain.fill(0); plain = null;
+       }
+-      out.db = await out.openDatabase(fresh); out.check();
++      spikeStep = "openDatabase"; out.db = await out.openDatabase(fresh); out.check();
+       out.db.onversionchange = () => { void out!.close(); };
+-      out.record = await out.readRecord(); out.check();
+-      plain = await out.decrypt(out.record); out.check(); out.bound(plain);
++      spikeStep = "read"; out.record = await out.readRecord(); out.check();
++      spikeStep = "decrypt"; plain = await out.decrypt(out.record); out.check(); spikeStep = "bound"; out.bound(plain);
+       const result = {store: out, plaintext: plain}; plain = null; return result;
+-    } catch (e) { await out?.close(); throw fail(e instanceof AppReplicaOwnerError && e.reason === "busy" ? "busy" : "unavailable"); }
++    } catch (e) { spikeTrace("store.open.error", {step: spikeStep, mode: p.mode, name: (e as {name?: string})?.name ?? null, reason: (e as {reason?: string})?.reason ?? null, message: String((e as {message?: string})?.message ?? e).slice(0, 160)}); await out?.close(); throw fail(e instanceof AppReplicaOwnerError && e.reason === "busy" ? "busy" : "unavailable"); }
+     finally { plain?.fill(0); fresh?.encrypted.fill(0); }
+   }
+   isCurrent(): boolean { try { this.check(); return true; } catch { return false; } }
+diff --git a/runtime/packages/sdk/src/app-host/web-sign-in-session.ts b/runtime/packages/sdk/src/app-host/web-sign-in-session.ts
+index 598c5a1..1a09a30 100644
+--- a/runtime/packages/sdk/src/app-host/web-sign-in-session.ts
++++ b/runtime/packages/sdk/src/app-host/web-sign-in-session.ts
+@@ -15,6 +15,7 @@ import { eraseAppInstallationData, eraseAppCollectionAccess } from "./sign-out-e
+ import type { AppLogHealth } from "./log-pump.js";
+ import { mdbaseError } from "../errors.js";
+ import type { AppAccountKeySecret } from "./account-key-host.js";
++import { spikeTrace } from "../spike-trace.js";
+ 
+ /** A Private collection this device is enrolled in but holds no key for.
+  * Display only: `mode` is the account-key mode from the status route (only
+@@ -207,6 +208,7 @@ type ReceiptRead = Readonly<{
+   acknowledged: boolean;
+ }>;
+ 
++let spikeOps = 0;
+ export class AppWebSignInSession<Connection> {
+   private readonly lifetime = new AbortController();
+   // Origin store closes only AFTER native shutdown, not on the host abort.
+@@ -310,7 +312,7 @@ export class AppWebSignInSession<Connection> {
+   private check(): void { if (this.closing || this.options.signal.aborted || this.lifetime.signal.aborted) throw failure("fenced"); }
+   /** Shared sign-in state (never a collection's status; see publishSlot). */
+   private publish(update: Partial<AppWebSignInSnapshot>): void {
+-    this.check(); this.setBase(update); this.changed();
++    this.check(); const before = this.base.status; this.setBase(update); if (this.base.status !== before || update.problem) spikeTrace("session.status", {from: before, to: this.base.status, problem: this.base.problem ?? null, signIn: this.flow?.view().state ?? null}); this.changed();
+   }
+   private setBase(update: Partial<AppWebSignInSnapshot>): void {
+     const {problemDetail: previousDetail, ...previous} = this.base;
+@@ -342,14 +344,16 @@ export class AppWebSignInSession<Connection> {
+   }
+   /** Background approval read; a sign-in gesture may wait for it (authorize). */
+   private poll(work: () => Promise<unknown>): void {
+-    if (this.pending) return;
++    if (this.pending) { spikeTrace("poll.skip", {reason: "pending"}); return; }
++    spikeTrace("poll.start", {status: this.base.status, foreground: this.foreground});
+     void this.operation(work).catch(() => {});
+     this.polling = this.pending;
+   }
+-  private stopPolling(): void { if (this.timer !== null) clearTimeout(this.timer); this.timer = null; }
++  private stopPolling(): void { if (this.timer !== null) { clearTimeout(this.timer); spikeTrace("timer.clear"); } this.timer = null; }
+   /** `contained`: a failure rejects the caller only; the session stays as it was. */
+   private operation<T>(work: () => Promise<T>, contained = false): Promise<T> {
+-    this.check(); if (this.pending) return Promise.reject(failure("busy"));
++    this.check(); if (this.pending) { spikeTrace("op.busy"); return Promise.reject(failure("busy")); }
++    const opId = ++spikeOps, opStarted = Date.now(); spikeTrace("op.start", {op: opId, status: this.base.status});
+     this.foregroundRead = null;
+     this.stopPolling();
+     const workResult = Promise.resolve().then(() => { this.check(); return work(); });
+@@ -382,6 +386,7 @@ export class AppWebSignInSession<Connection> {
+       throw error;
+     });
+     this.pending = pending;
++    pending.then(() => spikeTrace("op.settle", {op: opId, ok: true, ms: Date.now() - opStarted, status: this.base.status}), (e: unknown) => spikeTrace("op.settle", {op: opId, ok: false, ms: Date.now() - opStarted, code: (e as {code?: string})?.code ?? null, reason: (e as {reason?: string})?.reason ?? null, status: this.base.status}));
+     return pending.finally(() => { if (this.pending === pending) this.pending = null; this.schedulePoll(); });
+   }
+   /** Atomic create-or-restore; never recover a malformed ledger as fresh. A
+@@ -414,14 +419,14 @@ export class AppWebSignInSession<Connection> {
+           try { kept = this.flow.cachedApprovedCollections(this.installation!); } catch { kept = null; }
+           await this.refreshCollections(kept);
+         }
+-      } else {
++      } else { spikeTrace("start.restored", {local: view.state}); {
+         // A restart (a reload, or a mobile page frozen in the background and
+         // resumed) must not drop a sign-in the person may be approving right
+         // now: keep reading the SAME request a gesture sent, until it is
+         // approved, cancelled or expires. An unsent request stays unsent.
+         this.restoredPending = view.state === "pending" && this.flow.requestSent?.() === true;
+         this.publish({status: view.state === "pending" && !this.restoredPending ? "signed_out" : "authorizing"});
+-      }
++      } }
+       return this.getSnapshot();
+     });
+   }
+@@ -586,6 +591,7 @@ export class AppWebSignInSession<Connection> {
+       } else { await this.prepareNativeChoice(); this.publish({status: "authorizing", problem: null}); }
+       return;
+     }
++    spikeTrace("advance.exchange", {local: this.flow!.view().state});
+     let view: AppInstallationSignInView | null;
+     try { view = await this.exchangeReceipt(() => this.flow!.exchange()); }
+     catch (error) {
+@@ -595,15 +601,16 @@ export class AppWebSignInSession<Connection> {
+       this.check(); this.restoredPending = false; this.publish({status: "signed_out", problem: null}); return;
+     }
+     this.check();
++    spikeTrace("advance.exchanged", {state: view?.state ?? null});
+     if (!view) return;
+     if (view.state === "account_selected") {
+       // This consumes only the current SDK-owned, portal-confirmed selection.
+       // A view/account ID supplied by an app is not an authority capability.
+-      view = await this.flow!.confirmPortalSelectedAccount(); this.check();
++      view = await this.flow!.confirmPortalSelectedAccount(); this.check(); spikeTrace("advance.confirmed", {state: view.state});
+     }
+     if (view.state === "account_confirmed" || view.state === "awaiting_approval") {
+       await this.openDevice(); this.check();
+-      if (!this.attested) { await this.host!.attestInstallation(); this.check(); this.attested = true; }
++      if (!this.attested) { spikeTrace("advance.attest"); await this.host!.attestInstallation(); this.check(); this.attested = true; spikeTrace("advance.attested"); }
+       await this.prepareNativeChoice();
+     }
+     if (view.state === "paired") {
+@@ -720,7 +727,7 @@ export class AppWebSignInSession<Connection> {
+     else if (visible.length === 1) await this.openSlot(visible[0]!.collectionId, true);
+   }
+   private schedulePoll(): void {
+-    if (this.pending && !this.closing && !this.options.signal.aborted) return; // Keep ONE original occupied slot.
++    if (this.pending && !this.closing && !this.options.signal.aborted) { spikeTrace("schedule.skip", {reason: "pending"}); return; } // Keep ONE original occupied slot.
+     const read = this.foregroundRead; this.foregroundRead = null;
+     for (const slot of this.closing || this.options.signal.aborted ? [] : this.slots.values()) {
+       const wait = this.retryAfterMs(slot);
+@@ -733,10 +740,11 @@ export class AppWebSignInSession<Connection> {
+         void this.operation(() => this.openSlot(slot.id)).catch(() => {});
+       }, wait);
+     }
+-    if (this.closing || this.options.signal.aborted || this.timer !== null || this.base.status !== "authorizing") return;
++    if (this.closing || this.options.signal.aborted || this.timer !== null || this.base.status !== "authorizing") { if (this.base.status === "authorizing") spikeTrace("schedule.skip", {reason: this.timer !== null ? "timer" : "closing"}); return; }
+     const resume = this.foreground && read && this.currentReceipt(read) ? read : null;
++    const spikeDelay = resume ? 0 : !this.foreground ? 10000 : this.base.problem === "outcome_unknown" ? 5000 : 1000; spikeTrace("timer.set", {delay: spikeDelay, foreground: this.foreground, resume: !!resume});
+     this.timer = setTimeout(() => {
+-      this.timer = null;
++      this.timer = null; spikeTrace("timer.fire", {pending: this.pending !== null});
+       this.poll(async () => {
+         if (resume && (!this.foreground || !this.currentReceipt(resume))) return;
+         await this.advanceApproval();
+@@ -755,6 +763,7 @@ export class AppWebSignInSession<Connection> {
+    * the owning WorkerHost serializes revalidation with its lifecycle requests. */
+   setForeground(active: boolean): void {
+     this.check(); const resumed = active && !this.foreground;
++    spikeTrace("session.foreground", {active, resumed, pending: this.pending !== null, status: this.base.status});
+     this.foreground = active; this.stopPolling();
+     if (!active) this.foregroundRead = null;
+     else if (resumed && this.receiptRead?.operation === this.pending) this.foregroundRead = this.receiptRead;
+diff --git a/runtime/packages/sdk/src/application/entry.ts b/runtime/packages/sdk/src/application/entry.ts
+index 84e3e3e..a3ff559 100644
+--- a/runtime/packages/sdk/src/application/entry.ts
++++ b/runtime/packages/sdk/src/application/entry.ts
+@@ -49,6 +49,7 @@ import type {AppWebSignOutResult} from "../app-host/web-sign-in-session.js";
+ import type {SyncStatus} from "../wire.js";
+ import {ApplicationPrivateCollections,withPrivateCollections} from "./private-collections.js";
+ import type {AppCollectionReadinessFenceDetail} from "../app-host/collection-readiness.js";
++import {spikeTrace} from "../spike-trace.js";
+ 
+ export type MdbaseApplicationFacet="capabilities"|"contracts"|"configuration"|"files"|"people"|"notifications";
+ export interface MdbaseApplicationProblem {readonly code:string;readonly detail?:AppCollectionReadinessFenceDetail|"scope_aborted"|"scope_closed"|"observer_not_current"|"connection_not_current"|"collection_mismatch"|"currentness_check_failed"|"native_witness_collection_mismatch"|"native_witness_generation_mismatch"|"caller_aborted"|`${MdbaseApplicationFacet}_facet`}
+@@ -836,6 +837,7 @@ export class MdbaseConnect implements MdbaseApplicationEntry {
+    * If it went because the session signed out, this tab is signed out too: it
+    * neither leads nor starts a new session (its snapshot may not have arrived). */
+   private readonly leaderLost=(signedOut:boolean):void=>{
++    spikeTrace("entry.leaderLost",{signedOut});
+     if(this.closed||this.hidden)return;
+     const runtime=this.runtime,active=runtime!==null||this.initialization!==null;
+     this.election?.abort();this.election=null;
+@@ -858,7 +860,7 @@ export class MdbaseConnect implements MdbaseApplicationEntry {
+     this.selection?.resync();
+     void this.app.start().catch(()=>{/* the snapshot reports the typed problem */});
+   };
+-  private setForeground(active:boolean):void{this.foreground=active;this.runtime?.setForeground(active);}
++  private setForeground(active:boolean):void{spikeTrace("entry.foreground",{active,runtime:this.runtime!==null});this.foreground=active;this.runtime?.setForeground(active);}
+   private followVisibility():void{
+     const doc=globalThis.document;if(!doc||typeof doc.addEventListener!=="function")return;
+     // Not through this.app: this runs from the constructor, before it exists.
+@@ -890,6 +892,7 @@ export class MdbaseConnect implements MdbaseApplicationEntry {
+     }
+   }
+   private readonly pageHidden=():void=>{
++    spikeTrace("entry.pageHidden",{closed:this.closed,hidden:!!this.hidden,runtime:this.runtime!==null,status:this.snapshot.status});
+     if(this.closed||this.hidden)return;
+     const runtime=this.runtime,resume=runtime!==null||this.initialization!==null;
+     ++this.incarnation;this.hidden=Object.freeze({resume});this.clearPendingSave();
+@@ -903,7 +906,7 @@ export class MdbaseConnect implements MdbaseApplicationEntry {
+     this.snapshot=Object.freeze({...previous,status:resume?"starting":this.snapshot.status,problem:null,selectedCollectionId:null,readiness:emptyReadiness});
+   };
+   private readonly pageShown=(event:PageTransitionEvent):void=>{
+-    const hidden=this.hidden;if(this.closed||!hidden||!event.persisted)return;
++    const hidden=this.hidden;spikeTrace("entry.pageShown",{persisted:event.persisted,hidden:!!hidden,resume:hidden?.resume??null});if(this.closed||!hidden||!event.persisted)return;
+     this.hidden=null;this.notify();
+     if(!hidden.resume)return;
+     // Same path as the app's first start: fresh registration check, Worker and
+diff --git a/runtime/packages/sdk/src/application/worker-host.ts b/runtime/packages/sdk/src/application/worker-host.ts
+index b0b2d32..94821ec 100644
+--- a/runtime/packages/sdk/src/application/worker-host.ts
++++ b/runtime/packages/sdk/src/application/worker-host.ts
+@@ -14,6 +14,7 @@ import {webSignInProblem} from "../app-host/web-sign-in-problem.js";
+ import {APP_UNSYNCED_RECOVERY_MS,appUnsyncedIdentity,appUnsyncedWork,discardAppUnsynced,eraseAppUnsyncedStorage,openAppUnsyncedCollection,pruneAppUnsyncedRetired,retireAppUnsynced,type AppUnsyncedConnection} from "../app-host/unsynced-collection.js";
+ import type {AppWebNativeCollection} from "../app-host/web-collection.js";
+ import type {AppWebSignInSnapshot} from "../app-host/web-sign-in-session.js";
++import {spikeTrace} from "../spike-trace.js";
+ 
+ /** A failed operation's bounded reply code. Native app-host errors (setup journal,
+  * cloud-copy create, join, HTTP log, replica owner) keep their typed code, e.g.
+@@ -447,7 +448,7 @@ export class ApplicationWorkerHost {
+         }
+         // A tab shown, focused or back online: a visible connection drives now
+         // (backoff and offline waits reset), not on its next timer or push.
+-        client.foreground=request[4] as boolean;this.applyForeground(client.foreground,true);
++        client.foreground=request[4] as boolean;spikeTrace("host.foreground",{value:client.foreground,active:this.active?.request?.[3]??null,queued:this.queue.length});this.applyForeground(client.foreground,true);
+         return;
+       }
+       if(request[2]<=client.lastId)throw new ApplicationWorkerError("application_worker_binding");
+@@ -490,11 +491,12 @@ export class ApplicationWorkerHost {
+       pending=Promise.resolve().then(next.job).catch(()=>{}).finally(finish);
+       this.pending=pending;return;
+     }
+-    const {client,request}=next;
+-    pending=Promise.resolve().then(()=>this.invoke(client,request)).then(()=>{
++    const {client,request}=next;const spikeAt=Date.now();spikeTrace("host.request",{action:request[3],id:request[2]});
++    pending=Promise.resolve().then(()=>this.invoke(client,request)).then(()=>{spikeTrace("host.reply",{action:request[3],id:request[2],ok:true,ms:Date.now()-spikeAt});
+       if(this.stopping||this.lifetime.signal.aborted)throw new ApplicationWorkerError("application_worker_fenced");
+       this.post(client,[APPLICATION_WORKER_PROTOCOL,client.binding,"reply",request[2],{ok:true,snapshot:this.view(client)}]);
+     }).catch(error=>{
++      spikeTrace("host.reply",{action:request[3],id:request[2],ok:false,ms:Date.now()-spikeAt,code:(error as {code?:string})?.code??null,reason:(error as {reason?:string})?.reason??null});
+       try{this.post(client,[APPLICATION_WORKER_PROTOCOL,client.binding,"reply",request[2],{ok:false,problem:applicationWorkerReplyProblem(error)}]);}catch{/* stop owns late delivery */}
+     }).finally(finish);
+     this.pending=pending;
+diff --git a/runtime/packages/sdk/src/spike-trace.ts b/runtime/packages/sdk/src/spike-trace.ts
+new file mode 100644
+index 0000000..9d2cec5
+--- /dev/null
++++ b/runtime/packages/sdk/src/spike-trace.ts
+@@ -0,0 +1,20 @@
++// SPIKE INSTRUMENTATION (mobile B4). Never released. Wall-clock trace events
++// from the page and the Worker on one BroadcastChannel; the Obsidian spike page
++// forwards them to its trace file. Identifiers only: never URLs, secrets or bodies.
++type Fields = Record<string, string | number | boolean | null | undefined>;
++const Scope = (globalThis as {WorkerGlobalScope?: new () => object}).WorkerGlobalScope;
++const inWorker = typeof Scope === "function" && globalThis instanceof Scope;
++const ctx = inWorker ? `worker:${Math.random().toString(36).slice(2, 6)}` : "page";
++let channel: BroadcastChannel | null = null;
++try { channel = new BroadcastChannel("mdbase-spike-trace"); } catch { channel = null; }
++export function spikeTrace(tag: string, fields: Fields = {}): void {
++  try { channel?.postMessage({t: new Date().toISOString(), ctx, tag, ...fields}); } catch { /* trace only */ }
++}
++/** Path with request/collection ids collapsed. */
++export function spikePath(path: string): string { return path.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id").replace(/\?.*$/, ""); }
++if (inWorker && channel) {
++  let last = Date.now(), beats = 0;
++  spikeTrace("worker.boot");
++  setInterval(() => { const now = Date.now(), gap = now - last; last = now; beats++; if (gap > 12_000 || beats % 6 === 0) spikeTrace("worker.hb", {gapMs: gap}); }, 5000);
++  channel.onmessage = event => { const ping = (event.data as {ping?: number} | null)?.ping; if (typeof ping === "number") spikeTrace("worker.pong", {ping}); };
++}

@@ -11,6 +11,7 @@ import packed from "embedded:engine";
 const STATUS = "mdbase-engine-status.md";
 const CONTROL = "mdbase-engine-control.json";
 const DOWNLOADS = "mdbase-spike-download";
+const TRACE = "mdbase-engine-trace.log";
 
 async function gunzip(b64: string): Promise<Uint8Array> {
   const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
@@ -32,11 +33,14 @@ export default class Engine extends Plugin {
   next = 1;
   lastSeq = -1;
   writing: Promise<void> = Promise.resolve();
-  config: { platform: "native" | "omit"; patchWorker: boolean; hideHistory: boolean; blockFreeze: boolean; vault: string } = { platform: "native", patchWorker: true, hideHistory: false, blockFreeze: false, vault: "" };
+  config: { platform: "native" | "omit"; patchWorker: boolean; hideHistory: boolean; blockFreeze: boolean; vault: string; urlToFile?: boolean } = { platform: "native", patchWorker: true, hideHistory: false, blockFreeze: false, vault: "" };
   downloaded: { id: string; path: string; revision: string; local: string } | null = null;
 
   async onload() {
     this.registerDomEvent(window, "message", e => this.onMessage(e));
+    // SPIKE B4: the main window's own lifecycle, for comparison with the iframe's.
+    for (const name of ["visibilitychange", "freeze", "resume"]) this.registerDomEvent(document, name as any, () => this.note(`main ${name} vis=${document.visibilityState}`));
+    for (const name of ["pagehide", "pageshow", "focus", "blur"]) this.registerDomEvent(window, name as any, () => this.note(`main ${name}`));
     this.app.workspace.onLayoutReady(async () => {
       try { const c = JSON.parse(await this.app.vault.adapter.read(CONTROL)); this.lastSeq = c.seq ?? -1; if (c.config) Object.assign(this.config, c.config); } catch { /* none yet */ }
       this.note(`plugin loaded; config ${JSON.stringify(this.config)}; control seq ${this.lastSeq}`);
@@ -45,8 +49,21 @@ export default class Engine extends Plugin {
   }
   onunload() { this.bridge?.close(); this.frame?.remove(); }
 
+  traceLines: string[] = [];
+  traceTimer: number | null = null;
+  // SPIKE B4: one line per event, wall clock first. Buffered; appended at most once a second.
+  trace(line: string) {
+    this.traceLines.push(line);
+    if (this.traceTimer === null) this.traceTimer = window.setTimeout(() => {
+      this.traceTimer = null;
+      const text = this.traceLines.splice(0).join("\n") + "\n";
+      this.writing = this.writing.then(async () => { const a = this.app.vault.adapter; if (await a.exists(TRACE)) await a.append(TRACE, text); else await a.write(TRACE, text); }).catch(() => {});
+    }, 1000);
+  }
   note(m: string) {
-    this.log.push({ t: new Date().toISOString(), m });
+    const t = new Date().toISOString();
+    this.log.push({ t, m });
+    this.trace(`${t} [plugin] ${m}`);
     this.save();
   }
   save() {
@@ -202,8 +219,11 @@ try {
         break;
       }
       case "log": this.note(`page: ${m.text}`); break;
+      case "trace": { const { t, ctx, tag, ...rest } = m.ev ?? {}; this.trace(`${t} [${ctx}] ${tag} ${JSON.stringify(rest)}`); break; }
       // The sign-in URL is a bearer secret: open it, never log or store it.
-      case "open-url": this.note("open-url requested (URL not logged)"); window.open(m.url, "_blank"); break;
+      // B4 control (a): approve on another machine while Obsidian stays in front. The URL goes
+      // to a plugin-private file (pulled over adb, never logged) instead of opening the browser.
+      case "open-url": if (this.config.urlToFile) { this.note("open-url written to pending-url.txt (URL not logged)"); void this.app.vault.adapter.write(normalizePath(`${this.manifest.dir}/pending-url.txt`), m.url); } else { this.note("open-url requested (URL not logged)"); window.open(m.url, "_blank"); } break;
       case "result": {
         const c = this.calls.get(m.id); if (!c) return; this.calls.delete(m.id);
         if (m.ok) c.resolve(m.value); else c.reject(Object.assign(new Error(m.error?.message ?? "error"), m.error ?? {}));

@@ -1,0 +1,219 @@
+diff --git a/runtime/packages/sdk/public-api.txt b/runtime/packages/sdk/public-api.txt
+index 4e2613116..6dbab4584 100644
+--- a/runtime/packages/sdk/public-api.txt
++++ b/runtime/packages/sdk/public-api.txt
+@@ -2963,6 +2963,7 @@ AppProtectedInstallationSignIn@app-host/installation-sign-in.ts
+   prepareOriginalDevice: (installation: AppInstallationCustodyAuthority) => Promise<Readonly<{ mode: 'fresh' | 'existing'; pin: AppDeviceKeyCustodyPin; }>>
+   renameApprovedCollection: (installation: AppInstallationCustodyAuthority, collectionId: string, displayName: string) => Promise<Readonly<{ collectionId: string; displayName: string; }>>
+   renewExpiredPairing: () => Promise<AppInstallationSignInView>
++  requestSent: () => boolean
+   retainTimerChannel: (grantId: string, value: AppInstallationTimerChannel | null) => Promise<void>
+   retireCollectionScope: (installation: AppInstallationCustodyAuthority, collection: string, expectedReplacement?: string | null) => Promise<void>
+   session: (logOrigin: string) => AppCloudCopyHostSession
+@@ -5662,6 +5663,7 @@ State@app-host/installation-sign-in.ts
+   requestedCreateCollections: boolean
+   requestedPrivateDevice?: true | undefined
+   requestId: string
++  requestSent?: string | undefined
+   secret: string
+   selection: Selection | null
+   timerChannel?: AppInstallationTimerChannel | undefined
+diff --git a/runtime/packages/sdk/src/app-host/installation-sign-in.ts b/runtime/packages/sdk/src/app-host/installation-sign-in.ts
+index 7b2606a8d..08ac1f070 100644
+--- a/runtime/packages/sdk/src/app-host/installation-sign-in.ts
++++ b/runtime/packages/sdk/src/app-host/installation-sign-in.ts
+@@ -152,6 +152,9 @@ function collectionListing(value: unknown): readonly AppInstallationCollection[]
+ interface State {
+   version: 3; requestId: string; installationId: string; deviceId: string; secret: string;
+   renewal: {requestId: string; secret: string} | null;
++  /** The requestId whose START Connect accepted. Absent until the first
++   * sign-in gesture; dropped when an expired window is renewed. */
++  requestSent?: string;
+   requestedCreateCollections: boolean; collectionIds: string[]; createCollections: boolean;
+   consentRequest: ConsentRequest | null;
+   /** Present (true) only when the ORIGINAL request asked for Private device access. */
+@@ -349,7 +352,7 @@ export class AppProtectedInstallationSignIn {
+     const fields = `${base},requestedCreateCollections,collectionIds,createCollections,consentRequest`;
+     const r = legacy ? {...object(parsed, base), version: 3, renewal: null, requestedCreateCollections: false, collectionIds: [], createCollections: false, consentRequest: null}
+       : parsed?.version === 2 ? {...object(parsed, fields), version: 3, renewal: null}
+-      : object(parsed, `${fields},renewal${Object.hasOwn(parsed, "collectionSelection") ? ",collectionSelection" : ""}${Object.hasOwn(parsed,"timerConsent") ? ",timerConsent" : ""}${Object.hasOwn(parsed,"timerChannel") ? ",timerChannel" : ""}${Object.hasOwn(parsed,"owner") ? ",owner" : ""}${Object.hasOwn(parsed,"collectionListing") ? ",collectionListing" : ""}${Object.hasOwn(parsed,"collectionRecoveries") ? ",collectionRecoveries" : ""}${Object.hasOwn(parsed,"recoveryFor") ? ",recoveryFor" : ""}${Object.hasOwn(parsed,"nativeAuthorization") ? ",nativeAuthorization" : ""}${Object.hasOwn(parsed,"nativeSelection") ? ",nativeSelection" : ""}${Object.hasOwn(parsed,"nativeGrants") ? ",nativeGrants" : ""}${Object.hasOwn(parsed,"requestedPrivateDevice") ? ",requestedPrivateDevice" : ""}${Object.hasOwn(parsed,"privateDeviceCollectionIds") ? ",privateDeviceCollectionIds" : ""}`);
++      : object(parsed, `${fields},renewal${Object.hasOwn(parsed, "collectionSelection") ? ",collectionSelection" : ""}${Object.hasOwn(parsed,"timerConsent") ? ",timerConsent" : ""}${Object.hasOwn(parsed,"timerChannel") ? ",timerChannel" : ""}${Object.hasOwn(parsed,"owner") ? ",owner" : ""}${Object.hasOwn(parsed,"collectionListing") ? ",collectionListing" : ""}${Object.hasOwn(parsed,"collectionRecoveries") ? ",collectionRecoveries" : ""}${Object.hasOwn(parsed,"recoveryFor") ? ",recoveryFor" : ""}${Object.hasOwn(parsed,"nativeAuthorization") ? ",nativeAuthorization" : ""}${Object.hasOwn(parsed,"nativeSelection") ? ",nativeSelection" : ""}${Object.hasOwn(parsed,"nativeGrants") ? ",nativeGrants" : ""}${Object.hasOwn(parsed,"requestedPrivateDevice") ? ",requestedPrivateDevice" : ""}${Object.hasOwn(parsed,"privateDeviceCollectionIds") ? ",privateDeviceCollectionIds" : ""}${Object.hasOwn(parsed,"requestSent") ? ",requestSent" : ""}`);
+     if (r.version !== 3 || r.appId !== p.appId || (r as {owner?: unknown}).owner !== p.owner || r.kind !== (p.installationKind ?? "app-runtime") || r.origin !== p.origin || r.cpOrigin !== p.cpOrigin || r.environment !== p.environment || typeof r.confirmed !== "boolean" || typeof r.nativeStarted !== "boolean") throw fail("recovery_required");
+     const s = r as unknown as State;
+     if (typeof s.requestedCreateCollections !== "boolean" || typeof s.createCollections !== "boolean" ||
+@@ -388,6 +391,7 @@ export class AppProtectedInstallationSignIn {
+       const r = object(s.renewal, "requestId,secret"); id(r.requestId); text(r.secret, /^pair_[A-Za-z0-9_-]{43}$/);
+       if (r.requestId === s.requestId || r.secret === s.secret) throw fail("recovery_required");
+     }
++    if (s.requestSent !== undefined && s.requestSent !== s.requestId) throw fail("recovery_required");
+     if(s.timerChannel!==undefined) {
+       if(!s.token || !s.selection)throw fail("recovery_required");
+       try{s.timerChannel=timerChannel(s.timerChannel);}catch{throw fail("recovery_required");}
+@@ -537,7 +541,8 @@ export class AppProtectedInstallationSignIn {
+       try {
+         const requestId = crypto.randomUUID(), secret = `pair_${btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
+         if (requestId === s.requestId || requestId === s.renewal?.requestId || secret === s.secret) throw fail("binding");
+-        await this.save({...s, requestId, secret, renewal: {requestId:s.requestId, secret:s.secret}});
++        const {requestSent: _sent, ...unsent} = s;
++        await this.save({...unsent, requestId, secret, renewal: {requestId:s.requestId, secret:s.secret}});
+         this.expiredRequestId = null;
+         return await this.startRequest();
+       } finally { bytes.fill(0); }
+@@ -564,6 +569,8 @@ export class AppProtectedInstallationSignIn {
+       const uri = verificationUri(v.verification_uri, `${s.cpOrigin}/pair/${s.requestId}`, hint);
+       if (v.pairing_id !== s.requestId || v.pairing_secret !== s.secret || uri === null || v.installation_device !== true || v.app_id !== s.appId || v.app_origin !== s.origin || v.app_name !== this.options.appName || !Number.isSafeInteger(v.expires_in) || (v.expires_in as number) < 0 || (v.expires_in as number) > 600) throw fail("response");
+       this.expiredRequestId = null;
++      // One commit per accepted START: a restarted session keeps reading this request.
++      if (this.state.requestSent !== s.requestId) await this.save({...this.state, requestSent: s.requestId});
+       return Object.freeze({...this.view(), verificationUri: uri});
+   }
+   /** Scoped replies must echo the immutable protected CID. Legacy normal
+@@ -1002,6 +1009,9 @@ export class AppProtectedInstallationSignIn {
+       }
+     });
+   }
++  /** A sign-in gesture sent this pending request and Connect accepted it: a
++   * restarted session may keep reading it. False once signed in. */
++  requestSent(): boolean { this.check(); return !this.state.token && this.state.requestSent === this.state.requestId; }
+   /** True when this installation registered a Web Push channel (so a browser
+    * push subscription exists for the app). Metadata only. */
+   hasWebPushChannel(): boolean { this.check(); return this.state.timerChannel?.kind === "web_push"; }
+diff --git a/runtime/packages/sdk/src/app-host/web-sign-in-session.ts b/runtime/packages/sdk/src/app-host/web-sign-in-session.ts
+index 3acf16318..598c5a160 100644
+--- a/runtime/packages/sdk/src/app-host/web-sign-in-session.ts
++++ b/runtime/packages/sdk/src/app-host/web-sign-in-session.ts
+@@ -242,6 +242,8 @@ export class AppWebSignInSession<Connection> {
+   private receiptRead: ReceiptRead | null = null;
+   private foregroundRead: ReceiptRead | null = null;
+   private attested = false;
++  /** start() resumed a request sent before a restart: an expired or cancelled one ends quietly. */
++  private restoredPending = false;
+   private acknowledged = false;
+   private consentPending = false;
+   private listCached = false;
+@@ -412,7 +414,14 @@ export class AppWebSignInSession<Connection> {
+           try { kept = this.flow.cachedApprovedCollections(this.installation!); } catch { kept = null; }
+           await this.refreshCollections(kept);
+         }
+-      } else this.publish({status: view.state === "pending" ? "signed_out" : "authorizing"});
++      } else {
++        // A restart (a reload, or a mobile page frozen in the background and
++        // resumed) must not drop a sign-in the person may be approving right
++        // now: keep reading the SAME request a gesture sent, until it is
++        // approved, cancelled or expires. An unsent request stays unsent.
++        this.restoredPending = view.state === "pending" && this.flow.requestSent?.() === true;
++        this.publish({status: view.state === "pending" && !this.restoredPending ? "signed_out" : "authorizing"});
++      }
+       return this.getSnapshot();
+     });
+   }
+@@ -438,6 +447,7 @@ export class AppWebSignInSession<Connection> {
+   private beginAuthorization(portal: AppWebSignInPortal, options: {readonly collectionHint?: string | null}): Promise<AppWebSignInSnapshot> {
+     const hint = {collectionHint: options.collectionHint ?? null};
+     const view = this.flow!.view();
++    this.restoredPending = false;
+     this.authorizationStartedAt = performance.now();
+     this.publish({timing: Object.freeze({firstScreenMs: null, readyMs: null}), approval: null});
+     return this.operation(async () => {
+@@ -576,7 +586,15 @@ export class AppWebSignInSession<Connection> {
+       } else { await this.prepareNativeChoice(); this.publish({status: "authorizing", problem: null}); }
+       return;
+     }
+-    let view = await this.exchangeReceipt(() => this.flow!.exchange()); this.check();
++    let view: AppInstallationSignInView | null;
++    try { view = await this.exchangeReceipt(() => this.flow!.exchange()); }
++    catch (error) {
++      // A resumed request that expired or was cancelled meanwhile ends as the
++      // signed-out view it showed before; the next sign-in gesture renews it.
++      if (!this.restoredPending || !(error instanceof AppInstallationSignInError) || (error.reason !== "expired" && error.reason !== "refused")) throw error;
++      this.check(); this.restoredPending = false; this.publish({status: "signed_out", problem: null}); return;
++    }
++    this.check();
+     if (!view) return;
+     if (view.state === "account_selected") {
+       // This consumes only the current SDK-owned, portal-confirmed selection.
+diff --git a/runtime/packages/sdk/test/app-installation-sign-in.test.ts b/runtime/packages/sdk/test/app-installation-sign-in.test.ts
+index 858191aad..51f01e918 100644
+--- a/runtime/packages/sdk/test/app-installation-sign-in.test.ts
++++ b/runtime/packages/sdk/test/app-installation-sign-in.test.ts
+@@ -51,7 +51,7 @@ async function fixture(requestedCreateCollections = false, extra: {installationK
+   const custody = {...pk, envelope: new Uint8Array([6, 7])};
+   const runtime = {deviceCustodyCurrent: (_pin: unknown, c: unknown) => c === custody, signCpEnrol: vi.fn(() => {trace.push("native-fixed-sign"); return {...pk, signature: new Uint8Array(64).fill(8)};}), acknowledgeDeviceRegistration: vi.fn(() => {trace.push("native-ack"); expect(read().token).toMatch(/^idev_/);})} as unknown as AppWasmRuntime;
+   const persistence = {pending: vi.fn(async () => {trace.push("protected-noise-pending");}), registered: vi.fn(async () => {trace.push("protected-receipt");})};
+-  return {flow, options, installation, custody, runtime, persistence, trace, requests, read, request, editSaved:(change:(s:Record<string,unknown>)=>void)=>{const s=read();change(s);saved=new TextEncoder().encode(JSON.stringify(s));}, setSelected: () => {selected = true;}, setApproved: () => {approved = true;}, setFailHttp: () => {failHttp = true;}, setCommitFailure: () => {commitFailure = true;}, setOversized: () => {oversized = true;}, change: (fn: typeof change) => {change = fn;}};
++  return {flow, options, installation, custody, runtime, persistence, trace, requests, read, request, editSaved:(change:(s:Record<string,unknown>)=>void)=>{const s=read();change(s);saved=new TextEncoder().encode(JSON.stringify(s));}, setSelected: () => {selected = true;}, setApproved: () => {approved = true;}, setFailHttp: () => {failHttp = true;}, setCommitFailure: () => {commitFailure = true;}, clearCommitFailure: () => {commitFailure = false;}, setOversized: () => {oversized = true;}, change: (fn: typeof change) => {change = fn;}};
+ }
+ const expiredReply = () => new Response(JSON.stringify({error:{code:"installation_pairing_expired",message:"expired"}}),{status:404});
+ describe("installation kind", () => {
+@@ -140,8 +140,9 @@ describe("explicit expired-window retry preserves original actor", () => {
+     if(mode==='abort') parent.abort(); else await flow.close();
+     expect(ram.secret).toBe(''); expect(retainedParent.secret).toBe(''); expect(ram.renewal).toBeNull();
+     expect(f.read()).toEqual(durable); expect(f.trace.filter(v=>v==='protected-commit')).toHaveLength(commits);
+-    const reopened=await AppProtectedInstallationSignIn.open({...f.options,mode:'existing'});
+-    expect((await reopened.start()).requestId).toBe(durable.requestId); expect(f.read()).toEqual(durable); await reopened.close();
++    // A working store again: the reopened START records only that Connect accepted the durable successor.
++    f.clearCommitFailure(); const reopened=await AppProtectedInstallationSignIn.open({...f.options,mode:'existing'});
++    expect((await reopened.start()).requestId).toBe(durable.requestId); expect(f.read()).toEqual({...durable, requestSent: durable.requestId}); await reopened.close();
+   });
+   it("retains original confirmed selection, keys, challenge and proof on expiry",async()=>{
+     const f=await fixture();await confirmed(f);await f.flow.attest(f);const original=f.read(), signs=vi.mocked(f.runtime.signCpEnrol).mock.calls.length;
+@@ -534,7 +535,9 @@ describe("fresh scoped recovery receipt constraints", () => {
+     expect((await f.flow.start()).state).toBe("pending");
+     expect(f.requests[0]!.body).toMatchObject({installation: {recovery_collection_id: collection, requested_create_collections: false}});
+     expect((await f.flow.exchange()).state).toBe("pending");
+-    expect(f.read()).toEqual(original); expect(f.runtime.signCpEnrol).not.toHaveBeenCalled(); await f.flow.close();
++    // The only durable change: which request Connect accepted (a restart keeps reading it).
++    expect(f.read()).toEqual({...original, requestSent: original.requestId}); expect(f.flow.requestSent()).toBe(true);
++    expect(f.runtime.signCpEnrol).not.toHaveBeenCalled(); await f.flow.close();
+   });
+   it.each(["missing", "wrong"])("refuses a %s START target echo without unconstrained fallback", async mode => {
+     const f = await fixture(false, {owner: "bundle:notes:scope:original-local-reference", recoveryFor}), original = f.read();
+@@ -543,8 +546,8 @@ describe("fresh scoped recovery receipt constraints", () => {
+     expect(f.requests).toHaveLength(1); expect(f.read()).toEqual(original); expect(f.runtime.signCpEnrol).not.toHaveBeenCalled(); await f.flow.close();
+   });
+   it.each(["missing", "wrong"])("refuses a %s selected target echo before confirmation or native authority", async mode => {
+-    const f = await fixture(false, {owner: "bundle:notes:scope:original-local-reference", recoveryFor}), original = f.read();
+-    await f.flow.start(); f.setSelected();
++    const f = await fixture(false, {owner: "bundle:notes:scope:original-local-reference", recoveryFor});
++    await f.flow.start(); f.setSelected(); const original = f.read(); f.trace.length = 0;
+     f.change(v => {if (mode === "missing") delete v.recovery_collection_id; else v.recovery_collection_id = connector;});
+     await expect(f.flow.exchange()).rejects.toBeInstanceOf(AppInstallationSignInError);
+     expect(f.read()).toEqual(original); expect(f.trace).not.toContain("protected-commit"); expect(f.persistence.pending).not.toHaveBeenCalled();
+diff --git a/runtime/packages/sdk/test/web-sign-in-session.test.ts b/runtime/packages/sdk/test/web-sign-in-session.test.ts
+index 98a726231..d1dc6c8b3 100644
+--- a/runtime/packages/sdk/test/web-sign-in-session.test.ts
++++ b/runtime/packages/sdk/test/web-sign-in-session.test.ts
+@@ -37,6 +37,7 @@ function fixture(initial: AppInstallationSignInView["state"] = "pending", autoSe
+     close: vi.fn(async () => {trace.push("flow-close");}),
+     signOutInstallation: vi.fn(async (): Promise<"revoked" | "already_signed_out"> => {trace.push("cp-sign-out"); return "revoked";}),
+     hasWebPushChannel: vi.fn(() => false),
++    requestSent: vi.fn(() => false),
+   };
+   const flowOpen = vi.spyOn(AppProtectedInstallationSignIn, "open").mockImplementation(async p => {
+     flowSignal = p.signal; expect(p.mode).toBe("open"); expect(p.appId).toBe("independent-app"); expect(p.origin).toBe("https://notes.example.test"); return flow as unknown as AppProtectedInstallationSignIn;
+@@ -335,6 +336,25 @@ describe("shared first-party web sign-in", () => {
+     expect(f.flow.start).not.toHaveBeenCalled();
+     expect(f.flow.exchange).not.toHaveBeenCalled(); expect(f.hostOpen).not.toHaveBeenCalled(); expect(f.openPortal).not.toHaveBeenCalled(); expect(listener).toHaveBeenCalled(); stop(); await f.session.close();
+   });
++  it("a restart keeps reading the request a sign-in gesture sent, and completes it without another gesture", async () => {
++    // Mobile: the OS froze the page and its Worker while the person approved in the browser.
++    vi.useFakeTimers(); const f = fixture(); f.flow.requestSent.mockReturnValue(true);
++    await f.session.start(); expect(f.session.snapshot().status).toBe("authorizing");
++    expect(f.flow.start).not.toHaveBeenCalled(); expect(f.openPortal).not.toHaveBeenCalled();
++    f.selectOnPortal(); await vi.advanceTimersByTimeAsync(1000);
++    expect(f.flow.confirmPortalSelectedAccount).toHaveBeenCalledOnce(); expect(f.host.attestInstallation).toHaveBeenCalledOnce();
++    f.approve(); await vi.advanceTimersByTimeAsync(1000);
++    expect(f.session.snapshot().status).toBe("ready"); expect(f.flow.start).not.toHaveBeenCalled(); await f.session.close();
++  });
++  it.each(["refused","expired"] as const)("a request %s before the restart read it ends signed out, and the next sign-in renews it", async reason => {
++    vi.useFakeTimers(); const f = fixture(); f.flow.requestSent.mockReturnValue(true);
++    f.flow.exchange.mockRejectedValueOnce(new AppInstallationSignInError(reason));
++    await f.session.start(); await vi.advanceTimersByTimeAsync(1000);
++    expect(f.session.snapshot()).toMatchObject({status: "signed_out", problem: null});
++    await vi.advanceTimersByTimeAsync(20000); expect(f.flow.exchange).toHaveBeenCalledOnce();
++    f.flow.start.mockRejectedValueOnce(new AppInstallationSignInError(reason)); await f.session.authorize();
++    expect(f.flow.renewExpiredPairing).toHaveBeenCalledOnce(); expect(f.session.snapshot().status).toBe("authorizing"); await f.session.close();
++  });
+   it("one authorize opens Connect synchronously, automatically confirms the portal choice and attests, then opens the approved collection", async () => {
+     vi.useFakeTimers(); const f = fixture(); await f.session.start(); f.selectOnPortal();
+     const authorization = f.session.authorize(); expect(f.openPortal).toHaveBeenCalledOnce(); await authorization;
