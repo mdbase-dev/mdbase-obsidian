@@ -48,10 +48,13 @@ test("activity keeps the most recent entries first, up to the limit", () => {
 });
 
 test("the ready state is described in words, not log positions", () => {
-  assert.equal(readyText({ kind: "synced", pending: 0 }), "Everything is up to date.");
-  assert.equal(readyText({ kind: "synced", pending: 3 }), "3 changes waiting to send.");
-  assert.match(readyText({ kind: "offline", pending: 1 }), /^Offline\. .* 1 change waiting to send\.$/);
-  assert.equal(readyText({ kind: "catching_up", pending: 0 }), "Getting the latest changes from your other devices.");
+  assert.equal(readyText({ state: "saved", connection: "online", health: null, pending: 0 }), "Everything is up to date.");
+  assert.equal(readyText({ state: "saving", connection: "online", health: null, pending: 3 }), "3 changes waiting to send.");
+  assert.match(readyText({ state: "saved_on_device", connection: "reconnecting", health: "unreachable", pending: 1 }), /^Offline\. .* 1 change waiting to send\.$/);
+  assert.equal(readyText({ state: "catching_up", connection: "online", health: null, pending: 0 }), "Getting the latest changes from your other devices.");
+  assert.equal(readyText({ state: "catching_up", connection: "online", health: null, pending: 0, installing: true }), "Downloading the collection.");
+  assert.equal(readyText({ state: "reconnecting", connection: "reconnecting", health: null, pending: 0 }), "Everything is up to date.", "a replica still connecting is not offline");
+  assert.equal(readyText({ state: "reconnecting", connection: "reconnecting", health: "server_busy", pending: 0 }), "mdbase is busy. Sync carries on shortly.", "a busy service is not offline");
 });
 
 test("the collection's file policy leaves out attachments only, as Connect does", () => {

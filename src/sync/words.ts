@@ -1,3 +1,4 @@
+import type { MdbaseSync } from "@mdbase-dev/sdk/thin-client";
 import type { SyncSnapshot } from "./controller";
 
 export type Tone = "ok" | "busy" | "quiet" | "attention" | "problem";
@@ -119,17 +120,23 @@ const STATE_REASONS: Record<string, string> = {
   sync_not_eligible: "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched.",
 };
 
-/** The ready state in words (the SDK's own text is "Synced through <log position>"). */
-export function readyText(sync: { kind: string; pending: number; health?: string | null } | undefined): string {
+type ReadySync = Pick<MdbaseSync, "state" | "connection" | "pending" | "health"> & { installing?: boolean };
+
+/**
+ * Sync can't reach mdbase from here: no network, or the service did not answer.
+ * A busy or rate-limited service, or a replica still connecting, is not offline.
+ */
+export function syncOffline(sync: ReadySync | null | undefined): boolean {
+  return sync?.connection === "offline" || sync?.health === "unreachable";
+}
+
+/** The ready state in words. */
+export function readyText(sync: ReadySync | null | undefined): string {
   const waiting = sync?.pending ? `${sync.pending === 1 ? "1 change" : `${sync.pending.toLocaleString()} changes`} waiting to send.` : "";
-  switch (sync?.kind) {
-    case "offline": return `Offline. Changes are saved here and sync when the connection returns.${waiting ? ` ${waiting}` : ""}`;
-    case "catching_up": return "Getting the latest changes from your other devices.";
-    case "installing": return "Downloading the collection.";
-    default:
-      if (sync?.health === "server_busy" || sync?.health === "rate_limited") return "mdbase is busy. Sync carries on shortly.";
-      return waiting || "Everything is up to date.";
-  }
+  if (syncOffline(sync)) return `Offline. Changes are saved here and sync when the connection returns.${waiting ? ` ${waiting}` : ""}`;
+  if (sync?.state === "catching_up") return sync.installing ? "Downloading the collection." : "Getting the latest changes from your other devices.";
+  if (sync?.health === "server_busy" || sync?.health === "rate_limited") return "mdbase is busy. Sync carries on shortly.";
+  return waiting || "Everything is up to date.";
 }
 
 export function summarize(s: SyncSnapshot): SyncSummary {
@@ -165,10 +172,10 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     }
     // Offline outranks progress text: an upload that can't reach mdbase isn't
     // progressing, and the offline notice alone disappears (QA-3).
-    const offline = ready && !problem && phase.sync?.kind === "offline";
+    const offline = ready && !problem && syncOffline(phase.sync);
     if (offline) return { label: "Offline", detail: readyText(phase.sync), tone: "attention", syncing: true };
     const checking = /checking your files|uploading|downloading/i.test(text);
-    const label = problem ? "Sync needs attention" : checking ? "Syncing" : ready ? (phase.sync?.kind === "offline" ? "Offline" : phase.sync?.pending ? "Syncing" : "Synced") : phase.kind === "signed_out" ? "Sync off" : phase.kind === "choosing" ? "Choose collection" : phase.kind === "authorizing" ? "Finish sign-in" : "Starting sync";
+    const label = problem ? "Sync needs attention" : checking ? "Syncing" : ready ? (syncOffline(phase.sync) ? "Offline" : phase.sync?.pending ? "Syncing" : "Synced") : phase.kind === "signed_out" ? "Sync off" : phase.kind === "choosing" ? "Choose collection" : phase.kind === "authorizing" ? "Finish sign-in" : "Starting sync";
     const detail = ready && !problem && !checking ? readyText(phase.sync) : text;
     return { label, detail, tone: problem ? "problem" : checking ? "busy" : ready ? "ok" : "quiet", syncing: ready || problem };
   }
