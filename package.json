@@ -1,6 +1,6 @@
 {
   "name": "mdbase-obsidian",
-  "version": "0.4.19",
+  "version": "0.4.20",
   "description": "mdbase types and sync for Obsidian",
   "main": "main.js",
   "type": "module",
@@ -58,7 +58,7 @@
   },
   "dependencies": {
     "@callumalpass/mdbase-interop": "0.1.0-rc.2",
-    "@mdbase-dev/sdk": "file:vendor/sdk-1907e67f-production-beta187.tgz",
+    "@mdbase-dev/sdk": "file:vendor/sdk-e8ffb806-production-beta188.tgz",
     "@noble/hashes": "2.4.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
