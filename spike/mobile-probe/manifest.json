@@ -1,0 +1,9 @@
+{
+	"id": "mdbase-mobile-probe",
+	"name": "mdbase mobile probe (spike)",
+	"version": "0.0.1",
+	"minAppVersion": "1.11.4",
+	"description": "Spike only. Measures what the mdbase sync engine needs on mobile.",
+	"author": "mdbase spike",
+	"isDesktopOnly": false
+}
