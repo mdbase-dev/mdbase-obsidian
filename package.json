@@ -58,7 +58,7 @@
   },
   "dependencies": {
     "@callumalpass/mdbase-interop": "0.1.0-rc.2",
-    "@mdbase-dev/sdk": "file:vendor/sdk-4562e7b9-production-beta200.tgz",
+    "@mdbase-dev/sdk": "file:vendor/sdk-ea1275ab-production-beta202.tgz",
     "@noble/hashes": "2.4.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
