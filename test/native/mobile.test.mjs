@@ -468,7 +468,16 @@ test("the engine page uses the SDK Worker factory and explicit selection without
   globalThis.location = { origin: "http://localhost", href: "blob:http://localhost/engine" };
   globalThis.parent = { postMessage() {} }; globalThis.isSecureContext = true;
   globalThis.Worker = class { constructor(...args) { workers.push(args); } };
-  globalThis.mobileSdk = { setForeground() {}, subscribe() {}, getSnapshot: () => ({ phase: { kind: "ready" } }), select: async id => calls.push(["select", id]), start: async () => calls.push(["start"]) };
+  const watches = [];
+  const records = { watchChanges(onChanges, options) {
+    assert.equal(typeof onChanges, "function");
+    assert.deepEqual(options, { cursor: "retained-cursor" });
+    let finish;
+    const watch = { stopped: 0, finish: () => { onChanges({ cursor: "next-cursor", reset: true, changes: [] }); finish(); } };
+    watches.push(watch);
+    return Object.assign(() => { watch.stopped++; }, { ready: new Promise(resolve => { finish = resolve; }) });
+  } };
+  globalThis.mobileSdk = { setForeground() {}, subscribe() {}, getSnapshot: () => ({ phase: { kind: "ready", connection: { records } } }), select: async id => calls.push(["select", id]), start: async () => calls.push(["start"]), close: async () => calls.push(["close"]) };
   t.after(() => {
     Object.assign(globalThis, { location: previous.location, parent: previous.parent, Worker: previous.Worker, isSecureContext: previous.secure });
     for (const key of ["mdbaseHost", "document", "addEventListener"]) delete window[key];
@@ -489,10 +498,25 @@ test("the engine page uses the SDK Worker factory and explicit selection without
   assert.deepEqual(workers, [["blob:worker", { type: "module" }]]);
   assert.throws(() => globalThis.mobileOptions.worker("https://other/worker.js"));
   let receive;
-  const port = { postMessage() {}, set onmessage(handler) { receive = handler; } };
+  const messages = [];
+  const port = { postMessage(message) { messages.push(message); }, set onmessage(handler) { receive = handler; } };
   listeners.get("message")({ source: parent, data: { type: "connect" }, ports: [port] });
   await receive({ data: { type: "call", id: 1, method: "start", args: [] } });
   assert.deepEqual(calls, [["select", "selected"], ["start"]]);
+  const first = receive({ data: { type: "call", id: 2, method: "watch", args: ["retained-cursor"] } });
+  assert.equal(messages.some(message => message.type === "result" && message.id === 2), false);
+  watches[0].finish(); await first;
+  assert.deepEqual(messages.slice(-2), [{ type: "changes", batch: { cursor: "next-cursor", reset: true, changes: [] } }, { type: "result", id: 2, ok: true, value: true }]);
+  const second = receive({ data: { type: "call", id: 3, method: "watch", args: ["retained-cursor"] } });
+  assert.equal(watches[0].stopped, 1);
+  watches[1].finish(); await second;
+  await receive({ data: { type: "call", id: 4, method: "unwatch" } });
+  assert.equal(watches[1].stopped, 1);
+  const third = receive({ data: { type: "call", id: 5, method: "watch", args: ["retained-cursor"] } });
+  watches[2].finish(); await third;
+  await receive({ data: { type: "call", id: 6, method: "stop" } });
+  assert.deepEqual(watches.map(watch => watch.stopped), [1, 1, 1]);
+  assert.deepEqual(calls.at(-1), ["close"]);
 });
 test("mobile ownership refuses missing, foreign, unreadable, and desktop-locked markers", async t => {
   const { native, host, adapter } = fixture(t);

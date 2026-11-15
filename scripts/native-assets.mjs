@@ -4,11 +4,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
+import { checkNativeSdk } from "./native-sdk-contract.mjs";
 
 export async function nativeAssets() {
   const index = process.argv.indexOf("--native-sdk");
   const sdk = resolve(index < 0 ? "node_modules/@mdbase-dev/sdk" : process.argv[index + 1]);
   const environment = process.argv.includes("--lab") ? "lab" : process.argv.includes("--staging") ? "staging" : "production";
+  checkNativeSdk(sdk);
   const trust = readFileSync(resolve(sdk, "dist/application/packaged-trust.js"), "utf8");
   if (!trust.includes(`"environment":"${environment}"`)) throw new Error(`Native SDK must be authentically packaged for ${environment}; no environment retargeting`);
   const declaration = readFileSync(resolve(sdk, "dist/application/declaration.js"), "utf8");

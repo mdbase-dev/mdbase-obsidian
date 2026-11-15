@@ -207,6 +207,14 @@ node esbuild.config.mjs production --staging --native-sdk /absolute/path/to/sdk/
 
 Do not publish a LAB or staging build.
 
+The packer typechecks the engine page against the supplied package, not just
+the installed production SDK. An authenticated package can still have an
+incompatible public API: older SDKs take `watchChanges(cursor, callback)` and
+positional record includes, while this plugin uses `watchChanges(callback,
+{ cursor })` and read-options objects. Such packages are refused before
+bundling; build a matching SDK source revision with authenticated environment
+inputs instead of adding runtime signature detection or changing readiness.
+
 Unit tests exercise real vault IO for concurrent edits, renames, deletes,
 conflict-publication recovery, upload recovery, ownership transitions and fixed
 ports. The 50 MiB download test transfers actual MessagePort replies and checks
