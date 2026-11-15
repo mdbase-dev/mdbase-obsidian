@@ -16,6 +16,7 @@ test("settings search definitions share the legacy renderer's labels and control
   const fixtureState = fixture();
   let saves = 0;
   const plugin = {
+    register: () => {},
     settings: { validateOnOpen: true, validateOnSave: true, showNoticeOnSave: false, interopEnabled: false, mdbaseAppPath: "" },
     syncController: fixtureState.sync.controller,
     saveSettings: async () => { saves++; },
@@ -41,7 +42,10 @@ test("settings search definitions share the legacy renderer's labels and control
   assert.equal(plugin.settings.validateOnOpen, false);
   assert.equal(plugin.settings.validateOnSave, false);
   assert.equal(saves, 1);
-  assert.ok(!tab.getSettingDefinitions().some(definition => "name" in definition && definition.name === "Show validation notices"));
+  const notices = tab.getSettingDefinitions().find(definition => "name" in definition && definition.name === "Show validation notices");
+  assert.ok(notices && typeof notices.visible === "function");
+  assert.equal(notices.visible(), false);
+  assert.doesNotMatch(tab.containerEl.textContent ?? "", /Show validation notices/);
   tab.hide();
   fixtureState.dom.window.close();
 });

@@ -1,14 +1,10 @@
-import { type App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
+import { type App, type ButtonComponent, Modal, Notice, PluginSettingTab, requireApiVersion, Setting, type SettingDefinitionGroup, type SettingDefinitionRender, SettingGroup } from "obsidian";
 import type MdbasePlugin from "../main";
 import { errorText, modeName, summarize } from "./sync/words";
 
-interface SearchableSetting {
-  name: string;
-  desc?: string;
-  render: (setting: Setting) => void;
-}
+type SearchableSetting = SettingDefinitionRender;
 
-interface SearchableGroup {
+interface SearchableGroup extends SettingDefinitionGroup {
   type: "group";
   heading: string;
   items: SearchableSetting[];
@@ -19,31 +15,46 @@ interface SearchableGroup {
  * them. The workspace Sync destination keeps status, setup and decisions.
  */
 export class MdbaseSettingTab extends PluginSettingTab {
-  private unsubscribe: (() => void) | null = null;
-
   constructor(app: App, private readonly plugin: MdbasePlugin) {
     super(app, plugin);
+    plugin.register(plugin.syncController.subscribe(() => this.refresh()));
   }
 
   display(): void {
-    const { containerEl, plugin } = this;
+    if (requireApiVersion("1.13.0")) return;
+    this.renderLegacy();
+  }
+
+  private refresh(): void {
+    const { containerEl } = this;
+    if (containerEl.contains(containerEl.ownerDocument.activeElement)) return;
+    if (requireApiVersion("1.13.0")) this.update();
+    else if (containerEl.isShown()) this.renderLegacy();
+  }
+
+  private refreshVisibility(): void {
+    if (requireApiVersion("1.13.0")) this.refreshDomState();
+    else this.renderLegacy();
+  }
+
+  private renderLegacy(): void {
+    const { containerEl } = this;
     containerEl.empty();
-    this.unsubscribe ??= plugin.syncController.subscribe(() => {
-      if (containerEl.isShown() && !containerEl.contains(containerEl.ownerDocument.activeElement)) this.display();
-    });
+    const preferences = new SettingGroup(containerEl);
 
     for (const definition of this.getSettingDefinitions()) {
       if ("items" in definition) {
-        new Setting(containerEl).setName(definition.heading).setHeading();
-        for (const item of definition.items) this.renderDefinition(containerEl, item);
-      } else this.renderDefinition(containerEl, definition);
+        const group = new SettingGroup(containerEl).setHeading(definition.heading);
+        for (const item of definition.items) this.renderDefinition(group, item);
+      } else this.renderDefinition(preferences, definition);
     }
   }
 
-  private renderDefinition(container: HTMLElement, definition: SearchableSetting): void {
-    const setting = new Setting(container).setName(definition.name);
+  private renderDefinition(group: SettingGroup, definition: SearchableSetting): void {
+    if (!(typeof definition.visible === "function" ? definition.visible() : definition.visible ?? true)) return;
+    const setting = new Setting(group.listEl).setName(definition.name);
     if (definition.desc !== undefined) setting.setDesc(definition.desc);
-    definition.render(setting);
+    definition.render(setting, group);
   }
 
   getSettingDefinitions(): (SearchableSetting | SearchableGroup)[] {
@@ -56,23 +67,22 @@ export class MdbaseSettingTab extends PluginSettingTab {
           plugin.settings.validateOnSave = value;
           plugin.settings.validateOnOpen = value;
           await plugin.saveSettings();
-          this.display();
+          this.refreshVisibility();
         }),
       ); },
     }];
 
-    if (plugin.settings.validateOnSave) {
-      definitions.push({
-        name: "Show validation notices",
-        desc: "Notify when saving a note with issues.",
-        render: setting => { setting.addToggle((toggle) =>
-          toggle.setValue(plugin.settings.showNoticeOnSave).onChange(async (value) => {
-            plugin.settings.showNoticeOnSave = value;
-            await plugin.saveSettings();
-          }),
-        ); },
-      });
-    }
+    definitions.push({
+      name: "Show validation notices",
+      desc: "Notify when saving a note with issues.",
+      visible: () => plugin.settings.validateOnSave,
+      render: setting => { setting.addToggle((toggle) =>
+        toggle.setValue(plugin.settings.showNoticeOnSave).onChange(async (value) => {
+          plugin.settings.showNoticeOnSave = value;
+          await plugin.saveSettings();
+        }),
+      ); },
+    });
 
     definitions.push({
       name: "Allow plugin integrations",
@@ -89,11 +99,6 @@ export class MdbaseSettingTab extends PluginSettingTab {
     return definitions;
   }
 
-  hide(): void {
-    this.unsubscribe?.();
-    this.unsubscribe = null;
-  }
-
   private closeSettings(): void {
     (this.app as unknown as { setting?: { close(): void } }).setting?.close();
   }
@@ -105,7 +110,7 @@ export class MdbaseSettingTab extends PluginSettingTab {
       const e = error as { code?: string; reason?: string; message?: string };
       new Notice(typeof e?.code === "string" ? errorText({ code: e.code, reason: e.reason, message: e.message ?? "" }) : String(error));
     }
-    this.display();
+    this.refresh();
   }
 
   private syncDefinitions(): SearchableSetting[] {
@@ -149,9 +154,8 @@ export class MdbaseSettingTab extends PluginSettingTab {
       definitions.push({
         name: collection.name,
         desc: `${modeName(collection.mode)}${s.prefix ? ` · in the folder "${s.prefix}"` : ""}`,
-        render: setting => { setting.addButton((button) => button
+        render: setting => { setting.addButton((button) => destructive(button)
           .setButtonText("Disconnect…")
-          .setWarning()
           .onClick(async () => {
             const where = s.prefix ? `the folder "${s.prefix}"` : "this vault";
             if (!await confirm(this.app, `Stop syncing ${where}?`, "This computer stops syncing it. Your notes stay here, and your other devices keep syncing as before.", "Stop syncing")) return;
@@ -176,6 +180,11 @@ export class MdbaseSettingTab extends PluginSettingTab {
   }
 }
 
+function destructive(button: ButtonComponent): ButtonComponent {
+  if (requireApiVersion("1.13.0")) return button.setDestructive();
+  return button.setClass("mod-warning");
+}
+
 function confirm(app: App, title: string, body: string, action: string): Promise<boolean> {
   return new Promise((resolve) => {
     const modal = new Modal(app);
@@ -184,7 +193,7 @@ function confirm(app: App, title: string, body: string, action: string): Promise
     modal.contentEl.createEl("p", { text: body });
     new Setting(modal.contentEl)
       .addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close()))
-      .addButton((button) => button.setButtonText(action).setWarning().onClick(() => {
+      .addButton((button) => destructive(button).setButtonText(action).onClick(() => {
         answered = true;
         modal.close();
       }));

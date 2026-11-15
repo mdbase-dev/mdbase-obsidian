@@ -93,10 +93,66 @@ class Notice {
   constructor(message) { Notice.messages.push(message); }
 }
 class PluginSettingTab {
+  static apiVersion = apiVersion;
   constructor(app, plugin) {
     this.app = app;
     this.plugin = plugin;
     this.containerEl = document.createElement("div");
+    this.settingItems = [];
+    this.updateCalls = 0;
+    this.refreshDomStateCalls = 0;
+    this.predicateRows = [];
+  }
+  show() {
+    if (requireApiVersion("1.13.0")) this.update();
+    else this.display();
+  }
+  update() {
+    if (!requireApiVersion("1.13.0")) throw new Error("update is unavailable before 1.13");
+    this.updateCalls++;
+    this.settingItems = this.getSettingDefinitions();
+    if (!this.containerEl.isConnected) return;
+    this.containerEl.empty();
+    this.predicateRows = [];
+    const preferences = new SettingGroup(this.containerEl);
+    for (const definition of this.settingItems) {
+      if (definition.type === "group") {
+        const group = new SettingGroup(this.containerEl).setHeading(definition.heading);
+        for (const item of definition.items) this.renderDeclarativeDefinition(group, item);
+      } else this.renderDeclarativeDefinition(preferences, definition);
+    }
+  }
+  renderDeclarativeDefinition(group, definition) {
+    const setting = new Setting(group.listEl).setName(definition.name);
+    if (definition.desc !== undefined) setting.setDesc(definition.desc);
+    definition.render(setting, group);
+    this.predicateRows.push({ element: setting.settingEl, definition });
+    this.applyVisibility(setting.settingEl, definition);
+  }
+  applyVisibility(element, definition) {
+    element.hidden = !(typeof definition.visible === "function" ? definition.visible() : definition.visible ?? true);
+  }
+  refreshDomState() {
+    if (!requireApiVersion("1.13.0")) throw new Error("refreshDomState is unavailable before 1.13");
+    this.refreshDomStateCalls++;
+    for (const { element, definition } of this.predicateRows) this.applyVisibility(element, definition);
+  }
+  hide() {}
+}
+function requireApiVersion(version) {
+  const actual = PluginSettingTab.apiVersion.split(".").map(Number);
+  const required = version.split(".").map(Number);
+  for (let index = 0; index < required.length; index++) {
+    if (actual[index] !== required[index]) return actual[index] > required[index];
+  }
+  return true;
+}
+class SettingGroup {
+  constructor(container) { this.containerEl = container.createDiv(); this.listEl = this.containerEl.createDiv(); }
+  setHeading(text) {
+    const heading = this.containerEl.createDiv({ cls: "setting-item-heading", text });
+    this.containerEl.prepend(heading);
+    return this;
   }
 }
 class Setting {
@@ -115,6 +171,11 @@ class Setting {
       setButtonText(text) { el.textContent = text; return api; },
       setDisabled(value) { el.disabled = value; return api; },
       setWarning() { el.classList.add("mod-warning"); return api; },
+      setDestructive() {
+        if (!requireApiVersion("1.13.0")) throw new Error("setDestructive is unavailable before 1.13");
+        el.classList.add("mod-destructive"); return api;
+      },
+      setClass(value) { el.classList.add(value); return api; },
       setCta() { el.classList.add("mod-cta"); return api; },
       onClick(handler) { el.onclick = handler; return api; },
     };
@@ -201,7 +262,9 @@ module.exports = {
   SuggestModal,
   Notice,
   PluginSettingTab,
+  requireApiVersion,
   Setting,
+  SettingGroup,
   Platform,
   setIcon,
   requestUrl,
