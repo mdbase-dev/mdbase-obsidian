@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { safeFolderName, type SyncSnapshot } from "../src/sync/controller";
 import { candidateBinaries, collectionIdFrom, stateDir, vaultCollection, type CollectionStatus, type DaemonStatus } from "../src/sync/daemon";
 import { applyScalarEdits, EditorFence, hashText, minimalChange, scalarToUtf16 } from "../src/sync/editorFence";
-import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, STARTING_STALLED, errorText, failedText, modeName, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
+import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, STARTING_STALLED, errorText, failedText, modeName, signOutText, stoppedText, summarize, unlockProblemText } from "../src/sync/words";
 import { describeFailure } from "../src/sync/native/failures";
 import { differingLines, nameFromLink, syncNowSummary } from "../src/workspace/syncPane";
 import type { ActivityKind } from "../src/sync/native/device";
@@ -227,9 +227,9 @@ test("waiting for a bound collection's approval keeps the status bar, saying so 
   const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
   const waiting = summarize({ ...base, direct: { text: AWAITING_APPROVAL, phase: { kind: "authorizing" }, bound: true } } as SyncSnapshot);
   assert.deepEqual([waiting.label, waiting.tone, waiting.syncing, waiting.detail], ["Waiting for approval", "attention", true, AWAITING_APPROVAL]);
-  // A first sign-in (nothing bound) isn't a vault that syncs yet.
+  // A first sign-in waiting in the browser is the person's next step: shown too (issue 62).
   const first = summarize({ ...base, direct: { text: "Finish signing in in your browser.", phase: { kind: "authorizing" } } } as SyncSnapshot);
-  assert.equal(first.syncing, false);
+  assert.deepEqual([first.label, first.tone, first.syncing], ["Finish sign-in", "attention", true]);
 });
 
 test("starting that doesn't finish shows in the status bar; ordinary starting doesn't (prod F1, second run)", () => {
@@ -276,4 +276,13 @@ test("a failed unlock says what to do, in the plugin's words where it has them",
 test("known note refusals say what is wrong (QA-4)", () => {
   assert.equal(describeFailure({ code: "invalid_request", reason: "invalid_frontmatter" }).title, "Properties can't be read");
   assert.equal(describeFailure({ code: "invalid_request", reason: "record_too_large" }).title, "Too large to sync");
+});
+
+test("sign-out says when mdbase couldn't be told or local data stayed (issue 65)", () => {
+  assert.equal(signOutText({ server: "revoked", local: "erased" }), null);
+  assert.equal(signOutText({ server: "not_paired", local: "erased" }), null);
+  assert.equal(signOutText(null), null);
+  assert.match(signOutText({ server: "incomplete", local: "erased" }) ?? "", /^Signed out on this device\. mdbase couldn't be reached, so this device is still listed under your account .* Remove it under Apps/);
+  assert.match(signOutText({ server: "revoked", local: "incomplete" }) ?? "", /Some sign-in data on this device couldn't be removed/);
+  assert.match(errorText({ code: "conflict", reason: "sign_out_pending_writes", message: "x" }), /haven't reached mdbase yet, so you're still signed in/);
 });

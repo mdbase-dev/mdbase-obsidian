@@ -128,7 +128,17 @@ preservation journals), Sync also offers **Start over**. It calls the SDK's
 `signOut()` without `discard`, which erases only this vault's SDK sign-in data
 (installation, keys) and refuses by itself if writes are unsent. The plugin's
 journal and its own marker are kept; no other marker is ever removed. Once a
-collection is bound, Start over is not offered.
+collection is bound, Start over is not offered. The same check offers
+**Cancel sign-in** while a first sign-in waits in the browser (`authorizing`
+with nothing bound), so a sign-in that can't finish (refused for another
+account, say) can be dropped at once rather than when the request expires.
+The status bar shows **Finish sign-in** meanwhile.
+
+Start over and Sign out report the SDK's `signOutResult`. The SDK signs this
+device out even when mdbase can't be reached; `server: "incomplete"` gets a
+notice that the device is still listed under the account (remove it under
+Apps on the mdbase website), and `local: "incomplete"` a notice that some
+sign-in data stayed.
 
 While a vault that already has a collection waits for approval in the browser
 (the SDK's `authorizing` phase with a bound collection), Sync and the status bar
@@ -139,8 +149,26 @@ Other SDK problem actions: `approve` offers **Request access again** (for a
 named collection); `retry`, `check_connection`, `wait`, `resolve_outcome` and
 unknown actions offer **Try again**, which calls the SDK's `start()`. If the SDK
 then reports the same stop, Sync says "Tried again, but sync still can't
-continue." `choose_collection`, `set_up`, `update_app`, `free_space`,
-`contact_support` and `none` offer no button, and the message says what to do.
+continue." `set_up`, `update_app`, `free_space`, `contact_support` and `none`
+offer no button, and the message says what to do.
+
+`choose_collection` (collection deleted, access removed, unavailable) offers
+**Choose another collection**, plus **Try again** unless the collection was
+deleted. It releases the vault: the journal is cleared except the vault's
+identity and device choices, the marker's collection is cleared, and the SDK's
+`chooseAnother()` lists the collections. Files are not touched. The next
+collection is not picked automatically, even when it is the only one, and its
+first pass compares every file afresh: identical files are remembered, differing
+ones get a conflict copy, and a collection that already has notes asks first.
+
+## Sign out
+
+Once synced, **Sign out** sits under **Advanced** in Sync, and in the collection
+chooser. It waits for the job queue, then calls the SDK's `signOut()` without
+`discard`; while the SDK holds unsent changes it refuses with
+`sign_out_pending_writes` and nothing changes here. On success the vault is
+released exactly as for Choose another collection, so signing in again, with
+any account, starts from the collection chooser. Notes stay in the vault.
 
 ## Restart sync
 

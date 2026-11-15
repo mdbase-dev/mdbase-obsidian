@@ -1048,3 +1048,60 @@ test("Start over waits for a fresh host that first resumes the old sign-in, and 
   await assert.rejects(controller.startOver(), /Sync restarted, but Start over couldn't run yet\. Try Start over again\./);
   assert.deepEqual(events, ["unload 1", "create 2", "load 2"]);
 });
+
+test("a first sync into an empty collection counts what it sent (issue 61)", async t => {
+  const f = fixture(t);
+  f.put("a.md", "one"); f.put("b.md", "two"); f.put("_types/book.md", "{}");
+  await f.pass();
+  assert.equal(f.remote.size, 2, "both notes were sent");
+  assert.equal(f.native.totals.notes, 2);
+  assert.equal(f.native.totals.definitions, 1);
+});
+test("choose another collection after a stop releases the vault, keeps the notes, and lets the person pick (issue 60)", async t => {
+  const f = fixture(t); f.baseline();
+  Object.assign(f.native.data, { collectionId: "gone", cursor: "9", mergeConfirmed: "gone", device: { skip: ["image"], folders: [] } });
+  f.native.mirroring = false;
+  const calls = [];
+  f.native.call = async (method, ...args) => { calls.push([method, ...args]); return {}; };
+  f.native.phase = { kind: "problem", collectionId: "gone", problem: { key: "collection_access_removed", action: "approve" } };
+  assert.equal(f.native.canChooseAgain, false, "only for a stop that asks for another collection");
+  f.native.phase = { kind: "problem", collectionId: "gone", problem: { key: "collection_deleted", action: "choose_collection" } };
+  assert.equal(f.native.canChooseAgain, true);
+  await f.native.chooseAgain();
+  assert.deepEqual(calls, [["chooseAnother"]]);
+  assert.deepEqual(f.native.data, { version: 1, vaultId: "test-vault", paths: {}, device: { skip: ["image"], folders: [] } }, "released; device choices kept");
+  assert.equal(f.read("note.md"), "base", "the notes stay");
+  assert.equal(JSON.parse(fs.readFileSync(f.native.markerPath, "utf8")).collection_id, null);
+  // The one remaining collection is offered, not picked for the person.
+  await f.native.onPhase({ kind: "choosing", collections: [{ id: "other", name: "Other" }] });
+  assert.deepEqual(calls.map(c => c[0]), ["chooseAnother"]);
+});
+test("sign out releases the vault and keeps the notes; a refusal changes nothing (issue 65)", async t => {
+  const f = fixture(t); f.baseline();
+  f.native.data.collectionId = "c"; f.native.data.cursor = "4";
+  f.native.phase = { kind: "ready", collectionId: "c" };
+  const real = f.native.call, calls = [];
+  f.native.call = async (method, ...args) => {
+    calls.push(method);
+    if (method !== "signOut") return real(method, ...args);
+    throw Object.assign(new Error("pending"), { code: "conflict", reason: "sign_out_pending_writes" });
+  };
+  await assert.rejects(f.native.signOut(), /pending/);
+  assert.equal(f.native.data.collectionId, "c"); assert.ok(f.native.data.paths["note.md"]);
+  f.native.call = async (method) => { calls.push(method); f.native.phase = { kind: "signed_out" }; return { kind: "signed_out", signOutResult: { server: "incomplete", local: "erased", webPush: false } }; };
+  await f.native.signOut();
+  assert.deepEqual(calls, ["signOut", "signOut"], "the SDK's own sign-out, never with discard");
+  assert.deepEqual(f.native.data, { version: 1, vaultId: "test-vault", paths: {} });
+  assert.equal(f.read("note.md"), "base");
+});
+test("a sign-in waiting in the browser can start over while nothing is bound (issue 62)", async t => {
+  const f = fixture(t), calls = [];
+  f.native.mirroring = false;
+  f.native.call = async (method) => { calls.push(method); f.native.phase = { kind: "signed_out" }; return { kind: "signed_out", signOutResult: null }; };
+  f.native.phase = { kind: "authorizing" };
+  assert.equal(f.native.canStartOver, true);
+  await f.native.startOver();
+  assert.deepEqual(calls, ["signOut"]);
+  f.native.phase = { kind: "authorizing", collectionId: "c" }; f.native.data.collectionId = "c";
+  assert.equal(f.native.canStartOver, false, "Request access again on a bound vault is not a sign-in to drop");
+});
