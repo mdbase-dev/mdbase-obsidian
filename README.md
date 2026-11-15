@@ -7,15 +7,14 @@ The plugin is deliberately type-first. Its main workspace provides:
 - a searchable type workbench with guided and YAML editing;
 - local collection initialization;
 - read-only support for mdbase v0.2.x and reviewed migration to v0.3.x;
-- sync through the mdbase desktop app: sign-in, Private or Cloud copy
-  collections, live status, and decisions about edits made in two places;
+- sync: sign-in, Private or Cloud copy collections, live status, and
+  decisions about edits made in two places;
 - collection validation with bounded issue rendering for large vaults.
 
 Types and validation work through Obsidian's Vault APIs on desktop and mobile.
-Sync is desktop-only: the plugin talks to the mdbase desktop app on the same
-computer and never syncs files itself. Node modules and the sync client load
-only when sync is used, so the bundle stays safe on mobile (checked by
-`npm run check:mobile`).
+Sync runs inside the plugin on desktop and Android (see [Sync](#sync)). Node
+modules load only on desktop and only when sync is used, so the bundle stays
+safe on mobile (checked by `npm run check:mobile`).
 
 Canonical view files remain ordinary v0.3 records in this adapter. When a
 collection materializes `_types/view.md` (normally referring to
@@ -199,7 +198,8 @@ desktop app (`mdbase --json …`) for setup and status. mdbase interop is pinned
 - Read and migration input: mdbase v0.2.x
 - Obsidian minimum version: 1.11.4
 - Types and validation on desktop and mobile; sync on desktop (Windows, macOS,
-  Linux) with the mdbase desktop app
+  Linux) and on Android with Obsidian 1.12.3 or later (device testing in
+  progress); iOS sync is not supported yet
 
 The plugin is not a general record editor, query dashboard, or Connect server
 administration client.
