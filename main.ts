@@ -21,19 +21,18 @@ import {
   MdbaseIssue,
   MdbaseTypeDef,
   type CollectionRecord,
-  ensureCollectionInitialized,
   formatMarkdown,
-  getTopLevelFieldFromIssuePath,
-  getTypesForFile,
+  parseFrontmatter,
+} from "./src/mdbaseCore";
+import {
+  ensureCollectionInitialized,
   isExcluded,
   loadMdbaseConfig,
-  loadContractDefinitions,
-  loadTypeDefinitions,
-  parseFrontmatter,
   readCollectionRecords,
-  validateCollection,
-  validateFile,
-} from "./src/mdbaseCore";
+} from "./src/collectionConfig";
+import { loadContractDefinitions, loadTypeDefinitions } from "./src/typeDefinitions";
+import { getTypesForFile } from "./src/typeMatching";
+import { getTopLevelFieldFromIssuePath, validateCollection, validateFile } from "./src/validation";
 import type { StoredTypeDraft, TypeEditorModel } from "./src/typeEditorTypes";
 import {
   analyzeV02Migration,
@@ -173,7 +172,7 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async createTypedNote(path: string, frontmatter: Record<string, unknown>): Promise<TFile> {
-    const { createNoteFromType } = await import("./src/mdbaseCore");
+    const { createNoteFromType } = await import("./src/noteCreation");
     return createNoteFromType(this.app.vault, path, frontmatter);
   }
 

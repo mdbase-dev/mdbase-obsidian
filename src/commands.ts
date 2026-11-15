@@ -2,10 +2,10 @@ import { Notice, TFile } from "obsidian";
 import { CreateTypedNoteModal } from "./createTypedNoteModal";
 import type MdbasePlugin from "../main";
 import {
-  getTypesForFile,
   parseFrontmatter,
   type MdbaseTypeDef,
 } from "./mdbaseCore";
+import { getTypesForFile } from "./typeMatching";
 import { pickType } from "./modals";
 
 /** Commands are deliberately few. Navigation lives in the workspace's own tabs. */

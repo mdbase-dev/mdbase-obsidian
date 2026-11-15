@@ -1,5 +1,5 @@
 import type { CollectionContractDescriptor, JsonObject } from "./contractTypes";
-import { schemaFromV03Fields } from "./mdbaseCore";
+import { schemaFromV03Fields } from "./typeDefinitions";
 import type {
   TypeEditorContractImplementation,
   TypeEditorModel,

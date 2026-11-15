@@ -1,8 +1,8 @@
 import { App, Modal } from "obsidian";
-import {
-  buildInitialFrontmatter, buildUniqueNotePath, coerceFieldInput, getPromptFields,
-  validateRecordAgainstType, isExcluded, type MdbaseConfig, type MdbaseFieldDef, type MdbaseTypeDef,
-} from "./mdbaseCore";
+import type { MdbaseConfig, MdbaseFieldDef, MdbaseTypeDef } from "./mdbaseCore";
+import { buildInitialFrontmatter, buildUniqueNotePath, coerceFieldInput, getPromptFields } from "./noteCreation";
+import { validateRecordAgainstType } from "./validation";
+import { isExcluded } from "./collectionConfig";
 
 export function safeNotePath(value: string): string {
   const path = value.trim();

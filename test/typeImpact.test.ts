@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MdbaseConfig } from "../src/mdbaseCore";
-import { validateRecordAgainstType } from "../src/mdbaseCore";
+import { validateRecordAgainstType } from "../src/validation";
 import { fieldConstraintSummary, parseDefaultValue, parseEnumValue } from "../src/fieldSummary";
 import { groupIssuesByRule } from "../src/issuePresentation";
 import { analyzeTypeImpact, indexRecordTypes, typeDefFromDraft, typeStats } from "../src/typeImpact";
