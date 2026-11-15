@@ -6,7 +6,7 @@ export type DebouncedTask<Value> = (
 interface PendingEntry<Value> {
   value: Value;
   revision: number;
-  timer: ReturnType<typeof setTimeout> | null;
+  timer: number | null;
   ready: boolean;
   running: boolean;
 }
@@ -50,8 +50,8 @@ export class KeyedTrailingDebouncer<Key, Value> {
     entry.value = value;
     entry.revision += 1;
     entry.ready = false;
-    if (entry.timer !== null) clearTimeout(entry.timer);
-    entry.timer = setTimeout(() => {
+    if (entry.timer !== null) window.clearTimeout(entry.timer);
+    entry.timer = window.setTimeout(() => {
       if (this.entries.get(key) !== entry) return;
       entry.timer = null;
       entry.ready = true;
@@ -62,13 +62,13 @@ export class KeyedTrailingDebouncer<Key, Value> {
   cancel(key: Key): void {
     const entry = this.entries.get(key);
     if (!entry) return;
-    if (entry.timer !== null) clearTimeout(entry.timer);
+    if (entry.timer !== null) window.clearTimeout(entry.timer);
     this.entries.delete(key);
   }
 
   clear(): void {
     for (const entry of this.entries.values()) {
-      if (entry.timer !== null) clearTimeout(entry.timer);
+      if (entry.timer !== null) window.clearTimeout(entry.timer);
     }
     this.entries.clear();
   }

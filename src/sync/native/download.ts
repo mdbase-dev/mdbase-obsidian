@@ -1,3 +1,4 @@
+import { errorInfo } from "./protocol";
 import { nativeModule } from "./node";
 import { BRIDGE_CHUNK_BYTES } from "./downloadPull";
 
@@ -35,7 +36,7 @@ export async function stageDownload(options: {
     await options.publish(staged);
   } finally {
     await file.close().catch(() => {});
-    await fs.unlink(staged).catch(error => { if (error.code !== "ENOENT") throw error; });
+    await fs.unlink(staged).catch((error: unknown) => { if (errorInfo(error).code !== "ENOENT") throw error; });
     await options.close();
   }
 }

@@ -18,7 +18,7 @@ const result = await build({
   plugins: [{ name: "mocks", setup(b) {
     b.onResolve({ filter: /^obsidian$|^embedded:assets$/ }, args => ({ path: args.path, namespace: "mock" }));
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path === "obsidian" ? `
-      export const Platform = {isMobile: false}; export class Component {} export class Notice {} export class SuggestModal {} export class App {}
+      export const Platform = {isMobile: false}; export const requireApiVersion = () => true; export class Component {} export class Notice {} export class SuggestModal {} export class App {}
       export function parseYaml(text) { return JSON.parse(text); } // fixtures write JSON, which is YAML
       export class TAbstractFile {} export class TFile extends TAbstractFile { constructor(path) { super(); this.path = path; } }
       export class FileSystemAdapter { constructor(root) { this.root=root; } getBasePath() { return this.root; } }

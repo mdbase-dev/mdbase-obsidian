@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { TFile, normalizePath } from "obsidian";
+import legacyConfig from "../src/legacyConfig.json" with { type: "json" };
 import {
   MdbaseConfig,
   MdbaseIssue,
@@ -22,6 +23,11 @@ import {
   validateFile,
   isExcluded,
 } from "../src/mdbaseCore";
+
+test("legacy collection defaults remain format data, independent of the active vault config directory", () => {
+  assert.deepEqual(legacyConfig.validationExcludes, ["_types", ".obsidian", ".git", "node_modules", ".trash", ".mdbase"]);
+  assert.deepEqual(legacyConfig.matchingExcludes, ["_types", ".obsidian", ".git", ".mdbase"]);
+});
 
 test("record scans yield to UI timers even when every vault read is cached", async () => {
   const vault = new MockVault();

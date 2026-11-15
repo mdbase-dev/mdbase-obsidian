@@ -2,6 +2,18 @@ import { type App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MdbasePlugin from "../main";
 import { errorText, modeName, summarize } from "./sync/words";
 
+interface SearchableSetting {
+  name: string;
+  desc?: string;
+  render: (setting: Setting) => void;
+}
+
+interface SearchableGroup {
+  type: "group";
+  heading: string;
+  items: SearchableSetting[];
+}
+
 /**
  * Validation and sync preferences live here, where Obsidian users look for
  * them. The workspace Sync destination keeps status, setup and decisions.
@@ -20,41 +32,61 @@ export class MdbaseSettingTab extends PluginSettingTab {
       if (containerEl.isShown() && !containerEl.contains(containerEl.ownerDocument.activeElement)) this.display();
     });
 
-    new Setting(containerEl)
-      .setName("Validate notes automatically")
-      .setDesc("Check notes against their types when they are opened or saved.")
-      .addToggle((toggle) =>
+    for (const definition of this.getSettingDefinitions()) {
+      if ("items" in definition) {
+        new Setting(containerEl).setName(definition.heading).setHeading();
+        for (const item of definition.items) this.renderDefinition(containerEl, item);
+      } else this.renderDefinition(containerEl, definition);
+    }
+  }
+
+  private renderDefinition(container: HTMLElement, definition: SearchableSetting): void {
+    const setting = new Setting(container).setName(definition.name);
+    if (definition.desc !== undefined) setting.setDesc(definition.desc);
+    definition.render(setting);
+  }
+
+  getSettingDefinitions(): (SearchableSetting | SearchableGroup)[] {
+    const { plugin } = this;
+    const definitions: (SearchableSetting | SearchableGroup)[] = [{
+      name: "Validate notes automatically",
+      desc: "Check notes against their types when they are opened or saved.",
+      render: setting => { setting.addToggle((toggle) =>
         toggle.setValue(plugin.settings.validateOnSave || plugin.settings.validateOnOpen).onChange(async (value) => {
           plugin.settings.validateOnSave = value;
           plugin.settings.validateOnOpen = value;
           await plugin.saveSettings();
           this.display();
         }),
-      );
+      ); },
+    }];
 
     if (plugin.settings.validateOnSave) {
-      new Setting(containerEl)
-        .setName("Show validation notices")
-        .setDesc("Notify when saving a note with issues.")
-        .addToggle((toggle) =>
+      definitions.push({
+        name: "Show validation notices",
+        desc: "Notify when saving a note with issues.",
+        render: setting => { setting.addToggle((toggle) =>
           toggle.setValue(plugin.settings.showNoticeOnSave).onChange(async (value) => {
             plugin.settings.showNoticeOnSave = value;
             await plugin.saveSettings();
           }),
-        );
+        ); },
+      });
     }
 
-    new Setting(containerEl)
-      .setName("Allow plugin integrations")
-      .setDesc("Let other installed plugins exchange mdbase events and actions in this vault.")
-      .addToggle((toggle) =>
+    definitions.push({
+      name: "Allow plugin integrations",
+      desc: "Let other installed plugins exchange mdbase events and actions in this vault.",
+      render: setting => { setting.addToggle((toggle) =>
         toggle.setValue(plugin.settings.interopEnabled).onChange(async (value) => {
           plugin.settings.interopEnabled = value;
           await plugin.saveSettings();
         }),
-      );
+      ); },
+    });
 
-    this.displaySync(containerEl);
+    definitions.push({ type: "group", heading: "Sync", items: this.syncDefinitions() });
+    return definitions;
   }
 
   hide(): void {
@@ -76,67 +108,71 @@ export class MdbaseSettingTab extends PluginSettingTab {
     this.display();
   }
 
-  private displaySync(containerEl: HTMLElement): void {
+  private syncDefinitions(): SearchableSetting[] {
     const { plugin } = this;
     const controller = plugin.syncController;
     const s = controller.snapshot;
-    new Setting(containerEl).setName("Sync").setHeading();
     const summary = summarize(s);
-    new Setting(containerEl)
-      .setName(summary.syncing ? summary.label : "Status")
-      .setDesc(summary.detail)
-      .addButton((button) => button.setButtonText("Open sync").onClick(() => {
+    const definitions: SearchableSetting[] = [{
+      name: summary.syncing ? summary.label : "Status",
+      desc: summary.detail,
+      render: setting => { setting.addButton((button) => button.setButtonText("Open sync").onClick(() => {
         this.closeSettings();
         void plugin.openWorkspace("sync");
-      }));
+      })); },
+    }];
 
-    if (s.direct) return;
+    if (s.direct) return definitions;
 
     if (s.daemon === "running" && s.status) {
       const account = s.status.account;
-      const signIn = new Setting(containerEl).setName("Account");
+      const signIn: SearchableSetting = { name: "Account", render: () => {} };
       if (account.signed_in) {
-        signIn.setDesc(account.computer_name ? `Signed in. This computer is "${account.computer_name}".` : "Signed in.");
+        signIn.desc = account.computer_name ? `Signed in. This computer is "${account.computer_name}".` : "Signed in.";
         // Sign out is hidden: signing in again on the same computer breaks sync
         // there until the server fix (mdbase-connect #973) ships. Restore the
         // button (it called controller.signOut() after a confirm) once it has.
       } else {
-        signIn.setDesc("Not signed in.");
-        signIn.addButton((button) => button.setButtonText("Sign in").setCta().onClick(async () => {
+        signIn.desc = "Not signed in.";
+        signIn.render = setting => { setting.addButton((button) => button.setButtonText("Sign in").setCta().onClick(async () => {
           // The browser wait (and the link to copy) shows in Sync.
           this.closeSettings();
           await plugin.openWorkspace("sync");
           await this.attempt(() => controller.signIn());
-        }));
+        })); };
       }
+      definitions.push(signIn);
     }
 
     const collection = s.daemon === "running" ? s.collection : null;
     if (collection) {
-      new Setting(containerEl)
-        .setName(collection.name)
-        .setDesc(`${modeName(collection.mode)}${s.prefix ? ` · in the folder "${s.prefix}"` : ""}`)
-        .addButton((button) => button
+      definitions.push({
+        name: collection.name,
+        desc: `${modeName(collection.mode)}${s.prefix ? ` · in the folder "${s.prefix}"` : ""}`,
+        render: setting => { setting.addButton((button) => button
           .setButtonText("Disconnect…")
           .setWarning()
           .onClick(async () => {
             const where = s.prefix ? `the folder "${s.prefix}"` : "this vault";
             if (!await confirm(this.app, `Stop syncing ${where}?`, "This computer stops syncing it. Your notes stay here, and your other devices keep syncing as before.", "Stop syncing")) return;
             await this.attempt(() => controller.disconnect());
-          }));
+          })); },
+      });
     }
 
-    new Setting(containerEl)
-      .setName("mdbase app location")
-      .setDesc(s.daemon === "not_installed" ? "Obsidian can't find the mdbase app. If it's installed, enter the full path of its mdbase tool." : "Leave empty to find the mdbase app automatically.")
-      .addText((text) => text
+    definitions.push({
+      name: "mdbase app location",
+      desc: s.daemon === "not_installed" ? "Obsidian can't find the mdbase app. If it's installed, enter the full path of its mdbase tool." : "Leave empty to find the mdbase app automatically.",
+      render: setting => { setting.addText((text) => text
         .setPlaceholder("Automatic")
         .setValue(plugin.settings.mdbaseAppPath)
         .onChange(async (value) => {
           plugin.settings.mdbaseAppPath = value.trim();
           await plugin.saveSettings();
         }))
-      .addExtraButton((button) => button.setIcon("refresh-cw").setTooltip("Check again").onClick(() => this.attempt(() => controller.refresh())));
+      .addExtraButton((button) => button.setIcon("refresh-cw").setTooltip("Check again").onClick(() => this.attempt(() => controller.refresh()))); },
+    });
+    return definitions;
   }
 }
 

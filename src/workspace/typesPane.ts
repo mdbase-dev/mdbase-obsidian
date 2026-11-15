@@ -1158,7 +1158,7 @@ export class TypesPane {
     }
     if (type === "array") {
       const itemsSchema = isRecord(schema.items) ? schema.items : { type: "string" };
-      const list = Array.isArray(value) ? value : [];
+      const list: unknown[] = Array.isArray(value) ? value : [];
       const listEl = container.createDiv({ cls: "mdbase-contract-schema-array" });
       for (const [index, item] of list.entries()) {
         const itemEl = listEl.createDiv({ cls: "mdbase-contract-schema-array-item" });
@@ -1527,7 +1527,7 @@ export class TypesPane {
     const fieldLabel = options.name || options.staticLabel || "Enum";
     const fieldId = this.fieldId(definition);
     details.createDiv({ cls: "mdbase-field-children-label", text: "Allowed values" });
-    const values = Array.isArray(definition.values) ? definition.values : [];
+    const values: unknown[] = Array.isArray(definition.values) ? definition.values : [];
     if (!Array.isArray(definition.values) && !options.readOnly) definition.values = values;
     const list = details.createDiv({ cls: "mdbase-enum-list" });
     list.setAttr("role", "list");

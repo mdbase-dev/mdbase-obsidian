@@ -2,9 +2,9 @@ export interface UploadIdentity { transferId: string; mutationId: string }
 
 /** An RPC deadline doesn't cancel the SDK operation. Join it, don't enqueue a
  * second write. Across restarts the durable identity resumes the same transfer. */
-export class RetryUploads {
-  private readonly running = new Map<string, Promise<unknown>>();
-  run(identity: UploadIdentity | undefined, upload: () => Promise<unknown>): Promise<unknown> {
+export class RetryUploads<Result = unknown> {
+  private readonly running = new Map<string, Promise<Result>>();
+  run(identity: UploadIdentity | undefined, upload: () => Promise<Result>): Promise<Result> {
     if (!identity) return Promise.reject(new Error("Missing durable upload identity"));
     const prior = this.running.get(identity.transferId);
     if (prior) return prior;

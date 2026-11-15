@@ -10,7 +10,6 @@ export interface CatalogPack {
   installation: { visibility: string; recommendation: string; primary_type: string | null; caution?: string };
 }
 // The published wire field is named document.
-// eslint-disable-next-line obsidianmd/prefer-active-doc -- Preserve the published protocol property name.
 interface Provision { manifest: { kind: string; id: string; version: string; resources: Resource[] }; resources: { source: string; document: string }[] }
 interface Receipt { id: string; version: string; digest: string; installed_by: string; resources: Resource[] }
 interface PackLock { kind: string; lock_version: number; packs: Receipt[] }
@@ -91,7 +90,7 @@ export async function planPack(app: App, pack: CatalogPack, value: unknown): Pro
   const files: PackPlan["files"] = [];
   const resources: Resource[] = [];
   const lockBefore = await read(app, LOCK);
-  const lock: PackLock = lockBefore ? parseYaml(lockBefore) : { kind: "mdbase.type-pack-lock", lock_version: 1, packs: [] };
+  const lock: PackLock = lockBefore ? parseYaml(lockBefore) as PackLock : { kind: "mdbase.type-pack-lock", lock_version: 1, packs: [] };
   if (lock.kind !== "mdbase.type-pack-lock" || lock.lock_version !== 1 || !Array.isArray(lock.packs)) throw new Error("Existing pack lock cannot be read safely.");
   const existing = lock.packs.find(receipt => receipt.id === pack.id);
   const manifestDigest = await sha256(canonical(manifest));
@@ -125,7 +124,7 @@ export async function recoverPackInstall(app: App): Promise<void> {
   const journal = record(JSON.parse(await app.vault.adapter.read(JOURNAL)));
   if (!Array.isArray(journal.created)) throw new Error("Invalid pack recovery journal.");
   if (await read(app, LOCK) === journal.lockAfter) { await app.vault.adapter.remove(JOURNAL); return; }
-  for (const value of [...journal.created].reverse()) {
+  for (const value of [...journal.created as unknown[]].reverse()) {
     const item = record(value); const path = safePackPath(item.path);
     const file = app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile && await sha256(await app.vault.read(file)) === item.digest) await app.fileManager.trashFile(file);

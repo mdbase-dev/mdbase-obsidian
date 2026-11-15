@@ -1,0 +1,4 @@
+{
+  "validationExcludes": ["_types", ".obsidian", ".git", "node_modules", ".trash", ".mdbase"],
+  "matchingExcludes": ["_types", ".obsidian", ".git", ".mdbase"]
+}

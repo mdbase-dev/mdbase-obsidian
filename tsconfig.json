@@ -9,11 +9,13 @@
     "noImplicitAny": true,
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
     "importHelpers": true,
     "isolatedModules": true,
     "strictNullChecks": true,
     "lib": [
       "DOM",
+      "DOM.AsyncIterable",
       "ES5",
       "ES6",
       "ES7"

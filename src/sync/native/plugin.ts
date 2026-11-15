@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-this-alias -- Preserve the spike\'s dynamic SDK bridge; lifecycle and on-disk checks guard optional state. */
 // Native SDK host ported from the verified Obsidian SDK spike. The iframe owns the replica; all
 // vault IO and durable three-way sync state live here. No page/ runtime files.
-import { Notice, Component, SuggestModal, TAbstractFile, TFile, App, Platform, parseYaml, type PluginManifest } from "obsidian";
+import { Notice, Component, SuggestModal, TAbstractFile, TFile, App, Platform, parseYaml, type MarkdownView, type PluginManifest } from "obsidian";
+import { errorInfo, isObject, type NativeMethod, type NativeMethods, type NativeResult, type NativePhase, type PageMessage } from "./protocol";
 import { DesktopHost } from "./desktop";
 import { MobileHost } from "./mobile";
 import type { EngineHost } from "./host";
@@ -28,7 +28,7 @@ function renderCollectionChoice(c: { name: string; private?: boolean }, el: HTML
   if (c.private) el.createSpan({ cls: "mdbase-choice-tag", text: "Private" });
 }
 /** Collection choosers say, below the list, why a Private collection may be absent. */
-function withPrivateHint<T extends SuggestModal<any>>(modal: T): T {
+function withPrivateHint<T>(modal: SuggestModal<T>): SuggestModal<T> {
   modal.setInstructions([{ command: "", purpose: PRIVATE_COLLECTIONS_HINT }]);
   return modal;
 }
@@ -52,7 +52,7 @@ export interface NativeView {
 // Refusals of this exact input. Retrying unchanged bytes gets the same answer,
 // so they become per-path failures instead of stopping every other path.
 const REFUSED = new Set(["invalid_request", "invalid_record", "too_large", "quota_exceeded", "forbidden"]);
-const isRefusal = (e: any) => REFUSED.has(e?.code) && !["cursor_stale", "cursor_expired"].includes(e?.reason);
+const isRefusal = (e: unknown) => REFUSED.has(errorInfo(e).code ?? "") && !["cursor_stale", "cursor_expired"].includes(errorInfo(e).reason ?? "");
 
 
 interface Data {
@@ -82,18 +82,18 @@ interface Data {
   // with exactly this text is then this device's own edit, not a conflict.
   sending?: Record<string, string>;
 }
-// eslint-disable-next-line obsidianmd/prefer-active-doc -- This is the SDK record document field, not a DOM document.
-interface Remote { id: string; path: string; kind: ItemKind; revision: string; hash?: string; document?: string; digest?: string; confirmed?: boolean }
+type WireItem = NativeResult<"fileGet"> | NativeResult<"replace"> | NativeResult<"resourcePut">;
+interface Remote { id: string; path: string; kind: ItemKind; revision: string; hash?: string; document?: string; digest?: string; size?: number; confirmed?: boolean }
 /** Status while another device's writes keep invalidating a full scan. Matches words.ts' busy test. */
 const CATCHING_UP = "Checking your files: catching up with changes from other devices";
 /** How many plain note sends run at once. The SDK confirms them in batches. */
 const SEND_CONCURRENCY = 16;
-const isConflict = (e: any) => /conflict|revision/.test(`${e?.code} ${e?.reason}`);
+const isConflict = (e: unknown) => /conflict|revision/.test(`${errorInfo(e).code} ${errorInfo(e).reason}`);
 /** How long starting may take before Sync offers Restart sync. */
 export const START_STALL_MS = 30_000;
 
 export default class NativeSync extends Component {
-  constructor(readonly app: App, readonly manifest: PluginManifest, readonly changed: (text: string, phase: any, view?: NativeView) => void, readonly previousCollection?: string) {
+  constructor(readonly app: App, readonly manifest: PluginManifest, readonly changed: (text: string, phase: NativePhase, view?: NativeView) => void, readonly previousCollection?: string) {
     super();
     this.host = Platform.isMobile || Platform.isMobileApp ? new MobileHost(app, manifest) : new DesktopHost(app, manifest);
     this.frameCapability = this.host.uuid();
@@ -102,9 +102,9 @@ export default class NativeSync extends Component {
   private frameUrl = "";
   private persistence: Promise<void> = Promise.resolve();
   frame: HTMLIFrameElement | null = null;
-  calls = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void; timer: number }>();
+  calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void; timer: number }>();
   nextCall = 1;
-  phase: any = { kind: "starting" };
+  phase: NativePhase = { kind: "starting" };
   bridge: MessagePort | null = null;
   data!: Data;
   origin = "";
@@ -115,7 +115,7 @@ export default class NativeSync extends Component {
   mirroring = false;
   admitting = true;
   unloaded = false;
-  jobs: Promise<any> = Promise.resolve(); // FS/state transactions, not an upload-lane workaround.
+  jobs: Promise<unknown> = Promise.resolve(); // FS/state transactions, not an upload-lane workaround.
   root = "";
   pluginDir = "";
   markerTimer: number | null = null;
@@ -164,8 +164,8 @@ export default class NativeSync extends Component {
     // as first install destroys the only durable sync/rejection journal.
     try {
       this.data = await this.readData();
-      this.data.paths = Object.assign(Object.create(null), this.data.paths);
-      this.data.pathFailures = Object.assign(Object.create(null), this.data.pathFailures);
+      this.data.paths = Object.assign(Object.create(null) as Data["paths"], this.data.paths);
+      this.data.pathFailures = Object.assign(Object.create(null) as NonNullable<Data["pathFailures"]>, this.data.pathFailures);
       this.bindVault();
       await this.readActivity();
       if (!this.data.collectionId && this.previousCollection) this.data.collectionId = this.previousCollection;
@@ -232,7 +232,7 @@ export default class NativeSync extends Component {
       () => this.closeServer(),
     ];
     for (const step of steps) {
-      try { step(); } catch (e: any) { this.log(`unload step failed: ${e?.code ?? "error"}`); }
+      try { step(); } catch (e: unknown) { this.log(`unload step failed: ${errorInfo(e).code ?? "error"}`); }
     }
     this.markerTimer = this.settleTimer = this.reconcileRetryTimer = this.stallTimer = this.activityTimer = null;
     this.bridge = null; this.frame = null;
@@ -257,22 +257,26 @@ export default class NativeSync extends Component {
     this.data.vaultLocation = location;
   }
   async readData(): Promise<Data> {
-    let saved: any;
+    let saved: unknown;
     try { saved = JSON.parse(await this.host.readText(this.host.join(this.pluginDir, "sync-state.json"))); }
-    catch (e: any) {
-      if (e.code === "ENOENT") return { version: 1, vaultId: this.host.uuid(), paths: {} };
+    catch (e: unknown) {
+      if (errorInfo(e).code === "ENOENT") return { version: 1, vaultId: this.host.uuid(), paths: {} };
       throw new Error("Cannot read sync-state.json; sync stopped and original state retained. Restore a valid backup before reloading.");
     }
-    const object = (v: any) => v && typeof v === "object" && !Array.isArray(v);
-    if (!object(saved) || saved.version !== 1 || typeof saved.vaultId !== "string" || !saved.vaultId || !object(saved.paths)
-      || Object.values(saved.paths).some((s: any) => !object(s) || !["record", "file", "resource"].includes(s.kind) || ![s.id, s.revision, s.hash].every(v => typeof v === "string" && !!v))
-      || (saved.uploads !== undefined && (!object(saved.uploads) || Object.entries(saved.uploads).some(([p, u]: [string, any]) => !this.validPath(p) || !object(u) || ![u.transferId, u.mutationId].every(id => typeof id === "string" && /^[a-f0-9-]{36}$/.test(id)) || typeof u.hash !== "string")))
-      || (saved.pendingPaths !== undefined && (!object(saved.pendingPaths) || Object.values(saved.pendingPaths).some(v => typeof v !== "number" || !Number.isFinite(v))))
-      || (saved.pathFailures !== undefined && (!object(saved.pathFailures) || Object.values(saved.pathFailures).some((h: any) => !object(h) || typeof h.signature !== "string" || (h.unknown !== undefined && typeof h.unknown !== "boolean"))))
-      || (saved.conflictCopies !== undefined && (!object(saved.conflictCopies) || Object.values(saved.conflictCopies).some((h: any) => !object(h) || ![h.path, h.hash, h.copy].every(v => typeof v === "string" && !!v) || !["record", "file"].includes(h.kind))))
-      || (saved.sending !== undefined && (!object(saved.sending) || Object.values(saved.sending).some(v => typeof v !== "string")))
-      || (saved.handledRejections !== undefined && (!object(saved.handledRejections) || Object.values(saved.handledRejections).some((h: any) => !object(h) || typeof h.path !== "string" || typeof h.hash !== "string" || !["record", "file"].includes(h.kind)))))
-      throw new Error("Invalid sync-state.json; sync stopped and original state retained. Restore a valid backup before reloading.");
+    const object = isObject;
+    const valid = (saved: unknown): saved is Data => {
+      if (!object(saved) || saved.version !== 1 || typeof saved.vaultId !== "string" || !saved.vaultId || !object(saved.paths)
+        || Object.values(saved.paths).some((s) => !object(s) || (s.kind !== "record" && s.kind !== "file" && s.kind !== "resource") || ![s.id, s.revision, s.hash].every(v => typeof v === "string" && !!v))
+        || (saved.uploads !== undefined && (!object(saved.uploads) || Object.entries(saved.uploads).some(([p, u]) => !this.validPath(p) || !object(u) || ![u.transferId, u.mutationId].every(id => typeof id === "string" && /^[a-f0-9-]{36}$/.test(id)) || typeof u.hash !== "string")))
+        || (saved.pendingPaths !== undefined && (!object(saved.pendingPaths) || Object.values(saved.pendingPaths).some(v => typeof v !== "number" || !Number.isFinite(v))))
+        || (saved.pathFailures !== undefined && (!object(saved.pathFailures) || Object.values(saved.pathFailures).some((h) => !object(h) || typeof h.signature !== "string" || (h.unknown !== undefined && typeof h.unknown !== "boolean"))))
+        || (saved.conflictCopies !== undefined && (!object(saved.conflictCopies) || Object.values(saved.conflictCopies).some((h) => !object(h) || ![h.path, h.hash, h.copy].every(v => typeof v === "string" && !!v) || (h.kind !== "record" && h.kind !== "file"))))
+        || (saved.sending !== undefined && (!object(saved.sending) || Object.values(saved.sending).some(v => typeof v !== "string")))
+        || (saved.handledRejections !== undefined && (!object(saved.handledRejections) || Object.values(saved.handledRejections).some((h) => !object(h) || typeof h.path !== "string" || typeof h.hash !== "string" || (h.kind !== "record" && h.kind !== "file")))))
+        return false;
+      return true;
+    };
+    if (!valid(saved)) throw new Error("Invalid sync-state.json; sync stopped and original state retained. Restore a valid backup before reloading.");
     return saved;
   }
   // Three ways to save sync-state.json, which is rewritten whole each time:
@@ -307,7 +311,7 @@ export default class NativeSync extends Component {
   async flush(quiet = false) {
     if (!this.dirty) return;
     try { await this.persist(); }
-    catch (e: any) { if (!quiet) throw e; this.log(`saving sync state failed: ${e?.code ?? "error"}`); }
+    catch (e: unknown) { if (!quiet) throw e; this.log(`saving sync state failed: ${errorInfo(e).code ?? "error"}`); }
   }
   durable(): Promise<void> {
     if (this.retired) return Promise.reject(Object.assign(new Error("Sync host stopped; state not written"), { code: "unloaded" }));
@@ -320,7 +324,7 @@ export default class NativeSync extends Component {
       })(); }, Math.min(100, Math.max(2, this.persistCost * 2)));
     });
   }
-  enqueue(work: () => Promise<any>) {
+  enqueue(work: () => Promise<unknown>) {
     // Stop admitting stream/command work as well as vault events. Already
     // admitted jobs still finish before handover's final scan and drain.
     if (!this.admitting) return Promise.resolve();
@@ -336,24 +340,24 @@ export default class NativeSync extends Component {
 
   // ---- ownership: .mdbase is private, never a mirrored collection path -------
   get markerPath() { return this.host.join(this.root, ".mdbase", "host.json"); }
-  async readMarker(): Promise<any> {
+  async readMarker(): Promise<unknown> {
     this.assertDiskPath(".mdbase/host.json");
     try {
-      const marker = JSON.parse(await this.host.readText(this.markerPath));
+      const marker: unknown = JSON.parse(await this.host.readText(this.markerPath));
       if (!marker || typeof marker !== "object" || Array.isArray(marker)) throw new Error("Invalid marker");
       return marker;
-    } catch (e: any) { if (e.code === "ENOENT") return null; throw new Error("Unreadable ownership marker; waiting for desktop/manual recovery"); }
+    } catch (e: unknown) { if (errorInfo(e).code === "ENOENT") return null; throw new Error("Unreadable ownership marker; waiting for desktop/manual recovery"); }
   }
-  async ownsMarker(m?: any) {
+  async ownsMarker(m?: unknown) {
     if (m === undefined) m = await this.readMarker();
     return this.markerMatches(m);
   }
-  markerMatches(m: any) {
-    return !!m && Number.isSafeInteger(this.data.markerSince) && m.host === "obsidian" && m.collection_id === (this.data.collectionId ?? null) && m.since_ms === this.data.markerSince;
+  markerMatches(m: unknown) {
+    return isObject(m) && Number.isSafeInteger(this.data.markerSince) && m.host === "obsidian" && m.collection_id === (this.data.collectionId ?? null) && m.since_ms === this.data.markerSince;
   }
   checkOwnership() {
     return this.host.checkOwnership(text => {
-      let marker: any = null;
+      let marker: unknown = null;
       try {
         marker = text === null ? null : JSON.parse(text);
         if (text !== null && (!marker || typeof marker !== "object" || Array.isArray(marker))) throw new Error("Invalid marker");
@@ -375,7 +379,7 @@ export default class NativeSync extends Component {
     if (this.unloaded) return;
     await this.host.writeAtomic(this.markerPath, JSON.stringify({ host: "obsidian", pid: this.host.processId, collection_id: this.data.collectionId ?? null, since_ms: this.data.markerSince, heartbeat_ms: Date.now() }), true);
   }
-  pauseForOwnership(e: any) {
+  pauseForOwnership(e: unknown) {
     if (!this.admitting) return;
     this.admitting = false; this.mirroring = false;
     this.setStatus("Another app is syncing this folder. Waiting for it."); this.fail("ownership", e);
@@ -409,16 +413,16 @@ export default class NativeSync extends Component {
   }
 
   // ---- iframe RPC ----------------------------------------------------------
-  call(method: string, ...args: any[]): Promise<any> {
+  call<Method extends NativeMethod>(method: Method, ...args: Parameters<NativeMethods[Method]>): Promise<NativeResult<Method>> {
     if (!this.bridge) return Promise.reject(new Error("SDK host is not running"));
     const id = this.nextCall++;
     return new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => { this.calls.delete(id); reject(Object.assign(new Error(`SDK ${method} timed out; outcome may be unknown`), { code: "outcome_unknown" })); }, 180_000);
-      this.calls.set(id, { resolve, reject, timer });
+      this.calls.set(id, { resolve: value => resolve(value as NativeResult<Method>), reject, timer });
       this.bridge!.postMessage({ type: "call", id, method, args });
     });
   }
-  async onMessage(e: MessageEvent) {
+  async onMessage(e: Pick<MessageEvent<PageMessage>, "origin" | "source" | "data">) {
     if (this.unloaded) return;
     if (e.origin !== this.origin || e.source !== this.frame?.contentWindow || !e.data) return;
     const m = e.data;
@@ -426,7 +430,7 @@ export default class NativeSync extends Component {
       case "hello": {
         if (this.bridge) return;
         const channel = new MessageChannel(); this.bridge = channel.port1;
-        channel.port1.onmessage = event => this.onMessage({ origin: this.origin, source: this.frame!.contentWindow, data: event.data } as MessageEvent);
+        channel.port1.onmessage = (event: MessageEvent<PageMessage>) => this.onMessage({ origin: this.origin, source: this.frame!.contentWindow, data: event.data });
         this.frame.contentWindow!.postMessage({ type: "connect" }, this.origin, [channel.port2]);
         this.log(`page up: origin=${m.origin} opfs=${m.opfs} secure=${m.isSecureContext}`);
         try { await this.checkOwnership(); } catch (e) { this.pauseForOwnership(e); return; }
@@ -436,8 +440,8 @@ export default class NativeSync extends Component {
       case "open-url": this.openSignIn(m.url); break;
       case "changes": {
         const paths = new Set<string>();
-        const changed = new Set(m.batch.changes.map((c: any) => c.id));
-        for (const c of m.batch.changes) if (this.validPath(c.path)) paths.add(c.path);
+        const changed = new Set(m.batch.changes.map(c => c.id));
+        for (const c of m.batch.changes) if (c.path && this.validPath(c.path)) paths.add(c.path);
         // Include the old path for moves and tombstones whose path is absent.
         for (const [p, k] of Object.entries(this.data.paths)) if (changed.has(k.id)) paths.add(p);
         this.requestReconcile(m.batch.reset ? undefined : paths, m.batch.cursor); break;
@@ -455,7 +459,7 @@ export default class NativeSync extends Component {
     }
   }
   async select(id: string) { await this.claim(id); await this.call("select", id); }
-  async onPhase(phase: any) {
+  async onPhase(phase: NativePhase) {
     // After a handover the SDK is stopped; its closing notices change nothing here.
     if (this.phase.kind === "handed_over") return;
     const was = this.phase; this.phase = phase;
@@ -492,18 +496,18 @@ export default class NativeSync extends Component {
     if (syncOffline(phase.sync) && !syncOffline(was.sync))
       new Notice("mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns.", 10000);
     if (this.admitting && (phase.kind === "opening" || phase.kind === "needs_unlock") && phase.collectionId) {
-      try { await this.claim(phase.collectionId); } catch (e) { this.pauseForOwnership(e); return; }
+      try { await this.claim(phase.collectionId ?? undefined); } catch (e) { this.pauseForOwnership(e); return; }
     }
     if (this.admitting && phase.kind === "choosing") {
-      const bound = phase.collections.find((c: { id: string }) => c.id === this.data.collectionId);
+      const bound = phase.collections?.find((c: { id: string }) => c.id === this.data.collectionId);
       if (bound) await this.select(bound.id);
-      else if (!this.data.collectionId && phase.collections.length === 1) await this.select(phase.collections[0].id);
+      else if (!this.data.collectionId && phase.collections?.length === 1) await this.select(phase.collections[0].id);
     }
     // select() can publish opening/ready before its promise settles. The older
     // choosing handler must not subsequently turn off the now-ready mirror.
     if (this.unloaded || this.phase !== phase) return;
     if (this.admitting && phase.kind === "ready" && (was.kind !== "ready" || was.collectionId !== phase.collectionId)) {
-      try { await this.claim(phase.collectionId); } catch (e) { this.pauseForOwnership(e); return; }
+      try { await this.claim(phase.collectionId ?? undefined); } catch (e) { this.pauseForOwnership(e); return; }
       if (await this.needsMergeConfirmation(phase)) return;
       await this.startMirror();
     }
@@ -513,7 +517,7 @@ export default class NativeSync extends Component {
    * be combined in both directions. That needs the user's say-so: the single
    * collection is picked automatically, so it may not be the one they meant.
    */
-  async needsMergeConfirmation(phase: any): Promise<boolean> {
+  async needsMergeConfirmation(phase: NativePhase): Promise<boolean> {
     if (this.data.cursor !== undefined || Object.keys(this.data.paths).length || this.data.mergeConfirmed === phase.collectionId) return false;
     const remotes = await this.remoteAll(); // also reads the layout
     if (this.unloaded || this.phase !== phase) return true;
@@ -521,6 +525,7 @@ export default class NativeSync extends Component {
     const local = (await this.localPaths()).filter(p => this.kindOf(p) !== "resource").length;
     if (!remote || !local) return false;
     const name = phase.collections?.find((c: { id: string }) => c.id === phase.collectionId)?.name ?? "this collection";
+    if (!phase.collectionId) throw new Error("Missing collection identity");
     this.merge = { collectionId: phase.collectionId, name, local, remote };
     this.log(`waiting for merge confirmation: local=${local} remote=${remote}`);
     this.setStatus(`Waiting for you: this vault and “${name}” both have notes.`);
@@ -533,12 +538,12 @@ export default class NativeSync extends Component {
    */
   async unlock(secret: { password: string } | { recoveryKey: string }) {
     const phase = this.phase;
-    if (phase.kind !== "needs_unlock" || phase.unlock?.unlocking) return;
+    if (phase.kind !== "needs_unlock" || phase.unlock?.unlocking || !phase.collectionId) return;
     await this.call("unlock", phase.collectionId, secret);
   }
   /** Read again how the account unlocks (after setting a password elsewhere). */
   async recheckLock() {
-    if (this.phase.kind === "needs_unlock") await this.select(this.phase.collectionId);
+    if (this.phase.kind === "needs_unlock" && this.phase.collectionId) await this.select(this.phase.collectionId);
   }
   async confirmMerge() {
     const m = this.merge, phase = this.phase;
@@ -553,7 +558,11 @@ export default class NativeSync extends Component {
   }
   async chooseAnother() {
     if (!this.canChooseAnother) return;
-    const current = this.merge?.collectionId ?? this.phase.collectionId, plugin = this;
+    const current = this.merge?.collectionId ?? this.phase.collectionId;
+    const select = (id: string) => this.select(id);
+    const addCollection = () => this.call("addCollection");
+    const reset = async () => { this.data.collectionId = undefined; this.merge = null; await this.persist(); await this.writeMarker(); this.setStatus("Getting your collection ready."); };
+    const failed = (error: unknown) => this.fail("select", error);
     const items: { id: string | null; name: string; private?: boolean }[] = [
       ...(this.phase.collections ?? []).filter((c: { id: string }) => c.id !== current),
       { id: null, name: "New collection…" },
@@ -563,10 +572,9 @@ export default class NativeSync extends Component {
       renderSuggestion(c: { id: string | null; name: string; private?: boolean }, el: HTMLElement) { renderCollectionChoice(c, el); }
       onChooseSuggestion(c: { id: string | null; name: string }) {
         void (async () => {
-          plugin.data.collectionId = undefined; plugin.merge = null; await plugin.persist(); await plugin.writeMarker();
-          plugin.setStatus("Getting your collection ready.");
-          await (c.id ? plugin.select(c.id) : plugin.call("addCollection"));
-        })().catch(e => plugin.fail("select", e));
+          await reset();
+          await (c.id ? select(c.id) : addCollection());
+        })().catch(failed);
       }
     })(this.app)).open();
   }
@@ -606,7 +614,7 @@ export default class NativeSync extends Component {
         await this.host.remove(this.host.join(incoming, entry.name));
         this.log("removed an interrupted download's staging copy");
       }
-    } catch (e: any) { this.log(`staging cleanup skipped: ${e?.message ?? e}`); }
+    } catch (e: unknown) { this.log(`staging cleanup skipped: ${errorInfo(e).message ?? String(e)}`); }
   }
   async signIn() {
     if (this.phase.kind === "authorizing" && this.signInUrl) {
@@ -696,11 +704,12 @@ export default class NativeSync extends Component {
       .then(() => this.log("sign-in opened in system browser"), (e: Error) => this.fail("open sign-in", e));
   }
   choose() {
-    const items = this.phase.collections ?? [], plugin = this;
-    withPrivateHint(new (class extends SuggestModal<any> {
-      getSuggestions(q: string) { return items.filter((c: any) => c.name.toLowerCase().includes(q.toLowerCase())); }
-      renderSuggestion(c: any, el: HTMLElement) { renderCollectionChoice(c, el); }
-      onChooseSuggestion(c: any) { void plugin.select(c.id).catch(e => plugin.fail("select", e)); }
+    const items = this.phase.collections ?? [];
+    const select = (id: string) => { void this.select(id).catch(error => this.fail("select", error)); };
+    withPrivateHint(new (class extends SuggestModal<NonNullable<NativePhase["collections"]>[number]> {
+      getSuggestions(q: string) { return items.filter((c: NonNullable<NativePhase["collections"]>[number]) => c.name.toLowerCase().includes(q.toLowerCase())); }
+      renderSuggestion(c: NonNullable<NativePhase["collections"]>[number], el: HTMLElement) { renderCollectionChoice(c, el); }
+      onChooseSuggestion(c: NonNullable<NativePhase["collections"]>[number]) { select(c.id); }
     })(this.app)).open();
   }
 
@@ -727,10 +736,10 @@ export default class NativeSync extends Component {
       const changed = JSON.stringify(next) !== JSON.stringify(this.inclusion);
       if (next === null || validInclusion(next)) this.inclusion = next;
       if (changed) await this.forgetSkipped();
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Without it this device syncs every file type, as before; Connect still
       // refuses what its policy excludes, and those show as not synced.
-      this.log(`collection file policy unavailable: ${e?.code ?? "error"}`);
+      this.log(`collection file policy unavailable: ${errorInfo(e).code ?? "error"}`);
       this.inclusion ??= null;
     }
   }
@@ -766,15 +775,15 @@ export default class NativeSync extends Component {
   activityFile() { return this.host.join(this.pluginDir, "sync-activity.json"); }
   async readActivity() {
     try {
-      const saved = JSON.parse(await this.host.readText(this.activityFile()));
-      if (validActivity(saved?.activity)) this.activity = saved.activity;
-      if (typeof saved?.lastSynced === "number") this.lastSynced = saved.lastSynced;
+      const saved: unknown = JSON.parse(await this.host.readText(this.activityFile()));
+      if (isObject(saved) && validActivity(saved.activity)) this.activity = saved.activity;
+      if (isObject(saved) && typeof saved.lastSynced === "number") this.lastSynced = saved.lastSynced;
     } catch { /* no history yet, or unreadable: start a new one */ }
   }
   async writeActivity() {
     try {
       await this.host.writeAtomic(this.activityFile(), JSON.stringify({ activity: this.activity, lastSynced: this.lastSynced }));
-    } catch (e: any) { this.log(`activity not saved: ${e?.code ?? "error"}`); }
+    } catch (e: unknown) { this.log(`activity not saved: ${errorInfo(e).code ?? "error"}`); }
   }
   /** Read the layout from this vault's mdbase.yaml, else the collection's. */
   async readLayout(remoteConfig?: string) {
@@ -790,10 +799,10 @@ export default class NativeSync extends Component {
     return !!p && p === p.normalize("NFC") && !p.includes("\\") && !p.startsWith("/") && p.split("/").every(x => !!x && x !== "." && x !== ".." && ![".mdbase", this.app.vault.configDir, ".trash", ".git"].includes(x));
   }
   vaultPath(p: string) { if (!this.validPath(p)) throw new Error("Unsafe/private collection path refused"); return p; }
-  editorViews(p: string): any[] {
+  editorViews(p: string): MarkdownView[] {
     const vp = this.vaultPath(p);
-    return this.app.workspace?.getLeavesOfType("markdown").flatMap(({ view }: any) =>
-      view.file?.path === vp && view.editor && typeof view.getViewData === "function" ? [view] : []) ?? [];
+    return this.app.workspace?.getLeavesOfType("markdown").map(({ view }) => view).filter((view): view is MarkdownView =>
+      "file" in view && isObject(view.file) && view.file.path === vp && "editor" in view && !!view.editor && "getViewData" in view && typeof view.getViewData === "function") ?? [];
   }
   // Discovery alone is insufficient: known/remote paths can be replaced by a
   // symlink after discovery, including any ancestor directory. Never follow it.
@@ -801,8 +810,8 @@ export default class NativeSync extends Component {
   accessiblePath(p: string) {
     if (!this.validPath(p)) return false;
     try { this.assertDiskPath(p); return true; }
-    catch (e: any) {
-      if (e.code !== "unsafe_symlink") throw e;
+    catch (e: unknown) {
+      if (errorInfo(e).code !== "unsafe_symlink") throw e;
       if (!this.warnedPaths.has(p)) {
         this.warnedPaths.add(p); this.log(`symlink path skipped: ${JSON.stringify(p)}`);
         new Notice("mdbase: a symlink in the mirror was skipped. Its target will not be read or changed.", 10000);
@@ -818,14 +827,14 @@ export default class NativeSync extends Component {
       const unsupportedEncoding = this.kindOf(p) !== "file" && !validUtf8(diskBytes);
       // Never let an editor's replacement-character decode masquerade as the
       // original invalid disk bytes. Snapshot buffers AFTER asynchronous IO.
-      const buffers = !unsupportedEncoding && p.endsWith(".md") ? this.editorViews(p).map(v => v.getViewData() as string) : [];
+      const buffers = !unsupportedEncoding && p.endsWith(".md") ? this.editorViews(p).map(v => v.getViewData()) : [];
       if (new Set(buffers).size > 1) throw new Error("Open editor buffers disagree; local state retained");
       const bytes = buffers.length ? encode(buffers[0]) : diskBytes;
       if (!bytes) return undefined;
       return { f: f instanceof TFile ? f : undefined, bytes, hash: await this.host.hash(bytes), unsupportedEncoding };
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Disk watchers can expose the old TFile briefly after an external mv.
-      if (e.code === "ENOENT" || e.code === "EISDIR") return undefined;
+      if (errorInfo(e).code === "ENOENT" || errorInfo(e).code === "EISDIR") return undefined;
       throw e;
     }
   }
@@ -848,21 +857,21 @@ export default class NativeSync extends Component {
     };
     await walk(""); return out;
   }
-  remote(r: any, kind: ItemKind): Remote {
-    return kind === "file"
+  remote(r: WireItem, kind: ItemKind): Remote {
+    return "digest" in r
       ? { ...r, kind, revision: r.digest, hash: r.digest }
-      : { ...r, kind, revision: r.revision, hash: hash(encode(r.document)) };
+      : { ...r, kind, revision: r.revision, hash: hash(encode("document" in r ? r.document ?? "" : "")) };
   }
   async remoteAll(affected?: Set<string>): Promise<Map<string, Remote>> {
     const out = new Map<string, Remote>(), identities = new Set<string>();
     // Definitions are few and the change stream never reports them, so every
     // pass lists them all. Record/file lookups must not be asked for them.
-    const resources: any[] = await this.call("resourcesAll");
+    const resources = await this.call("resourcesAll");
     await this.readLayout(resources.find(r => r.path === CONFIG_PATH)?.document);
     const lookup = affected && [...affected].filter(p => this.validPath(p) && !["resource", "excluded"].includes(this.kindOf(p)));
-    const selected: any[] | undefined = lookup ? (lookup.length ? await this.call("at", lookup) : []) : undefined;
-    const records: any[] = selected ? selected.filter(r => r.kind === "record") : await this.call("all");
-    const files: any[] = selected ? selected.filter(r => r.kind === "file") : await this.call("filesAll");
+    const selected = lookup ? (lookup.length ? await this.call("at", lookup) : []) : undefined;
+    const records = selected ? selected.filter(r => r.kind === "record") : await this.call("all");
+    const files = selected ? selected.filter(r => r.kind === "file") : await this.call("filesAll");
     for (const [rows, kind] of [[resources, "resource"], [records, "record"], [files, "file"]] as const) for (const row of rows) {
       if (!this.validPath(row.path)) continue;
       const identity = `${kind}:${row.id}`;
@@ -904,25 +913,25 @@ export default class NativeSync extends Component {
   }
   async moveLocal(from: string, to: string, k: Synced, r: Remote) {
     await this.assertMirror();
-    let next: any;
+    let next: WireItem;
     try {
       next = r.kind === "record"
-        ? await this.call("replace", r.id, { path: from, doc: r.document }, { path: to, doc: r.document }, r.revision)
+        ? await this.call("replace", r.id, { path: from, doc: r.document! }, { path: to, doc: r.document! }, r.revision)
         : await this.call("fileMove", r.id, to, r.revision);
-    } catch (e: any) {
+    } catch (e: unknown) { const failure = errorInfo(e);
       // A rejected path-only record CAS is still a ledger write. Preserve its
       // exact submitted document/target before acknowledging it, just as for an
       // edit rejection. Usually the user's moved file itself is the copy, so do
       // not manufacture a second identical conflict file unnecessarily.
-      if (isConflict(e) && e.mutationId && r.kind === "record") {
+      if (isConflict(e) && failure.mutationId && r.kind === "record") {
         const bytes = encode(r.document!), submitted = { f: undefined, bytes, hash: hash(bytes), unsupportedEncoding: false };
         const local = await this.local(to), target = (await this.remoteAll()).get(to);
         if (local?.hash === submitted.hash && (!target || (target.kind === "record" && target.hash === submitted.hash && target.confirmed === true))) {
           const h = { path: from, hash: submitted.hash, kind: "record" as const, copy: to, handled: false };
-          (this.data.handledRejections ??= {})[e.mutationId] = h; await this.persist();
+          (this.data.handledRejections ??= {})[failure.mutationId] = h; await this.persist();
           if (!target) await this.push(to, submitted);
           h.handled = true; await this.persist();
-        } else await this.preserveConflict(to, submitted, e.mutationId);
+        } else await this.preserveConflict(to, submitted, failure.mutationId);
         await this.acknowledgeHandled();
       }
 
@@ -965,7 +974,7 @@ export default class NativeSync extends Component {
         }
         if (nextCursor !== undefined && nextCursor !== this.data.cursor) { this.data.cursor = nextCursor; await this.persist(); }
         this.reconcileRetryDelay = 250;
-      } catch (e: any) {
+      } catch (e: unknown) {
         // Never skip a failed batch by committing a later cursor after a partial
         // pass. The next trigger must reconcile a full snapshot before advancing.
         this.reconcileFull = true; this.reconcileCursor ??= nextCursor; this.reconcileImmediate ||= now;
@@ -974,7 +983,7 @@ export default class NativeSync extends Component {
         // write. Coalesce new events and retry a fresh full scan with bounded
         // backoff, including when no later event arrives. Never commit a partial
         // snapshot or advance the stream cursor, and don't spam failure Notices.
-        if (e?.code === "invalid_request" && ["cursor_stale", "cursor_expired"].includes(e?.reason)) {
+        if (errorInfo(e).code === "invalid_request" && ["cursor_stale", "cursor_expired"].includes(errorInfo(e).reason ?? "")) {
           if (this.reconcileRetryDelay === 250) this.log("snapshot query invalidated; retrying full scan with cursor retained");
           // Not up to date until a full pass completes, whatever the SDK says (QA-2).
           this.passStatus(CATCHING_UP);
@@ -1007,12 +1016,12 @@ export default class NativeSync extends Component {
     await this.acknowledgeHandled(false, remotes);
     const failedBefore = new Set(Object.keys(this.data.pathFailures ?? {}));
     // One path's failure is recorded for the Sync tab; the pass carries on.
-    const notSynced = async (p: string, signature: string, e: any): Promise<ActivityKind> => {
+    const notSynced = async (p: string, signature: string, e: unknown): Promise<ActivityKind> => {
       if (!this.mirroring || this.unloaded) throw e;
       await this.checkOwnership();
-      (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: e?.code, reason: e?.reason, unknown: /unknown/.test(`${e?.code} ${e?.reason}`), ...(Array.isArray(e?.issues) ? { issues: e.issues } : {}) };
+      (this.data.pathFailures ??= Object.create(null) as NonNullable<Data["pathFailures"]>)[p] = { signature, code: errorInfo(e).code, reason: errorInfo(e).reason, unknown: /unknown/.test(`${errorInfo(e).code} ${errorInfo(e).reason}`), ...(Array.isArray(errorInfo(e).issues) ? { issues: errorInfo(e).issues } : {}) };
       await this.persist();
-      this.log(`not synced: ${JSON.stringify(p)} ${[e?.code, e?.reason].filter(Boolean).join(" ")}`);
+      this.log(`not synced: ${JSON.stringify(p)} ${[errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ")}`);
       return "not_synced";
     };
     if (affected) {
@@ -1072,7 +1081,7 @@ export default class NativeSync extends Component {
       }
       delete this.data.pathFailures?.[from];
       delete this.data.paths[from]; await this.persist();
-      } catch (e: any) {
+      } catch (e: unknown) {
         blockedSources.add(from); blockedTargets.add(r.path);
         await notSynced(from, signature, e);
       }
@@ -1089,10 +1098,10 @@ export default class NativeSync extends Component {
     const unreadable = new Set<string>();
     for (const p of paths) {
       try { const l = await this.local(p); if (l) locals.set(p, { hash: l.hash, unsupportedEncoding: l.unsupportedEncoding }); }
-      catch (e: any) {
+      catch (e: unknown) {
         await this.assertMirror(); unreadable.add(p);
-        (this.data.pathFailures ??= Object.create(null))[p] = { signature: "unreadable", code: e?.code ?? "unreadable" };
-        await this.persist(); this.log(`read failed: ${JSON.stringify(p)} ${e?.code ?? ""}`);
+        (this.data.pathFailures ??= Object.create(null) as NonNullable<Data["pathFailures"]>)[p] = { signature: "unreadable", code: errorInfo(e).code ?? "unreadable" };
+        await this.persist(); this.log(`read failed: ${JSON.stringify(p)} ${errorInfo(e).code ?? ""}`);
       }
     }
     if (!affected) for (const p of Object.keys(this.data.pathFailures ?? {})) if (!paths.has(p)) { delete this.data.pathFailures![p]; await this.persist(); }
@@ -1127,7 +1136,7 @@ export default class NativeSync extends Component {
         }
       }
     }
-    const pending = this.data.pendingPaths ??= Object.create(null);
+    const pending = this.data.pendingPaths ??= Object.create(null) as NonNullable<Data["pendingPaths"]>;
     const unsettled = new Set([...missing.map(m => m.path), ...added.map(a => a.path)].filter(p =>
       (!this.data.paths[p] && locals.has(p) && !remotes.has(p)) || (!!this.data.paths[p] && !locals.has(p))));
     let pendingChanged = false;
@@ -1157,7 +1166,7 @@ export default class NativeSync extends Component {
       const l = await this.local(p), r = blockedTargets.has(p) ? undefined : remotes.get(p);
       let k = this.data.paths[p];
       // Over the collection's size limit: neither sent nor fetched, never deleted.
-      if ((r?.kind ?? this.kindOf(p)) === "file" && collectionExcludes(p, "file", this.inclusion, l?.bytes.length ?? (r as any)?.size)) continue;
+      if ((r?.kind ?? this.kindOf(p)) === "file" && collectionExcludes(p, "file", this.inclusion, l?.bytes.length ?? r?.size)) continue;
       if (l?.unsupportedEncoding) {
         const key = `encoding:${p}:${l.hash}`;
         if (!this.warnedPaths.has(key)) {
@@ -1165,7 +1174,7 @@ export default class NativeSync extends Component {
         }
         const signature = JSON.stringify([l.hash, r?.id, r?.kind, r?.revision]);
         if (this.data.pathFailures?.[p]?.signature !== signature) {
-          (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: "unsupported_encoding" }; await this.persist();
+          (this.data.pathFailures ??= Object.create(null) as NonNullable<Data["pathFailures"]>)[p] = { signature, code: "unsupported_encoding" }; await this.persist();
         }
         continue;
       }
@@ -1200,19 +1209,19 @@ export default class NativeSync extends Component {
         case "push":
           if (kind === "record" && !recovering) { sends.push({ p, signature }); continue; }
           try { await this.push(p, l!, r); }
-          catch (e: any) {
+          catch (e: unknown) { const failure = errorInfo(e);
             if (!isConflict(e)) throw e;
             // Fetch a fresh view after a live revision rejection and use the
             // identical preserve-local/pull-remote rule (no blind retry).
             const fresh = (await this.remoteAll()).get(p);
-            await this.conflict(p, await this.local(p), fresh, e.mutationId ? { mutationId: e.mutationId, local: l! } : undefined);
+            await this.conflict(p, await this.local(p), fresh, failure.mutationId ? { mutationId: failure.mutationId, local: l! } : undefined);
             if (this.data.uploads?.[p]) await this.clearUpload(p);
             outcome = "conflict";
           }
           break;
         case "deleteRemote":
           try { await this.call(r!.kind === "record" ? "remove" : "fileDelete", r!.id, r!.revision); delete this.data.paths[p]; await this.persist(); }
-          catch (e: any) {
+          catch (e: unknown) { const failure = errorInfo(e);
             if (!isConflict(e)) throw e;
             const fresh = (await this.remoteAll()).get(p);
             if (fresh) {
@@ -1220,8 +1229,8 @@ export default class NativeSync extends Component {
               // is restoration of the winning remote bytes, not a new copy.
               // Journal that exact proof before IO; a failed pull cannot clear
               // the ledger, and crash recovery still requires confirmed bytes.
-              const h = e.mutationId ? { path: p, hash: fresh.hash!, kind: fresh.kind === "file" ? "file" as const : "record" as const, copy: p, handled: false } : undefined;
-              if (h) { (this.data.handledRejections ??= {})[e.mutationId] = h; await this.persist(); }
+              const h = failure.mutationId ? { path: p, hash: fresh.hash!, kind: fresh.kind === "file" ? "file" as const : "record" as const, copy: p, handled: false } : undefined;
+              if (h && failure.mutationId) { (this.data.handledRejections ??= {})[failure.mutationId] = h; await this.persist(); }
               await this.pull(p, fresh);
               if (h && fresh.confirmed === true) { h.handled = true; await this.persist(); }
               outcome = "downloaded";
@@ -1237,7 +1246,7 @@ export default class NativeSync extends Component {
         case "forget": delete this.data.paths[p]; await this.persist(); break;
         case "conflict": await this.conflict(p, l, r); break;
       }
-      } catch (e: any) { outcome = await notSynced(p, signature, e); }
+      } catch (e: unknown) { outcome = await notSynced(p, signature, e); }
       settled(p, outcome);
     }
     await this.sendNotes(sends, remotes, settled, notSynced);
@@ -1264,10 +1273,10 @@ export default class NativeSync extends Component {
    * conflict waits until the others have finished, then is resolved alone,
    * exactly as when sends went one by one.
    */
-  async sendNotes(sends: { p: string; signature: string }[], remotes: Map<string, Remote>, settled: (p: string, outcome: ActivityKind | null) => void, notSynced: (p: string, signature: string, e: any) => Promise<ActivityKind>) {
+  async sendNotes(sends: { p: string; signature: string }[], remotes: Map<string, Remote>, settled: (p: string, outcome: ActivityKind | null) => void, notSynced: (p: string, signature: string, e: unknown) => Promise<ActivityKind>) {
     if (!sends.length) return;
     type Local = NonNullable<Awaited<ReturnType<NativeSync["local"]>>>;
-    const conflicts: { p: string; signature: string; e: any; l: Local }[] = [];
+    const conflicts: { p: string; signature: string; e: unknown; l: Local }[] = [];
     let next = 0, done = 0, shown = 0, stop: Error | undefined;
     const sendOne = async ({ p, signature }: { p: string; signature: string }) => {
       let l: Awaited<ReturnType<NativeSync["local"]>>;
@@ -1279,7 +1288,7 @@ export default class NativeSync extends Component {
         const r = remotes.get(p);
         if (!l || l.unsupportedEncoding || reconcileDecision(this.data.paths[p], l.hash, r) !== "push") return;
         await this.push(p, l, r);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (l && isConflict(e)) { conflicts.push({ p, signature, e, l }); return; }
         settled(p, await notSynced(p, signature, e));
         return;
@@ -1302,8 +1311,8 @@ export default class NativeSync extends Component {
         // A fresh view after the rejection, then the same preserve-local and
         // pull-remote rule as any conflict (no blind retry).
         const fresh = (await this.remoteAll()).get(p);
-        await this.conflict(p, await this.local(p), fresh, e.mutationId ? { mutationId: e.mutationId, local: l } : undefined);
-      } catch (error: any) { outcome = await notSynced(p, signature, error); }
+        await this.conflict(p, await this.local(p), fresh, errorInfo(e).mutationId! ? { mutationId: errorInfo(e).mutationId!, local: l } : undefined);
+      } catch (error: unknown) { outcome = await notSynced(p, signature, error); }
       settled(p, outcome);
     }
   }
@@ -1337,10 +1346,10 @@ export default class NativeSync extends Component {
       }
       case "push":
         try { await this.push(p, l!, r); return true; }
-        catch (e: any) { if (isConflict(e)) throw conflict(); throw e; }
+        catch (e: unknown) { if (isConflict(e)) throw conflict(); throw e; }
       case "deleteRemote":
         try { await this.call("resourceDelete", p, r!.revision); delete this.data.paths[p]; await this.persist(); return true; }
-        catch (e: any) { if (isConflict(e)) throw conflict(); throw e; }
+        catch (e: unknown) { if (isConflict(e)) throw conflict(); throw e; }
       case "deleteLocal": {
         const latest = await this.local(p);
         if (latest && latest.hash !== l?.hash) throw conflict();
@@ -1443,7 +1452,7 @@ export default class NativeSync extends Component {
       return this.pull(p, r, latest.hash);
     }
     try { await this.put(p, bytes, latest?.hash); }
-    catch (e: any) { if (e.code === "local_changed") return this.pull(p, r, latest?.hash); throw e; }
+    catch (e: unknown) { if (errorInfo(e).code === "local_changed") return this.pull(p, r, latest?.hash); throw e; }
     this.remember(p, r, hash(bytes));
   }
   async push(p: string, l: NonNullable<Awaited<ReturnType<NativeSync["local"]>>>, r?: Remote) {
@@ -1451,25 +1460,25 @@ export default class NativeSync extends Component {
     const kind = this.kindOf(p);
     if (kind === "excluded") throw new Error("Excluded path is never sent");
     if (r && r.kind !== kind) throw new Error("Remote item kind differs from extension; manual resolution required");
-    let next: any;
+    let next: WireItem;
     if (kind !== "file") {
       const doc = decode(l.bytes);
       if (!validUtf8(l.bytes)) throw Object.assign(new Error("Text is not valid UTF-8; local bytes retained"), { code: "unsupported_encoding" });
       // Base is the replica's current exact document, not a stale cached body.
-      (this.data.sending ??= Object.create(null))[p] = l.hash; await this.durable();
+      (this.data.sending ??= Object.create(null) as NonNullable<Data["sending"]>)[p] = l.hash; await this.durable();
       await this.assertMirror();
       try {
         next = kind === "resource"
           ? await this.call("resourcePut", p, doc, r?.revision)
-          : r ? await this.call("replace", r.id, { path: r.path, doc: r.document }, { path: p, doc }, r.revision) : await this.call("create", p, doc);
-      } catch (e: any) {
+          : r ? await this.call("replace", r.id, { path: r.path, doc: r.document! }, { path: p, doc }, r.revision) : await this.call("create", p, doc);
+      } catch (e: unknown) {
         // A definite refusal or conflict means the text didn't land.
-        if (isRefusal(e) || isConflict(e)) { delete this.data.sending![p]; await this.persist(); }
+        if (isRefusal(e) || isConflict(e)) { delete this.data.sending[p]; await this.persist(); }
         throw e;
       }
-      delete this.data.sending![p]; // remember() below persists
+      delete this.data.sending[p]; // remember() below persists
     } else {
-      const uploads = this.data.uploads ??= Object.create(null);
+      const uploads = this.data.uploads ??= Object.create(null) as NonNullable<Data["uploads"]>;
       if (!uploads[p]) {
         const identity = { transferId: this.host.uuid(), mutationId: this.host.uuid(), hash: l.hash, fileId: r?.id, revision: r?.revision };
         this.assertDiskPath(".mdbase/uploads");
@@ -1478,11 +1487,11 @@ export default class NativeSync extends Component {
         uploads[p] = identity; await this.persist(); // bytes and identity precede the first send
       }
       try { next = await this.finishUpload(p); }
-      catch (e: any) { if (isRefusal(e)) await this.clearUpload(p); throw e; }
+      catch (e: unknown) { if (isRefusal(e)) await this.clearUpload(p); throw e; }
     }
     // Only identity and revision are kept; a note's reply may omit its text.
-    this.remember(p, kind === "file" ? this.remote(next, kind) : { ...next, kind }, l.hash);
-    this.log(`pushed ${kind} (${l.bytes.length} bytes)${next?.via ? ` via ${next.via}` : ""}`);
+    this.remember(p, this.remote(next, kind), l.hash);
+    this.log(`pushed ${kind} (${l.bytes.length} bytes)${"via" in next && next.via ? ` via ${next.via}` : ""}`);
   }
   uploadPath(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid upload identity");
@@ -1512,15 +1521,15 @@ export default class NativeSync extends Component {
       // untouched and the path pass sends it the right way (or not at all).
       if (this.kindOf(p) !== "file") { this.log(`dropped upload for non-file path ${JSON.stringify(p)}`); await this.clearUpload(p); continue; }
       try { await this.finishUpload(p); }
-      catch (e: any) {
+      catch (e: unknown) { const failure = errorInfo(e);
         // Refused outright: resending the same bytes can't succeed. The path
         // pass resends only if they change, and records why in the Sync tab.
-        if (isRefusal(e)) { this.log(`upload refused for ${JSON.stringify(p)}: ${e.code}`); await this.clearUpload(p); continue; }
-        if (!isConflict(e) || !e.mutationId) throw e;
+        if (isRefusal(e)) { this.log(`upload refused for ${JSON.stringify(p)}: ${failure.code}`); await this.clearUpload(p); continue; }
+        if (!isConflict(e) || !failure.mutationId) throw e;
         const intent = this.data.uploads![p];
         const bytes = await this.host.readBytes(this.uploadPath(intent.transferId));
         const submitted = { bytes, hash: intent.hash, f: undefined, unsupportedEncoding: false };
-        await this.conflict(p, await this.local(p), (await this.remoteAll()).get(p), { mutationId: e.mutationId, local: submitted });
+        await this.conflict(p, await this.local(p), (await this.remoteAll()).get(p), { mutationId: failure.mutationId, local: submitted });
         await this.clearUpload(p);
       }
     }
@@ -1531,7 +1540,7 @@ export default class NativeSync extends Component {
     await this.host.stageDownload({
       directory: this.host.join(this.root, ".mdbase/incoming"), digest: r.digest!,
       next: () => this.call("downloadNext", token),
-      close: () => this.call("downloadClose", token),
+      close: async () => { await this.call("downloadClose", token); },
       publish: async staged => {
         const latest = await this.local(p);
         if (latest && latest.hash !== expectedHash && latest.hash !== r.digest) await this.preserveConflict(p, latest);
@@ -1555,7 +1564,7 @@ export default class NativeSync extends Component {
       if (arguments.length > 1 && current !== expectedHash) throw Object.assign(new Error("Local file changed before delete; bytes retained"), { code: "local_changed" });
       await this.assertMirror(); this.assertDiskPath(p);
       await this.host.remove(this.host.join(this.root, p));
-    } catch (e: any) { if (e.code !== "ENOENT") throw e; }
+    } catch (e: unknown) { if (errorInfo(e).code !== "ENOENT") throw e; }
     delete this.data.paths[p]; await this.persist();
     } finally { this.writingPaths.delete(p); }
   }
@@ -1618,18 +1627,18 @@ export default class NativeSync extends Component {
       const p = Object.entries(this.data.paths).find(([, k]) => e.records.includes(k.id))?.[0] ?? "unknown path";
       return `${p} — ${e.code} — ${e.mutationId}`;
     };
-    const plugin = this;
+    const discard = (entry: typeof entries[number]) => {
+      void this.enqueue(async () => {
+        const ok = await this.call("acknowledge", entry.mutationId);
+        delete this.data.handledRejections?.[entry.mutationId]; await this.persist();
+        this.log(`rejected write discarded by user: mutationId=${entry.mutationId} problem=${entry.code} ok=${ok}`);
+        new Notice(ok ? "mdbase: rejected write discarded" : "mdbase: discard failed");
+      }).catch(error => this.fail("discard rejected", error));
+    };
     new (class extends SuggestModal<typeof entries[number]> {
       getSuggestions(q: string) { return entries.filter(e => label(e).toLowerCase().includes(q.toLowerCase())); }
       renderSuggestion(e: typeof entries[number], el: HTMLElement) { el.setText(`Discard: ${label(e)}`); }
-      onChooseSuggestion(e: typeof entries[number]) {
-        void plugin.enqueue(async () => {
-          const ok = await plugin.call("acknowledge", e.mutationId);
-          delete plugin.data.handledRejections?.[e.mutationId]; await plugin.persist();
-          plugin.log(`rejected write discarded by user: mutationId=${e.mutationId} problem=${e.code} ok=${ok}`);
-          new Notice(ok ? "mdbase: rejected write discarded" : "mdbase: discard failed");
-        }).catch(err => plugin.fail("discard rejected", err));
-      }
+      onChooseSuggestion(e: typeof entries[number]) { discard(e); }
     })(this.app).open();
   }
   async acknowledgeHandled(explicit = false, remotes?: Map<string, Remote>) {
@@ -1645,7 +1654,7 @@ export default class NativeSync extends Component {
       const local = h?.copy ? await this.local(h.copy) : undefined;
       // No path/name heuristic can prove which bytes a legacy CAS refused.
       // Only our journal binds this mutation to the exact preserved bytes.
-      if (!h || (!h.handled && !(copy?.kind === h.kind && copy.confirmed === true && copy.hash === h.hash && local?.hash === h.hash))) {
+      if (!h || (!h.handled && !(copy && copy.kind === h.kind && copy.confirmed === true && copy.hash === h.hash && local?.hash === h.hash))) {
         if (explicit) this.log(`rejected write retained: mutationId=${e.mutationId}; preservation unproven`);
         continue;
       }
@@ -1725,15 +1734,15 @@ export default class NativeSync extends Component {
     console.debug("[mdbase]", line);
   }
   /** `whole`: `userMessage` is already the full status sentence (a stop the sync engine explained). */
-  fail(what: string, e: any, userMessage?: string, whole = false) {
+  fail(what: string, e: unknown, userMessage?: string, whole = false) {
     // Calls cut off by our own unload are not failures; the next start resumes.
     if (this.unloaded) { this.log(`stopped during ${what} (plugin unloading)`); return; }
     // Do not log arbitrary mutation error bodies: they can contain documents.
-    const detail = [e?.code, e?.reason].filter(Boolean).join(" ") || (what === "startup" || what === "ownership" || what === "start" ? this.safeText(e?.message ?? "error") : "operation failed; local state retained");
-    if (e?.code === "collection_bound") userMessage = "This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing.";
+    const detail = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ") || (what === "startup" || what === "ownership" || what === "start" ? this.safeText(errorInfo(e).message ?? "error") : "operation failed; local state retained");
+    if (errorInfo(e).code === "collection_bound") userMessage = "This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing.";
     if (what === "ownership" && !userMessage) userMessage = "Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.";
     // Plain words for the status; the code stays for support, and the log keeps the detail.
-    const code = [e?.code, e?.reason].filter(Boolean).join(" ");
+    const code = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ");
     const reason = userMessage ?? (what === "startup" || what === "start" ? detail : `Something went wrong${code ? ` (${code})` : ""}. Your files here are untouched`);
     this.setStatus(whole && userMessage ? userMessage : failedText(reason));
     this.log(`FAILED ${what}: ${detail}`); new Notice(`mdbase: ${userMessage ?? `${what}: ${detail}`}`, 10000);

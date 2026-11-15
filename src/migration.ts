@@ -1,3 +1,4 @@
+import legacyConfig from "./legacyConfig.json" with { type: "json" };
 import {
   normalizePath,
   parseYaml,
@@ -587,8 +588,7 @@ function configForMatching(raw: Dict, version: string): MdbaseConfig {
       exclude: Array.isArray(settings.exclude)
         ? settings.exclude.filter((value): value is string => typeof value === "string")
         // This is collection configuration data, not Obsidian's runtime config path.
-        // eslint-disable-next-line obsidianmd/hardcoded-config-path -- Preserve the v0.2 collection-format default during migration.
-        : ["_types", ".obsidian", ".git", ".mdbase"],
+        : [...legacyConfig.matchingExcludes],
     },
   };
 }
@@ -685,7 +685,7 @@ async function readRequired(vault: Vault, path: string): Promise<string> {
 
 export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPlan> {
   const configSource = await readRequired(vault, "mdbase.yaml");
-  const rawConfig = parseYaml(configSource);
+  const rawConfig: unknown = parseYaml(configSource);
   if (!isRecord(rawConfig)) throw new Error("mdbase.yaml must contain a YAML mapping.");
   const sourceVersion = typeof rawConfig.spec_version === "string" ? rawConfig.spec_version : "";
   if (!/^0\.2(?:\.\d+)?$/.test(sourceVersion)) {

@@ -6,10 +6,45 @@ import { MdbaseWorkspaceView } from "../src/workspaceView";
 import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
 import { Menu } from "obsidian";
+import { MdbaseSettingTab } from "../src/settingsTab";
 import type { SyncSnapshot } from "../src/sync/controller";
 import type { CollectionStatus } from "../src/sync/daemon";
 
 type TypeModel = ReturnType<typeof createDefaultTypeModel>;
+
+test("settings search definitions share the legacy renderer's labels and controls", async () => {
+  const fixtureState = fixture();
+  let saves = 0;
+  const plugin = {
+    settings: { validateOnOpen: true, validateOnSave: true, showNoticeOnSave: false, interopEnabled: false, mdbaseAppPath: "" },
+    syncController: fixtureState.sync.controller,
+    saveSettings: async () => { saves++; },
+    openWorkspace: async () => {},
+  };
+  const tab = new MdbaseSettingTab(fixtureState.view.app, plugin as never);
+  const definitions = tab.getSettingDefinitions();
+  assert.equal(tab.containerEl.children.length, 0);
+  assert.deepEqual(definitions.filter(definition => "name" in definition).map(definition => definition.name), [
+    "Validate notes automatically", "Show validation notices", "Allow plugin integrations",
+  ]);
+  const group = definitions.find(definition => "items" in definition);
+  assert.ok(group && "items" in group);
+  assert.equal(group.heading, "Sync");
+  assert.ok(group.items.some(item => item.name === "mdbase app location"));
+  tab.display();
+  assert.match(tab.containerEl.textContent ?? "", /Validate notes automatically/);
+  const toggle = tab.containerEl.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  assert.ok(toggle);
+  toggle.checked = false;
+  toggle.dispatchEvent(new fixtureState.dom.window.Event("change"));
+  await Promise.resolve();
+  assert.equal(plugin.settings.validateOnOpen, false);
+  assert.equal(plugin.settings.validateOnSave, false);
+  assert.equal(saves, 1);
+  assert.ok(!tab.getSettingDefinitions().some(definition => "name" in definition && definition.name === "Show validation notices"));
+  tab.hide();
+  fixtureState.dom.window.close();
+});
 
 // Exercise the actual renderer with Obsidian's DOM convenience methods, not
 // source-string assertions. Browser screenshots separately cover real styles.
