@@ -6,8 +6,8 @@ const baseline = JSON.parse(
 );
 const vault = process.env.OBSIDIAN_TEST_VAULT?.trim() || "test";
 const expression = `(async()=>{
-  const plugin=app.plugins.plugins['mdbase-obsidian'];
-  if(!plugin)throw new Error('mdbase-obsidian is not loaded');
+  const plugin=app.plugins.plugins['mdbase-sync'];
+  if(!plugin)throw new Error('mdbase-sync is not loaded');
   const measure=async(operation)=>{const start=performance.now();const value=await operation();return{ms:performance.now()-start,value}};
   const heapBefore=performance.memory?.usedJSHeapSize??null;
   const schema=await measure(()=>plugin.loadWorkspaceSchema(true));
