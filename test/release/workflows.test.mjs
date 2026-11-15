@@ -41,3 +41,15 @@ test("manual version dispatch creates a normal PR without a merge-time bot branc
   assert.ok(!runs.includes("gh pr merge"));
   for (const name of ["build", "version-bump"]) assert.ok(!JSON.stringify(workflow(name)).includes("automation/plugin-release"));
 });
+
+test("promotion runs on a schedule from main, apart from the publisher's queue", () => {
+  const definition = workflow("promote");
+  assert.ok(definition.on.schedule.length);
+  assert.ok("workflow_dispatch" in definition.on);
+  assert.equal(definition.jobs.promote.if, "github.ref == 'refs/heads/main'");
+  assert.notEqual(definition.concurrency.group, workflow("build").jobs.release.concurrency.group);
+  assert.equal(definition.concurrency["cancel-in-progress"], false);
+  for (const step of definition.jobs.promote.steps.filter((value) => value.uses)) assert.match(step.uses, /@[0-9a-f]{40}$/);
+  assert.match(definition.jobs.promote.steps.at(-1).run, /plugin-release.mjs promote/);
+  assert.ok(!JSON.stringify(definition).includes("permission-pull-requests"));
+});
