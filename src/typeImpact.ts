@@ -1,12 +1,12 @@
-import {
-  getTypesForFile,
-  v03TypeDefFromFrontmatter,
-  validateRecordAgainstType,
-  type CollectionRecord,
-  type MdbaseConfig,
-  type MdbaseIssue,
-  type MdbaseTypeDef,
+import type {
+  CollectionRecord,
+  MdbaseConfig,
+  MdbaseIssue,
+  MdbaseTypeDef,
 } from "./mdbaseCore";
+import { v03TypeDefFromFrontmatter } from "./typeDefinitions";
+import { getTypesForFile } from "./typeMatching";
+import { validateRecordAgainstType } from "./validation";
 import { frontmatterFromTypeModel } from "./typeModel";
 import type { TypeEditorModel } from "./typeEditorTypes";
 
