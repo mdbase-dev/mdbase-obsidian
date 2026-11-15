@@ -150,11 +150,100 @@ export function releasePlugin(run = execute, environment = process.env) {
   }
 }
 
-// A published prerelease becomes the full, latest release once main has been
-// quiet for three hours: no commit has landed and nothing newer was published.
-export const promotionQuietMs = 3 * 60 * 60 * 1000;
+// ---- Quiet prereleases ------------------------------------------------------
+// A merge to main does not publish by itself. Once no commit has landed on main
+// for three hours and main's plugin bytes differ from the newest release, the
+// scheduled job opens a version PR set to merge when required CI passes; that
+// merge publishes the prerelease (releasePlugin). A burst of merges ships once.
+export const quietMs = 3 * 60 * 60 * 1000;
+const versionFiles = ["manifest.json", "versions.json", "package.json", "package-lock.json"];
+const releaseBranch = /^release\/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+// Paths that cannot change main.js, styles.css or the manifest. A diff touching
+// only these skips the build; otherwise the built bytes decide.
+const inert = [/\.md$/, /^docs\//, /^test\//, /^\.github\//, /^LICENSE$/];
 
-export function promotionDecision(releases, tagOutput, mainCommittedAt, now) {
+/** When main becomes quiet, or null if it already is. */
+export function quietUntil(mainCommittedAt, now) {
+  const committed = Date.parse(mainCommittedAt);
+  assert.ok(Number.isFinite(committed), "Unreadable main commit time");
+  return now - committed < quietMs ? new Date(committed + quietMs).toISOString() : null;
+}
+
+export function needsBuild(changedPaths) {
+  return changedPaths.some((path) => !inert.some((pattern) => pattern.test(path)));
+}
+
+/**
+ * Decide whether quiet main needs a prerelease. Moves an open release PR along
+ * instead (bring it up to date, ask it to merge) when one exists.
+ */
+export function quietCheck(run = execute, environment = process.env, now = Date.now()) {
+  const repository = environment.GITHUB_REPOSITORY;
+  assert.equal(repository, "mdbase-dev/mdbase-obsidian");
+  const none = (reason, extra = {}) => ({ action: "none", reason, ...extra });
+  const readyAt = quietUntil(run("gh", "api", `repos/${repository}/commits/main`, "--jq", ".commit.committer.date"), now);
+  if (readyAt) return none("recent", { readyAt });
+  const open = JSON.parse(run("gh", "pr", "list", "--repo", repository, "--base", "main", "--state", "open", "--json", "number,headRefName,mergeStateStatus,autoMergeRequest,url"))
+    .filter((pull) => releaseBranch.test(pull.headRefName));
+  assert.ok(open.length <= 1, `More than one open release PR: ${open.map((pull) => pull.url).join(", ")}`);
+  if (open.length) {
+    const [pull] = open;
+    if (pull.mergeStateStatus === "BEHIND") run("gh", "pr", "update-branch", String(pull.number), "--repo", repository);
+    if (!pull.autoMergeRequest) run("gh", "pr", "merge", String(pull.number), "--repo", repository, "--auto", "--merge");
+    return { action: "pending", url: pull.url };
+  }
+  const head = run("git", "rev-parse", "HEAD");
+  assert.equal(run("git", "ls-remote", "origin", "refs/heads/main").split(/\s/)[0], head, "Checkout is not current main");
+  const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
+  const state = stateFor(run, repository, version);
+  if (state.pending.size) return none("publishing", { version });
+  // A bumped version still unpublished is the Build's to publish, not a new bump.
+  if (compareVersions(version, state.baseline) > 0) return none("version-unpublished", { version });
+  const released = state.tags.get(state.baseline);
+  assert.match(released ?? "", /^[0-9a-f]{40}$/, `Newest release ${state.baseline} has no tag`);
+  if (!needsBuild(run("git", "diff", "--name-only", released, head).split("\n").filter(Boolean))) {
+    return none("unchanged", { baseline: state.baseline });
+  }
+  return { action: "build", head, baseline: state.baseline };
+}
+
+/** With main built, open the version PR if its bytes differ from the newest release. */
+export function quietOpen(run = execute, environment = process.env, now = Date.now()) {
+  const decision = quietCheck(run, environment, now);
+  if (decision.action !== "build") return decision;
+  const repository = environment.GITHUB_REPOSITORY;
+  const directory = mkdtempSync(join(tmpdir(), "obsidian-quiet-"));
+  try {
+    run("gh", "release", "download", decision.baseline, "--repo", repository, "--dir", directory, ...assets.flatMap((file) => ["--pattern", file]));
+    if (sameAssets(directory)) return { action: "none", reason: "unchanged-assets", baseline: decision.baseline };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+  const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
+  const next = nextVersion(stateFor(run, repository, version), version);
+  const branch = `release/${next}`;
+  // A leftover branch means its PR was closed without merging: someone held this
+  // release back. Deleting the branch lets it be opened again.
+  if (run("git", "ls-remote", "--heads", "origin", `refs/heads/${branch}`)) return { action: "none", reason: "held", branch };
+  run("node", "version-bump.mjs", next);
+  run("git", "config", "user.name", `${environment.APP_SLUG}[bot]`);
+  run("git", "config", "user.email", `${environment.APP_SLUG}[bot]@users.noreply.github.com`);
+  run("git", "switch", "--create", branch);
+  run("git", "add", ...versionFiles);
+  run("git", "commit", "--message", `Release Obsidian plugin ${next}`);
+  run("git", "push", "origin", `HEAD:refs/heads/${branch}`);
+  const url = run("gh", "pr", "create", "--repo", repository, "--base", "main", "--head", branch, "--title", `Release Obsidian plugin ${next}`, "--body",
+    `Main has been quiet for three hours and its plugin bytes differ from ${decision.baseline}. ` +
+    `This PR merges itself when required CI passes, and the merge publishes ${next} as a prerelease. ` +
+    "To hold the release, close this PR and keep its branch; delete the branch to let it be opened again.");
+  run("gh", "pr", "merge", url, "--repo", repository, "--auto", "--merge");
+  return { action: "open", version: next, url };
+}
+
+// ---- Full releases -----------------------------------------------------------
+// Only by hand (promote.yml, workflow_dispatch): the newest published prerelease
+// becomes the full release marked Latest, which Obsidian's community list serves.
+export function promotionDecision(releases, tagOutput) {
   const numeric = releases.filter((release) => numericVersion.test(release.tag_name));
   const published = numeric.filter((release) => !release.draft);
   published.sort((left, right) => compareVersions(right.tag_name, left.tag_name));
@@ -165,20 +254,14 @@ export function promotionDecision(releases, tagOutput, mainCommittedAt, now) {
   if (numeric.some((release) => release.draft) || tags.some((name) => !published.some((release) => release.tag_name === name))) {
     return { action: "none", reason: "publishing" };
   }
-  const quietSince = Math.max(Date.parse(mainCommittedAt), Date.parse(candidate.published_at));
-  assert.ok(Number.isFinite(quietSince), "Unreadable main commit or release time");
-  if (now - quietSince < promotionQuietMs) {
-    return { action: "none", reason: "recent", version: candidate.tag_name, readyAt: new Date(quietSince + promotionQuietMs).toISOString() };
-  }
   return { action: "promote", version: candidate.tag_name };
 }
 
-export function promoteRelease(run = execute, environment = process.env, now = Date.now()) {
+export function promoteRelease(run = execute, environment = process.env) {
   const repository = environment.GITHUB_REPOSITORY;
   assert.equal(repository, "mdbase-dev/mdbase-obsidian");
   const releases = JSON.parse(run("gh", "api", "--paginate", "--slurp", `repos/${repository}/releases?per_page=100`)).flat();
-  const mainCommittedAt = run("gh", "api", `repos/${repository}/commits/main`, "--jq", ".commit.committer.date");
-  const decision = promotionDecision(releases, run("git", "ls-remote", "--tags", "origin"), mainCommittedAt, now);
+  const decision = promotionDecision(releases, run("git", "ls-remote", "--tags", "origin"));
   if (decision.action === "promote") {
     run("gh", "release", "edit", decision.version, "--repo", repository, "--prerelease=false", "--latest");
   }
@@ -191,6 +274,12 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     console.log(nextVersion(stateFor(execute, "mdbase-dev/mdbase-obsidian", version), version));
   } else if (process.argv[2] === "promote") {
     console.log(JSON.stringify(promoteRelease()));
+  } else if (process.argv[2] === "quiet") {
+    const decision = quietCheck();
+    appendFileSync(process.env.GITHUB_OUTPUT, `build=${decision.action === "build"}\n`);
+    console.log(JSON.stringify(decision));
+  } else if (process.argv[2] === "quiet-open") {
+    console.log(JSON.stringify(quietOpen()));
   } else if (process.argv[2] === "target") {
     const target = releaseTarget();
     appendFileSync(process.env.GITHUB_OUTPUT, `ref=${target.sha ?? ""}\n`);

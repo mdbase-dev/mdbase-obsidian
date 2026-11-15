@@ -22,8 +22,8 @@ mdbase account.
 In Obsidian, open **Settings → Community plugins**, choose **Browse**, search
 for **mdbase**, then choose **Install** and **Enable**.
 
-New versions appear here as prereleases first, and reach the community plugin
-list a few hours later. To get them straight away, install the
+New versions come out as prereleases first, and reach the community plugin
+list once they've been tried. To get them early, install the
 [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin, choose **Add beta
 plugin**, and enter `mdbase-dev/mdbase-obsidian`.
 
