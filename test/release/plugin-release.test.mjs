@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { nextVersion, releasePlugin, releaseState, releaseTarget, sameAssets } from "../../scripts/plugin-release.mjs";
+import { nextVersion, promoteRelease, promotionDecision, releasePlugin, releaseState, releaseTarget, sameAssets } from "../../scripts/plugin-release.mjs";
 
 const sha = "a".repeat(40);
 const older = "b".repeat(40);
@@ -193,4 +193,38 @@ test("failed downloads, uploads and corrupt bytes never make a draft public", ()
     assert.throws(() => releasePlugin(run, environment));
     assert.ok(!calls.some((args) => args.slice(0, 3).join(" ") === "gh release edit"));
   });
+});
+
+test("promotes the newest prerelease only after three quiet hours on main", () => {
+  const hour = 60 * 60 * 1000;
+  const now = Date.parse("2026-11-16T12:00:00Z");
+  const at = (hours) => new Date(now - hours * hour).toISOString();
+  const full = { tag_name: "0.4.28", draft: false, prerelease: false, published_at: at(48) };
+  const newest = { tag_name: "0.4.32", draft: false, prerelease: true, published_at: at(4) };
+  const releases = [full, { tag_name: "0.4.31", draft: false, prerelease: true, published_at: at(5) }, newest];
+  assert.deepEqual(promotionDecision(releases, tagsFor("0.4.32"), at(4), now), { action: "promote", version: "0.4.32" });
+  const recentCommit = promotionDecision(releases, "", at(1), now);
+  assert.equal(recentCommit.reason, "recent");
+  assert.equal(recentCommit.readyAt, new Date(now + 2 * hour).toISOString());
+  assert.equal(promotionDecision([full, { ...newest, published_at: at(2) }], "", at(4), now).reason, "recent");
+  assert.equal(promotionDecision([full, { ...newest, prerelease: false }], "", at(4), now).reason, "current");
+  assert.equal(promotionDecision([...releases, { tag_name: "0.4.33", draft: true }], "", at(4), now).reason, "publishing");
+  assert.equal(promotionDecision(releases, tagsFor("0.4.33"), at(4), now).reason, "publishing");
+  assert.throws(() => promotionDecision(releases, "", "not a date", now));
+});
+
+test("promotion edits only the chosen release and only when it is due", () => {
+  const now = Date.parse("2026-11-16T12:00:00Z");
+  for (const [committedAt, expected] of [["2026-11-16T08:00:00Z", "promote"], ["2026-11-16T11:00:00Z", "none"]]) {
+    const calls = [];
+    const run = (...args) => {
+      calls.push(args);
+      if (args[0] === "gh" && args[1] === "api" && args[2] === "--paginate") return JSON.stringify([[{ tag_name: "0.4.3", draft: false, prerelease: true, published_at: "2026-11-16T07:00:00Z" }, { ...baseline, prerelease: false, published_at: "2026-11-01T00:00:00Z" }]]);
+      if (args[0] === "gh" && args[1] === "api") return committedAt;
+      return "";
+    };
+    assert.equal(promoteRelease(run, environment, now).action, expected);
+    const edits = mutations(calls);
+    assert.deepEqual(edits, expected === "promote" ? [["gh", "release", "edit", "0.4.3", "--repo", "mdbase-dev/mdbase-obsidian", "--prerelease=false", "--latest"]] : []);
+  }
 });
