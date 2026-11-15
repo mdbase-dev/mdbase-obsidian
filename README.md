@@ -1,231 +1,182 @@
 # mdbase for Obsidian
 
-The Obsidian gateway to mdbase v0.3 collections and mdbase sync.
+Give your notes types, check them, and sync them with
+[mdbase](https://mdbase.dev).
 
-The plugin is deliberately type-first. Its main workspace provides:
+mdbase treats a folder of Markdown notes as a collection of typed records. A
+*type* says what properties a kind of note has (a book has a title, an author
+and a rating from 1 to 5, say). This plugin lets you:
 
-- a searchable type workbench with guided and YAML editing;
-- local collection initialization;
-- read-only support for mdbase v0.2.x and reviewed migration to v0.3.x;
-- sync: sign-in, Private or Cloud copy collections, live status, and
-  decisions about edits made in two places;
-- collection validation with bounded issue rendering for large vaults.
+- **design types** with a form, or in YAML if you prefer;
+- **create notes from a type**, with a form that fills in the properties for you;
+- **check notes against their types** as you open and save them, or check the
+  whole vault at once, with one-click fixes for common problems;
+- **sync the vault** with mdbase on desktop and Android, so it's available on
+  your other devices and in mdbase web apps.
 
-Types and validation work through Obsidian's Vault APIs on desktop and mobile.
-Sync runs inside the plugin on desktop and Android (see [Sync](#sync)). Node
-modules load only on desktop and only when sync is used, so the bundle stays
-safe on mobile (checked by `npm run check:mobile`).
+Types and checking work offline and without an account. Only sync needs an
+mdbase account.
 
-The plugin ID is `mdbase-sync`; its display name remains **mdbase**. Install it
-under `<configDir>/plugins/mdbase-sync/`. This is a fresh install: settings and
-sync state from the earlier ID are not migrated. Command hotkeys are keyed by
-the plugin ID, so hotkeys from the earlier ID must be assigned again.
+## Install
 
-Canonical view files remain ordinary v0.3 records in this adapter. When a
-collection materializes `_types/view.md` (normally referring to
-`schemas/v0.3/view.schema.json`), the plugin validates their nested shared
-`query` and named-view frontmatter like any other typed record. This plugin does
-not execute named views or advertise the optional `view_records` feature; it
-leaves execution and presentation to query-capable companion tools.
+The plugin isn't in Obsidian's community plugin list yet. Until it is, install
+it one of these ways:
 
-## Collection roles
+- **With BRAT:** install the [BRAT](https://github.com/TfTHacker/obsidian42-brat)
+  plugin, choose **Add beta plugin**, and enter `mdbase-dev/mdbase-obsidian`.
+- **By hand:** download `main.js`, `manifest.json` and `styles.css` from the
+  [latest release](https://github.com/mdbase-dev/mdbase-obsidian/releases), put
+  them in a folder called `mdbase-sync` inside your vault's `.obsidian/plugins/`
+  folder, then turn on **mdbase** under **Settings → Community plugins**.
 
-On first open, the workspace asks where the collection lives. **Start a
-collection** makes this vault a local mdbase collection. The **Sync** tab turns
-sync on for the vault, or adds a collection you already sync on another device.
+## Get started
 
-### Local collection
+Click the mdbase icon in the left ribbon, or run **mdbase: Open workspace** from
+the command palette. The first time, it asks where your collection lives:
 
-**Start a collection** creates a canonical v0.3 `mdbase.yaml` and `_types/`
-directory. The vault is authoritative and remains an ordinary collection of
-files. First run offers published [mdbase-contracts](https://mdbase.dev/contracts/catalog.json)
-packs with reviewed, digest-verified installation and a portable lockfile;
-it does not invent a starter type. Local starter customizations are preserved.
-Pack upgrades and custom mappings remain in mdbase editor.
+- **Start a collection** makes this vault an mdbase collection. It adds an
+  `mdbase.yaml` file and a `_types/` folder, and offers ready-made type packs
+  you can install. It doesn't create a type you didn't ask for.
+- **Sync** connects the vault to mdbase. See [Sync](#sync).
 
-### Sync
+## Types
 
-Sync runs inside the plugin on desktop, and on Android (tested on an emulator,
-not yet on physical phones), using the same Sync tab and settings. No desktop app is needed on a
-phone. On desktop, a vault already
-owned by the mdbase app continues using its background service. Obsidian keeps
-saving files as usual, and edits from other devices arrive in open notes
-without losing the cursor. The synced copy on a phone is stored in Obsidian's
-app storage, where other installed plugins can read it.
+Open the workspace and choose **Types**.
 
-For vaults using the desktop app:
+- **Design** edits a type with a form: its name, which notes belong to it, where
+  new ones go, and its fields, including lists, nested objects, choices and
+  links.
+- **YAML** shows the type definition itself.
+- Unsaved changes survive reloads and restarts. Before saving, you see what
+  changed and any problems with it. Changes that could affect existing notes
+  ask you to review them first.
+- **New note** opens a form for a note of that type, previews where it will be
+  saved, and checks it before creating it.
 
-- **Sign in** opens the mdbase sign-in page in the browser (with **Copy sign-in
-  link** if no browser opens). Sign-in belongs to the computer, not the vault.
-- **Sync this vault** offers **Cloud copy** (recommended: mdbase keeps a copy
-  online, so web apps and new devices get notes straight away) or **Private**
-  (end-to-end encrypted; for now it works on the first computer only, because
-  another computer can't be approved yet).
-- **Add a collection you already sync** takes the link copied from another
-  device's Sync tab. An empty vault becomes the collection; otherwise it goes
-  into a new folder.
-- The first time Obsidian talks to the app, the app asks to allow it.
+On phones, the type list and the editor are separate screens with buttons big
+enough to tap.
 
-The status bar and the Sync tab say whether the vault is synced, sending or
-getting changes, offline (changes stay on this computer), Private on a second computer,
-or stopped, in plain words with the next step. Files changed in two places at
-once are listed with **Keep this computer's**, **Use the other version** and
-**Keep both**; edits that mdbase merged on its own are listed under "changes to
-check", with a way to use the other value. **Copy link** shares the collection
-with your other devices.
+## Checking notes
 
-Settings carry sign-out, disconnecting this vault (notes stay; other devices
-keep syncing) and the app location for unusual desktop installs. Android sync
-needs a modern WebView with OPFS and module Workers; it has been tested on an
-Android emulator but not yet on physical phones. iOS sync is not yet supported or tested. Mobile operating systems
-can suspend Obsidian in the background; sync resumes when it is reopened.
+With **Validate notes automatically** on (the default), notes are checked
+against their types when you open and save them. **mdbase: Validate collection**
+checks the whole vault, shows progress, and can be stopped. Many problems come
+with a fix you can apply in one click; it changes only the property it names.
 
-Commands: **Open workspace**, **Open sync**, **Create type definition**, **Edit
-type definition** (the current note's type, or a picker), **Create note from
-type**, **Validate current note** and **Validate collection**. **Initialize
-collection** appears only when it applies.
+## Sync
 
-## Type workbench
+Sync keeps the vault in step with an mdbase collection. It runs inside the
+plugin on desktop and on Android, so a phone doesn't need anything else
+installed.
 
-Open **mdbase: Open workspace** and choose **Types**.
+1. Open the **Sync** tab in the workspace and choose **Sign in**. Your browser
+   opens an mdbase page. Approve Obsidian there and pick the collection this
+   vault should sync.
+2. Go back to Obsidian. Sync starts on its own. If you have several
+   collections, it may ask you to choose one.
 
-- Design mode edits identity, membership, placement, and recursive field
-  schemas—including nested objects, lists, lists of objects, enums, and links.
-- The application compatibility section discovers local record contracts under
-  `_contracts/`, lets you map contract fields to type fields, and edits binding
-  settings from their JSON Schema.
-- YAML mode exposes the canonical type definition.
-- Unknown v0.3 schema and extension data is preserved by guided edits.
-- Drafts survive plugin reloads and Obsidian restarts; stale source revisions
-  are blocked, and high-impact schema changes require an explicit review.
-- Dirty changes and validation failures are shown before save.
-- Stale drafts can be compared, exported or explicitly discarded without losing
-  newer edits.
-- `New note` opens one validated form with a location preview and retained input.
-- Validation quick fixes target exact nested properties, preserve sibling data,
-  and use Obsidian's atomic file processing API. Ambiguous legacy nested paths
-  are not offered automatic fixes.
-- v0.2 definitions are browsable but read-only until migration.
+There are two kinds of collection:
 
-Validation reports coverage and freshness, not merely an empty issue list.
-Collection scans show progress and can be stopped without claiming completion.
-Transfer review searches and paginates the full plan; filters never narrow the
-approved transfer scope. A bad file no longer pauses the entire sync: independent
-files transfer while blocked files and related moves remain untouched for retry.
-Unscoped inspection failures and competing-write protections still stop unsafe
-operations. See [UX acceptance](docs/user-experience-acceptance.md)
-for the live Obsidian harness, verification evidence and implementation limits.
+- **Cloud copy** keeps a copy online, so mdbase web apps and new devices get
+  your notes straight away.
+- **Private** collections are end-to-end encrypted. Obsidian asks for your
+  encryption password to unlock one. They're only offered when mdbase lets this
+  device keep the collection's key, which it doesn't do everywhere yet.
 
-On mobile, the type list and editor use separate navigation states with
-touch-sized actions instead of a compressed desktop split view.
+Once it's running:
 
-## Migrating v0.2 to v0.3
+- The status bar and the Sync tab say what sync is doing, in plain words, and
+  what to do next if it needs you.
+- Edits from other devices arrive in open notes without moving your cursor.
+- Changes are sent and fetched on their own. **Sync now** checks straight
+  away.
+- If a note was changed on two devices at once, both versions are kept: the
+  other one is saved as a conflict copy beside the original. The **Conflicts**
+  list in the Sync tab shows these copies so you can open them, or choose
+  **Keep both** to keep them as ordinary notes.
 
-The migration review shows the source and target versions, every planned write,
-warnings, lossy diagnostics, record-equivalence results, and the recovery
-location.
+On phones, Android stops Obsidian soon after it goes into the background. Sync
+picks up again when you reopen it. Approving a sign-in in the browser can take
+two tries if you take a while to come back to Obsidian.
 
-Migration:
+### The mdbase desktop app
 
-- verifies that source files have not changed since analysis;
-- requires explicit consent for any lossy conversion;
-- writes backups and a recovery manifest below `.mdbase/migrations/`;
-- writes configuration and type definitions sequentially and rolls back on
-  failure;
-- verifies the result;
-- never rewrites records.
+If you use the [mdbase desktop app](https://mdbase.dev/downloads), it can sync
+the vault instead, in the background, even when Obsidian is closed. A vault the
+app already syncs keeps using the app, and the Sync tab shows its status. To
+switch a vault from Obsidian to the app, use **Move to mdbase app** under
+**Advanced** in the Sync tab.
 
-Existing v0.3 collections are not offered migration.
+## Upgrading older collections
 
-## Application interoperability
+Collections made with mdbase v0.2 open read-only. The workspace offers to
+upgrade them to v0.3. Before anything is written, it shows every change it
+plans, warns you about anything that can't be carried over exactly, and asks
+you to agree. It backs up every file it changes (under `.mdbase/migrations/`)
+and undoes everything if a step fails. It never rewrites your notes, only the
+collection's settings and types.
 
-The plugin also hosts local application interoperability for companion plugins:
+## Commands
+
+- **Open workspace**
+- **Open sync**
+- **Create type definition**
+- **Edit type definition** (the current note's type, or pick one)
+- **Create note from type**
+- **Validate current note**
+- **Validate collection**
+- **Initialize collection** (only when the vault isn't a collection yet)
+
+## Settings
+
+- **Validate notes automatically:** check notes when they're opened or saved.
+- **Show validation notices:** show a notice when you save a note with
+  problems.
+- **Allow plugin integrations:** let other plugins exchange mdbase events and
+  actions in this vault. Off by default.
+- **Sync:** status, and a shortcut to the Sync tab. When the desktop app syncs
+  the vault, this also shows the account and collection, and where to find the
+  app if Obsidian can't.
+
+## Requirements
+
+- Obsidian 1.11.4 or later.
+- Types and checking work on desktop and mobile.
+- Sync works on Windows, macOS and Linux, and on Android with Obsidian 1.12.3 or
+  later. Android sync has been tested on an emulator, not yet on physical
+  phones. Sync isn't available on iOS yet.
+- Collections in mdbase v0.3. v0.2 collections open read-only until you
+  upgrade them.
+
+## Privacy and network use
+
+- **Account:** sync needs an mdbase account. Everything else works without one.
+- **Network:** with sync on, the plugin sends your notes to mdbase's servers
+  (`connect.mdbase.dev` and `log.mdbase.dev`) and fetches changes from them.
+  Private collections are encrypted on your device first. When you start a
+  collection, the plugin fetches the list of ready-made type packs from
+  `mdbase.dev`. If you use the mdbase desktop app, the plugin talks to it on
+  your own computer.
+- **No telemetry:** the plugin doesn't collect analytics or usage data.
+- **Files outside your vault:** on desktop, if you use the mdbase desktop app,
+  the plugin finds the app and runs its `mdbase` command-line tool to check
+  sync status and set things up.
+- **On phones:** the synced copy is kept in Obsidian's app storage, where other
+  plugins you install can read it.
+
+## For plugin developers
+
+Other plugins can exchange events and actions with mdbase in the same vault,
+once the user turns on **Allow plugin integrations**:
 
 ```ts
 const host = app.plugins.getPlugin("mdbase-sync");
 const client = host?.api.interop.connect(yourPlugin);
 ```
 
-Enable **Allow local application interoperability** in mdbase settings first.
-The grant is deliberately off by default and is independent of contract
-compatibility: matching schemas do not authorize an application.
+See [docs/development.md](docs/development.md) for how the bridge works, and
+for building and testing the plugin.
 
-The bridge verifies each caller from Obsidian's active plugin registry. Event
-sources publish CloudEvents 1.0 envelopes to every compatible subscriber.
-Actions resolve to exactly one compatible provider; zero providers and
-ambiguous providers fail explicitly. Every delivered event and action outcome
-records the exact contract version and digest plus application and
-implementation identity.
+## License
 
-The bridge is cooperative, same-process transport for Obsidian plugins. It does
-not claim to be a durable runtime: workflows, scheduling, retries, recovery,
-and runtime-policy admission belong to a Runtime 0.2 host such as Connect. It
-does not claim durable delivery or cross-device execution.
-
-## Development
-
-```bash
-npm install
-npm test
-npm run build
-```
-
-Additional gates:
-
-```bash
-npm run check:mobile
-npm run profile:testvault
-npm run build:test
-```
-
-`build:test` copies the build to configured test vaults.
-`profile:testvault` scans the registered Obsidian vault named `test` without
-writing it and enforces checked-in schema, migration-analysis, validation, and
-issue-render budgets. Set `OBSIDIAN_TEST_VAULT` to profile another registered
-disposable vault with the exact installed bundle.
-
-`mdbase-test-vault/` is a small committed local collection for trying the
-plugin in a real Obsidian: `book`, `person` and `note` types, valid records,
-one record that breaks every rule of its type, and one typed only by its path.
-Its `Welcome.md` says what each is for, and a unit test keeps the records
-validating as described. Open a copy of it, not the committed folder, so test
-runs don't leave plugin state behind; never enroll it in Connect.
-
-Sync uses `@mdbase-dev/sdk` (its `thin-client` entry, loaded on demand) from
-the tarball in `vendor/`, and the `mdbase` command-line tool that ships with the
-desktop app (`mdbase --json …`) for setup and status. mdbase interop is pinned to
-`0.1.0-rc.2`. To update the SDK, replace the tarball, update `package.json` and
-`package-lock.json`, and rerun the tests and `npm run check:mobile`.
-
-## Compatibility
-
-- Authoring target: mdbase v0.3.x
-- Read and migration input: mdbase v0.2.x
-- Obsidian minimum version: 1.11.4
-- Types and validation on desktop and mobile; sync on desktop (Windows, macOS,
-  Linux) and on Android with Obsidian 1.12.3 or later (tested on an emulator,
-  not yet on physical phones); iOS sync is not supported yet
-
-The plugin is not a general record editor, query dashboard, or Connect server
-administration client.
-
-## Lint checks
-
-Run `npm run lint` from the project root. It runs the 0.6.0 Obsidian recommended
-rules, the newest-submission scanner-equivalent rules, and Stylelint, all with
-`--max-warnings=0`. `npm run lint:scanner` runs the scanner lane separately.
-`eslint.scanner.config.mjs` follows the full configuration and newest-layer
-adjustments in the upstream 0.6.0 [configuration guide](https://github.com/obsidianmd/eslint-plugin/blob/0.6.0/docs/configuration.md#community-plugin-scanner-configuration).
-Build output, tests, and tooling are excluded as in the scanner. The TypeScript
-project includes `DOM.AsyncIterable` for the SDK's streaming downloads.
-
-The repository lane also validates `manifest.json` and `LICENSE` with the
-plugin's `validate-manifest` and `validate-license` rules; the scanner lane
-leaves them off, as the scanner does.
-
-Legacy v0.2 collection exclusion lists live in `src/legacyConfig.json`: these
-are persisted-format defaults, not a lookup of Obsidian's runtime config folder.
-Keeping them as data preserves migration and validation behavior for old vaults.
-Settings search definitions share the renderer used on Obsidian 1.11.4; no new
-settings APIs are called on older versions. Mobile sync still requires 1.12.3,
-now expressed through `requireApiVersion` as well as the adapter capability check.
+[MIT](LICENSE)
