@@ -1,19 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-this-alias -- Preserve the spike\'s dynamic SDK bridge; lifecycle and on-disk checks guard optional state. */
 // Native SDK host ported from the verified Obsidian SDK spike. The iframe owns the replica; all
 // vault IO and durable three-way sync state live here. No page/ runtime files.
-import { Notice, Component, SuggestModal, TAbstractFile, TFile, App, FileSystemAdapter, parseYaml, type PluginManifest } from "obsidian";
-import { nativeModule } from "./node";
-const http = nativeModule<typeof import("node:http")>("http");
-const fs = nativeModule<typeof import("node:fs")>("fs");
-const path = nativeModule<typeof import("node:path")>("path");
-const os = nativeModule<typeof import("node:os")>("os");
-const { createHash, randomUUID } = nativeModule<typeof import("node:crypto")>("crypto");
-const { spawnSync } = nativeModule<typeof import("node:child_process")>("child_process");
-const { brotliDecompressSync } = nativeModule<typeof import("node:zlib")>("zlib");
-import packedAssets from "embedded:assets";
-import { validVaultPort } from "../ownership";
+import { Notice, Component, SuggestModal, TAbstractFile, TFile, App, Platform, parseYaml, type PluginManifest } from "obsidian";
+import { DesktopHost } from "./desktop";
+import { MobileHost } from "./mobile";
+import type { EngineHost } from "./host";
+import { encode, decode, hash, validUtf8 } from "./encoding";
 import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, SIGN_IN_STOPPED, STARTING_STALLED, failedText, readyText, stoppedText, syncOffline } from "../words";
-import { stageDownload } from "./download";
 import { retryUpload, type UploadIdentity } from "./upload";
 import { conflictPath, reconcileDecision, remoteMoveDecision, localMovePairs, Synced } from "./reconcile";
 import { classifyPath, layoutFromConfig, CONFIG_PATH, DEFAULT_LAYOUT, type CollectionLayout, type PathKind } from "./classify";
@@ -44,6 +37,7 @@ export interface MergePrompt { collectionId: string; name: string; local: number
 export interface SyncTotals { notes: number; attachments: number; definitions: number; attachmentBytes: number; notHere: number; byCollection: number }
 export interface NativeView {
   failures: DirectFailure[]; merge: MergePrompt | null;
+  conflicts: { path: string; copy: string }[];
   /** Most recent first. */
   activity: ActivityEntry[];
   /** When a full pass last finished with nothing left to send or fix. */
@@ -61,9 +55,6 @@ const REFUSED = new Set(["invalid_request", "invalid_record", "too_large", "quot
 const isRefusal = (e: any) => REFUSED.has(e?.code) && !["cursor_stale", "cursor_expired"].includes(e?.reason);
 
 
-const TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".wasm": "application/wasm",
-};
 interface Data {
   version: 1; vaultId: string; port?: number; collectionId?: string; markerSince?: number;
   // Prevent copied settings from opening another vault's writable replica.
@@ -93,7 +84,6 @@ interface Data {
 }
 // eslint-disable-next-line obsidianmd/prefer-active-doc -- This is the SDK record document field, not a DOM document.
 interface Remote { id: string; path: string; kind: ItemKind; revision: string; hash?: string; document?: string; digest?: string; confirmed?: boolean }
-const hash = (bytes: Uint8Array) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 /** Status while another device's writes keep invalidating a full scan. Matches words.ts' busy test. */
 const CATCHING_UP = "Checking your files: catching up with changes from other devices";
 /** How many plain note sends run at once. The SDK confirms them in batches. */
@@ -101,12 +91,16 @@ const SEND_CONCURRENCY = 16;
 const isConflict = (e: any) => /conflict|revision/.test(`${e?.code} ${e?.reason}`);
 /** How long starting may take before Sync offers Restart sync. */
 export const START_STALL_MS = 30_000;
-/** How long a saved port may stay busy while a previous host lets go of it. */
-const PORT_WAIT_MS = 2_000;
 
 export default class NativeSync extends Component {
-  constructor(readonly app: App, readonly manifest: PluginManifest, readonly changed: (text: string, phase: any, view?: NativeView) => void, readonly previousCollection?: string) { super(); }
-  server: import("node:http").Server | null = null;
+  constructor(readonly app: App, readonly manifest: PluginManifest, readonly changed: (text: string, phase: any, view?: NativeView) => void, readonly previousCollection?: string) {
+    super();
+    this.host = Platform.isMobile || Platform.isMobileApp ? new MobileHost(app, manifest) : new DesktopHost(app, manifest);
+    this.frameCapability = this.host.uuid();
+  }
+  readonly host: EngineHost;
+  private frameUrl = "";
+  private persistence: Promise<void> = Promise.resolve();
   frame: HTMLIFrameElement | null = null;
   calls = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void; timer: number }>();
   nextCall = 1;
@@ -116,7 +110,7 @@ export default class NativeSync extends Component {
   origin = "";
   // A web page must not be able to frame this authenticated SDK host. The
   // capability is memory-only, checked by the HTTP listener before serving HTML.
-  private readonly frameCapability = randomUUID();
+  private readonly frameCapability: string;
   signInUrl: string | null = null; // bearer secret, memory only; never log
   mirroring = false;
   admitting = true;
@@ -126,12 +120,12 @@ export default class NativeSync extends Component {
   pluginDir = "";
   markerTimer: number | null = null;
   settleTimer: number | null = null;
-  served = new Set<string>();
   warnedPaths = new Set<string>();
-  assets = new Map<string, Buffer>();
   reconcileQueued = false;
   reconcileFull = false;
   reconcilePaths = new Set<string>();
+  deferredRemoteMoves = new Map<string, string>();
+  sweptIncoming = false;
   reconcileCursor?: string;
   startingMirror = false;
   syncingFiles = false;
@@ -164,39 +158,40 @@ export default class NativeSync extends Component {
 
   async initialize(): Promise<void> {
     this.setStatus("Starting sync");
-    this.pluginDir = path.join((this.app.vault.adapter as any).getBasePath(), this.manifest.dir!);
-    this.root = (this.app.vault.adapter as FileSystemAdapter).getBasePath();
+    this.pluginDir = this.host.pluginDir;
+    this.root = this.host.root;
     // Obsidian's loadData returns null after a JSON parse failure. Treating that
     // as first install destroys the only durable sync/rejection journal.
     try {
-      this.data = this.readData();
+      this.data = await this.readData();
       this.data.paths = Object.assign(Object.create(null), this.data.paths);
       this.data.pathFailures = Object.assign(Object.create(null), this.data.pathFailures);
       this.bindVault();
-      this.readActivity();
+      await this.readActivity();
       if (!this.data.collectionId && this.previousCollection) this.data.collectionId = this.previousCollection;
       // A marker from desktop, an unknown host, or another installation is never
       // overridden, even when stale. Do not overwrite data before this check.
-      this.checkOwnership();
-      this.persist();
+      await this.checkOwnership();
+      await this.persist();
       await this.startServer();
       // Unloaded while the port opened: never leave a frame or listener behind.
       if (this.unloaded) { this.closeServer(); return; }
       // Reserve even on first sign-in, before the SDK can auto-open anything.
       // collection_id is null only until the SDK first identifies a collection;
       // the daemon refuses host:"obsidian" regardless of that optional field.
-      this.claim(this.data.collectionId);
+      await this.claim(this.data.collectionId);
+      if (this.unloaded) { this.closeServer(); return; }
     } catch (e) { this.closeServer(); this.phase = { kind: "blocked" }; this.fail("startup", e); return; }
     this.registerDomEvent(window, "message", (e: MessageEvent) => this.onMessage(e));
     this.frame = this.app.workspace.containerEl.createEl("iframe", { attr: { src: this.pageUrl(), "data-mdbase-native": "1" } });
     Object.assign(this.frame.style, { position: "fixed", width: "1px", height: "1px", border: "0", left: "-10px", top: "-10px" });
     this.watchStart();
-    this.markerTimer = window.setInterval(() => {
+    this.markerTimer = window.setInterval(() => { void (async () => {
       try {
-        this.checkOwnership();
-        if (this.ownsMarker()) this.writeMarker();
+        await this.checkOwnership();
+        if (await this.ownsMarker()) await this.writeMarker();
       } catch (e) { this.pauseForOwnership(e); }
-    }, 5000);
+    })(); }, 5000);
     this.registerEvent(this.app.vault.on("create", f => this.onVaultChange(f, true)));
     this.registerEvent(this.app.vault.on("modify", f => this.onVaultChange(f)));
     this.registerEvent(this.app.vault.on("delete", f => this.onVaultChange(f, true)));
@@ -206,9 +201,7 @@ export default class NativeSync extends Component {
     }));
   }
 
-  pageUrl() {
-    return `${this.origin}/?bridge=${this.frameCapability}&vault=${encodeURIComponent(`obsidian-vault-${this.data.vaultId}`)}${this.data.collectionId ? `&collection=${encodeURIComponent(this.data.collectionId)}` : ""}`;
-  }
+  pageUrl() { return this.frameUrl; }
   async addCollection() {
     // SDK approval selects the newly added collection. A bound mirror cannot
     // follow that switch without putting its existing files in another collection.
@@ -232,8 +225,8 @@ export default class NativeSync extends Component {
       () => { for (const t of [this.settleTimer, this.reconcileRetryTimer, this.stallTimer]) if (t !== null) window.clearTimeout(t); },
       () => { if (this.markerTimer !== null) window.clearInterval(this.markerTimer); },
       // Memory is the truth; anything persistSoon() or durable() deferred goes to disk now.
-      () => { if (this.data && (this.dirty || this.commitTimer !== null)) this.persist(); },
-      () => { if (this.activityTimer !== null) { window.clearTimeout(this.activityTimer); this.writeActivity(); } },
+      () => { if (this.data && (this.dirty || this.commitTimer !== null)) void this.persist().catch(error => this.fail("saving state", error)); },
+      () => { if (this.activityTimer !== null) { window.clearTimeout(this.activityTimer); void this.writeActivity(); } },
       () => { this.bridge?.close(); },
       () => { this.frame?.remove(); },
       () => this.closeServer(),
@@ -254,28 +247,20 @@ export default class NativeSync extends Component {
   }
   /** Close the loopback server and every connection to it; `released` says when the port is free. */
   closeServer() {
-    const server = this.server;
-    this.server = null;
-    if (!server) return;
-    this.released = new Promise<void>(resolve => {
-      const timer = window.setTimeout(resolve, 3000);
-      try { server.close(() => { window.clearTimeout(timer); resolve(); }); }
-      catch { window.clearTimeout(timer); resolve(); }
-      // A kept-alive connection must not serve a later page with this host's handler.
-      try { server.closeAllConnections(); } catch { /* older Node: close() alone */ }
-    });
+    this.released = Promise.all([this.persistence, this.jobs, this.host.close()]).then(() => {});
+    void this.released.catch(() => this.log("sync host release failed; restart blocked"));
   }
   bindVault() {
-    const location = `${os.hostname()}:${fs.realpathSync(this.root)}`;
+    const location = this.host.location();
     if (this.data.vaultLocation !== undefined && this.data.vaultLocation !== location)
       throw new Error("sync-state.json belongs to another vault or host; refusing shared replica storage. Restore this vault's own settings (do not copy another vault's sync-state.json).");
     this.data.vaultLocation = location;
   }
-  readData(): Data {
+  async readData(): Promise<Data> {
     let saved: any;
-    try { saved = JSON.parse(fs.readFileSync(path.join(this.pluginDir, "sync-state.json"), "utf8")); }
+    try { saved = JSON.parse(await this.host.readText(this.host.join(this.pluginDir, "sync-state.json"))); }
     catch (e: any) {
-      if (e.code === "ENOENT") return { version: 1, vaultId: randomUUID(), paths: {} };
+      if (e.code === "ENOENT") return { version: 1, vaultId: this.host.uuid(), paths: {} };
       throw new Error("Cannot read sync-state.json; sync stopped and original state retained. Restore a valid backup before reloading.");
     }
     const object = (v: any) => v && typeof v === "object" && !Array.isArray(v);
@@ -295,38 +280,44 @@ export default class NativeSync extends Component {
   //  - durable(): resolves once saved. Sends that start together share one write.
   //  - persistSoon(): shortly, and at the end of every pass. Only for facts a
   //    restart can work out again (what was synced; see `sending`).
-  persist() {
+  persist(): Promise<void> {
     if (this.retired) throw Object.assign(new Error("Sync host stopped; state not written"), { code: "unloaded" });
     const started = Date.now();
-    const file = path.join(this.pluginDir, "sync-state.json"), temp = file + ".tmp";
-    fs.writeFileSync(temp, JSON.stringify(this.data, null, 2), { mode: 0o600 }); fs.renameSync(temp, file);
-    this.persistCost = Date.now() - started; this.dirty = false;
-    if (this.persistTimer !== null) { window.clearTimeout(this.persistTimer); this.persistTimer = null; }
-    if (this.commitTimer !== null) { window.clearTimeout(this.commitTimer); this.commitTimer = null; }
+    const file = this.host.join(this.pluginDir, "sync-state.json");
+    const snapshot = JSON.stringify(this.data, null, 2);
+    this.dirty = false;
+    for (const timer of [this.persistTimer, this.commitTimer]) if (timer !== null) window.clearTimeout(timer);
+    this.persistTimer = this.commitTimer = null;
     const waiting = this.commitWaiters; this.commitWaiters = [];
-    for (const w of waiting) w.resolve();
+    let operation;
+    try { operation = this.host.writeAtomic(file, snapshot); }
+    catch (error) { this.dirty = true; for (const waiter of waiting) waiter.reject(error); throw error; }
+    const write = Promise.resolve(operation);
+    this.persistence = write;
+    void write.then(() => { this.persistCost = Date.now() - started; for (const waiter of waiting) waiter.resolve(); }, error => { this.dirty = true; for (const waiter of waiting) waiter.reject(error); });
+    return write;
   }
   persistSoon() {
     if (this.retired) return; // a restart works these facts out again
     this.dirty = true;
     // A large state file takes longer to write, so it is written less often.
-    if (this.persistTimer === null) this.persistTimer = window.setTimeout(() => { this.persistTimer = null; this.flush(true); }, Math.min(2000, Math.max(250, this.persistCost * 20)));
+    if (this.persistTimer === null) this.persistTimer = window.setTimeout(() => { this.persistTimer = null; void this.flush(true); }, Math.min(2000, Math.max(250, this.persistCost * 20)));
   }
   /** Save anything persistSoon() left unsaved. */
-  flush(quiet = false) {
+  async flush(quiet = false) {
     if (!this.dirty) return;
-    try { this.persist(); }
+    try { await this.persist(); }
     catch (e: any) { if (!quiet) throw e; this.log(`saving sync state failed: ${e?.code ?? "error"}`); }
   }
   durable(): Promise<void> {
     if (this.retired) return Promise.reject(Object.assign(new Error("Sync host stopped; state not written"), { code: "unloaded" }));
     return new Promise((resolve, reject) => {
       this.commitWaiters.push({ resolve, reject });
-      if (this.commitTimer === null) this.commitTimer = window.setTimeout(() => {
+      if (this.commitTimer === null) this.commitTimer = window.setTimeout(() => { void (async () => {
         this.commitTimer = null;
-        try { this.persist(); }
+        try { await this.persist(); }
         catch (e) { const waiting = this.commitWaiters; this.commitWaiters = []; for (const w of waiting) w.reject(e); }
-      }, Math.min(100, Math.max(2, this.persistCost * 2)));
+      })(); }, Math.min(100, Math.max(2, this.persistCost * 2)));
     });
   }
   enqueue(work: () => Promise<any>) {
@@ -339,106 +330,50 @@ export default class NativeSync extends Component {
 
   // ---- in-memory loopback assets -------------------------------------------
   async startServer() {
-    const server = this.server = http.createServer((req, res) => {
-      // A stopped host serves nothing, even on a connection still open to it.
-      if (this.unloaded) { res.writeHead(503, { connection: "close" }).end(); return; }
-      let request: URL;
-      try { request = new URL(req.url ?? "/", this.origin); } catch { res.writeHead(400).end(); return; }
-      let rel = request.pathname;
-      if (rel.startsWith("/auth/")) { res.writeHead(200, { "content-type": "text/plain" }).end("Return to Obsidian to finish signing in."); return; }
-      if (rel === "/" || rel === "/index.html") {
-        if (request.searchParams.get("bridge") !== this.frameCapability) { res.writeHead(403).end(); return; }
-        rel = "/index.html";
-      }
-      const packed = (packedAssets)[rel];
-      if (!packed) { res.writeHead(404).end(); return; }
-      let bytes = this.assets.get(rel);
-      if (!bytes) { bytes = brotliDecompressSync(Buffer.from(packed, "base64")); this.assets.set(rel, bytes); }
-      if (!this.served.has(rel)) { this.served.add(rel); this.log(`memory asset ${rel} (${bytes.length} bytes)`); }
-      res.writeHead(200, { "content-type": TYPES[path.extname(rel)] ?? "application/octet-stream", "content-length": bytes.length, "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" });
-      res.end(bytes);
-    });
-    const listen = (port: number) => new Promise<void>((resolve, reject) => {
-      // Unloaded meanwhile: this server is nobody's, so it must not open a port.
-      if (this.unloaded) { reject(Object.assign(new Error("Sync host stopped"), { code: "unloaded" })); return; }
-      const done = () => { server.off("error", failed); server.off("listening", ready); server.off("close", closed); };
-      const failed = (e: Error) => { done(); reject(e); };
-      const ready = () => { done(); resolve(); };
-      // Closed (by unload) before the port opened: Node then reports neither listening nor error.
-      const closed = () => { done(); reject(Object.assign(new Error("Sync host stopped"), { code: "unloaded" })); };
-      server.once("error", failed); server.once("listening", ready); server.once("close", closed);
-      this.origin = `http://127.0.0.1:${port}`; server.listen(port, "127.0.0.1");
-    });
-    // Unloaded while the port opened (listening completes asynchronously): close it again.
-    const abandoned = () => {
-      if (!this.unloaded) return;
-      try { server.close(); server.closeAllConnections(); } catch { /* not listening */ }
-      throw Object.assign(new Error("Sync host stopped"), { code: "unloaded" });
-    };
-    if (this.data.port !== undefined) {
-      if (!validVaultPort(this.data.port)) throw new Error("Invalid saved native port");
-      // A host that just stopped (Restart sync, plugin reload) may still be letting go of it.
-      for (const until = Date.now() + PORT_WAIT_MS; ;) {
-        try { await listen(this.data.port); break; }
-        catch (e: any) {
-          if (e.code === "unloaded") throw e;
-          if (e.code !== "EADDRINUSE" || Date.now() >= until)
-            throw new Error(`Saved port ${this.data.port} unavailable (${e.code}); not switching origins. Close the other listener and reload.`);
-          await new Promise(resolve => window.setTimeout(resolve, 100));
-        }
-      }
-    } else {
-      const first = Math.floor(Math.random() * 100);
-      for (let n = 0; n < 100; n++) {
-        const port = 48300 + ((first + n) % 100);
-        try { await listen(port); }
-        catch (e: any) { if (e.code !== "EADDRINUSE") throw e; continue; }
-        abandoned(); this.data.port = port; this.persist(); break;
-      }
-      if (!this.data.port) throw new Error("No free native port in 48300–48399");
-    }
-    abandoned();
-    this.log(`native host ${this.origin}; assets embedded in main.js`);
+    const page = await this.host.open({ data: this.data, capability: this.frameCapability, stopped: () => this.unloaded, save: () => this.persist(), log: text => this.log(text) });
+    this.origin = page.origin; this.frameUrl = page.url;
   }
 
   // ---- ownership: .mdbase is private, never a mirrored collection path -------
-  get markerPath() { return path.join(this.root, ".mdbase", "host.json"); }
-  readMarker(): any {
+  get markerPath() { return this.host.join(this.root, ".mdbase", "host.json"); }
+  async readMarker(): Promise<any> {
     this.assertDiskPath(".mdbase/host.json");
     try {
-      const marker = JSON.parse(fs.readFileSync(this.markerPath, "utf8"));
+      const marker = JSON.parse(await this.host.readText(this.markerPath));
       if (!marker || typeof marker !== "object" || Array.isArray(marker)) throw new Error("Invalid marker");
       return marker;
     } catch (e: any) { if (e.code === "ENOENT") return null; throw new Error("Unreadable ownership marker; waiting for desktop/manual recovery"); }
   }
-  ownsMarker(m = this.readMarker()) {
+  async ownsMarker(m?: any) {
+    if (m === undefined) m = await this.readMarker();
+    return this.markerMatches(m);
+  }
+  markerMatches(m: any) {
     return !!m && Number.isSafeInteger(this.data.markerSince) && m.host === "obsidian" && m.collection_id === (this.data.collectionId ?? null) && m.since_ms === this.data.markerSince;
   }
   checkOwnership() {
-    this.assertDiskPath(".mdbase/host.lock");
-    const m = this.readMarker();
-    if ((m && !this.ownsMarker(m)) || (!m && this.mirroring)) throw new Error("Folder owned elsewhere (or ownership marker missing); waiting. Never remove another host's marker.");
-    const lock = path.join(this.root, ".mdbase", "host.lock");
-    if (fs.existsSync(lock)) {
-      // Node has no flock primitive. Probe the same OS advisory lock used by the
-      // daemon; absence of a supported probe fails closed instead of guessing by age.
-      if (process.platform !== "linux" || spawnSync("flock", ["-n", lock, "true"], { timeout: 1000 }).status !== 0)
-        throw new Error("Desktop folder lock held or lock probe unavailable; waiting");
-    }
+    return this.host.checkOwnership(text => {
+      let marker: any = null;
+      try {
+        marker = text === null ? null : JSON.parse(text);
+        if (text !== null && (!marker || typeof marker !== "object" || Array.isArray(marker))) throw new Error("Invalid marker");
+      } catch { throw new Error("Unreadable ownership marker; waiting for desktop/manual recovery"); }
+      if ((marker && !this.markerMatches(marker)) || (!marker && this.mirroring)) throw new Error("Folder owned elsewhere (or ownership marker missing); waiting. Never remove another host's marker.");
+    });
   }
-  claim(id?: string) {
-    this.checkOwnership();
+  async claim(id?: string) {
+    await this.checkOwnership();
     if (this.data.collectionId && this.data.collectionId !== id) throw Object.assign(new Error("Folder is bound to another collection; drain it before reconfiguration"), { code: "collection_bound" });
-    this.data.collectionId = id; this.data.markerSince ??= Date.now(); this.persist();
-    this.writeMarker(); this.checkOwnership();
-    if (!this.ownsMarker()) throw new Error("Ownership changed while claiming folder");
+    this.data.collectionId = id; this.data.markerSince ??= Date.now(); await this.persist();
+    await this.writeMarker(); await this.checkOwnership();
+    if (!await this.ownsMarker()) throw new Error("Ownership changed while claiming folder");
   }
-  writeMarker() {
+  async writeMarker() {
+    if (this.unloaded) return;
     this.assertDiskPath(".mdbase/host.json");
-    fs.mkdirSync(path.dirname(this.markerPath), { recursive: true });
-    const temp = this.markerPath + `.obsidian-${randomUUID()}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify({ host: "obsidian", pid: process.pid, collection_id: this.data.collectionId ?? null, since_ms: this.data.markerSince, heartbeat_ms: Date.now() }), { flag: "wx", mode: 0o600 });
-    fs.renameSync(temp, this.markerPath);
+    await this.host.mkdir(this.host.dirname(this.markerPath));
+    if (this.unloaded) return;
+    await this.host.writeAtomic(this.markerPath, JSON.stringify({ host: "obsidian", pid: this.host.processId, collection_id: this.data.collectionId ?? null, since_ms: this.data.markerSince, heartbeat_ms: Date.now() }), true);
   }
   pauseForOwnership(e: any) {
     if (!this.admitting) return;
@@ -461,9 +396,9 @@ export default class NativeSync extends Component {
       }
       this.mirroring = false;
       await this.call("stop");
-      this.checkOwnership();
-      if (!this.ownsMarker()) throw new Error("Ownership changed during handover");
-      fs.unlinkSync(this.markerPath);
+      await this.checkOwnership();
+      if (!await this.ownsMarker()) throw new Error("Ownership changed during handover");
+      await this.host.remove(this.markerPath);
       this.log("handover: SDK stopped; own marker removed");
       if (this.markerTimer) window.clearInterval(this.markerTimer);
       // Stopped on purpose: a state of its own, so it reads as done, not as a fault.
@@ -483,7 +418,7 @@ export default class NativeSync extends Component {
       this.bridge!.postMessage({ type: "call", id, method, args });
     });
   }
-  onMessage(e: MessageEvent) {
+  async onMessage(e: MessageEvent) {
     if (this.unloaded) return;
     if (e.origin !== this.origin || e.source !== this.frame?.contentWindow || !e.data) return;
     const m = e.data;
@@ -494,7 +429,7 @@ export default class NativeSync extends Component {
         channel.port1.onmessage = event => this.onMessage({ origin: this.origin, source: this.frame!.contentWindow, data: event.data } as MessageEvent);
         this.frame.contentWindow!.postMessage({ type: "connect" }, this.origin, [channel.port2]);
         this.log(`page up: origin=${m.origin} opfs=${m.opfs} secure=${m.isSecureContext}`);
-        try { this.checkOwnership(); } catch (e) { this.pauseForOwnership(e); return; }
+        try { await this.checkOwnership(); } catch (e) { this.pauseForOwnership(e); return; }
         void this.call("start").catch(e => this.fail("start", e)); break;
       }
       case "phase": void this.onPhase(m.phase).catch(e => this.fail("phase", e)); break;
@@ -519,7 +454,7 @@ export default class NativeSync extends Component {
       }
     }
   }
-  async select(id: string) { this.claim(id); await this.call("select", id); }
+  async select(id: string) { await this.claim(id); await this.call("select", id); }
   async onPhase(phase: any) {
     // After a handover the SDK is stopped; its closing notices change nothing here.
     if (this.phase.kind === "handed_over") return;
@@ -557,7 +492,7 @@ export default class NativeSync extends Component {
     if (syncOffline(phase.sync) && !syncOffline(was.sync))
       new Notice("mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns.", 10000);
     if (this.admitting && (phase.kind === "opening" || phase.kind === "needs_unlock") && phase.collectionId) {
-      try { this.claim(phase.collectionId); } catch (e) { this.pauseForOwnership(e); return; }
+      try { await this.claim(phase.collectionId); } catch (e) { this.pauseForOwnership(e); return; }
     }
     if (this.admitting && phase.kind === "choosing") {
       const bound = phase.collections.find((c: { id: string }) => c.id === this.data.collectionId);
@@ -568,7 +503,7 @@ export default class NativeSync extends Component {
     // choosing handler must not subsequently turn off the now-ready mirror.
     if (this.unloaded || this.phase !== phase) return;
     if (this.admitting && phase.kind === "ready" && (was.kind !== "ready" || was.collectionId !== phase.collectionId)) {
-      try { this.claim(phase.collectionId); } catch (e) { this.pauseForOwnership(e); return; }
+      try { await this.claim(phase.collectionId); } catch (e) { this.pauseForOwnership(e); return; }
       if (await this.needsMergeConfirmation(phase)) return;
       await this.startMirror();
     }
@@ -583,7 +518,7 @@ export default class NativeSync extends Component {
     const remotes = await this.remoteAll(); // also reads the layout
     if (this.unloaded || this.phase !== phase) return true;
     const remote = [...remotes.values()].filter(r => r.kind !== "resource").length;
-    const local = this.localPaths().filter(p => this.kindOf(p) !== "resource").length;
+    const local = (await this.localPaths()).filter(p => this.kindOf(p) !== "resource").length;
     if (!remote || !local) return false;
     const name = phase.collections?.find((c: { id: string }) => c.id === phase.collectionId)?.name ?? "this collection";
     this.merge = { collectionId: phase.collectionId, name, local, remote };
@@ -608,7 +543,7 @@ export default class NativeSync extends Component {
   async confirmMerge() {
     const m = this.merge, phase = this.phase;
     if (!m || phase.kind !== "ready" || phase.collectionId !== m.collectionId) return;
-    this.data.mergeConfirmed = m.collectionId; this.merge = null; this.persist();
+    this.data.mergeConfirmed = m.collectionId; this.merge = null; await this.persist();
     await this.startMirror();
   }
   /** Only before anything has synced: release the collection and pick again. */
@@ -616,7 +551,7 @@ export default class NativeSync extends Component {
   get canChooseAnother(): boolean {
     return (this.merge !== null || this.phase.kind === "needs_unlock") && this.data.cursor === undefined && !Object.keys(this.data.paths).length;
   }
-  chooseAnother() {
+  async chooseAnother() {
     if (!this.canChooseAnother) return;
     const current = this.merge?.collectionId ?? this.phase.collectionId, plugin = this;
     const items: { id: string | null; name: string; private?: boolean }[] = [
@@ -627,9 +562,11 @@ export default class NativeSync extends Component {
       getSuggestions(q: string) { return items.filter(c => c.name.toLowerCase().includes(q.toLowerCase())); }
       renderSuggestion(c: { id: string | null; name: string; private?: boolean }, el: HTMLElement) { renderCollectionChoice(c, el); }
       onChooseSuggestion(c: { id: string | null; name: string }) {
-        plugin.data.collectionId = undefined; plugin.merge = null; plugin.persist(); plugin.writeMarker();
-        plugin.setStatus("Getting your collection ready.");
-        void (c.id ? plugin.select(c.id) : plugin.call("addCollection")).catch(e => plugin.fail("select", e));
+        void (async () => {
+          plugin.data.collectionId = undefined; plugin.merge = null; await plugin.persist(); await plugin.writeMarker();
+          plugin.setStatus("Getting your collection ready.");
+          await (c.id ? plugin.select(c.id) : plugin.call("addCollection"));
+        })().catch(e => plugin.fail("select", e));
       }
     })(this.app)).open();
   }
@@ -644,11 +581,32 @@ export default class NativeSync extends Component {
     // watch may synchronously replay/reset before its RPC reply. Fold that
     // into the mandatory startup snapshot instead of running two full scans.
     this.setStatus("Checking your files");
+    await this.sweepIncoming();
     this.startingMirror = true;
     try { await this.call("watch", this.data.cursor); }
     finally { this.startingMirror = false; }
     this.requestReconcile(undefined, undefined, true);
     await this.jobs;
+  }
+  /**
+   * `.mdbase/incoming` holds only staging copies of downloads, each removed by
+   * its own transfer. A transfer killed with the app (Android stops Obsidian
+   * without warning) leaves its partial copy behind. Sweep once per load,
+   * before the first pass: no transfer of this load has started yet, and a
+   * later restart of the mirror must not touch a transfer still running.
+   */
+  async sweepIncoming() {
+    if (this.sweptIncoming) return;
+    this.sweptIncoming = true;
+    const incoming = this.host.join(this.root, ".mdbase", "incoming");
+    try {
+      if (!await this.host.exists(incoming)) return;
+      for (const entry of await this.host.list(incoming)) {
+        if (!entry.file || !entry.name.endsWith(".tmp")) continue;
+        await this.host.remove(this.host.join(incoming, entry.name));
+        this.log("removed an interrupted download's staging copy");
+      }
+    } catch (e: any) { this.log(`staging cleanup skipped: ${e?.message ?? e}`); }
   }
   async signIn() {
     if (this.phase.kind === "authorizing" && this.signInUrl) {
@@ -734,8 +692,7 @@ export default class NativeSync extends Component {
   }
   openSignIn(url: string) {
     this.signInUrl = url;
-    // Obsidian desktop: hand the link to the system browser.
-    void (window as any).require("electron").shell.openExternal(url)
+    void this.host.openExternal(url)
       .then(() => this.log("sign-in opened in system browser"), (e: Error) => this.fail("open sign-in", e));
   }
   choose() {
@@ -769,7 +726,7 @@ export default class NativeSync extends Component {
       const next = await this.call("inclusion");
       const changed = JSON.stringify(next) !== JSON.stringify(this.inclusion);
       if (next === null || validInclusion(next)) this.inclusion = next;
-      if (changed) this.forgetSkipped();
+      if (changed) await this.forgetSkipped();
     } catch (e: any) {
       // Without it this device syncs every file type, as before; Connect still
       // refuses what its policy excludes, and those show as not synced.
@@ -786,44 +743,43 @@ export default class NativeSync extends Component {
     if (!validFilter(filter)) throw new Error("Invalid device sync choices");
     // Saved before anything else: a choice must survive a reload even when it
     // matches no file yet (QA-1).
-    const apply = () => { this.data.device = filter.skip.length || filter.folders.length ? filter : undefined; this.persist(); this.forgetSkipped(); };
+    const apply = async () => { this.data.device = filter.skip.length || filter.folders.length ? filter : undefined; await this.persist(); await this.forgetSkipped(); };
     // Between passes only: a pass in flight still holds the old choices.
-    if (this.mirroring) await this.enqueue(async () => { apply(); await this.reconcileAll(false, undefined, true); });
-    else apply();
+    if (this.mirroring) await this.enqueue(async () => { await apply(); await this.reconcileAll(false, undefined, true); });
+    else await apply();
     this.setStatus(this.statusText);
   }
   /** Skipped paths keep no synced state, so turning one back on compares both sides afresh. */
-  forgetSkipped() {
+  async forgetSkipped() {
     let changed = false;
     for (const p of Object.keys(this.data.paths)) if (this.skipped(p)) { delete this.data.paths[p]; changed = true; }
     // Paths never synced (a refused new note, say) leave records here too. A
     // stale one would keep "Last synced" from ever updating (QA-5).
     for (const map of [this.data.pendingPaths, this.data.pathFailures, this.data.sending])
       for (const p of Object.keys(map ?? {})) if (this.skipped(p)) { delete map![p]; changed = true; }
-    if (changed) this.persist();
+    if (changed) await this.persist();
   }
   note(kind: ActivityKind, p: string, extra: Partial<ActivityEntry> = {}) {
     this.activity = recordActivity(this.activity, { at: Date.now(), kind, path: p, ...extra });
-    if (this.activityTimer === null) this.activityTimer = window.setTimeout(() => { this.activityTimer = null; this.writeActivity(); }, 2000);
+    if (this.activityTimer === null) this.activityTimer = window.setTimeout(() => { this.activityTimer = null; void this.writeActivity(); }, 2000);
   }
-  activityFile() { return path.join(this.pluginDir, "sync-activity.json"); }
-  readActivity() {
+  activityFile() { return this.host.join(this.pluginDir, "sync-activity.json"); }
+  async readActivity() {
     try {
-      const saved = JSON.parse(fs.readFileSync(this.activityFile(), "utf8"));
+      const saved = JSON.parse(await this.host.readText(this.activityFile()));
       if (validActivity(saved?.activity)) this.activity = saved.activity;
       if (typeof saved?.lastSynced === "number") this.lastSynced = saved.lastSynced;
     } catch { /* no history yet, or unreadable: start a new one */ }
   }
-  writeActivity() {
+  async writeActivity() {
     try {
-      const file = this.activityFile(), temp = `${file}.tmp`;
-      fs.writeFileSync(temp, JSON.stringify({ activity: this.activity, lastSynced: this.lastSynced }), { mode: 0o600 }); fs.renameSync(temp, file);
+      await this.host.writeAtomic(this.activityFile(), JSON.stringify({ activity: this.activity, lastSynced: this.lastSynced }));
     } catch (e: any) { this.log(`activity not saved: ${e?.code ?? "error"}`); }
   }
   /** Read the layout from this vault's mdbase.yaml, else the collection's. */
-  readLayout(remoteConfig?: string) {
+  async readLayout(remoteConfig?: string) {
     let text: string | undefined;
-    try { this.assertDiskPath(CONFIG_PATH); text = fs.readFileSync(path.join(this.root, CONFIG_PATH), "utf8"); }
+    try { this.assertDiskPath(CONFIG_PATH); text = await this.host.readText(this.host.join(this.root, CONFIG_PATH)); }
     catch { text = remoteConfig; }
     try { this.layout = text === undefined ? DEFAULT_LAYOUT : layoutFromConfig(parseYaml(text)); }
     catch { this.layout = DEFAULT_LAYOUT; } // Connect reports a broken config itself
@@ -841,15 +797,7 @@ export default class NativeSync extends Component {
   }
   // Discovery alone is insufficient: known/remote paths can be replaced by a
   // symlink after discovery, including any ancestor directory. Never follow it.
-  assertDiskPath(p: string) {
-    let current = this.root;
-    for (const part of ["", ...p.split("/")]) {
-      if (part) current = path.join(current, part);
-      try {
-        if (fs.lstatSync(current).isSymbolicLink()) throw Object.assign(new Error("Symlink mirror path refused"), { code: "unsafe_symlink" });
-      } catch (e: any) { if (e.code === "ENOENT") return; throw e; }
-    }
-  }
+  assertDiskPath(p: string) { this.host.assertPath(p); }
   accessiblePath(p: string) {
     if (!this.validPath(p)) return false;
     try { this.assertDiskPath(p); return true; }
@@ -866,36 +814,25 @@ export default class NativeSync extends Component {
     if (!this.accessiblePath(p)) return undefined;
     const f = this.app.vault.getAbstractFileByPath(this.vaultPath(p));
     try {
-      const adapter = this.app.vault.adapter;
-      // Desktop watchers may publish delete/create in different batches, or
-      // throttle the create while backgrounded. Use disk truth, not that index.
-      // Markdown autosave is debounced. Disk alone can be unchanged while a
-      // user has an entire losing edit in memory. Include that buffer in every
-      // three-way/recheck decision, and fail closed on inconsistent open views.
-      const diskBytes = adapter instanceof FileSystemAdapter
-        ? new Uint8Array(await fs.promises.readFile(path.join(adapter.getBasePath(), this.vaultPath(p))))
-        : f instanceof TFile ? new Uint8Array(await this.app.vault.readBinary(f)) : undefined;
-      const unsupportedEncoding = !!diskBytes && this.kindOf(p) !== "file" && !Buffer.from(Buffer.from(diskBytes).toString("utf8"), "utf8").equals(Buffer.from(diskBytes));
+      const diskBytes = await this.host.readBytes(this.host.join(this.root, this.vaultPath(p)));
+      const unsupportedEncoding = this.kindOf(p) !== "file" && !validUtf8(diskBytes);
       // Never let an editor's replacement-character decode masquerade as the
       // original invalid disk bytes. Snapshot buffers AFTER asynchronous IO.
       const buffers = !unsupportedEncoding && p.endsWith(".md") ? this.editorViews(p).map(v => v.getViewData() as string) : [];
       if (new Set(buffers).size > 1) throw new Error("Open editor buffers disagree; local state retained");
-      const bytes = buffers.length ? new Uint8Array(Buffer.from(buffers[0], "utf8")) : diskBytes;
+      const bytes = buffers.length ? encode(buffers[0]) : diskBytes;
       if (!bytes) return undefined;
-      return { f: f instanceof TFile ? f : undefined, bytes, hash: hash(bytes), unsupportedEncoding };
+      return { f: f instanceof TFile ? f : undefined, bytes, hash: await this.host.hash(bytes), unsupportedEncoding };
     } catch (e: any) {
       // Disk watchers can expose the old TFile briefly after an external mv.
       if (e.code === "ENOENT" || e.code === "EISDIR") return undefined;
       throw e;
     }
   }
-  localPaths(skippedOnly = false) {
-    const adapter = this.app.vault.adapter;
-    const wanted = (p: string) => skippedOnly ? this.validPath(p) && this.skipped(p) : !!this.collectionPath(p);
-    if (!(adapter instanceof FileSystemAdapter)) return this.app.vault.getFiles().flatMap(f => wanted(f.path) ? [f.path] : []);
+  async localPaths(skippedOnly = false) {
     const out: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(path.join(this.root, dir), { withFileTypes: true })) {
+    const walk = async (dir: string) => {
+      for (const entry of await this.host.list(this.host.join(this.root, dir))) {
         const p = dir ? `${dir}/${entry.name}` : entry.name;
         if (!this.validPath(p)) {
           if (p !== p.normalize("NFC") && !this.warnedPaths.has(p)) {
@@ -905,23 +842,23 @@ export default class NativeSync extends Component {
           }
           continue;
         }
-        if (entry.isDirectory()) { if (!entry.name.startsWith(".") && entry.name !== "node_modules") walk(p); }
-        else if (entry.isFile() && (skippedOnly ? this.skipped(p) : this.kindOf(p) !== "excluded")) out.push(p); // do not traverse symlinks
+        if (entry.directory) { if (!entry.name.startsWith(".") && entry.name !== "node_modules") await walk(p); }
+        else if (entry.file && (skippedOnly ? this.skipped(p) : this.kindOf(p) !== "excluded")) out.push(p); // do not traverse symlinks
       }
     };
-    walk(""); return out;
+    await walk(""); return out;
   }
   remote(r: any, kind: ItemKind): Remote {
     return kind === "file"
       ? { ...r, kind, revision: r.digest, hash: r.digest }
-      : { ...r, kind, revision: r.revision, hash: hash(Buffer.from(r.document, "utf8")) };
+      : { ...r, kind, revision: r.revision, hash: hash(encode(r.document)) };
   }
   async remoteAll(affected?: Set<string>): Promise<Map<string, Remote>> {
     const out = new Map<string, Remote>(), identities = new Set<string>();
     // Definitions are few and the change stream never reports them, so every
     // pass lists them all. Record/file lookups must not be asked for them.
     const resources: any[] = await this.call("resourcesAll");
-    this.readLayout(resources.find(r => r.path === CONFIG_PATH)?.document);
+    await this.readLayout(resources.find(r => r.path === CONFIG_PATH)?.document);
     const lookup = affected && [...affected].filter(p => this.validPath(p) && !["resource", "excluded"].includes(this.kindOf(p)));
     const selected: any[] | undefined = lookup ? (lookup.length ? await this.call("at", lookup) : []) : undefined;
     const records: any[] = selected ? selected.filter(r => r.kind === "record") : await this.call("all");
@@ -945,11 +882,8 @@ export default class NativeSync extends Component {
   }
   diskIdentity(p: string) {
     try {
-      const adapter = this.app.vault.adapter;
-      if (!(adapter instanceof FileSystemAdapter)) return undefined;
       this.assertDiskPath(p);
-      const s = fs.statSync(path.join(adapter.getBasePath(), this.vaultPath(p)));
-      return { dev: s.dev, ino: s.ino, birthtimeMs: s.birthtimeMs };
+      return this.host.identity(this.host.join(this.root, this.vaultPath(p)));
     } catch { return undefined; } // mobile/non-filesystem: hash-only matching
   }
   remember(p: string, r: Remote, localHash: string) {
@@ -969,7 +903,7 @@ export default class NativeSync extends Component {
     }
   }
   async moveLocal(from: string, to: string, k: Synced, r: Remote) {
-    this.assertMirror();
+    await this.assertMirror();
     let next: any;
     try {
       next = r.kind === "record"
@@ -981,13 +915,13 @@ export default class NativeSync extends Component {
       // edit rejection. Usually the user's moved file itself is the copy, so do
       // not manufacture a second identical conflict file unnecessarily.
       if (isConflict(e) && e.mutationId && r.kind === "record") {
-        const bytes = Buffer.from(r.document!, "utf8"), submitted = { f: undefined, bytes, hash: hash(bytes), unsupportedEncoding: false };
+        const bytes = encode(r.document!), submitted = { f: undefined, bytes, hash: hash(bytes), unsupportedEncoding: false };
         const local = await this.local(to), target = (await this.remoteAll()).get(to);
         if (local?.hash === submitted.hash && (!target || (target.kind === "record" && target.hash === submitted.hash && target.confirmed === true))) {
           const h = { path: from, hash: submitted.hash, kind: "record" as const, copy: to, handled: false };
-          (this.data.handledRejections ??= {})[e.mutationId] = h; this.persist();
+          (this.data.handledRejections ??= {})[e.mutationId] = h; await this.persist();
           if (!target) await this.push(to, submitted);
-          h.handled = true; this.persist();
+          h.handled = true; await this.persist();
         } else await this.preserveConflict(to, submitted, e.mutationId);
         await this.acknowledgeHandled();
       }
@@ -1029,7 +963,7 @@ export default class NativeSync extends Component {
           this.reconcileFull = true; this.reconcileCursor ??= nextCursor;
           return;
         }
-        if (nextCursor !== undefined && nextCursor !== this.data.cursor) { this.data.cursor = nextCursor; this.persist(); }
+        if (nextCursor !== undefined && nextCursor !== this.data.cursor) { this.data.cursor = nextCursor; await this.persist(); }
         this.reconcileRetryDelay = 250;
       } catch (e: any) {
         // Never skip a failed batch by committing a later cursor after a partial
@@ -1057,21 +991,30 @@ export default class NativeSync extends Component {
   async reconcileAll(defer = false, affected?: Set<string>, retryFailed = false): Promise<boolean | undefined> {
     let result: boolean | undefined;
     try { result = await this.reconcilePass(defer, affected, retryFailed); }
-    catch (e) { this.flush(true); throw e; }
-    this.flush();
+    catch (e) { await this.flush(true); throw e; }
+    await this.flush();
     return result;
   }
   async reconcilePass(defer: boolean, affected: Set<string> | undefined, retryFailed: boolean): Promise<boolean | undefined> {
     if (!this.mirroring) return;
-    this.checkOwnership();
+    await this.checkOwnership();
     // Recovery journals require the original and preservation copy together.
-    if (Object.keys(this.data.handledRejections ?? {}).length || Object.keys(this.data.conflictCopies ?? {}).length || Object.keys(this.data.pathFailures ?? {}).length) affected = undefined;
+    if (this.deferredRemoteMoves.size || Object.keys(this.data.handledRejections ?? {}).length || Object.keys(this.data.conflictCopies ?? {}).length || Object.keys(this.data.pathFailures ?? {}).length) affected = undefined;
     if (!affected || this.inclusion === undefined) await this.readInclusion();
-    this.forgetSkipped();
+    await this.forgetSkipped();
     await this.resumeUploads();
     let remotes = await this.remoteAll(affected);
     await this.acknowledgeHandled(false, remotes);
     const failedBefore = new Set(Object.keys(this.data.pathFailures ?? {}));
+    // One path's failure is recorded for the Sync tab; the pass carries on.
+    const notSynced = async (p: string, signature: string, e: any): Promise<ActivityKind> => {
+      if (!this.mirroring || this.unloaded) throw e;
+      await this.checkOwnership();
+      (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: e?.code, reason: e?.reason, unknown: /unknown/.test(`${e?.code} ${e?.reason}`), ...(Array.isArray(e?.issues) ? { issues: e.issues } : {}) };
+      await this.persist();
+      this.log(`not synced: ${JSON.stringify(p)} ${[e?.code, e?.reason].filter(Boolean).join(" ")}`);
+      return "not_synced";
+    };
     if (affected) {
       // Remote definition changes arrive only through this listing.
       for (const r of remotes.values()) if (r.kind === "resource" && this.data.paths[r.path]?.revision !== r.revision) affected.add(r.path);
@@ -1079,31 +1022,67 @@ export default class NativeSync extends Component {
     }
     // Records validate against the definitions. Folding their revisions into a
     // record's failure signature retries an invalid_record once types change.
-    const definitions = hash(Buffer.from(JSON.stringify([...remotes.values()].filter(r => r.kind === "resource").map(r => [r.path, r.revision]).sort()), "utf8"));
+    const definitions = hash(encode(JSON.stringify([...remotes.values()].filter(r => r.kind === "resource").map(r => [r.path, r.revision]).sort())));
     let definitionsChanged = false;
     // Index once, rather than allocating/scanning all remotes for every path.
     const byId = new Map([...remotes.values()].map(r => [`${r.kind}:${r.id}`, r]));
+    const previousMoves = this.deferredRemoteMoves;
+    this.deferredRemoteMoves = new Map();
+    const blockedSources = new Set<string>(), blockedTargets = new Set<string>();
+    let retryMoves = false, refreshRemotes = false;
     // Join by stable identity BEFORE treating a new path as a new remote item.
     for (const [from, k] of Object.entries(this.data.paths)) {
       const r = byId.get(`${k.kind}:${k.id}`);
       // A move into a folder this device skips reads as a removal at `from`.
       if (!r || r.path === from || !this.accessiblePath(from) || !this.accessiblePath(r.path) || this.skipped(r.path) || (affected && !affected.has(from) && !affected.has(r.path))) continue;
       affected?.add(from); affected?.add(r.path);
+      const signature = `remote-move:${JSON.stringify([k.id, k.kind, r.path, r.revision])}`;
+      try {
       const l = await this.local(from);
-      const decision = remoteMoveDecision(k, l?.hash, r, !!this.app.vault.getAbstractFileByPath(this.vaultPath(r.path)) || !!this.data.paths[r.path]);
-      if (decision === "blocked") throw new Error("Remote move destination occupied; local state retained");
+      const tracked = this.data.paths[r.path];
+      let occupied = !!tracked || !!this.app.vault.getAbstractFileByPath(this.vaultPath(r.path)) || await this.host.exists(this.host.join(this.root, r.path));
+      if (!tracked && occupied && k.id === r.id && k.kind === r.kind) {
+        if (l && !l.f) throw Object.assign(new Error("Waiting for vault index before remote rename"), { code: "vault_index_pending" });
+        const occupant = await this.local(r.path);
+        if (occupant) {
+          refreshRemotes = true;
+          const copy = await this.preserveConflict(r.path, occupant);
+          affected?.add(copy);
+          await this.removeLocal(r.path, occupant.hash);
+          occupied = false;
+          this.note("conflict", r.path);
+        }
+      }
+      const decision = remoteMoveDecision(k, l?.hash, r, occupied);
+      if (decision === "blocked") {
+        blockedSources.add(from); blockedTargets.add(r.path);
+        this.deferredRemoteMoves.set(from, signature);
+        if (previousMoves.get(from) === signature || this.data.pathFailures?.[from]?.signature === signature) {
+          await notSynced(from, signature, { code: "remote_move_blocked", reason: k.id !== r.id || k.kind !== r.kind ? "identity_mismatch" : "destination_occupied", issues: [{ message: `Destination: ${r.path}` }] });
+        } else retryMoves = true;
+        continue;
+      }
       if (decision === "rename") {
-        await this.ensureFolder(this.vaultPath(r.path)); this.assertMirror();
-        if (!l!.f) throw new Error("Waiting for vault index before remote rename");
+        await this.ensureFolder(this.vaultPath(r.path)); await this.assertMirror();
+        if (!l!.f) throw Object.assign(new Error("Waiting for vault index before remote rename"), { code: "vault_index_pending" });
         await this.app.vault.rename(l!.f, this.vaultPath(r.path));
         this.data.paths[r.path] = k;
         this.note("moved", from, { to: r.path, from: "remote" });
         this.log(`remote ${r.kind} move: renamed locally (no download)`);
       }
-      delete this.data.paths[from]; this.persist();
+      delete this.data.pathFailures?.[from];
+      delete this.data.paths[from]; await this.persist();
+      } catch (e: any) {
+        blockedSources.add(from); blockedTargets.add(r.path);
+        await notSynced(from, signature, e);
+      }
+    }
+    if (refreshRemotes) remotes = await this.remoteAll(affected);
+    for (const [p, failure] of Object.entries(this.data.pathFailures ?? {})) if (failure.signature.startsWith("remote-move:") && !blockedSources.has(p)) {
+      delete this.data.pathFailures![p]; await this.persist();
     }
     const paths = new Set([...(affected ?? [...Object.keys(this.data.paths), ...remotes.keys()])].filter(p => this.accessiblePath(p) && this.kindOf(p) !== "excluded"));
-    if (!affected) for (const p of this.localPaths()) paths.add(p);
+    if (!affected) for (const p of await this.localPaths()) paths.add(p);
     // Pairing needs hashes, not payloads. Keeping every byte here retained an
     // entire vault (including large attachments) throughout slow network IO.
     const locals = new Map<string, { hash: string; unsupportedEncoding?: boolean }>();
@@ -1111,32 +1090,42 @@ export default class NativeSync extends Component {
     for (const p of paths) {
       try { const l = await this.local(p); if (l) locals.set(p, { hash: l.hash, unsupportedEncoding: l.unsupportedEncoding }); }
       catch (e: any) {
-        this.assertMirror(); unreadable.add(p);
+        await this.assertMirror(); unreadable.add(p);
         (this.data.pathFailures ??= Object.create(null))[p] = { signature: "unreadable", code: e?.code ?? "unreadable" };
-        this.persist(); this.log(`read failed: ${JSON.stringify(p)} ${e?.code ?? ""}`);
+        await this.persist(); this.log(`read failed: ${JSON.stringify(p)} ${e?.code ?? ""}`);
       }
     }
-    if (!affected) for (const p of Object.keys(this.data.pathFailures ?? {})) if (!paths.has(p)) { delete this.data.pathFailures![p]; this.persist(); }
-    const missing = Object.entries(this.data.paths).filter(([p]) => paths.has(p) && !unreadable.has(p) && !locals.has(p)).map(([p, known]) => ({ path: p, known, remote: remotes.get(p) }));
-    const added = [...locals].filter(([p, l]) => !l.unsupportedEncoding && !this.data.paths[p] && !remotes.has(p)).map(([p, l]) => ({ path: p, kind: this.kindOf(p) as ItemKind, hash: l.hash, disk: this.diskIdentity(p) }));
+    if (!affected) for (const p of Object.keys(this.data.pathFailures ?? {})) if (!paths.has(p)) { delete this.data.pathFailures![p]; await this.persist(); }
+    const missing = Object.entries(this.data.paths).filter(([p]) => paths.has(p) && !blockedSources.has(p) && !blockedTargets.has(p) && !unreadable.has(p) && !locals.has(p)).map(([p, known]) => ({ path: p, known, remote: remotes.get(p) }));
+    const added = [...locals].filter(([p, l]) => !blockedSources.has(p) && !blockedTargets.has(p) && !l.unsupportedEncoding && !this.data.paths[p] && !remotes.has(p)).map(([p, l]) => ({ path: p, kind: this.kindOf(p) as ItemKind, hash: l.hash, disk: this.diskIdentity(p) }));
     // A content event can race disk moves whose create/delete watcher has not
     // arrived yet. Topology needs the whole disk for conservative move pairing.
     if (affected && (missing.length || added.length)) return this.reconcileAll(defer, undefined, retryFailed);
     // Moving a note into a folder this device skips is still a move for every
     // other device. Pair those by inode only: skipped files are never hashed.
-    const intoSkipped = missing.length && !affected ? this.localPaths(true).filter(p => !this.data.paths[p] && !remotes.has(p)).map(p => ({ path: p, kind: classifyPath(p, this.layout) as ItemKind, hash: "", disk: this.diskIdentity(p) })) : [];
+    const intoSkipped = missing.length && !affected ? (await this.localPaths(true)).filter(p => !this.data.paths[p] && !remotes.has(p)).map(p => ({ path: p, kind: classifyPath(p, this.layout) as ItemKind, hash: "", disk: this.diskIdentity(p) })) : [];
     // A definition's path is its identity: moving one is a delete plus a create.
     for (const pair of localMovePairs(missing.filter(m => m.known.kind !== "resource"), [...added, ...intoSkipped].filter(a => a.kind !== "resource"))) {
       // Recheck disk state after async IO; never move a now-occupied source.
       const skippedTarget = this.skipped(pair.to);
-      if (await this.local(pair.from) || !(skippedTarget ? fs.existsSync(path.join(this.root, pair.to)) : await this.local(pair.to))) continue;
+      const signature = `local-move:${JSON.stringify([pair.from, pair.to, locals.get(pair.to)?.hash, remotes.get(pair.from)?.revision])}`;
+      if (this.data.pathFailures?.[pair.to]?.signature === signature && !retryFailed) {
+        blockedSources.add(pair.from); blockedTargets.add(pair.to); continue;
+      }
       try {
+        if (await this.local(pair.from) || !(skippedTarget ? await this.host.exists(this.host.join(this.root, pair.to)) : await this.local(pair.to))) continue;
         const moved = await this.moveLocal(pair.from, pair.to, this.data.paths[pair.from], remotes.get(pair.from)!);
         remotes.delete(pair.from);
-        if (skippedTarget) { delete this.data.paths[pair.to]; this.persist(); }
+        if (skippedTarget) { delete this.data.paths[pair.to]; await this.persist(); }
         else remotes.set(pair.to, moved);
         this.log(`external move paired by ${pair.via}`);
-      } catch (e) { if (!isConflict(e)) throw e; remotes = await this.remoteAll(); }
+      } catch (e) {
+        if (isConflict(e)) remotes = await this.remoteAll();
+        else {
+          blockedSources.add(pair.from); blockedTargets.add(pair.to);
+          await notSynced(pair.to, signature, e);
+        }
+      }
     }
     const pending = this.data.pendingPaths ??= Object.create(null);
     const unsettled = new Set([...missing.map(m => m.path), ...added.map(a => a.path)].filter(p =>
@@ -1149,21 +1138,12 @@ export default class NativeSync extends Component {
       const due = Math.min(pending[p] ?? Date.now() + 2000, Date.now() + 2000);
       if (due !== pending[p]) { pending[p] = due; pendingChanged = true; }
     }
-    if (pendingChanged) this.persist();
+    if (pendingChanged) await this.persist();
     this.scheduleSettle();
     // What happened to one path: its activity line, and its settle deadline.
     const settled = (p: string, outcome: ActivityKind | null) => {
       if (outcome) this.note(outcome, p, outcome === "deleted_remote" ? { from: "here" } : outcome === "deleted_here" ? { from: "remote" } : {});
       if (Object.prototype.hasOwnProperty.call(pending, p)) { delete pending[p]; this.persistSoon(); }
-    };
-    // One path's failure is recorded for the Sync tab; the pass carries on.
-    const notSynced = (p: string, signature: string, e: any): ActivityKind => {
-      if (!this.mirroring || this.unloaded) throw e;
-      this.checkOwnership(); // ownership/stop failures remain pass-wide barriers
-      (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: e?.code, reason: e?.reason, unknown: /unknown/.test(`${e?.code} ${e?.reason}`), ...(Array.isArray(e?.issues) ? { issues: e.issues } : {}) };
-      this.persist();
-      this.log(`not synced: ${JSON.stringify(p)} ${[e?.code, e?.reason].filter(Boolean).join(" ")}`);
-      return "not_synced";
     };
     // Plain note sends (new here, or changed here only) wait until everything
     // else has been handled one at a time, then go several at once.
@@ -1171,10 +1151,10 @@ export default class NativeSync extends Component {
     // Settings first, then types, then the notes that use them.
     const rank = (p: string) => p === CONFIG_PATH ? 0 : this.kindOf(p) === "resource" ? 1 : 2;
     for (const p of [...paths].sort((a, b) => rank(a) - rank(b))) {
-      if (unreadable.has(p) || (defer && pending[p] > Date.now())) continue;
-      this.checkOwnership();
+      if (blockedSources.has(p) || (blockedTargets.has(p) && !this.data.paths[p]) || unreadable.has(p) || (defer && pending[p] > Date.now())) continue;
+      await this.checkOwnership();
       if (!this.mirroring || this.unloaded) throw new Error("Mirror stopped");
-      const l = await this.local(p), r = remotes.get(p);
+      const l = await this.local(p), r = blockedTargets.has(p) ? undefined : remotes.get(p);
       let k = this.data.paths[p];
       // Over the collection's size limit: neither sent nor fetched, never deleted.
       if ((r?.kind ?? this.kindOf(p)) === "file" && collectionExcludes(p, "file", this.inclusion, l?.bytes.length ?? (r as any)?.size)) continue;
@@ -1185,7 +1165,7 @@ export default class NativeSync extends Component {
         }
         const signature = JSON.stringify([l.hash, r?.id, r?.kind, r?.revision]);
         if (this.data.pathFailures?.[p]?.signature !== signature) {
-          (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: "unsupported_encoding" }; this.persist();
+          (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: "unsupported_encoding" }; await this.persist();
         }
         continue;
       }
@@ -1198,7 +1178,7 @@ export default class NativeSync extends Component {
       // A durable preservation journal makes replay safe even after the copy's
       // confirmation reply was lost; without it, unknown outcomes stay blocked.
       if (failure && ((failure.unknown && !r && !recovering) || (failure.signature === signature && ((!retryFailed && !recovering) || (failure.unknown && !recovering))))) continue;
-      if (this.data.pathFailures?.[p]) { delete this.data.pathFailures[p]; this.persist(); }
+      if (this.data.pathFailures?.[p]) { delete this.data.pathFailures[p]; await this.persist(); }
       let outcome: ActivityKind | null = null;
       try {
       const sent = this.data.sending?.[p];
@@ -1206,7 +1186,7 @@ export default class NativeSync extends Component {
         // A send cut off by quit or reload. If it landed, that remote version
         // is the baseline: compare the local file against it, not the older one.
         if (r && r.kind !== "file" && r.hash === sent) { this.remember(p, r, sent); k = this.data.paths[p]; }
-        delete this.data.sending![p]; this.persist();
+        delete this.data.sending![p]; await this.persist();
       }
       const decision = reconcileDecision(k, l?.hash, r);
       const outcomes: Partial<Record<typeof decision, ActivityKind>> = { pull: "downloaded", push: "uploaded", deleteRemote: "deleted_remote", deleteLocal: "deleted_here", conflict: "conflict" };
@@ -1231,7 +1211,7 @@ export default class NativeSync extends Component {
           }
           break;
         case "deleteRemote":
-          try { await this.call(r!.kind === "record" ? "remove" : "fileDelete", r!.id, r!.revision); delete this.data.paths[p]; this.persist(); }
+          try { await this.call(r!.kind === "record" ? "remove" : "fileDelete", r!.id, r!.revision); delete this.data.paths[p]; await this.persist(); }
           catch (e: any) {
             if (!isConflict(e)) throw e;
             const fresh = (await this.remoteAll()).get(p);
@@ -1241,9 +1221,9 @@ export default class NativeSync extends Component {
               // Journal that exact proof before IO; a failed pull cannot clear
               // the ledger, and crash recovery still requires confirmed bytes.
               const h = e.mutationId ? { path: p, hash: fresh.hash!, kind: fresh.kind === "file" ? "file" as const : "record" as const, copy: p, handled: false } : undefined;
-              if (h) { (this.data.handledRejections ??= {})[e.mutationId] = h; this.persist(); }
+              if (h) { (this.data.handledRejections ??= {})[e.mutationId] = h; await this.persist(); }
               await this.pull(p, fresh);
-              if (h && fresh.confirmed === true) { h.handled = true; this.persist(); }
+              if (h && fresh.confirmed === true) { h.handled = true; await this.persist(); }
               outcome = "downloaded";
             } else outcome = "deleted_remote";
           }
@@ -1254,10 +1234,10 @@ export default class NativeSync extends Component {
           else await this.removeLocal(p, latest?.hash);
           break;
         }
-        case "forget": delete this.data.paths[p]; this.persist(); break;
+        case "forget": delete this.data.paths[p]; await this.persist(); break;
         case "conflict": await this.conflict(p, l, r); break;
       }
-      } catch (e: any) { outcome = notSynced(p, signature, e); }
+      } catch (e: any) { outcome = await notSynced(p, signature, e); }
       settled(p, outcome);
     }
     await this.sendNotes(sends, remotes, settled, notSynced);
@@ -1269,14 +1249,14 @@ export default class NativeSync extends Component {
     const fresh = failed.filter(p => !failedBefore.has(p)).length;
     if (fresh) new Notice(`mdbase: ${fresh === 1 ? "1 file" : `${fresh} files`} couldn't sync. Open Sync to see why.`, 8000);
     if (!affected) this.totals = this.countTotals(remotes);
-    if (!failed.length && !Object.keys(this.data.pendingPaths ?? {}).length && !Object.keys(this.data.uploads ?? {}).length) {
+    if (!blockedSources.size && !failed.length && !Object.keys(this.data.pendingPaths ?? {}).length && !Object.keys(this.data.uploads ?? {}).length) {
       this.lastSynced = Date.now();
-      if (this.activityTimer === null) this.activityTimer = window.setTimeout(() => { this.activityTimer = null; this.writeActivity(); }, 2000);
+      if (this.activityTimer === null) this.activityTimer = window.setTimeout(() => { this.activityTimer = null; void this.writeActivity(); }, 2000);
     }
     this.passStatus(this.phase.sync ? readyText(this.phase.sync) : "Synced");
     // Notes refused under the old definitions get another chance now.
-    if (definitionsChanged && failed.length) window.setTimeout(() => this.requestReconcile(), 0);
-    return failed.length === 0;
+    if (retryMoves || (definitionsChanged && failed.length)) window.setTimeout(() => this.requestReconcile(), 0);
+    return failed.length === 0 && blockedSources.size === 0;
   }
   /**
    * Send plain note changes, several at a time. Each send is independent: its
@@ -1284,7 +1264,7 @@ export default class NativeSync extends Component {
    * conflict waits until the others have finished, then is resolved alone,
    * exactly as when sends went one by one.
    */
-  async sendNotes(sends: { p: string; signature: string }[], remotes: Map<string, Remote>, settled: (p: string, outcome: ActivityKind | null) => void, notSynced: (p: string, signature: string, e: any) => ActivityKind) {
+  async sendNotes(sends: { p: string; signature: string }[], remotes: Map<string, Remote>, settled: (p: string, outcome: ActivityKind | null) => void, notSynced: (p: string, signature: string, e: any) => Promise<ActivityKind>) {
     if (!sends.length) return;
     type Local = NonNullable<Awaited<ReturnType<NativeSync["local"]>>>;
     const conflicts: { p: string; signature: string; e: any; l: Local }[] = [];
@@ -1292,7 +1272,7 @@ export default class NativeSync extends Component {
     const sendOne = async ({ p, signature }: { p: string; signature: string }) => {
       let l: Awaited<ReturnType<NativeSync["local"]>>;
       try {
-        this.assertMirror();
+        await this.assertMirror();
         // Read again now rather than hold every note's text in memory. If the
         // file changed meanwhile and is no longer a plain send, a later pass decides.
         l = await this.local(p);
@@ -1301,7 +1281,7 @@ export default class NativeSync extends Component {
         await this.push(p, l, r);
       } catch (e: any) {
         if (l && isConflict(e)) { conflicts.push({ p, signature, e, l }); return; }
-        settled(p, notSynced(p, signature, e));
+        settled(p, await notSynced(p, signature, e));
         return;
       }
       settled(p, "uploaded");
@@ -1323,7 +1303,7 @@ export default class NativeSync extends Component {
         // pull-remote rule as any conflict (no blind retry).
         const fresh = (await this.remoteAll()).get(p);
         await this.conflict(p, await this.local(p), fresh, e.mutationId ? { mutationId: e.mutationId, local: l } : undefined);
-      } catch (error: any) { outcome = notSynced(p, signature, error); }
+      } catch (error: any) { outcome = await notSynced(p, signature, error); }
       settled(p, outcome);
     }
   }
@@ -1348,18 +1328,18 @@ export default class NativeSync extends Component {
     switch (decision) {
       case "none": if (k && l) this.remember(p, r!, l.hash); return false;
       case "remember": this.remember(p, r!, l!.hash); return false;
-      case "forget": delete this.data.paths[p]; this.persist(); return false;
+      case "forget": delete this.data.paths[p]; await this.persist(); return false;
       case "pull": {
         const latest = await this.local(p);
         if (latest && latest.hash !== k?.hash && latest.hash !== r!.hash) throw conflict();
-        await this.put(p, Buffer.from(r!.document!, "utf8"), latest?.hash);
+        await this.put(p, encode(r!.document!), latest?.hash);
         this.remember(p, r!, r!.hash!); return false;
       }
       case "push":
         try { await this.push(p, l!, r); return true; }
         catch (e: any) { if (isConflict(e)) throw conflict(); throw e; }
       case "deleteRemote":
-        try { await this.call("resourceDelete", p, r!.revision); delete this.data.paths[p]; this.persist(); return true; }
+        try { await this.call("resourceDelete", p, r!.revision); delete this.data.paths[p]; await this.persist(); return true; }
         catch (e: any) { if (isConflict(e)) throw conflict(); throw e; }
       case "deleteLocal": {
         const latest = await this.local(p);
@@ -1376,20 +1356,20 @@ export default class NativeSync extends Component {
       const r = (await this.remoteAll()).get(p), l = await this.local(p);
       if (keep === "local") {
         if (l) await this.push(p, l, r);
-        else if (r) { await this.call("resourceDelete", p, r.revision); delete this.data.paths[p]; this.persist(); }
+        else if (r) { await this.call("resourceDelete", p, r.revision); delete this.data.paths[p]; await this.persist(); }
       } else {
         // Keep the replaced text where sync never looks, in case it's wanted.
         if (l) {
           this.assertDiskPath(".mdbase/replaced");
-          const backup = path.join(this.root, ".mdbase", "replaced", `${new Date().toISOString().replace(/[:.]/g, "-")}`, p);
-          fs.mkdirSync(path.dirname(backup), { recursive: true });
-          fs.writeFileSync(backup, l.bytes, { mode: 0o600 });
+          const backup = this.host.join(this.root, ".mdbase", "replaced", `${new Date().toISOString().replace(/[:.]/g, "-")}`, p);
+          await this.host.mkdir(this.host.dirname(backup));
+          await this.host.writeBytes(backup, l.bytes);
           this.log(`definition replaced; previous text kept in .mdbase/replaced`);
         }
-        if (r) { await this.put(p, Buffer.from(r.document!, "utf8"), l?.hash); this.remember(p, r, r.hash!); }
+        if (r) { await this.put(p, encode(r.document!), l?.hash); this.remember(p, r, r.hash!); }
         else if (l) await this.removeLocal(p, l.hash);
       }
-      delete this.data.pathFailures?.[p]; this.persist();
+      delete this.data.pathFailures?.[p]; await this.persist();
       await this.reconcileAll(false, undefined, true);
     });
   }
@@ -1400,12 +1380,20 @@ export default class NativeSync extends Component {
       catch (e) { if (!await this.app.vault.adapter.exists(dir)) throw e; }
     }
   }
-  assertMirror() {
+  assertActive() {
+    if (this.unloaded || !this.mirroring) throw new Error("Mirror stopped");
+  }
+  publicationGuard(p: string, expectedHash?: string) {
+    this.assertActive(); this.assertDiskPath(p);
+    if (this.editorViews(p).some(view => hash(encode(view.getViewData())) !== expectedHash))
+      throw Object.assign(new Error("Local editor changed before publication; retained"), { code: "local_changed" });
+  }
+  async assertMirror() {
     if (!this.mirroring || this.unloaded) throw new Error("Mirror stopped");
-    this.checkOwnership();
+    await this.checkOwnership();
   }
   async put(p: string, bytes: Uint8Array, expectedHash?: string) {
-    this.assertMirror(); this.assertDiskPath(p);
+    await this.assertMirror(); this.assertDiskPath(p);
     const vp = this.vaultPath(p), f = this.app.vault.getAbstractFileByPath(vp);
     if (f && !(f instanceof TFile)) throw new Error("Folder collides with remote file");
     const initial = await this.local(p), nextHash = hash(bytes);
@@ -1413,49 +1401,40 @@ export default class NativeSync extends Component {
     if (arguments.length > 2 && initial?.hash !== expectedHash && initial?.hash !== nextHash) throw changed();
     if (initial?.hash === nextHash) return;
     if (initial?.unsupportedEncoding) throw Object.assign(new Error("Invalid UTF-8 disk bytes retained"), { code: "unsupported_encoding" });
-    const applyEditors = () => {
+    const applyEditors = async () => {
+      await this.assertMirror();
       const editors = p.endsWith(".md") ? this.editorViews(p) : [];
       if (!editors.length) return undefined;
-      const text = Buffer.from(bytes).toString("utf8");
-      if (!Buffer.from(text, "utf8").equals(Buffer.from(bytes))) throw Object.assign(new Error("Invalid UTF-8 cannot enter editor"), { code: "unsupported_encoding" });
+      const text = decode(bytes);
+      if (!validUtf8(bytes)) throw Object.assign(new Error("Invalid UTF-8 cannot enter editor"), { code: "unsupported_encoding" });
       // No await between this buffer recheck and setValue: newer typing must
       // enter preservation, never be clobbered by atomic disk publication.
-      if (editors.some(v => hash(Buffer.from(v.getViewData(), "utf8")) !== initial?.hash)) throw changed();
-      this.assertMirror(); this.assertDiskPath(p);
+      if (editors.some(v => hash(encode(v.getViewData())) !== initial?.hash)) throw changed();
+      this.assertDiskPath(p);
       for (const view of editors) if (view.getViewData() !== text) view.editor.setValue(text);
-      return Promise.all(editors.map(view => view.save()));
+      await Promise.all(editors.map(view => view.save()));
+      return true;
     };
     this.writingPaths.add(p);
     try {
-      const saved = applyEditors();
-      if (saved) { await saved; return; }
-      const adapter = this.app.vault.adapter;
-      if (adapter instanceof FileSystemAdapter) {
-        await this.ensureFolder(vp); this.assertMirror(); this.assertDiskPath(p);
-        const incoming = path.join(this.root, ".mdbase", "incoming");
-        this.assertDiskPath(".mdbase/incoming"); fs.mkdirSync(incoming, { recursive: true });
-        const temp = path.join(incoming, randomUUID() + ".tmp");
-        try {
-          await fs.promises.writeFile(temp, bytes, { flag: "wx", mode: 0o600 });
-          this.assertMirror(); this.assertDiskPath(p);
-          const current = await this.local(p);
-          if (current?.hash !== initial?.hash) throw changed();
-          // An editor can have opened while staging. It owns publication now.
-          const saved = applyEditors();
-          if (saved) { await saved; return; }
-          this.assertMirror(); this.assertDiskPath(p);
-          fs.renameSync(temp, path.join(adapter.getBasePath(), vp));
-        } finally { await fs.promises.unlink(temp).catch(() => {}); }
-      } else {
-        const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-        if (f instanceof TFile) { this.assertMirror(); this.assertDiskPath(p); await this.app.vault.modifyBinary(f, buffer); }
-        else { await this.ensureFolder(vp); this.assertMirror(); this.assertDiskPath(p); await this.app.vault.createBinary(vp, buffer); }
-      }
+      if (await applyEditors()) return;
+      await this.ensureFolder(vp); await this.assertMirror(); this.assertDiskPath(p);
+      const incoming = this.host.join(this.root, ".mdbase", "incoming");
+      this.assertDiskPath(".mdbase/incoming"); await this.host.mkdir(incoming);
+      const temp = this.host.join(incoming, this.host.uuid() + ".tmp");
+      try {
+        await this.host.writeBytes(temp, bytes, true);
+        await this.assertMirror(); this.assertDiskPath(p);
+        const current = await this.local(p);
+        if (current?.hash !== initial?.hash) throw changed();
+        if (await applyEditors()) return;
+        await this.host.publish(temp, this.host.join(this.root, vp), initial?.hash, nextHash, () => this.checkOwnership(), () => this.publicationGuard(p, initial?.hash));
+      } finally { if (await this.host.exists(temp)) await this.host.remove(temp); }
     } finally { this.writingPaths.delete(p); }
   }
   async pull(p: string, r: Remote, expectedHash = this.data.paths[p]?.hash): Promise<void> {
     if (r.kind === "file") return this.pullFile(p, r, expectedHash);
-    const bytes = Buffer.from(r.document!, "utf8");
+    const bytes = encode(r.document!);
     const latest = await this.local(p);
     if (latest && latest.hash !== expectedHash && latest.hash !== hash(bytes)) {
       await this.preserveConflict(p, latest);
@@ -1468,35 +1447,35 @@ export default class NativeSync extends Component {
     this.remember(p, r, hash(bytes));
   }
   async push(p: string, l: NonNullable<Awaited<ReturnType<NativeSync["local"]>>>, r?: Remote) {
-    this.assertMirror();
+    await this.assertMirror();
     const kind = this.kindOf(p);
     if (kind === "excluded") throw new Error("Excluded path is never sent");
     if (r && r.kind !== kind) throw new Error("Remote item kind differs from extension; manual resolution required");
     let next: any;
     if (kind !== "file") {
-      const doc = Buffer.from(l.bytes).toString("utf8");
-      if (!Buffer.from(doc, "utf8").equals(Buffer.from(l.bytes))) throw Object.assign(new Error("Text is not valid UTF-8; local bytes retained"), { code: "unsupported_encoding" });
+      const doc = decode(l.bytes);
+      if (!validUtf8(l.bytes)) throw Object.assign(new Error("Text is not valid UTF-8; local bytes retained"), { code: "unsupported_encoding" });
       // Base is the replica's current exact document, not a stale cached body.
       (this.data.sending ??= Object.create(null))[p] = l.hash; await this.durable();
-      this.assertMirror();
+      await this.assertMirror();
       try {
         next = kind === "resource"
           ? await this.call("resourcePut", p, doc, r?.revision)
           : r ? await this.call("replace", r.id, { path: r.path, doc: r.document }, { path: p, doc }, r.revision) : await this.call("create", p, doc);
       } catch (e: any) {
         // A definite refusal or conflict means the text didn't land.
-        if (isRefusal(e) || isConflict(e)) { delete this.data.sending![p]; this.persist(); }
+        if (isRefusal(e) || isConflict(e)) { delete this.data.sending![p]; await this.persist(); }
         throw e;
       }
       delete this.data.sending![p]; // remember() below persists
     } else {
       const uploads = this.data.uploads ??= Object.create(null);
       if (!uploads[p]) {
-        const identity = { transferId: randomUUID(), mutationId: randomUUID(), hash: l.hash, fileId: r?.id, revision: r?.revision };
+        const identity = { transferId: this.host.uuid(), mutationId: this.host.uuid(), hash: l.hash, fileId: r?.id, revision: r?.revision };
         this.assertDiskPath(".mdbase/uploads");
-        fs.mkdirSync(path.join(this.root, ".mdbase/uploads"), { recursive: true });
-        fs.writeFileSync(this.uploadPath(identity.transferId), l.bytes, { flag: "wx", mode: 0o600 });
-        uploads[p] = identity; this.persist(); // bytes and identity precede the first send
+        await this.host.mkdir(this.host.join(this.root, ".mdbase/uploads"));
+        await this.host.writeBytes(this.uploadPath(identity.transferId), l.bytes, true);
+        uploads[p] = identity; await this.persist(); // bytes and identity precede the first send
       }
       try { next = await this.finishUpload(p); }
       catch (e: any) { if (isRefusal(e)) await this.clearUpload(p); throw e; }
@@ -1508,11 +1487,11 @@ export default class NativeSync extends Component {
   uploadPath(id: string) {
     if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid upload identity");
     this.assertDiskPath(`.mdbase/uploads/${id}`);
-    return path.join(this.root, ".mdbase/uploads", id);
+    return this.host.join(this.root, ".mdbase/uploads", id);
   }
   async finishUpload(p: string) {
     const intent = this.data.uploads![p];
-    const bytes = new Uint8Array(fs.readFileSync(this.uploadPath(intent.transferId)));
+    const bytes = await this.host.readBytes(this.uploadPath(intent.transferId));
     if (hash(bytes) !== intent.hash) throw new Error("Upload recovery bytes differ; stopped");
     const next = await retryUpload(() => this.call("upload", p, bytes, intent.fileId, intent.revision, intent));
     this.remember(p, this.remote(next, "file"), intent.hash);
@@ -1521,13 +1500,13 @@ export default class NativeSync extends Component {
   }
   async clearUpload(p: string) {
     const intent = this.data.uploads?.[p]; if (!intent) return;
-    delete this.data.uploads![p]; this.persist();
-    fs.unlinkSync(this.uploadPath(intent.transferId));
+    delete this.data.uploads![p]; await this.persist();
+    await this.host.remove(this.uploadPath(intent.transferId));
     await this.call("uploadForget", intent.transferId);
   }
   async resumeUploads() {
     for (const p of Object.keys(this.data.uploads ?? {})) {
-      this.assertMirror();
+      await this.assertMirror();
       // An upload saved before this path was known to be a note, a definition
       // or excluded was never accepted. Drop the saved copy; the vault file is
       // untouched and the path pass sends it the right way (or not at all).
@@ -1539,7 +1518,7 @@ export default class NativeSync extends Component {
         if (isRefusal(e)) { this.log(`upload refused for ${JSON.stringify(p)}: ${e.code}`); await this.clearUpload(p); continue; }
         if (!isConflict(e) || !e.mutationId) throw e;
         const intent = this.data.uploads![p];
-        const bytes = new Uint8Array(fs.readFileSync(this.uploadPath(intent.transferId)));
+        const bytes = await this.host.readBytes(this.uploadPath(intent.transferId));
         const submitted = { bytes, hash: intent.hash, f: undefined, unsupportedEncoding: false };
         await this.conflict(p, await this.local(p), (await this.remoteAll()).get(p), { mutationId: e.mutationId, local: submitted });
         await this.clearUpload(p);
@@ -1547,10 +1526,10 @@ export default class NativeSync extends Component {
     }
   }
   async pullFile(p: string, r: Remote, expectedHash?: string) {
-    this.assertMirror(); this.assertDiskPath(".mdbase/incoming");
+    await this.assertMirror(); this.assertDiskPath(".mdbase/incoming");
     const token = await this.call("downloadOpen", r.id);
-    await stageDownload({
-      directory: path.join(this.root, ".mdbase/incoming"), digest: r.digest!,
+    await this.host.stageDownload({
+      directory: this.host.join(this.root, ".mdbase/incoming"), digest: r.digest!,
       next: () => this.call("downloadNext", token),
       close: () => this.call("downloadClose", token),
       publish: async staged => {
@@ -1559,40 +1538,25 @@ export default class NativeSync extends Component {
         const current = await this.local(p);
         if (current?.hash !== latest?.hash) throw new Error("Local file changed during download; retained");
         await this.ensureFolder(this.vaultPath(p));
-        this.assertMirror(); this.assertDiskPath(p);
-        // No async gap between the final disk check and atomic publication.
-        let diskHash: string | undefined;
-        try { diskHash = hash(fs.readFileSync(path.join(this.root, p))); }
-        catch (e: any) { if (e.code !== "ENOENT") throw e; }
-        if (diskHash !== current?.hash) throw new Error("Local file changed before publication; retained");
-        fs.renameSync(staged, path.join(this.root, p));
+        await this.assertMirror(); this.assertDiskPath(p);
+        await this.host.publish(staged, this.host.join(this.root, p), current?.hash, r.digest!, () => this.checkOwnership(), () => this.publicationGuard(p, current?.hash));
         this.remember(p, r, r.digest!);
       },
     });
   }
   async removeLocal(p: string, expectedHash?: string) {
-    this.assertMirror(); this.assertDiskPath(p);
+    await this.assertMirror(); this.assertDiskPath(p);
     const latest = await this.local(p);
     if (arguments.length > 1 && latest?.hash !== expectedHash) throw Object.assign(new Error("Local file changed before delete; bytes retained"), { code: "local_changed" });
     this.writingPaths.add(p);
     try {
-    const adapter = this.app.vault.adapter;
-    if (adapter instanceof FileSystemAdapter) {
-      const target = path.join(adapter.getBasePath(), this.vaultPath(p));
-      // A disk file can predate its TFile (or survive a stale index entry).
-      // Forgetting state without unlinking it would re-upload a remote deletion.
-      try {
-        const current = hash(fs.readFileSync(target));
-        if (arguments.length > 1 && current !== expectedHash) throw Object.assign(new Error("Local file changed before delete; bytes retained"), { code: "local_changed" });
-        this.assertMirror(); this.assertDiskPath(p); fs.unlinkSync(target);
-      } catch (e: any) { if (e.code !== "ENOENT") throw e; }
-    } else {
-      const latest = await this.local(p);
-      if (arguments.length > 1 && latest?.hash !== expectedHash) throw Object.assign(new Error("Local file changed before delete; bytes retained"), { code: "local_changed" });
-      const f = this.app.vault.getAbstractFileByPath(this.vaultPath(p));
-      if (f instanceof TFile) await this.app.fileManager.trashFile(f);
-    }
-    delete this.data.paths[p]; this.persist();
+    try {
+      const current = await this.host.hash(await this.host.readBytes(this.host.join(this.root, this.vaultPath(p))));
+      if (arguments.length > 1 && current !== expectedHash) throw Object.assign(new Error("Local file changed before delete; bytes retained"), { code: "local_changed" });
+      await this.assertMirror(); this.assertDiskPath(p);
+      await this.host.remove(this.host.join(this.root, p));
+    } catch (e: any) { if (e.code !== "ENOENT") throw e; }
+    delete this.data.paths[p]; await this.persist();
     } finally { this.writingPaths.delete(p); }
   }
   async preserveConflict(p: string, l: NonNullable<Awaited<ReturnType<NativeSync["local"]>>>, mutationId?: string) {
@@ -1617,7 +1581,7 @@ export default class NativeSync extends Component {
     (this.data.conflictCopies ??= {})[key] = { path: p, hash: l.hash, copy, kind };
     if (mutationId)
       (this.data.handledRejections ??= {})[mutationId] = { path: p, hash: l.hash, kind, copy };
-    this.persist(); // before local IO and remote publication, not only CAS rejections
+    await this.persist(); // before local IO and remote publication, not only CAS rejections
     await this.put(copy, l.bytes);
     if (remote && remote.confirmed !== true)
       throw Object.assign(new Error("Conflict copy awaiting confirmation; local state retained"), { code: "outcome_unknown" });
@@ -1626,9 +1590,24 @@ export default class NativeSync extends Component {
     if (!remote) await this.push(copy, l);
     else this.remember(copy, remote, l.hash);
     if (mutationId) {
-      this.data.handledRejections![mutationId].handled = true; this.persist();
+      this.data.handledRejections![mutationId].handled = true; await this.persist();
     }
     return copy;
+  }
+  async keepConflictCopies(copyPath: string) {
+    await this.enqueue(async () => {
+      await this.assertMirror();
+      const remotes = await this.remoteAll();
+      for (const [key, copy] of Object.entries(this.data.conflictCopies ?? {})) if (copy.copy === copyPath) {
+        const remote = remotes.get(copy.copy), local = await this.local(copy.copy);
+        const original = remotes.get(copy.path), current = await this.local(copy.path);
+        if (remote?.confirmed !== true || remote.hash !== copy.hash || local?.hash !== copy.hash || !this.data.paths[copy.path] || original?.confirmed !== true || !current || original.hash !== current.hash) {
+          new Notice("mdbase: both files must finish syncing before keeping them."); return;
+        }
+        delete this.data.conflictCopies![key];
+      }
+      await this.persist(); this.setStatus(this.statusText);
+    });
   }
   // User-reviewed escape hatch for rejections the plugin cannot prove it preserved.
   // The user picks one entry; nothing is discarded automatically.
@@ -1646,7 +1625,7 @@ export default class NativeSync extends Component {
       onChooseSuggestion(e: typeof entries[number]) {
         void plugin.enqueue(async () => {
           const ok = await plugin.call("acknowledge", e.mutationId);
-          delete plugin.data.handledRejections?.[e.mutationId]; plugin.persist();
+          delete plugin.data.handledRejections?.[e.mutationId]; await plugin.persist();
           plugin.log(`rejected write discarded by user: mutationId=${e.mutationId} problem=${e.code} ok=${ok}`);
           new Notice(ok ? "mdbase: rejected write discarded" : "mdbase: discard failed");
         }).catch(err => plugin.fail("discard rejected", err));
@@ -1670,17 +1649,17 @@ export default class NativeSync extends Component {
         if (explicit) this.log(`rejected write retained: mutationId=${e.mutationId}; preservation unproven`);
         continue;
       }
-      h.handled = true; this.persist(); // survives an acknowledgement failure/crash
+      h.handled = true; await this.persist(); // survives an acknowledgement failure/crash
       if (await this.call("acknowledge", e.mutationId)) {
         this.log(`handled rejection acknowledged: mutationId=${e.mutationId} path=${JSON.stringify(h.path)} problem=${e.code}`);
-        delete this.data.handledRejections![e.mutationId]; this.persist();
+        delete this.data.handledRejections![e.mutationId]; await this.persist();
       }
     }
     // If a crash happened after SDK acknowledgement but before sync-state.json commit,
     // repeating acknowledgement is harmless; never touch an unrelated entry.
     for (const [id, h] of Object.entries(this.data.handledRejections ?? {})) {
       if (h.handled && !entries.some(e => e.mutationId === id) && await this.call("acknowledge", id)) {
-        delete this.data.handledRejections![id]; this.persist();
+        delete this.data.handledRejections![id]; await this.persist();
       }
     }
   }
@@ -1691,7 +1670,7 @@ export default class NativeSync extends Component {
     if (l && l.hash !== rejected?.local.hash) await this.preserveConflict(p, l);
     if (r) await this.pull(p, r, l?.hash); else await this.removeLocal(p, l?.hash);
     for (const [key, copy] of Object.entries(this.data.conflictCopies ?? {})) if (copy.path === p) delete this.data.conflictCopies![key];
-    this.persist();
+    await this.persist();
     this.log("conflict: local preserved as a new conflict item; remote wins original path");
     new Notice("mdbase: conflict preserved in a separate file; remote version kept at original path.");
   }
@@ -1712,7 +1691,7 @@ export default class NativeSync extends Component {
     if (from0 && k0 && f instanceof TFile && this.validPath(f.path) && this.skipped(f.path) && k0.kind !== "resource") {
       const r = (await this.remoteAll()).get(from0);
       if (r && r.id === k0.id && r.revision === k0.revision && r.kind === classifyPath(f.path, this.layout)) {
-        try { await this.moveLocal(from0, f.path, k0, r); delete this.data.paths[f.path]; this.persist(); }
+        try { await this.moveLocal(from0, f.path, k0, r); delete this.data.paths[f.path]; await this.persist(); }
         catch (e) { if (!isConflict(e)) throw e; }
       }
       return this.reconcileAll(true);
@@ -1737,7 +1716,8 @@ export default class NativeSync extends Component {
   passStatus(text: string) { this.setStatus(this.phase.kind === "ready" ? text : this.statusText); }
   view(): NativeView {
     const failures = Object.entries(this.data?.pathFailures ?? {}).map(([p, f]) => ({ path: p, ...describeFailure({ ...f, kind: this.data.paths[p]?.kind }) }));
-    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
+    const conflicts = Object.values(this.data?.conflictCopies ?? {}).map(({ path, copy }) => ({ path, copy }));
+    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), conflicts, merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
   }
   safeText(text: string) { return String(text).replace(/https?:\/\/[^\s"<>]+/g, value => { try { const u = new URL(value); return u.origin + u.pathname; } catch { return "[url]"; } }); }
   log(text: string) {

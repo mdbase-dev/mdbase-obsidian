@@ -1,8 +1,4 @@
 import { nativeModule } from "./node";
-const { createHash, randomUUID } = nativeModule<typeof import("node:crypto")>("crypto");
-const fs = nativeModule<typeof import("node:fs/promises")>("fs/promises");
-const path = nativeModule<typeof import("node:path")>("path");
-
 import { BRIDGE_CHUNK_BYTES } from "./downloadPull";
 
 /** Keep provisional bytes private. Never expose them to Obsidian before EOF. */
@@ -13,6 +9,9 @@ export async function stageDownload(options: {
   publish(staged: string): Promise<void>;
   close(): Promise<void>;
 }): Promise<void> {
+  const { createHash, randomUUID } = nativeModule<typeof import("node:crypto")>("crypto");
+  const fs = nativeModule<typeof import("node:fs/promises")>("fs/promises");
+  const path = nativeModule<typeof import("node:path")>("path");
   await fs.mkdir(options.directory, { recursive: true });
   const staged = path.join(options.directory, `${randomUUID()}.tmp`);
   const file = await fs.open(staged, "wx", 0o600);

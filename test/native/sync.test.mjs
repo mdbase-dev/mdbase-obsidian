@@ -18,7 +18,7 @@ const result = await build({
   plugins: [{ name: "mocks", setup(b) {
     b.onResolve({ filter: /^obsidian$|^embedded:assets$/ }, args => ({ path: args.path, namespace: "mock" }));
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path === "obsidian" ? `
-      export class Component {} export class Notice {} export class SuggestModal {} export class App {}
+      export const Platform = {isMobile: false}; export class Component {} export class Notice {} export class SuggestModal {} export class App {}
       export function parseYaml(text) { return JSON.parse(text); } // fixtures write JSON, which is YAML
       export class TAbstractFile {} export class TFile extends TAbstractFile { constructor(path) { super(); this.path = path; } }
       export class FileSystemAdapter { constructor(root) { this.root=root; } getBasePath() { return this.root; } }
@@ -74,7 +74,7 @@ function fixture(t) {
   };
   const baseline = (p = "note.md") => {
     put(p, "base"); putRemote(p, "base");
-    native.data.paths[p] = { id: "original", kind: "record", revision: "r1", hash: digest("base"), disk: native.diskIdentity(p) }; native.persist();
+    native.data.paths[p] = { id: "original", kind: "record", revision: "r1", hash: digest("base"), disk: native.diskIdentity(p) }; void native.persist();
   };
   t.after(() => { for (const timer of ["settleTimer", "persistTimer", "commitTimer"]) if (native[timer]) clearTimeout(native[timer]); fs.rmSync(root, { recursive: true, force: true }); });
   return { root, native, remote, resources, put, putRemote, putResource, baseline, read: p => fs.readFileSync(path.join(root, p), "utf8") };
@@ -92,12 +92,215 @@ for (const scenario of ["offline edit plus remote edit", "remote delete versus l
       else f.putRemote("note.md", "remote edit", "r2");
     }
     await f.native.reconcileAll();
-    const localDocuments = f.native.localPaths().map(f.read);
+    const localDocuments = (await f.native.localPaths()).map(f.read);
     assert.ok(localDocuments.includes(scenario.startsWith("local rename") ? "base" : "offline edit"));
     if (!scenario.startsWith("remote delete")) assert.ok(localDocuments.includes("remote edit"));
     assert.ok(!f.native.data.pathFailures || !Object.keys(f.native.data.pathFailures).length);
   });
 }
+test("remote rename preserves an untracked, unindexed occupant and syncs unrelated paths", async t => {
+  const f = fixture(t); f.baseline();
+  const occupant = "---\r\ntitle: café\r\n---\r\nunsynced target\r\n";
+  f.put("target.md", occupant);
+  const lookup = f.native.app.vault.getAbstractFileByPath;
+  f.native.app.vault.getAbstractFileByPath = p => p === "target.md" ? null : lookup(p);
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("incoming.md", "other remote note", "r1", "incoming");
+  f.put("outgoing.md", "other local note");
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(fs.existsSync(path.join(f.root, "note.md")), false);
+  const copies = Object.values(f.native.data.conflictCopies);
+  assert.equal(copies.length, 1);
+  assert.equal(copies[0].path, "target.md");
+  assert.deepEqual(f.native.view().conflicts, [{ path: "target.md", copy: copies[0].copy }]);
+  assert.match(copies[0].copy, /target \(conflict .* test-v\)\.md$/);
+  assert.deepEqual(fs.readFileSync(path.join(f.root, copies[0].copy)), Buffer.from(occupant));
+  assert.equal(f.remote.get(copies[0].copy).document, occupant);
+  assert.equal(f.read("incoming.md"), "other remote note");
+  assert.equal(f.remote.get("outgoing.md").document, "other local note");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+  await f.native.reconcileAll();
+  assert.equal(Object.values(f.native.data.conflictCopies).length, 1);
+  assert.equal(f.read(copies[0].copy), occupant);
+  await f.native.keepConflictCopies(copies[0].copy);
+  assert.deepEqual(f.native.view().conflicts, []);
+  assert.equal(f.read(copies[0].copy), occupant); assert.equal(f.read("target.md"), "base");
+  assert.equal(f.remote.get(copies[0].copy).document, occupant);
+});
+for (const vacated of ["moved", "deleted"]) test(`remote rename onto a tracked path ${vacated} in the batch converges within two passes`, async t => {
+  const f = fixture(t); f.baseline();
+  f.put("target.md", "old target");
+  f.native.data.paths["target.md"] = { id: "target-id", kind: "record", revision: "r1", hash: digest("old target") };
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  if (vacated === "moved") f.putRemote("vacated.md", "old target", "r2", "target-id");
+  f.putRemote("incoming.md", "independent", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.paths["note.md"].id, "original");
+  assert.equal(f.read("note.md"), "base");
+  assert.equal(f.read("incoming.md"), "independent");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+  assert.equal(await f.native.reconcileAll(false, new Set(["incoming.md"])), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(fs.existsSync(path.join(f.root, "note.md")), false);
+  if (vacated === "moved") assert.equal(f.read("vacated.md"), "old target");
+  assert.equal(f.native.data.paths["target.md"].id, "original");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+});
+test("persistently blocked tracked renames report per-path failures without touching either source", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "old target");
+  f.native.data.paths["target.md"] = { id: "target-id", kind: "record", revision: "r1", hash: digest("old target") };
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("note.md", "old target", "r2", "target-id");
+  assert.equal(await f.native.reconcileAll(), false);
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.read("incoming.md"), "unrelated");
+  assert.equal(f.read("note.md"), "base"); assert.equal(f.read("target.md"), "old target");
+  assert.equal(f.native.data.pathFailures["note.md"].code, "remote_move_blocked");
+  assert.equal(f.native.data.pathFailures["target.md"].code, "remote_move_blocked");
+  assert.match(f.native.view().failures[0].detail, /occupies the rename destination/);
+  assert.match(f.native.view().failures.find(failure => failure.path === "note.md").detail, /Destination: target.md/);
+  f.put("outgoing.md", "still syncing");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.remote.get("outgoing.md").document, "still syncing");
+  assert.equal(f.native.data.paths["note.md"].id, "original");
+  assert.equal(f.native.data.paths["target.md"].id, "target-id");
+});
+test("a deferred tracked rename schedules its own follow-up without another remote event", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "old target");
+  f.native.data.paths["target.md"] = { id: "target-id", kind: "record", revision: "r1", hash: digest("old target") };
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  const reconcile = f.native.reconcilePass.bind(f.native);
+  let passes = 0;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Deferred rename did not retry")), 2000);
+    t.after(() => clearTimeout(timeout));
+    f.native.reconcilePass = async (...args) => {
+      try {
+        const result = await reconcile(...args);
+        if (++passes === 2) { clearTimeout(timeout); resolve(); }
+        return result;
+      } catch (error) { clearTimeout(timeout); reject(error); throw error; }
+    };
+    f.native.requestReconcile();
+  });
+  await f.native.jobs;
+  assert.equal(passes, 2); assert.equal(f.read("target.md"), "base");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+});
+test("a folder blocking a remote rename is a retried path failure, cleared when vacated", async t => {
+  const f = fixture(t); f.baseline(); fs.mkdirSync(path.join(f.root, "target.md"));
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.pathFailures["note.md"].code, "remote_move_blocked");
+  assert.equal(f.read("note.md"), "base");
+  fs.rmdirSync(path.join(f.root, "target.md"));
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
+test("waiting for the source vault index does not stop unrelated sync", async t => {
+  const f = fixture(t); f.baseline();
+  const lookup = f.native.app.vault.getAbstractFileByPath;
+  f.native.app.vault.getAbstractFileByPath = p => p === "note.md" ? null : lookup(p);
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.pathFailures["note.md"].code, "vault_index_pending");
+  assert.equal(f.read("incoming.md"), "unrelated"); assert.equal(f.read("note.md"), "base");
+  assert.equal(fs.existsSync(path.join(f.root, "target.md")), false);
+  f.native.app.vault.getAbstractFileByPath = lookup;
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
+test("an occupant changed during preservation is never removed for a remote rename", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "original occupant");
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  const preserve = f.native.preserveConflict.bind(f.native);
+  f.native.preserveConflict = async (...args) => { const copy = await preserve(...args); f.put("target.md", "new occupant edit"); return copy; };
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.pathFailures["note.md"].code, "local_changed");
+  assert.equal(f.read("note.md"), "base"); assert.equal(f.read("target.md"), "new occupant edit");
+  const [copy] = Object.values(f.native.data.conflictCopies);
+  assert.equal(f.read(copy.copy), "original occupant");
+  assert.equal(f.remote.get(copy.copy).document, "original occupant");
+  assert.equal(f.read("incoming.md"), "unrelated");
+});
+test("a refused preservation upload leaves both rename paths untouched and retries the same copy", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "unsynced occupant");
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  const call = f.native.call;
+  f.native.call = async (method, ...args) => {
+    if (method === "create") throw Object.assign(new Error("Collection full"), { code: "quota_exceeded" });
+    return call(method, ...args);
+  };
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.read("note.md"), "base"); assert.equal(f.read("target.md"), "unsynced occupant");
+  assert.equal(f.read("incoming.md"), "unrelated");
+  const [copy] = Object.values(f.native.data.conflictCopies);
+  assert.equal(f.read(copy.copy), "unsynced occupant");
+  assert.equal(f.native.data.pathFailures["note.md"].code, "quota_exceeded");
+  await f.native.keepConflictCopies(copy.copy);
+  assert.equal(Object.values(f.native.data.conflictCopies).length, 1);
+  assert.equal(f.native.mirroring, true);
+  f.native.call = call;
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(f.remote.get(copy.copy).document, "unsynced occupant");
+  assert.equal(Object.values(f.native.data.conflictCopies).length, 1);
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
+test("a refused local rename is per-path, retains its baseline and waits for retry", async t => {
+  const f = fixture(t); f.baseline();
+  fs.renameSync(path.join(f.root, "note.md"), path.join(f.root, "moved.md"));
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  const call = f.native.call; let refused = 0;
+  f.native.call = async (method, ...args) => {
+    if (method === "replace") { refused++; throw Object.assign(new Error("Not allowed"), { code: "forbidden" }); }
+    return call(method, ...args);
+  };
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.read("moved.md"), "base"); assert.equal(f.remote.get("note.md").document, "base");
+  assert.equal(f.read("incoming.md"), "unrelated");
+  assert.equal(f.native.data.paths["note.md"].id, "original");
+  assert.equal(f.native.data.pathFailures["moved.md"].code, "forbidden");
+  assert.equal(await f.native.reconcileAll(), false); assert.equal(refused, 1);
+  f.native.call = call;
+  assert.equal(await f.native.reconcileAll(false, undefined, true), true);
+  assert.equal(f.remote.has("note.md"), false); assert.equal(f.remote.get("moved.md").document, "base");
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
+test("starting the mirror removes downloads interrupted by a killed app, once per load", async t => {
+  const f = fixture(t);
+  const incoming = path.join(f.root, ".mdbase", "incoming");
+  fs.mkdirSync(incoming, { recursive: true });
+  fs.writeFileSync(path.join(incoming, "11111111-dead.tmp"), Buffer.alloc(4096));
+  fs.writeFileSync(path.join(incoming, "notes.txt"), "not a staging copy");
+  const call = f.native.call;
+  let leftAtWatch;
+  f.native.call = async (method, ...args) => {
+    if (method === "watch") { leftAtWatch = fs.readdirSync(incoming).sort(); return true; }
+    return call(method, ...args);
+  };
+  await f.native.startMirror();
+  assert.deepEqual(leftAtWatch, ["notes.txt"], "swept before the first pass can start a download");
+  // A restarted mirror in the same load may have a transfer running: leave it.
+  fs.writeFileSync(path.join(incoming, "22222222-active.tmp"), Buffer.alloc(16));
+  await f.native.startMirror();
+  assert.deepEqual(fs.readdirSync(incoming).sort(), ["22222222-active.tmp", "notes.txt"]);
+});
+test("a vault without an incoming folder starts the mirror normally", async t => {
+  const f = fixture(t);
+  const call = f.native.call;
+  f.native.call = async (method, ...args) => method === "watch" ? true : call(method, ...args);
+  await f.native.startMirror();
+  assert.equal(fs.existsSync(path.join(f.root, ".mdbase", "incoming")), false);
+});
 test("crash after upload submission resumes saved bytes with the same identity", async t => {
   const f = fixture(t); f.put("image.bin", "original bytes");
   const identities = [];
@@ -109,7 +312,7 @@ test("crash after upload submission resumes saved bytes with the same identity",
   assert.equal(identities.length, 2);
   assert.deepEqual(identities[0], identities[1]);
   f.put("image.bin", "new edit after crash");
-  f.native.data = f.native.readData();
+  f.native.data = await f.native.readData();
   f.native.call = async (method, ...args) => {
     if (method === "uploadForget") return true;
     assert.equal(method, "upload"); assert.equal(args[4].transferId, identities[0].transferId); assert.equal(args[4].mutationId, identities[0].mutationId);
@@ -131,14 +334,14 @@ test("crash after conflict publication reuses the journaled copy", async t => {
   };
   await f.native.reconcileAll();
   assert.ok(Object.keys(f.native.data.conflictCopies).length);
-  f.native.data = f.native.readData(); f.native.call = call;
+  f.native.data = await f.native.readData(); f.native.call = call;
   await f.native.reconcileAll();
-  const copies = f.native.localPaths().filter(p => p.includes("(conflict "));
+  const copies = (await f.native.localPaths()).filter(p => p.includes("(conflict "));
   assert.equal(copies.length, 1); assert.equal(f.read(copies[0]), "offline edit"); assert.equal(f.read("note.md"), "remote edit");
 });
 test("handover removes only its own marker after reconcile, drain and stop", async t => {
   const f = fixture(t), order = []; f.native.data.collectionId = "collection";
-  f.native.data.markerSince = 1; f.native.writeMarker();
+  f.native.data.markerSince = 1; await f.native.writeMarker();
   f.native.reconcileAll = async () => { order.push("reconcile"); return true; };
   f.native.call = async method => { order.push(method); assert.ok(fs.existsSync(f.native.markerPath)); };
   await f.native.handover();
@@ -146,7 +349,7 @@ test("handover removes only its own marker after reconcile, drain and stop", asy
 });
 test("a finished handover is its own calm state, which later SDK notices don't replace (prod F5)", async t => {
   const f = fixture(t), seen = []; f.native.data.collectionId = "collection";
-  f.native.data.markerSince = 1; f.native.writeMarker();
+  f.native.data.markerSince = 1; await f.native.writeMarker();
   f.native.changed = (text, phase) => seen.push([text, phase.kind]);
   f.native.reconcileAll = async () => true;
   f.native.call = async () => {};
@@ -159,7 +362,7 @@ test("a finished handover is its own calm state, which later SDK notices don't r
 test("start over signs out of an unfinished sign-in only when nothing can be lost (prod F1)", async t => {
   const f = fixture(t), calls = [];
   f.native.mirroring = false;
-  f.native.data.markerSince = 1; f.native.writeMarker();
+  f.native.data.markerSince = 1; await f.native.writeMarker();
   const marker = fs.readFileSync(f.native.markerPath, "utf8");
   const stuck = { kind: "problem", collectionId: null, problem: { key: "recovery_required", action: "reload" } };
   // The SDK's sign-out ends the stop (it publishes signed_out before replying).
@@ -215,7 +418,7 @@ test("a stop the plugin noticed reads plainly, without the old 'Check Sync' tail
   for (const text of seen) assert.doesNotMatch(text, /: |\.\.|Check Sync/);
 });
 test("failed drain retains the marker and all local files", async t => {
-  const f = fixture(t); f.native.data.collectionId = "collection"; f.native.data.markerSince = 1; f.native.writeMarker(); f.put("note.md", "unsent");
+  const f = fixture(t); f.native.data.collectionId = "collection"; f.native.data.markerSince = 1; await f.native.writeMarker(); f.put("note.md", "unsent");
   f.native.reconcileAll = async () => true;
   f.native.call = async method => { if (method === "drain") throw new Error("offline"); };
   await f.native.handover();
@@ -254,21 +457,22 @@ test("controller starts the SDK only without a desktop marker and changes both d
   fs.unlinkSync(marker); await controller.refresh(); assert.equal(created, 2); assert.equal(events.at(-1), "same-collection");
   fs.writeFileSync(marker, "unreadable JSON"); await controller.refresh(); assert.equal(controller.native, null); assert.equal(created, 2);
 });
-test("copied vault journals cannot share a writable SDK namespace", t => {
+test("copied vault journals cannot share a writable SDK namespace", async t => {
   const f = fixture(t); f.native.bindVault(); const saved = structuredClone(f.native.data);
   const otherRoot = path.join(f.root, "another-vault"); fs.mkdirSync(otherRoot);
-  const other = new NativeSync(f.native.app, {}, () => {}); other.root = otherRoot; other.data = saved;
+  const app = { ...f.native.app, vault: { ...f.native.app.vault, adapter: new FileSystemAdapter(otherRoot) } };
+  const other = new NativeSync(app, {}, () => {}); other.root = otherRoot; other.data = saved;
   assert.throws(() => other.bindVault(), /another vault or host/);
   assert.equal(other.data.vaultId, f.native.data.vaultId, "refusal does not reset or discard the old journal");
 });
 test("a vault reuses its saved port and refuses to move when it is occupied", async t => {
   const f = fixture(t); await f.native.startServer(); const port = f.native.data.port;
   assert.equal((await fetch(f.native.origin)).status, 403, "untrusted pages cannot load the authenticated iframe without its memory-only capability");
-  await new Promise(resolve => f.native.server.close(resolve));
-  f.native.data = f.native.readData(); await f.native.startServer(); assert.equal(f.native.data.port, port);
+  await new Promise(resolve => f.native.host.server.close(resolve));
+  f.native.data = await f.native.readData(); await f.native.startServer(); assert.equal(f.native.data.port, port);
   const other = new NativeSync(f.native.app, {}, () => {}); other.data = { port }; other.persist = () => {};
   await assert.rejects(other.startServer(), /not switching origins/);
-  await new Promise(resolve => f.native.server.close(resolve));
+  await new Promise(resolve => f.native.host.server.close(resolve));
 });
 test("50 MiB download crosses bridge in at most 4 MiB replies with one outstanding pull", async t => {
   const f = fixture(t), size = 50 * 1024 * 1024; let produced = 0, largest = 0, outstanding = 0, peak = 0;
@@ -449,7 +653,7 @@ test("an edit whose send was cut off by a reload is not a conflict when the serv
     await assert.rejects(f.native.push("note.md", await f.native.local("note.md"), known ? f.remote.get("note.md") && { ...f.remote.get("note.md"), kind: "record", hash: digest("base") } : undefined));
     f.native.call = call;
     // Reload: state comes back from disk, and typing continued meanwhile.
-    f.native.data = f.native.readData();
+    f.native.data = await f.native.readData();
     f.put("note.md", "typed it");
     await f.native.reconcileAll();
     assert.equal(f.remote.get("note.md").document, "typed it", known ? "the newer edit is sent on" : "a cut-off create is adopted");
@@ -477,7 +681,7 @@ test("files the collection's own settings leave out are neither sent, fetched no
 test("device choices that match no file yet survive a reload (QA-1)", async t => {
   const f = fixture(t); f.put("note.md", "n"); await f.native.reconcileAll();
   await f.native.setDevice({ skip: ["video"], folders: ["future-private"] });
-  f.native.data = f.native.readData();
+  f.native.data = await f.native.readData();
   assert.deepEqual(f.native.device, { skip: ["video"], folders: ["future-private"] });
   f.put("future-private/secret.md", "s");
   await f.native.reconcileAll();
@@ -586,13 +790,13 @@ test("plain note sends run several at once, and every note arrives", async t => 
     try { return await call(method, ...args); } finally { flying--; }
   };
   const persist = f.native.persist.bind(f.native); let saves = 0;
-  f.native.persist = () => { saves++; persist(); };
+  f.native.persist = () => { saves++; return persist(); };
   assert.equal(await f.native.reconcileAll(), true);
   assert.equal(f.remote.size, 100);
   for (let i = 0; i < 100; i++) assert.equal(f.remote.get(`bulk/n${i}.md`).document, `note ${i}`);
   assert.ok(most > 1 && most <= 16, `between 2 and 16 sends in flight, saw ${most}`);
   assert.ok(saves < 50, `state is saved per batch, not per note: ${saves} saves for 100 notes`);
-  const saved = f.native.readData();
+  const saved = await f.native.readData();
   assert.equal(Object.keys(saved.paths).length, 100, "the finished pass is all on disk");
   assert.deepEqual(saved.sending, {});
   assert.equal(f.native.activity.filter(a => a.kind === "uploaded").length, 100);
@@ -602,7 +806,7 @@ test("every send is journaled on disk before it leaves", async t => {
   for (let i = 0; i < 40; i++) f.put(`n${i}.md`, `note ${i}`);
   const call = f.native.call;
   f.native.call = async (method, ...args) => {
-    if (method === "create") assert.equal(f.native.readData().sending?.[args[0]], digest(args[1]), `${args[0]} is journaled before sending`);
+    if (method === "create") assert.equal((await f.native.readData()).sending?.[args[0]], digest(args[1]), `${args[0]} is journaled before sending`);
     return call(method, ...args);
   };
   assert.equal(await f.native.reconcileAll(), true);
@@ -614,7 +818,7 @@ test("a conflict among concurrent sends is resolved alone, after the others fini
     const p = `n${i}.md`; f.put(p, "base"); f.putRemote(p, "base", "r1", `id-${i}`);
     f.native.data.paths[p] = { id: `id-${i}`, kind: "record", revision: "r1", hash: digest("base"), disk: f.native.diskIdentity(p) };
   }
-  f.native.persist();
+  await f.native.persist();
   for (let i = 0; i < 30; i++) f.put(`n${i}.md`, `edit ${i}`);
   const call = f.native.call; let flying = 0; const duringConflict = [];
   f.native.call = async (method, ...args) => {
@@ -646,7 +850,7 @@ test("a refused note among concurrent sends is listed; the rest still arrive", a
   assert.equal(await f.native.reconcileAll(), false);
   assert.equal(f.remote.size, 29);
   assert.deepEqual(f.native.view().failures.map(x => [x.path, x.title]), [["n3.md", "Properties can't be read"]]);
-  assert.equal(f.native.readData().sending?.["n3.md"], undefined, "a refused send leaves no journal entry");
+  assert.equal((await f.native.readData()).sending?.["n3.md"], undefined, "a refused send leaves no journal entry");
 });
 test("sync stopping mid-batch starts no further sends, and a restart finishes without conflicts", async t => {
   const f = fixture(t);
@@ -665,7 +869,7 @@ test("sync stopping mid-batch starts no further sends, and a restart finishes wi
   assert.ok(sent < 60, `stopped early: ${sent} sends started`);
   const landed = f.remote.size;
   // Restart: state from disk, and one note edited while the plugin was down.
-  f.native.call = call; f.native.mirroring = true; f.native.data = f.native.readData();
+  f.native.call = call; f.native.mirroring = true; f.native.data = await f.native.readData();
   f.put("n0.md", "note 0 edited");
   assert.equal(await f.native.reconcileAll(), true);
   assert.ok(landed > 0 && f.remote.size === 60);
@@ -689,7 +893,7 @@ test("a host whose SDK can't stop is still fully torn down, and a new one starts
   const f = fixture(t), frames = [];
   const old = host(f, frames);
   await old.initialize();
-  t.after(() => { if (old.server) old.server.close(); });
+  t.after(() => { if (old.host.server) old.host.server.close(); });
   assert.equal(frames.length, 1); const port = old.data.port, vaultId = old.data.vaultId;
   assert.ok(fs.existsSync(old.markerPath), "the host claimed the folder");
   // The SDK's Worker quarantined itself: every call hangs or fails, stop included.
@@ -701,7 +905,7 @@ test("a host whose SDK can't stop is still fully torn down, and a new one starts
   old.onunload();
   await assert.rejects(stopping, /unloaded/, "a call the SDK will never answer ends with the host");
   assert.equal(frames[0].removed, true, "the SDK's page (and with it its Worker) is gone");
-  for (const k of ["server", "markerTimer", "stallTimer", "bridge", "frame"]) assert.equal(old[k], null, k);
+  for (const k of ["markerTimer", "stallTimer", "bridge", "frame"]) assert.equal(old[k], null, k);
   await old.released;
   assert.throws(() => old.persist(), /not written/, "the old host writes no more state");
   old.onMessage({ origin: old.origin, source: undefined, data: { type: "hello" } });
@@ -722,7 +926,7 @@ test("unloading while a host is still starting leaves no page or listener behind
   const starting = native.initialize();
   native.onunload();
   await starting;
-  assert.equal(frames.length, 0); assert.equal(native.server, null);
+  assert.equal(frames.length, 0); assert.equal(native.host.server, null);
   await native.released;
   const port = native.data.port;
   if (port) { const again = host(f, frames); again.data = { port }; again.persist = () => {}; await again.startServer(); again.closeServer(); await again.released; }
@@ -743,7 +947,7 @@ test("starting that takes too long says so and offers Restart sync; any other st
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(f.native.stalled, false, "only a host still starting stalls");
 });
-test("only a reload request, a gone Worker or a stalled start needs a restart", t => {
+test("only a reload request, a gone Worker or a stalled start needs a restart", async t => {
   const f = fixture(t);
   const stop = problem => { f.native.phase = { kind: "problem", collectionId: null, problem }; };
   stop({ action: "retry", code: "application_worker_fenced" }); assert.equal(f.native.workerGone, true); assert.equal(f.native.needsRestart, true);

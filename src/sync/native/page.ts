@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion -- Preserve the spike\'s dynamic SDK bridge; lifecycle and on-disk checks guard optional state. */
+/* eslint-disable @typescript-eslint/no-explicit-any -- Preserve the spike\'s dynamic SDK bridge; lifecycle and on-disk checks guard optional state. */
 // The SDK host page. Runs in a loopback iframe inside Obsidian so the SDK sees a
 // native app origin (http://127.0.0.1:<vault port>). Owns the WASM replica; the plugin
 // drives it over postMessage and does all vault IO.
-import { createMdbase } from "@mdbase-dev/sdk";
-import template from "./mdbase-app.json";
+import { createMdbase, type ChangesWatch, type MdbaseClient } from "@mdbase-dev/sdk";
+import { engineManifest } from "./declaration";
 import { DownloadPull } from "./downloadPull";
 import { RetryUploads } from "./upload";
 // Sync carries files, and spec 04 never rejects those for validity: an invalid
@@ -11,9 +11,14 @@ import { RetryUploads } from "./upload";
 // replica with the submit validation param; older ones ignore it and refuse
 // invalid notes as invalid_record.
 const SYNC_WRITE: { validation?: "off" | "warn" | "error" } = { validation: "warn" };
-const manifest = { ...template, homepage: `${location.origin}/`, redirect_uris: [`${location.origin}/auth/mdbase/callback`] };
-const namespace = new URL(location.href).searchParams.get("vault");
+const embedded = (window as typeof window & { mdbaseHost?: { namespace: string; collection?: string; workerUrl: string } }).mdbaseHost;
+const manifest = engineManifest(location.origin, !!embedded);
+const namespace = embedded?.namespace ?? new URL(location.href).searchParams.get("vault");
 if (!namespace) throw new Error("Missing stable vault storage namespace");
+const worker = embedded ? (url: string) => {
+  if (url !== new URL("./sdk/application/worker.js", window.document.baseURI).href) throw new Error("Unexpected sync Worker URL");
+  return new Worker(embedded.workerUrl, { type: "module" });
+} : undefined;
 
 declare const __MDBASE_ENVIRONMENT__: "lab" | "staging" | "production";
 let bridge: MessagePort | null = null;
@@ -26,7 +31,7 @@ const log = (...parts: any[]) => post({ type: "log", text: parts.map(String).joi
 
 const mdbase = createMdbase(
   { id: manifest.id, name: manifest.name, environment: __MDBASE_ENVIRONMENT__, origin: location.origin, manifest, storage: { applicationNamespace: namespace } },
-  { followVisibility: false, signIn: { open: (url: string) => post({ type: "open-url", url }) } },
+  { followVisibility: false, ...(embedded ? { worker, urlSelection: false } : {}), signIn: { open: (url: string) => post({ type: "open-url", url }) } },
 );
 // The iframe is deliberately hidden; Obsidian, not iframe visibility, owns IO.
 mdbase.setForeground(true);
@@ -77,7 +82,7 @@ mdbase.subscribe(() => {
   if (key !== last) { last = key; post({ type: "phase", phase: summary }); }
 });
 
-function records(): any {
+function records(): MdbaseClient {
   const p: any = mdbase.getSnapshot().phase;
   if (p.kind !== "ready") throw Object.assign(new Error(`not ready (${p.kind})`), { code: "not_ready" });
   return p.connection.records;
@@ -91,9 +96,9 @@ const rplain = (r: any) => ({ id: r.path, path: r.path, revision: r.revision, do
 
 const downloads = new Map<string, DownloadPull>();
 const uploads = new RetryUploads();
-let watch: { close?: () => void; stop?: () => void; ready?: Promise<void> } | null = null;
+let watch: ChangesWatch | null = null;
 const methods: Record<string, (...args: any[]) => Promise<any>> = {
-  start: async () => { await mdbase.start(); return phaseSummary(); },
+  start: async () => { if (embedded?.collection) await mdbase.select(embedded.collection); await mdbase.start(); return phaseSummary(); },
   signIn: async () => { await mdbase.signIn(); return phaseSummary(); },
   // No discard flag: the SDK must refuse sign-out with unconfirmed writes.
   signOut: async () => { await mdbase.signOut(); return phaseSummary(); },
@@ -138,12 +143,12 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     return out;
   },
   watch: async (cursor?: string) => {
-    watch?.close?.(); watch?.stop?.();
+    watch?.();
     watch = records().watchChanges((batch: any) =>
       post({ type: "changes", batch: { cursor: batch.cursor, reset: batch.reset, changes: batch.changes.map((c: any) => ({ id: c.id, path: c.path, kind: c.kind, entity: c.entity ?? null })) } }), { cursor });
     // The ACK is delivered only after the initial reset/replay callback. Keep
     // startup's barrier closed until that callback has reached the parent.
-    await watch!.ready;
+    await watch.ready;
     return true;
   },
   create: async (path: string, document: string) => {
@@ -239,7 +244,7 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     await ledger.acknowledge(mutationId);
     return !ledger.getSnapshot().rejected.some((e: any) => e.mutationId === mutationId) && !(await client.listConflicts()).some((e: any) => e.mutation === mutationId);
   },
-  unwatch: async () => { watch?.close?.(); watch?.stop?.(); watch = null; return true; },
+  unwatch: async () => { watch?.(); watch = null; return true; },
   drain: async () => {
     const until = Date.now() + 120_000;
     while (true) {
@@ -254,7 +259,7 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
       await new Promise(resolve => window.setTimeout(resolve, 200));
     }
   },
-  stop: async () => { watch?.close?.(); watch?.stop?.(); watch = null; await mdbase.close(); return true; },
+  stop: async () => { watch?.(); watch = null; await mdbase.close(); return true; },
   debug: async () => {
     const s: any = mdbase.getSnapshot();
     const safe = (v: any) => JSON.parse(JSON.stringify(v ?? null, (_k, x) => typeof x === "bigint" ? Number(x) : typeof x === "function" ? undefined : x));

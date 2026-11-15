@@ -886,6 +886,20 @@ function directFixture(phase: Record<string, unknown>, text: string, canStartOve
   return { ...f, calls };
 }
 
+test("native conflict copies are listed with non-destructive review and keep-both actions", async () => {
+  const f = directFixture({ kind: "ready" }, "Synced");
+  const kept: string[] = [];
+  Object.assign((f.sync.controller as unknown as { native: object }).native, { keepConflictCopies: async (copy: string) => { kept.push(copy); } });
+  const copy = "target (conflict 2026-11-15 0900 test-v).md";
+  f.sync.set({ direct: { text: "Synced", phase: { kind: "ready" }, conflicts: [{ path: "target.md", copy }] } });
+  f.state.render();
+  assert.match(f.text(), /Conflicts/); assert.match(f.text(), /target \(conflict 2026-11-15 0900 test-v\)\.md/);
+  assert.ok(button(f.root, "Open current file")); assert.ok(button(f.root, "Open conflict copy"));
+  button(f.root, "Keep both").click(); await tick();
+  assert.deepEqual(kept, [copy]);
+  f.dom.window.close();
+});
+
 test("where collections are chosen, a quiet line says when Private ones are listed (LAB F3)", () => {
   const choosing = directFixture({ kind: "choosing", collections: [{ id: "c", name: "Notes", private: false }] }, "Choose the collection to sync with this vault.");
   const hint = Array.from(choosing.root.querySelectorAll("p.mdbase-muted")).map((p) => p.textContent ?? "").find((t) => /Private collections/.test(t));
@@ -1035,12 +1049,11 @@ test("access removed offers Request access again, which starts the approval flow
   other.dom.window.close();
 });
 
-test("phones and tablets say plainly that sync runs on the computer", () => {
-  const f = fixture();
-  f.sync.set({ daemon: "mobile", status: null });
-  f.state.render();
-  assert.match(f.text(), /Sync isn't available on phones and tablets yet.*Types and validation work here as usual/);
-  assert.equal(f.root.querySelectorAll(".mdbase-sync button").length, 0);
+test("the shared SDK sync pane offers sign-in without requiring the desktop app", () => {
+  const f = directFixture({ kind: "signed_out" }, "Sign in to sync this vault.");
+  assert.match(f.text(), /Sign in to sync this vault/);
+  assert.ok(button(f.root, "Sign in"));
+  assert.doesNotMatch(f.text(), /isn't available on phones|Install the mdbase app/);
   f.dom.window.close();
 });
 

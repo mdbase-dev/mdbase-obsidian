@@ -11,6 +11,7 @@ for (const kind of ["record", "file"]) {
     assert.equal(move(known, "h1", remote, false), "rename");
     assert.equal(move(known, "h1", remote, true), "blocked");
     assert.equal(move(known, "h1", { ...remote, id: "other" }, false), "blocked");
+    assert.equal(move(known, "h1", { ...remote, kind: kind === "file" ? "record" : "file" }, false), "blocked");
     assert.equal(move(known, undefined, remote, false), "restore");
   });
   const cases = [

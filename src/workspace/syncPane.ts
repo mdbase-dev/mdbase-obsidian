@@ -135,6 +135,7 @@ export class SyncPane {
       } else if (phase === "ready") {
         this.renderSyncNow(root, () => native.enqueue(() => native.reconcileAll(false, undefined, true)));
         this.renderDirectFailures(root, s.direct.failures ?? []);
+        this.renderDirectConflicts(root, s.direct.conflicts ?? []);
         this.renderOverview(root, s.direct.lastSynced ?? null, s.direct.totals ?? null, s.direct.phase.sync);
         this.renderDevice(root, s.direct.device ?? { skip: [], folders: [] }, s.direct.inclusion ?? null, (next) => this.run(() => native.setDevice(next)));
         this.renderActivity(root, s.direct.activity ?? []);
@@ -172,9 +173,6 @@ export class SyncPane {
       return;
     }
     switch (s.daemon) {
-      case "mobile":
-        root.createEl("p", { text: "Sync this vault from Obsidian on your computer, with the mdbase app installed. Types and validation work here as usual." });
-        return;
       case "checking":
         return;
       case "not_installed":
@@ -523,6 +521,25 @@ export class SyncPane {
       ]);
     }
     if (failures.length > MAX_FAILURES_SHOWN) section.createEl("p", { cls: "mdbase-muted", text: `And ${failures.length - MAX_FAILURES_SHOWN} more.` });
+  }
+
+  private renderDirectConflicts(root: HTMLElement, conflicts: NonNullable<SyncSnapshot["direct"]>["conflicts"]): void {
+    if (!conflicts?.length) return;
+    const native = this.ctx.host.syncController.native;
+    if (!native) return;
+    const section = this.group(root, "Conflicts");
+    section.createEl("p", { cls: "mdbase-muted", text: "Both versions are kept. Review the current file and its conflict copy before choosing to keep both." });
+    const list = section.createDiv({ cls: "mdbase-hold-list" });
+    for (const conflict of conflicts.slice(0, MAX_FAILURES_SHOWN)) {
+      const row = list.createDiv({ cls: "mdbase-hold" });
+      row.createDiv({ cls: "mdbase-hold-path", text: conflict.path });
+      row.createDiv({ cls: "mdbase-muted", text: conflict.copy });
+      this.actions(row, [
+        ["Open current file", false, () => this.ctx.host.openFileByPath(conflict.path)],
+        ["Open conflict copy", false, () => this.ctx.host.openFileByPath(conflict.copy)],
+        ["Keep both", false, () => this.run(() => native.keepConflictCopies(conflict.copy))],
+      ]);
+    }
   }
 
   private renderHolds(root: HTMLElement): void {

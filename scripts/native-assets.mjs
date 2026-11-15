@@ -2,13 +2,15 @@
 import { build } from "esbuild";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { brotliCompressSync, constants } from "node:zlib";
+import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
+import { checkNativeSdk } from "./native-sdk-contract.mjs";
 
 export async function nativeAssets() {
   const index = process.argv.indexOf("--native-sdk");
   const sdk = resolve(index < 0 ? "node_modules/@mdbase-dev/sdk" : process.argv[index + 1]);
   const environment = process.argv.includes("--lab") ? "lab" : process.argv.includes("--staging") ? "staging" : "production";
+  checkNativeSdk(sdk);
   const trust = readFileSync(resolve(sdk, "dist/application/packaged-trust.js"), "utf8");
   if (!trust.includes(`"environment":"${environment}"`)) throw new Error(`Native SDK must be authentically packaged for ${environment}; no environment retargeting`);
   const declaration = readFileSync(resolve(sdk, "dist/application/declaration.js"), "utf8");
@@ -50,5 +52,5 @@ export async function nativeAssets() {
     } }],
   });
   assets["/app.js"] = Buffer.from(page.outputFiles[0].contents);
-  return Object.fromEntries(Object.entries(assets).map(([url, bytes]) => [url, brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 6 } }).toString("base64")]));
+  return Object.fromEntries(Object.entries(assets).map(([url, bytes]) => [url, gzipSync(bytes, { level: 9 }).toString("base64")]));
 }

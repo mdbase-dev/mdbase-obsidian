@@ -28,3 +28,8 @@ test("a definition conflict offers a choice; unknown codes stay readable", () =>
   assert.equal(describeFailure({ code: "conflict" }).choose, undefined);
   assert.match(describeFailure({ code: "weird" }).detail, /\(weird\)/);
 });
+test("remote rename failures explain the occupied destination, identity mismatch and index wait", () => {
+  assert.match(describeFailure({ code: "remote_move_blocked", reason: "destination_occupied" }).detail, /Both files are unchanged/);
+  assert.match(describeFailure({ code: "remote_move_blocked", reason: "identity_mismatch" }).detail, /identity or kind doesn't match/);
+  assert.match(describeFailure({ code: "vault_index_pending" }).detail, /hasn't indexed the file/);
+});

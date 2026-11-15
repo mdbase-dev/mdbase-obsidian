@@ -146,6 +146,7 @@ class Setting {
     const el = this.controlEl.createEl("input", { type: "checkbox" });
     const api = {
       setValue(value) { el.checked = value; return api; },
+      setDisabled(value) { el.disabled = value; return api; },
       onChange(handler) { el.onchange = () => handler(el.checked); return api; },
     };
     build(api);
