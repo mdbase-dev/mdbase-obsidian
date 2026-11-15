@@ -1,3 +1,4 @@
+import legacyConfig from "./legacyConfig.json" with { type: "json" };
 import { getFrontMatterInfo, normalizePath, parseYaml, stringifyYaml, TFile, Vault } from "obsidian";
 import type { CollectionContractDescriptor } from "./contractTypes";
 import type { ErrorObject } from "ajv";
@@ -130,8 +131,7 @@ const DEFAULT_CONFIG: MdbaseConfig = {
 
 /** The v0.2 plugin default, still applied to v0.2 collections without `exclude`. */
 // This is collection configuration data, not Obsidian's runtime config path.
-// eslint-disable-next-line obsidianmd/hardcoded-config-path -- Preserve the v0.2 collection-format default.
-const V02_DEFAULT_EXCLUDE = ["_types", ".obsidian", ".git", "node_modules", ".trash", ".mdbase"];
+const V02_DEFAULT_EXCLUDE = legacyConfig.validationExcludes;
 
 let ajv: Ajv2020 | null = null;
 
@@ -148,7 +148,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value));
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function parseStrictMode(value: unknown): StrictMode | undefined {
@@ -297,7 +297,7 @@ export function parseFrontmatter(content: string): FrontmatterParse {
 
   try {
     const yamlSource = info.frontmatter;
-    const parsed = parseYaml(yamlSource);
+    const parsed: unknown = parseYaml(yamlSource);
     if (parsed == null && yamlSource.trim() !== "") {
       return {
         hasFrontmatter: true,
@@ -345,7 +345,7 @@ export async function loadMdbaseConfig(vault: Vault): Promise<MdbaseConfig | nul
 
   try {
     const raw = await vault.cachedRead(configFile);
-    const parsed = parseYaml(raw);
+    const parsed: unknown = parseYaml(raw);
     if (!isRecord(parsed)) {
       return null;
     }
@@ -423,8 +423,9 @@ function schemaTypeToFieldDefinition(
   required: boolean,
 ): MdbaseFieldDef {
   const schema = isRecord(schemaValue) ? schemaValue : {};
-  const rawType = Array.isArray(schema.type)
-    ? schema.type.find((value) => value !== "null")
+  const schemaTypes: unknown = schema.type;
+  const rawType = Array.isArray(schemaTypes)
+    ? (schemaTypes as unknown[]).find((value) => value !== "null")
     : schema.type;
   const field: MdbaseFieldDef = { required };
 
@@ -628,7 +629,7 @@ async function resolveV03SchemaRef(
   const file = vault.getAbstractFileByPath(schemaPath);
   if (!(file instanceof TFile)) return null;
   try {
-    const document = JSON.parse(await vault.cachedRead(file));
+    const document: unknown = JSON.parse(await vault.cachedRead(file));
     const selected = resolveJsonPointer(document, fragment);
     return isRecord(selected) ? selected : null;
   } catch {
@@ -687,8 +688,7 @@ export async function readCollectionRecords(vault: Vault, config: MdbaseConfig):
     // cachedRead can resolve in a microtask: awaiting it alone does not let the
     // editor paint or process input. Yield by time, not once per tiny file.
     if (performance.now() - yieldedAt >= 8) {
-      // eslint-disable-next-line obsidianmd/prefer-window-timers -- Host-independent cooperative yield, like collection validation below.
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise(resolve => window.setTimeout(resolve, 0));
       yieldedAt = performance.now();
     }
     if (isExcluded(file.path, config)) continue;
@@ -921,7 +921,7 @@ function getWhereField(
     for (const value of current) {
       if (!isRecord(value) || !Object.prototype.hasOwnProperty.call(value, key)) continue;
       const child = value[key];
-      if (expandArray && Array.isArray(child)) next.push(...child);
+      if (expandArray && Array.isArray(child)) next.push(...child as unknown[]);
       else if (!expandArray) next.push(child);
     }
     if (!next.length) return { present: false, value: undefined };
@@ -1890,8 +1890,7 @@ export async function validateCollection(
     options.onProgress?.({ completed: index + 1, total: files.length, phase: "notes" });
     // Give touch/keyboard cancellation and paint a chance even with cached reads.
     // This core also runs in Node-based profiling and unit tests.
-    // eslint-disable-next-line obsidianmd/prefer-window-timers -- Host-independent cooperative yield.
-    if (index % 25 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+    if (index % 25 === 0) await new Promise(resolve => window.setTimeout(resolve, 0));
   }
 
   options.signal?.throwIfAborted();
@@ -2048,7 +2047,7 @@ export function coerceFieldInput(rawInput: string, fieldDef: MdbaseFieldDef): un
       return values.map((entry) => coerceFieldInput(entry, fieldDef.items as MdbaseFieldDef));
     }
     case "object": {
-      const parsed = parseYaml(trimmed);
+      const parsed: unknown = parseYaml(trimmed);
       if (!isRecord(parsed)) {
         throw new Error("Expected YAML object value");
       }

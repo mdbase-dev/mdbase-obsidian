@@ -83,7 +83,8 @@ export class CreateTypedNoteModal extends Modal {
     this.submit = actions.createEl("button", { text: "Create note", cls: "mod-cta" });
     this.submit.onclick = () => void this.save();
     void this.suggestPath();
-    this.inputs.values().next().value?.input.focus();
+    const firstInput = this.inputs.values().next();
+    if (!firstInput.done) firstInput.value.input.focus();
   }
 
   private readInputs(): boolean {

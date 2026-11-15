@@ -108,5 +108,5 @@ export function recordActivity(log: ActivityEntry[], entry: ActivityEntry): Acti
 }
 
 export function validActivity(v: unknown): v is ActivityEntry[] {
-  return Array.isArray(v) && v.every((e) => e && typeof e === "object" && typeof e.at === "number" && typeof e.kind === "string" && typeof e.path === "string");
+  return Array.isArray(v) && v.every((e: unknown) => e !== null && typeof e === "object" && "at" in e && "kind" in e && "path" in e && typeof e.at === "number" && typeof e.kind === "string" && typeof e.path === "string");
 }

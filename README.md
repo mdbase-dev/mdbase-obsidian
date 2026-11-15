@@ -203,3 +203,24 @@ desktop app (`mdbase --json …`) for setup and status. mdbase interop is pinned
 
 The plugin is not a general record editor, query dashboard, or Connect server
 administration client.
+
+## Lint checks
+
+Run `npm run lint` from the project root. It runs the 0.6.0 Obsidian recommended
+rules, the newest-submission scanner-equivalent rules, and Stylelint, all with
+`--max-warnings=0`. `npm run lint:scanner` runs the scanner lane separately.
+`eslint.scanner.config.mjs` follows the full configuration and newest-layer
+adjustments in the upstream 0.6.0 [configuration guide](https://github.com/obsidianmd/eslint-plugin/blob/0.6.0/docs/configuration.md#community-plugin-scanner-configuration).
+Build output, tests, and tooling are excluded as in the scanner. The TypeScript
+project includes `DOM.AsyncIterable` for the SDK's streaming downloads.
+
+The repository lane also validates `manifest.json` and `LICENSE` with the
+plugin's `validate-manifest` and `validate-license` rules; the scanner lane
+leaves them off, as the scanner does.
+
+Legacy v0.2 collection exclusion lists live in `src/legacyConfig.json`: these
+are persisted-format defaults, not a lookup of Obsidian's runtime config folder.
+Keeping them as data preserves migration and validation behavior for old vaults.
+Settings search definitions share the renderer used on Obsidian 1.11.4; no new
+settings APIs are called on older versions. Mobile sync still requires 1.12.3,
+now expressed through `requireApiVersion` as well as the adapter capability check.

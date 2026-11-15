@@ -19,19 +19,22 @@ const result = await build({
     export * from './src/sync/native/declaration.ts';
     export { default as NativeSync } from './src/sync/native/plugin.ts';
     export { SyncController } from './src/sync/controller.ts';
-    export { TFile } from 'obsidian';`, resolveDir: process.cwd() },
+    export { TFile, setApiSupport } from 'obsidian';`, resolveDir: process.cwd() },
   bundle: true, platform: "node", format: "esm", write: false,
   plugins: [{ name: "mobile-mocks", setup(builder) {
     builder.onResolve({ filter: /^obsidian$|^embedded:assets$/ }, args => ({ path: args.path, namespace: "mock" }));
     builder.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path === "obsidian" ? `
       export const Platform = { isMobile: true, isMobileApp: true };
+      let apiSupported = true;
+      export const requireApiVersion = version => { if (version !== "1.12.3") throw new Error("Unexpected API version"); return apiSupported; };
+      export const setApiSupport = value => { apiSupported = value; };
       export class Component {} export class Notice {} export class SuggestModal {} export class App {}
       export const parseYaml = JSON.parse;
       export class TAbstractFile {} export class TFile extends TAbstractFile { constructor(path) { super(); this.path = path; } }
     ` : `export default ${JSON.stringify(assets)};`, loader: "js" }));
   } }],
 });
-const { MobileHost, NativeSync, SyncController, TFile, mobileOrigin, vaultNamespace, decodeAsset, engineManifest } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
+const { MobileHost, NativeSync, SyncController, TFile, setApiSupport, mobileOrigin, vaultNamespace, decodeAsset, engineManifest } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
 const digest = bytes => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const encode = text => new TextEncoder().encode(text);
 const decode = bytes => new TextDecoder().decode(bytes);
@@ -376,6 +379,15 @@ test("mobile boot on an Obsidian without appendBinary stops with an update messa
   const options = { data: { vaultId: "first-vault" }, capability: "secret", stopped: () => false, save: async () => {}, log() {} };
   await assert.rejects(host.open(options), /needs Obsidian 1\.12\.3 or later/);
   assert.equal([...adapter.files.keys()].filter(file => file.includes("sync-engine")).length, 0);
+});
+test("mobile boot respects requireApiVersion even if an adapter supplies appendBinary", async t => {
+  const { host, adapter } = fixture(t);
+  const options = { data: { vaultId: "first-vault" }, capability: "secret", stopped: () => false, save: async () => {}, log() {} };
+  setApiSupport(false);
+  try {
+    await assert.rejects(host.open(options), /needs Obsidian 1\.12\.3 or later/);
+    assert.equal(adapter.events.length, 0);
+  } finally { setApiSupport(true); }
 });
 test("mobile controller uses the shared SDK UI path without invoking desktop discovery", async t => {
   let created = 0;

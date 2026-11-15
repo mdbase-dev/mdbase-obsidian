@@ -1,4 +1,5 @@
 import type { App, DataAdapter, PluginManifest } from "obsidian";
+import { requireApiVersion } from "obsidian";
 import packedAssets from "embedded:assets";
 import type { DownloadOptions, EngineHost, EngineOptions, HostResult } from "./host";
 import { vaultNamespace } from "./host";
@@ -140,6 +141,7 @@ export class MobileHost implements EngineHost {
     }
   }
   async stageDownload(options: DownloadOptions) {
+    if (!requireApiVersion("1.12.3")) throw new Error("Sync on this device needs Obsidian 1.12.3 or later. Update Obsidian, then restart sync.");
     const staged = this.join(options.directory, `${this.uuid()}.tmp`);
     try {
       await this.mkdir(options.directory);
@@ -166,7 +168,7 @@ export class MobileHost implements EngineHost {
     const stopped = () => this.closed || options.stopped();
     // Downloads append in chunks (adapter.appendBinary, Obsidian 1.12.3);
     // the plugin's minAppVersion is lower because desktop doesn't need it.
-    if (typeof this.adapter.appendBinary !== "function")
+    if (!requireApiVersion("1.12.3") || typeof this.adapter.appendBinary !== "function")
       throw new Error("Sync on this device needs Obsidian 1.12.3 or later. Update Obsidian, then restart sync.");
     const origin = mobileOrigin(window.location.origin);
     const directory = this.join(this.pluginDir, "sync-engine");

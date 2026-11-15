@@ -270,7 +270,7 @@ export function frontmatterFromTypeModel(model: TypeEditorModel): Record<string,
   if (present.length) match.fields_present = present;
   else delete match.fields_present;
   if (model.matchWhere.trim()) {
-    const where = parseYaml(model.matchWhere);
+    const where: unknown = parseYaml(model.matchWhere);
     if (!isRecord(where)) throw new Error("Match where must be a YAML mapping.");
     match.where = where;
   } else delete match.where;

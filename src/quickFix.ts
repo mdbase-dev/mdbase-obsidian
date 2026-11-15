@@ -41,7 +41,7 @@ export function applyFieldQuickFix(frontmatter: Record<string, unknown>, issue: 
   if (!parent || typeof parent !== "object" || Array.isArray(parent)) return false;
   const object = parent as Record<string, unknown>;
   const key = path[path.length - 1];
-  const exists = Object.prototype.hasOwnProperty.call(object, key);
+  const exists = Object.prototype.hasOwnProperty.call(object, key) === true;
   if (["unknown_field", "schema_additional_properties"].includes(issue.code)) {
     if (!exists) return false;
     delete object[key];

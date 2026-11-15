@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- Preserve the spike\'s dynamic SDK bridge; lifecycle and on-disk checks guard optional state. */
 // The SDK host page. Runs in a loopback iframe inside Obsidian so the SDK sees a
 // native app origin (http://127.0.0.1:<vault port>). Owns the WASM replica; the plugin
 // drives it over postMessage and does all vault IO.
-import { createMdbase, type ChangesWatch, type MdbaseClient } from "@mdbase-dev/sdk";
+import { createMdbase, type ChangesWatch, type MdbaseClient, type Write, type RecordView, type FileView } from "@mdbase-dev/sdk";
 import { engineManifest } from "./declaration";
+import { errorInfo, isObject, type CallMessage } from "./protocol";
 import { DownloadPull } from "./downloadPull";
 import { RetryUploads } from "./upload";
 // Sync carries files, and spec 04 never rejects those for validity: an invalid
@@ -22,12 +22,12 @@ const worker = embedded ? (url: string) => {
 
 declare const __MDBASE_ENVIRONMENT__: "lab" | "staging" | "production";
 let bridge: MessagePort | null = null;
-const queued: any[] = [];
+const queued: unknown[] = [];
 if (parent === window) throw new Error("Native SDK must run inside its owning vault");
-const post = (msg: any, transfer: Transferable[] = []) => {
+const post = (msg: unknown, transfer: Transferable[] = []) => {
   if (bridge) bridge.postMessage(msg, transfer); else queued.push(msg);
 };
-const log = (...parts: any[]) => post({ type: "log", text: parts.map(String).join(" ") });
+const log = (...parts: unknown[]) => post({ type: "log", text: parts.map(String).join(" ") });
 
 const mdbase = createMdbase(
   { id: manifest.id, name: manifest.name, environment: __MDBASE_ENVIRONMENT__, origin: location.origin, manifest, storage: { applicationNamespace: namespace } },
@@ -35,7 +35,7 @@ const mdbase = createMdbase(
 );
 // The iframe is deliberately hidden; Obsidian, not iframe visibility, owns IO.
 mdbase.setForeground(true);
-const confirmed = async (w: any) => {
+const confirmed = async <Written extends Pick<Write, "confirmed">>(w: Written) => {
   const receipt = await w.confirmed;
   // Confirmation means the log accepted an outcome, not necessarily our edit.
   // In particular two path-only moves can confirm with a recorded path conflict
@@ -51,28 +51,29 @@ const confirmed = async (w: any) => {
 // revision a read-back returns (checked against production; the view's own
 // `state` is the stale optimistic one), which saves that read. The caller keeps
 // only identity and revision.
-const written = async (w: any, id: string) => {
-  const receipt: any = await w.confirmed;
-  const r = receipt?.state === "confirmed" && receipt.status === "applied" ? receipt.records?.find((x: any) => x.id === id) : undefined;
+const written = async (w: Pick<Write, "confirmed">, id: string) => {
+  const receipt = await w.confirmed;
+  const r = receipt?.state === "confirmed" && receipt.status === "applied" ? receipt.records?.find((x) => x.id === id) : undefined;
   if (r && typeof r.revision === "string" && typeof r.path === "string") return { id: r.id, path: r.path, revision: r.revision, via: "receipt" };
   return plain(await records().get(id, { include: { document: true } }));
 };
 
-function phaseSummary() {
-  const s: any = mdbase.getSnapshot();
-  const p: any = s.phase;
+export function phaseSummary() {
+  const s = mdbase.getSnapshot();
+  const p = s.phase;
+  const problem = "problem" in p ? p.problem : null;
   return {
     kind: p.kind,
-    collectionId: p.collectionId ?? null,
+    collectionId: "collectionId" in p ? p.collectionId : null,
     sync: s.sync ? { state: s.sync.state, connection: s.sync.connection, pending: s.sync.pending, health: s.sync.health, live: s.sync.live, holds: s.sync.holds, conflicts: s.sync.conflicts,
       // The SDK reads a first download as catching up; the replica says which it is.
-      installing: p.connection?.records?.status?.installing !== undefined } : null,
+      installing: "connection" in p && p.connection.records.status?.installing !== undefined } : null,
     // `action` is the SDK's suggested next step ("approve" to request access again).
-    problem: p.problem ? { code: p.problem.code, reason: p.problem.reason, key: p.problem.key ?? null, title: p.problem.title, message: p.problem.message, action: p.problem.action ?? null } : null,
+    problem: problem ? { code: problem.code, reason: errorInfo(problem).reason, key: problem.key ?? null, title: problem.title, message: problem.message, action: problem.action ?? null } : null,
     // A Private collection without its key on this device: how the account
     // unlocks it, and whether an attempt is running. Never the secret.
     unlock: p.kind === "needs_unlock" ? { mode: p.mode, unlocking: !!p.unlocking, name: p.displayName ?? null } : null,
-    collections: (s.collections ?? []).map((c: any) => ({ id: c.collectionId, name: c.displayName ?? c.name ?? c.collectionId, availability: c.availability?.kind ?? c.availability ?? null, private: c.mode === "private" })),
+    collections: (s.collections ?? []).map((c) => ({ id: c.collectionId, name: c.displayName ?? ("name" in c && typeof c.name === "string" ? c.name : c.collectionId), availability: (isObject(c.availability) && "kind" in c.availability ? c.availability.kind : undefined) ?? c.availability ?? null, private: c.mode === "private" })),
   };
 }
 let last = "";
@@ -83,21 +84,25 @@ mdbase.subscribe(() => {
 });
 
 function records(): MdbaseClient {
-  const p: any = mdbase.getSnapshot().phase;
+  const p = mdbase.getSnapshot().phase;
   if (p.kind !== "ready") throw Object.assign(new Error(`not ready (${p.kind})`), { code: "not_ready" });
   return p.connection.records;
 }
-const files = (): any => { records(); return (mdbase.getSnapshot().phase as any).connection.files; };
-const fplain = (f: any) => ({ id: f.id, path: f.path, size: f.size, digest: f.digest, state: f.state, media: f.media, confirmed: f.confirmedSeq > 0 && f.state !== "pending_upload" && !f.hold });
-const plain = (r: any) => ({ id: r.id, path: r.path, revision: r.revision, document: r.document, state: r.state?.kind ?? r.state, confirmed: r.state?.state === "confirmed" && !r.state?.hold && !r.state?.unresolved });
+const files = () => {
+  const phase = mdbase.getSnapshot().phase;
+  if (phase.kind !== "ready") throw Object.assign(new Error(`not ready (${phase.kind})`), { code: "not_ready" });
+  return phase.connection.files;
+};
+const fplain = (f: FileView) => ({ id: f.id, path: f.path, size: f.size, digest: f.digest, state: f.state, media: f.media, confirmed: f.confirmedSeq > 0 && f.state !== "pending_upload" && !f.hold });
+const plain = (r: RecordView) => ({ id: r.id, path: r.path, revision: r.revision, document: r.document, state: ("kind" in r.state ? r.state.kind : undefined) ?? r.state, confirmed: r.state?.state === "confirmed" && !r.state?.hold && !r.state?.unresolved });
 
 // A resource has no UUID; its path is its identity.
-const rplain = (r: any) => ({ id: r.path, path: r.path, revision: r.revision, document: r.text, confirmed: r.state === "confirmed" });
+const rplain = (r: Awaited<ReturnType<MdbaseClient["resources"]["get"]>>) => ({ id: r.path, path: r.path, revision: r.revision, document: r.text, confirmed: r.state === "confirmed" });
 
 const downloads = new Map<string, DownloadPull>();
-const uploads = new RetryUploads();
+const uploads = new RetryUploads<ReturnType<typeof fplain>>();
 let watch: ChangesWatch | null = null;
-const methods: Record<string, (...args: any[]) => Promise<any>> = {
+export const methods = {
   start: async () => { if (embedded?.collection) await mdbase.select(embedded.collection); await mdbase.start(); return phaseSummary(); },
   signIn: async () => { await mdbase.signIn(); return phaseSummary(); },
   // No discard flag: the SDK must refuse sign-out with unconfirmed writes.
@@ -108,20 +113,20 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   select: async (id: string) => { await mdbase.select(id); return phaseSummary(); },
   // The secret is used for this one call. A wrong one resolves, still locked,
   // with the problem on the phase; nothing here keeps or logs it.
-  unlock: async (id: string, secret: { password: string } | { recoveryKey: string }) => { await (mdbase as any).unlock(id, secret); return phaseSummary(); },
+  unlock: async (id: string, secret: { password: string } | { recoveryKey: string }) => { await mdbase.unlock(id, secret); return phaseSummary(); },
   // Every record with its exact source.
   all: async () => {
     // Native QUERY budgets hydrated source bytes as well as row count. Even a
     // bounded page of 64 mixed-size notes can exceed 1 MiB. Restart with smaller
     // pages on that precise refusal; never return a truncated/duplicate snapshot.
     for (let limit = 64; ; limit = Math.max(1, Math.floor(limit / 2))) {
-      const out: any[] = [];
+      const out: ReturnType<typeof plain>[] = [];
       try {
         for await (const page of records().queryPages({ limit }, { include: { document: true }, onReset: () => { out.length = 0; } }))
           for (const r of page.records) out.push(plain(r));
         return out;
-      } catch (e: any) {
-        if (limit === 1 || e?.code !== "too_large" || e?.reason !== "query_budget_exceeded") throw e;
+      } catch (e) {
+        if (limit === 1 || errorInfo(e).code !== "too_large" || errorInfo(e).reason !== "query_budget_exceeded") throw e;
       }
     }
   },
@@ -129,12 +134,12 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   // Bounded ordinary reads for an event's affected paths. Only not_found means
   // absent: permission, budget and transient errors must never look like deletes.
   at: async (paths: string[]) => {
-    const out: any[] = []; let next = 0;
+    const out: (Awaited<ReturnType<typeof read>> & {})[] = []; let next = 0;
     const read = async (path: string) => {
-      try { return { ...plain(await records().get({ path }, { include: { document: true } })), kind: "record" }; }
-      catch (e: any) { if (e?.code !== "not_found") throw e; }
-      try { return { ...fplain(await files().get({ path })), kind: "file" }; }
-      catch (e: any) { if (e?.code !== "not_found") throw e; }
+      try { return { ...plain(await records().get({ path }, { include: { document: true } })), kind: "record" as const }; }
+      catch (e) { if (errorInfo(e).code !== "not_found") throw e; }
+      try { return { ...fplain(await files().get({ path })), kind: "file" as const }; }
+      catch (e) { if (errorInfo(e).code !== "not_found") throw e; }
       return null;
     };
     await Promise.all(Array.from({ length: Math.min(8, paths.length) }, async () => {
@@ -144,15 +149,15 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   },
   watch: async (cursor?: string) => {
     watch?.();
-    watch = records().watchChanges((batch: any) =>
-      post({ type: "changes", batch: { cursor: batch.cursor, reset: batch.reset, changes: batch.changes.map((c: any) => ({ id: c.id, path: c.path, kind: c.kind, entity: c.entity ?? null })) } }), { cursor });
+    watch = records().watchChanges((batch) =>
+      post({ type: "changes", batch: { cursor: batch.cursor, reset: batch.reset, changes: batch.changes.map((c) => ({ id: c.id, path: c.path, kind: c.kind, entity: c.entity ?? null })) } }), { cursor });
     // The ACK is delivered only after the initial reset/replay callback. Keep
     // startup's barrier closed until that callback has reached the parent.
     await watch.ready;
     return true;
   },
   create: async (path: string, document: string) => {
-    const w: any = await confirmed(await records().create({ path, document }, SYNC_WRITE));
+    const w = await confirmed(await records().create({ path, document }, SYNC_WRITE));
     return written(w, w.recordId);
   },
   replace: async (id: string, base: { path: string; doc: string }, next: { path: string; doc: string }, revision: string) => {
@@ -161,19 +166,19 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   },
   // The collection's file policy (which attachments sync, for every device).
   inclusion: async () => {
-    const i: any = (await records().describe()).inclusion;
+    const i = (await records().describe()).inclusion;
     return i ? { include: [...(i.include ?? [])], exclude: i.exclude ? [...i.exclude] : undefined, maxSize: typeof i.maxSize === "bigint" ? Number(i.maxSize) : i.maxSize ?? undefined } : null;
   },
   // ---- definitions: mdbase.yaml, type and contract files (resources, §4.1) ----
   // They are not records, so the record change stream never reports them; the
   // plugin lists them on every pass. Revision is the CAS token for put/delete.
   resourcesAll: async () => {
-    const out: any[] = []; let cursor: string | undefined;
+    const out: ReturnType<typeof rplain>[] = []; let cursor: string | undefined;
     do {
-      const page: any = await records().resources.list({ text: true, limit: 128, ...(cursor ? { cursor } : {}) });
+      const page = await records().resources.list({ text: true, limit: 128, ...(cursor ? { cursor } : {}) });
       for (const r of page.resources) {
         // A listing may omit a large text; read that one resource on its own.
-        const full: any = typeof r.text === "string" ? r : await records().resources.get(r.path);
+        const full = typeof r.text === "string" ? r : await records().resources.get(r.path);
         if (typeof full.text !== "string") throw Object.assign(new Error("Resource text unavailable"), { code: "unavailable" });
         out.push(rplain(full));
       }
@@ -184,7 +189,7 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   },
   resourcePut: async (path: string, doc: string, baseRevision?: string) => {
     await confirmed(await records().resources.put(path, doc, baseRevision ? { baseRevision } : { mustNotExist: true }));
-    const got: any = await records().resources.get(path);
+    const got = await records().resources.get(path);
     // An empty document must never stand in for text a single read omits.
     if (typeof got.text !== "string") return { ...rplain(got), document: doc };
     return rplain(got);
@@ -193,11 +198,11 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     await confirmed(await records().resources.delete(path, { baseRevision })); return true;
   },
   // ---- files (attachments and anything not a record) ----
-  filesAll: async () => { const out: any[] = []; for await (const f of files().list({})) out.push(fplain(f)); return out; },
+  filesAll: async () => { const out: ReturnType<typeof fplain>[] = []; for await (const f of files().list({})) out.push(fplain(f)); return out; },
   fileGet: async (id: string) => fplain(await files().get(id)),
   downloadOpen: async (id: string) => {
     const token = crypto.randomUUID();
-    downloads.set(token, new DownloadPull(await files().downloadStream(id)));
+    downloads.set(token, new DownloadPull(files().downloadStream(id)));
     return token;
   },
   downloadNext: async (token: string) => {
@@ -210,7 +215,7 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     await stream?.close(); return true;
   },
   upload: async (path: string, bytes: Uint8Array, fileId?: string, ifRevision?: string, identity?: { transferId: string; mutationId: string }) => uploads.run(identity, async () => {
-    const w: any = await confirmed(await files().upload(path, bytes, { ...identity, ...(fileId ? { fileId } : {}), ...(ifRevision ? { ifRevision } : {}), onProgress: (p: any) => post({ type: "transfer", direction: "upload", done: p.done, total: p.total }) }));
+    const w = await confirmed(await files().upload(path, bytes, { ...identity, ...(fileId ? { fileId } : {}), ...(ifRevision ? { ifRevision } : {}), onProgress: (p) => post({ type: "transfer", direction: "upload", done: p.done, total: p.total }) }));
     return fplain(await files().get(w.fileId));
   }),
   uploadForget: async (id: string) => { uploads.forget(id); return true; },
@@ -242,14 +247,14 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
     // user-reviewed discard). Never clear other mutations or unproven conflicts.
     for (const entry of await client.listConflicts()) if (entry.mutation === mutationId) await confirmed(await client.dismissConflict(entry));
     await ledger.acknowledge(mutationId);
-    return !ledger.getSnapshot().rejected.some((e: any) => e.mutationId === mutationId) && !(await client.listConflicts()).some((e: any) => e.mutation === mutationId);
+    return !ledger.getSnapshot().rejected.some((e) => errorInfo(e).mutationId === mutationId) && !(await client.listConflicts()).some((e) => e.mutation === mutationId);
   },
   unwatch: async () => { watch?.(); watch = null; return true; },
   drain: async () => {
     const until = Date.now() + 120_000;
     while (true) {
       const status = await records().getStatus();
-      const writes: any = mdbase.getSnapshot().sync?.writes;
+      const writes = mdbase.getSnapshot().sync?.writes;
       if (writes?.rejected?.length || status.holds > 0 || status.unresolved > 0) {
         log(`drain blocked: rejected=${writes?.rejected?.length ?? 0} holds=${status.holds} unresolved=${status.unresolved} pending=${status.pending}`);
         throw new Error("Unresolved writes/holds; ownership retained");
@@ -261,38 +266,38 @@ const methods: Record<string, (...args: any[]) => Promise<any>> = {
   },
   stop: async () => { watch?.(); watch = null; await mdbase.close(); return true; },
   debug: async () => {
-    const s: any = mdbase.getSnapshot();
-    const safe = (v: any) => JSON.parse(JSON.stringify(v ?? null, (_k, x) => typeof x === "bigint" ? Number(x) : typeof x === "function" ? undefined : x));
+    const s = mdbase.getSnapshot();
+    const safe = (v: unknown): unknown => JSON.parse(JSON.stringify(v ?? null, (_k, x: unknown) => typeof x === "bigint" ? Number(x) : typeof x === "function" ? undefined : x));
     // Conflict values can contain documents/blob references. Diagnostics expose
     // identifiers only, even when the visible file namespace has been cleaned.
-    const conflicts = s.phase.kind === "ready" ? (await records().listConflicts()).map((e: any) => ({ seq: e.seq, mutationId: e.mutation, id: e.conflict.id, kind: e.conflict.kind })) : [];
-    return safe({ phase: { kind: s.phase.kind, slow: s.phase.slow, progress: s.phase.progress, problem: s.phase.problem }, status: s.status, problem: s.problem, problemDetail: s.problemDetail, readiness: s.readiness, openingProgress: s.openingProgress, sync: s.sync, conflicts });
+    const conflicts = s.phase.kind === "ready" ? (await records().listConflicts()).map((e) => ({ seq: e.seq, mutationId: e.mutation, id: e.conflict.id, kind: e.conflict.kind })) : [];
+    return safe({ phase: { kind: s.phase.kind, slow: "slow" in s.phase ? s.phase.slow : undefined, progress: "progress" in s.phase ? s.phase.progress : undefined, problem: "problem" in s.phase ? s.phase.problem : undefined }, status: s.status, problem: s.problem, problemDetail: s.problemDetail, readiness: s.readiness, openingProgress: s.openingProgress, sync: s.sync, conflicts });
   },
-  status: async () => { const s: any = await records().getStatus(); const w = records().ledger.getSnapshot(); return JSON.parse(JSON.stringify({ ...s, rejected: w.rejected.length, ledgerPending: w.pending.length, restored: w.restored }, (_k, v) => typeof v === "bigint" ? Number(v) : v)); },
+  status: async (): Promise<Awaited<ReturnType<MdbaseClient["getStatus"]>> & { rejected: number; ledgerPending: number; restored: boolean }> => { const s = await records().getStatus(); const w = records().ledger.getSnapshot(); return JSON.parse(JSON.stringify({ ...s, rejected: w.rejected.length, ledgerPending: w.pending.length, restored: w.restored }, (_k, v: unknown) => typeof v === "bigint" ? Number(v) : v)) as Awaited<ReturnType<MdbaseClient["getStatus"]>> & { rejected: number; ledgerPending: number; restored: boolean }; },
 };
 
 
-async function receive(e: MessageEvent) {
+async function receive(e: MessageEvent<CallMessage>) {
   if (!e.data || e.data.type !== "call") return;
   const { id, method, args } = e.data;
   try {
     const fn = methods[method];
     if (!fn) throw new Error(`unknown method ${method}`);
-    const value: any = await fn(...(args ?? []));
-    post({ type: "result", id, ok: true, value }, method === "downloadNext" && value.bytes ? [value.bytes.buffer] : []);
-  } catch (err: any) {
+    const value: unknown = await Reflect.apply(fn, undefined, args ?? []);
+    post({ type: "result", id, ok: true, value }, method === "downloadNext" && isObject(value) && value.bytes instanceof Uint8Array ? [value.bytes.buffer] : []);
+  } catch (err: unknown) {
     // Validation issues say why a write was refused ("missing required field
     // title"). They go to the plugin's Sync tab, never to the log.
-    const issues = Array.isArray(err?.issues) ? err.issues.slice(0, 5).map((i: any) => ({ code: String(i?.code ?? ""), severity: String(i?.severity ?? ""), message: String(i?.message ?? ""), ...(typeof i?.location === "string" && i.location ? { location: i.location } : {}) })) : null;
-    post({ type: "result", id, ok: false, error: { code: err?.code ?? null, reason: err?.reason ?? null, mutationId: err?.mutationId ?? null, issues, message: String(err?.message ?? err) } });
+    const issues = errorInfo(err).issues?.slice(0, 5).map((i: unknown) => ({ code: String(errorInfo(i).code ?? ""), severity: String(errorInfo(i).severity ?? ""), message: String(errorInfo(i).message ?? ""), ...(typeof errorInfo(i).location === "string" && errorInfo(i).location ? { location: errorInfo(i).location } : {}) })) ?? null;
+    post({ type: "result", id, ok: false, error: { code: errorInfo(err).code ?? null, reason: errorInfo(err).reason ?? null, mutationId: errorInfo(err).mutationId ?? null, issues, message: String(errorInfo(err).message ?? err) } });
   }
 }
-window.addEventListener("message", e => {
+window.addEventListener("message", (e: MessageEvent<{ type?: string }>) => {
   if (e.source !== parent || e.data?.type !== "connect" || bridge || !e.ports[0]) return;
   bridge = e.ports[0]; bridge.onmessage = receive;
   for (const msg of queued.splice(0)) bridge.postMessage(msg);
 });
 // Error messages can include submitted documents or URLs; log only identifiers.
 window.addEventListener("error", () => log("page error (details intentionally omitted)"));
-window.addEventListener("unhandledrejection", (e: any) => log("page rejection:", e.reason?.code ?? "unknown", e.reason?.reason ?? ""));
+window.addEventListener("unhandledrejection", (e) => log("page rejection:", errorInfo(e.reason).code ?? "unknown", errorInfo(e.reason).reason ?? ""));
 parent.postMessage({ type: "hello", origin: location.origin, opfs: !!navigator.storage?.getDirectory, isSecureContext }, "*");
