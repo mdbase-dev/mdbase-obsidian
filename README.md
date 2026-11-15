@@ -40,8 +40,8 @@ Pack upgrades and custom mappings remain in mdbase editor.
 
 ### Sync
 
-Sync runs inside the plugin on desktop, and on Android (still being tested on
-devices), using the same Sync tab and settings. No desktop app is needed on a
+Sync runs inside the plugin on desktop, and on Android (tested on an emulator,
+not yet on physical phones), using the same Sync tab and settings. No desktop app is needed on a
 phone. On desktop, a vault already
 owned by the mdbase app continues using its background service. Obsidian keeps
 saving files as usual, and edits from other devices arrive in open notes
@@ -71,8 +71,8 @@ with your other devices.
 
 Settings carry sign-out, disconnecting this vault (notes stay; other devices
 keep syncing) and the app location for unusual desktop installs. Android sync
-needs a modern WebView with OPFS and module Workers; device qualification is
-still pending. iOS sync is not yet supported or tested. Mobile operating systems
+needs a modern WebView with OPFS and module Workers; it has been tested on an
+Android emulator but not yet on physical phones. iOS sync is not yet supported or tested. Mobile operating systems
 can suspend Obsidian in the background; sync resumes when it is reopened.
 
 Commands: **Open workspace**, **Open sync**, **Create type definition**, **Edit
@@ -198,8 +198,8 @@ desktop app (`mdbase --json …`) for setup and status. mdbase interop is pinned
 - Read and migration input: mdbase v0.2.x
 - Obsidian minimum version: 1.11.4
 - Types and validation on desktop and mobile; sync on desktop (Windows, macOS,
-  Linux) and on Android with Obsidian 1.12.3 or later (device testing in
-  progress); iOS sync is not supported yet
+  Linux) and on Android with Obsidian 1.12.3 or later (tested on an emulator,
+  not yet on physical phones); iOS sync is not supported yet
 
 The plugin is not a general record editor, query dashboard, or Connect server
 administration client.
