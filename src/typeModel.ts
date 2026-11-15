@@ -1,9 +1,6 @@
 import { parseYaml, stringifyYaml } from "obsidian";
-import {
-  fieldsFromV03Schema,
-  type MdbaseFieldDef,
-  schemaFromV03Fields,
-} from "./mdbaseCore";
+import type { MdbaseFieldDef } from "./mdbaseCore";
+import { fieldsFromV03Schema, schemaFromV03Fields } from "./typeDefinitions";
 import type {
   TypeEditorContractImplementation,
   TypeEditorField,

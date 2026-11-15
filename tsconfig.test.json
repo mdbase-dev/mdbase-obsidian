@@ -21,6 +21,11 @@
   },
   "include": [
     "src/mdbaseCore.ts",
+    "src/collectionConfig.ts",
+    "src/typeDefinitions.ts",
+    "src/typeMatching.ts",
+    "src/validation.ts",
+    "src/noteCreation.ts",
     "src/migration.ts",
     "src/typeModel.ts",
     "src/typeEditorTypes.ts",

@@ -5,24 +5,25 @@ import legacyConfig from "../src/legacyConfig.json" with { type: "json" };
 import {
   MdbaseConfig,
   MdbaseIssue,
-  MdbasePathError,
   MdbaseTypeDef,
-  applyReadDefaults,
-  buildUniqueNotePath,
-  ensureCollectionInitialized,
-  fieldsFromV03Schema,
   formatMarkdown,
-  getTypesForFile,
-  loadMdbaseConfig,
-  loadTypeDefinitions,
-  normalizeSafeRelativePath,
   parseFrontmatter,
-  readCollectionRecords,
-  schemaFromV03Fields,
-  validateCollection,
-  validateFile,
-  isExcluded,
 } from "../src/mdbaseCore";
+import {
+  ensureCollectionInitialized,
+  isExcluded,
+  loadMdbaseConfig,
+  readCollectionRecords,
+} from "../src/collectionConfig";
+import {
+  applyReadDefaults,
+  fieldsFromV03Schema,
+  loadTypeDefinitions,
+  schemaFromV03Fields,
+} from "../src/typeDefinitions";
+import { getTypesForFile } from "../src/typeMatching";
+import { validateCollection, validateFile } from "../src/validation";
+import { MdbasePathError, buildUniqueNotePath, normalizeSafeRelativePath } from "../src/noteCreation";
 
 test("legacy collection defaults remain format data, independent of the active vault config directory", () => {
   assert.deepEqual(legacyConfig.validationExcludes, ["_types", ".obsidian", ".git", "node_modules", ".trash", ".mdbase"]);
