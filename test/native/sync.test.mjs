@@ -76,8 +76,16 @@ function fixture(t) {
     put(p, "base"); putRemote(p, "base");
     native.data.paths[p] = { id: "original", kind: "record", revision: "r1", hash: digest("base"), disk: native.diskIdentity(p) }; void native.persist();
   };
-  t.after(() => { for (const timer of ["settleTimer", "persistTimer", "commitTimer"]) if (native[timer]) clearTimeout(native[timer]); fs.rmSync(root, { recursive: true, force: true }); });
-  return { root, native, remote, resources, put, putRemote, putResource, baseline, read: p => fs.readFileSync(path.join(root, p), "utf8") };
+  // A pass that defers a remote move queues its own follow-up pass. In the
+  // plugin every pass runs on the job queue, so they never overlap; a test that
+  // calls reconcileAll() directly can race that follow-up. Use pass() then.
+  const pass = (...args) => new Promise((resolve, reject) => { void native.enqueue(() => native.reconcileAll(...args).then(resolve, reject)); });
+  t.after(async () => {
+    for (const timer of ["settleTimer", "persistTimer", "commitTimer"]) if (native[timer]) clearTimeout(native[timer]);
+    await new Promise(resolve => setTimeout(resolve, 0)); await native.jobs; // let a queued follow-up finish first
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  return { root, native, remote, resources, put, putRemote, putResource, baseline, pass, read: p => fs.readFileSync(path.join(root, p), "utf8") };
 }
 for (const scenario of ["offline edit plus remote edit", "remote delete versus local edit", "remote rename versus local edit", "local rename versus remote edit"]) {
   test(scenario + " retains both versions", async t => {
@@ -152,9 +160,9 @@ test("persistently blocked tracked renames report per-path failures without touc
   f.native.data.paths["target.md"] = { id: "target-id", kind: "record", revision: "r1", hash: digest("old target") };
   f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
   f.putRemote("note.md", "old target", "r2", "target-id");
-  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(await f.pass(), false);
   f.putRemote("incoming.md", "unrelated", "r1", "incoming");
-  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(await f.pass(), false);
   assert.equal(f.read("incoming.md"), "unrelated");
   assert.equal(f.read("note.md"), "base"); assert.equal(f.read("target.md"), "old target");
   assert.equal(f.native.data.pathFailures["note.md"].code, "remote_move_blocked");
@@ -162,7 +170,7 @@ test("persistently blocked tracked renames report per-path failures without touc
   assert.match(f.native.view().failures[0].detail, /occupies the rename destination/);
   assert.match(f.native.view().failures.find(failure => failure.path === "note.md").detail, /Destination: target.md/);
   f.put("outgoing.md", "still syncing");
-  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(await f.pass(), false);
   assert.equal(f.remote.get("outgoing.md").document, "still syncing");
   assert.equal(f.native.data.paths["note.md"].id, "original");
   assert.equal(f.native.data.paths["target.md"].id, "target-id");
@@ -192,12 +200,12 @@ test("a deferred tracked rename schedules its own follow-up without another remo
 test("a folder blocking a remote rename is a retried path failure, cleared when vacated", async t => {
   const f = fixture(t); f.baseline(); fs.mkdirSync(path.join(f.root, "target.md"));
   f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
-  assert.equal(await f.native.reconcileAll(), false);
-  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(await f.pass(), false);
+  assert.equal(await f.pass(), false);
   assert.equal(f.native.data.pathFailures["note.md"].code, "remote_move_blocked");
   assert.equal(f.read("note.md"), "base");
   fs.rmdirSync(path.join(f.root, "target.md"));
-  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(await f.pass(), true);
   assert.equal(f.read("target.md"), "base");
   assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
 });
