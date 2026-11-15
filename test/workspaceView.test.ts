@@ -1035,12 +1035,11 @@ test("access removed offers Request access again, which starts the approval flow
   other.dom.window.close();
 });
 
-test("phones and tablets say plainly that sync runs on the computer", () => {
-  const f = fixture();
-  f.sync.set({ daemon: "mobile", status: null });
-  f.state.render();
-  assert.match(f.text(), /Sync isn't available on phones and tablets yet.*Types and validation work here as usual/);
-  assert.equal(f.root.querySelectorAll(".mdbase-sync button").length, 0);
+test("the shared SDK sync pane offers sign-in without requiring the desktop app", () => {
+  const f = directFixture({ kind: "signed_out" }, "Sign in to sync this vault.");
+  assert.match(f.text(), /Sign in to sync this vault/);
+  assert.ok(button(f.root, "Sign in"));
+  assert.doesNotMatch(f.text(), /isn't available on phones|Install the mdbase app/);
   f.dom.window.close();
 });
 

@@ -47,7 +47,7 @@ export interface MergedChange {
   lostValue: unknown;
 }
 
-export type DaemonState = "checking" | "mobile" | "not_installed" | "not_running" | "running" | "error";
+export type DaemonState = "checking" | "not_installed" | "not_running" | "running" | "error";
 export type LinkState = "off" | "connecting" | "open" | "declined" | "failed";
 
 export interface PendingApproval {
@@ -147,7 +147,6 @@ export class SyncController {
 
   constructor(private readonly host: SyncHost, readonly mobile: boolean) {
     this.cli = new MdbaseCli(() => (this.mobile ? null : findBinary(host.binaryOverride())));
-    if (mobile) this.snapshotValue = { ...this.snapshotValue, daemon: "mobile" };
   }
 
   get snapshot(): SyncSnapshot {
@@ -165,7 +164,7 @@ export class SyncController {
   }
 
   start(): void {
-    if (this.mobile || !this.stopped) return;
+    if (!this.stopped) return;
     this.stopped = false;
     void this.refresh();
   }
@@ -184,7 +183,7 @@ export class SyncController {
     const native = this.native;
     if (!native) return Promise.resolve();
     this.native = null;
-    const releasing = releaseNative(native).finally(() => { if (this.releasing === releasing) this.releasing = null; });
+    const releasing = releaseNative(native, this.mobile).finally(() => { if (this.releasing === releasing) this.releasing = null; });
     this.releasing = releasing;
     return releasing;
   }
@@ -249,7 +248,6 @@ export class SyncController {
 
   /** Check mdbase now; coalesces with a check already running. */
   refresh(): Promise<void> {
-    if (this.mobile) return Promise.resolve();
     this.refreshing ??= this.check().finally(() => {
       this.refreshing = null;
       this.schedule();
@@ -268,12 +266,14 @@ export class SyncController {
 
   private async check(): Promise<void> {
     const vaultPath = this.host.vaultPath();
-    if (vaultPath && this.host.createNative) {
+    if ((vaultPath || this.mobile) && this.host.createNative) {
       try {
-        const { fs, path } = desktopModules();
         let marker: unknown = null;
-        try { marker = JSON.parse(fs.readFileSync(path.join(vaultPath, ".mdbase/host.json"), "utf8")); }
-        catch (e) { if ((e as { code?: string }).code !== "ENOENT") throw new Error("Cannot read folder ownership. Sync is waiting; files are untouched."); }
+        if (!this.mobile && vaultPath) {
+          const { fs, path } = desktopModules();
+          try { marker = JSON.parse(fs.readFileSync(path.join(vaultPath, ".mdbase/host.json"), "utf8")); }
+          catch (e) { if ((e as { code?: string }).code !== "ENOENT") throw new Error("Cannot read folder ownership. Sync is waiting; files are untouched."); }
+        }
         const owner = folderHost(marker);
         if (owner === "wait") throw new Error("This folder is owned by another app. Sync is waiting; files are untouched.");
         if (owner === "plugin") {
@@ -655,8 +655,9 @@ export class SyncController {
  * for the SDK: a broken SDK can't stop gracefully, and removing its page is what
  * stops it (the SDK's own pagehide path). Bounded, so a restart never hangs.
  */
-async function releaseNative(native: NativeSync): Promise<void> {
+async function releaseNative(native: NativeSync, waitForIo: boolean): Promise<void> {
   try { native.unload(); } catch (error) { console.warn("mdbase: stopping the sync host failed", error); }
+  if (waitForIo) { await native.released; return; }
   let timer: number | undefined;
   await Promise.race([
     native.released ?? Promise.resolve(),

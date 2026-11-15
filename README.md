@@ -41,10 +41,14 @@ Pack upgrades and custom mappings remain in mdbase editor.
 
 ### Sync
 
-Sync needs the mdbase desktop app on the same computer. The app runs a
-background service that watches the vault folder and syncs it; the plugin is a
-window onto it. Obsidian keeps saving files as usual, and edits from other
-devices arrive in open notes without losing the cursor.
+Sync runs inside the plugin on desktop and Android, using the same Sync tab
+and settings. No desktop app is needed on a phone. On desktop, a vault already
+owned by the mdbase app continues using its background service. Obsidian keeps
+saving files as usual, and edits from other devices arrive in open notes
+without losing the cursor. The synced copy on a phone is stored in Obsidian's
+app storage, where other installed plugins can read it.
+
+For vaults using the desktop app:
 
 - **Sign in** opens the mdbase sign-in page in the browser (with **Copy sign-in
   link** if no browser opens). Sign-in belongs to the computer, not the vault.
@@ -66,8 +70,10 @@ check", with a way to use the other value. **Copy link** shares the collection
 with your other devices.
 
 Settings carry sign-out, disconnecting this vault (notes stay; other devices
-keep syncing) and the app location for unusual installs. Phones and tablets
-show types and validation; sync there is not available yet.
+keep syncing) and the app location for unusual desktop installs. Android sync
+needs a modern WebView with OPFS and module Workers; device qualification is
+still pending. iOS sync is not yet supported or tested. Mobile operating systems
+can suspend Obsidian in the background; sync resumes when it is reopened.
 
 Commands: **Open workspace**, **Open sync**, **Create type definition**, **Edit
 type definition** (the current note's type, or a picker), **Create note from

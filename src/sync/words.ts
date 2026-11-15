@@ -179,7 +179,6 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     const detail = ready && !problem && !checking ? readyText(phase.sync) : text;
     return { label, detail, tone: problem ? "problem" : checking ? "busy" : ready ? "ok" : "quiet", syncing: ready || problem };
   }
-  if (s.daemon === "mobile") return off("Sync on desktop", "Sync isn't available on phones and tablets yet.");
   if (s.daemon === "checking") return off("Checking sync", "Checking mdbase on this computer.");
   if (s.daemon === "not_installed") return off("Sync off", "Install the mdbase app to sync this vault.");
   const wasSyncing = Boolean(s.collection && s.collection.mode !== "local");

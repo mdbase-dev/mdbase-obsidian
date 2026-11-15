@@ -16,7 +16,7 @@ settings, not in the mirrored namespace. It stores a vault UUID, fixed loopback
 port, collection binding, per-path identity/revision/hash, preservation journals
 and upload identities. Copying that file to another vault or computer is refused.
 SDK installation, locks, grants, Worker and OPFS use the stable vault namespace.
-The SDK manifest declares a native application with a numeric IPv4 loopback
+On desktop the SDK manifest declares a native application with a numeric IPv4 loopback
 homepage and callback. The iframe gets a memory-only capability URL; unauthorised
 HTML requests are refused. Only its owning window receives the private RPC port.
 
@@ -58,7 +58,45 @@ Obsidian resumes its SDK host and reconciles before sending. A leftover desktop
 marker after a crash is deliberately not overridden. Copied/stale-marker takeover
 needs explicit recovery, not a timeout. The inherited OS-lock probe currently
 uses Linux `flock`; other systems fail closed if a desktop lock file exists.
-Mobile and Android shared-localhost support are not part of this implementation.
+
+## Mobile host
+
+`EngineHost` separates vault IO, hashes, lock probes, device identity, download
+staging, and engine-page transport from the shared reconciliation and RPC code.
+`DesktopHost` retains Node IO, loopback hosting, the saved port, hostname, and
+flock checks. `MobileHost` uses `app.vault.adapter`, Web Crypto SHA-256 for file
+bytes, and no hostname or flock. A leftover desktop lock or foreign/unreadable
+ownership marker is refused; mobile never takes over a desktop-owned folder.
+
+The engine runs in a blob iframe with a resource-directory base URL. Android's
+resource HTML has a sandbox CSP, so it cannot itself be the iframe document.
+The SDK's `worker` factory constructs a module Worker from the exact packaged
+Worker bytes in a blob, without rewriting imports or replacing `Worker`. The
+SDK still receives the original Worker URL and verifies native assets against
+its own pins. `urlSelection: false` leaves Obsidian's URL alone; the journal's
+collection is restored through `select`.
+
+Android declares the manifest with `homepage: "http://localhost/"` and a
+same-origin callback, omitting `platform: "native"`. This registers separately
+from the desktop application's numeric-loopback manifest. Every mobile vault
+uses its persisted UUID as `applicationNamespace`; a resource-path location
+binding refuses a journal copied to another vault. The origin's storage is
+shared with other vaults and plugins, not an encryption or security boundary.
+
+Journal writes are awaited before covered IO or remote sends and serialized
+through adapter temporary-file/rename operations. Restart waits for queued
+journal IO to finish before starting another host. Download chunks append to a
+private staging file; EOF and Web Crypto digest verification precede publication.
+The adapter API provides no atomic compare-and-swap with other plugins or
+external filesystem writers; device tests must exercise concurrent edits and
+rename-over-existing semantics. Digest verification reads the completed staged
+file into memory; large-attachment memory behavior needs device qualification.
+
+iOS is untested. A `capacitor://localhost` origin currently fails closed before
+extracting assets or starting the SDK. Enabling it needs qualification of blob
+origin/message routing, secure module Workers, OPFS synchronous access handles,
+resource fetches and SDK/Connect origin admission, plus lifecycle and storage
+tests on WKWebView. No Android-specific filesystem API is used.
 
 ## Signing in
 
@@ -152,6 +190,12 @@ packer refuses an SDK that is not packaged for the environment being built, and
 checks every embedded SDK asset against the SDK's own pins. The SDK pins the
 official OPFS proxy but never loads it, and the published package leaves it out;
 the packer embeds it only when the supplied package has it.
+
+One gzip/base64 asset tree is embedded in `main.js` for both hosts: Android's
+`DecompressionStream` has no brotli decoder. Desktop uses Node gunzip; mobile
+extracts the tree into the plugin's private `sync-engine/` directory, excluded
+from mirrored paths. This avoids shipping duplicate gzip and brotli trees.
+The normal 5 MiB raw/gzip mobile budget remains unchanged.
 
 To build against an authenticated LAB or staging SDK package:
 

@@ -2,7 +2,7 @@
 import { build } from "esbuild";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { brotliCompressSync, constants } from "node:zlib";
+import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
 export async function nativeAssets() {
@@ -50,5 +50,5 @@ export async function nativeAssets() {
     } }],
   });
   assets["/app.js"] = Buffer.from(page.outputFiles[0].contents);
-  return Object.fromEntries(Object.entries(assets).map(([url, bytes]) => [url, brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 6 } }).toString("base64")]));
+  return Object.fromEntries(Object.entries(assets).map(([url, bytes]) => [url, gzipSync(bytes, { level: 9 }).toString("base64")]));
 }

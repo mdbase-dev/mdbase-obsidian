@@ -3,7 +3,7 @@
 // native app origin (http://127.0.0.1:<vault port>). Owns the WASM replica; the plugin
 // drives it over postMessage and does all vault IO.
 import { createMdbase } from "@mdbase-dev/sdk";
-import template from "./mdbase-app.json";
+import { engineManifest } from "./declaration";
 import { DownloadPull } from "./downloadPull";
 import { RetryUploads } from "./upload";
 // Sync carries files, and spec 04 never rejects those for validity: an invalid
@@ -11,9 +11,14 @@ import { RetryUploads } from "./upload";
 // replica with the submit validation param; older ones ignore it and refuse
 // invalid notes as invalid_record.
 const SYNC_WRITE: { validation?: "off" | "warn" | "error" } = { validation: "warn" };
-const manifest = { ...template, homepage: `${location.origin}/`, redirect_uris: [`${location.origin}/auth/mdbase/callback`] };
-const namespace = new URL(location.href).searchParams.get("vault");
+const embedded = (window as typeof window & { mdbaseHost?: { namespace: string; collection?: string; workerUrl: string } }).mdbaseHost;
+const manifest = engineManifest(location.origin, !!embedded);
+const namespace = embedded?.namespace ?? new URL(location.href).searchParams.get("vault");
 if (!namespace) throw new Error("Missing stable vault storage namespace");
+const worker = embedded ? (url: string) => {
+  if (url !== new URL("./sdk/application/worker.js", window.document.baseURI).href) throw new Error("Unexpected sync Worker URL");
+  return new Worker(embedded.workerUrl, { type: "module" });
+} : undefined;
 
 declare const __MDBASE_ENVIRONMENT__: "lab" | "staging" | "production";
 let bridge: MessagePort | null = null;
@@ -26,7 +31,7 @@ const log = (...parts: any[]) => post({ type: "log", text: parts.map(String).joi
 
 const mdbase = createMdbase(
   { id: manifest.id, name: manifest.name, environment: __MDBASE_ENVIRONMENT__, origin: location.origin, manifest, storage: { applicationNamespace: namespace } },
-  { followVisibility: false, signIn: { open: (url: string) => post({ type: "open-url", url }) } },
+  { followVisibility: false, ...(embedded ? { worker, urlSelection: false } : {}), signIn: { open: (url: string) => post({ type: "open-url", url }) } },
 );
 // The iframe is deliberately hidden; Obsidian, not iframe visibility, owns IO.
 mdbase.setForeground(true);
@@ -93,7 +98,7 @@ const downloads = new Map<string, DownloadPull>();
 const uploads = new RetryUploads();
 let watch: { close?: () => void; stop?: () => void; ready?: Promise<void> } | null = null;
 const methods: Record<string, (...args: any[]) => Promise<any>> = {
-  start: async () => { await mdbase.start(); return phaseSummary(); },
+  start: async () => { if (embedded?.collection) await mdbase.select(embedded.collection); await mdbase.start(); return phaseSummary(); },
   signIn: async () => { await mdbase.signIn(); return phaseSummary(); },
   // No discard flag: the SDK must refuse sign-out with unconfirmed writes.
   signOut: async () => { await mdbase.signOut(); return phaseSummary(); },

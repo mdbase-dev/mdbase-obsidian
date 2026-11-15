@@ -172,9 +172,6 @@ export class SyncPane {
       return;
     }
     switch (s.daemon) {
-      case "mobile":
-        root.createEl("p", { text: "Sync this vault from Obsidian on your computer, with the mdbase app installed. Types and validation work here as usual." });
-        return;
       case "checking":
         return;
       case "not_installed":

@@ -1,4 +1,4 @@
-import { type App, Modal, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
+import { type App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MdbasePlugin from "../main";
 import { errorText, modeName, summarize } from "./sync/words";
 
@@ -81,10 +81,6 @@ export class MdbaseSettingTab extends PluginSettingTab {
     const controller = plugin.syncController;
     const s = controller.snapshot;
     new Setting(containerEl).setName("Sync").setHeading();
-    if (Platform.isMobile) {
-      new Setting(containerEl).setName("Sync isn't available on phones and tablets yet").setDesc("Sync this vault from Obsidian on your computer, with the mdbase app installed.");
-      return;
-    }
     const summary = summarize(s);
     new Setting(containerEl)
       .setName(summary.syncing ? summary.label : "Status")
