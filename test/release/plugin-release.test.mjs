@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { nextVersion, promoteRelease, promotionDecision, releasePlugin, releaseState, releaseTarget, sameAssets } from "../../scripts/plugin-release.mjs";
+import { needsBuild, nextVersion, promoteRelease, promotionDecision, quietCheck, quietOpen, quietUntil, releasePlugin, releaseState, releaseTarget, sameAssets } from "../../scripts/plugin-release.mjs";
 
 const sha = "a".repeat(40);
 const older = "b".repeat(40);
@@ -195,36 +195,135 @@ test("failed downloads, uploads and corrupt bytes never make a draft public", ()
   });
 });
 
-test("promotes the newest prerelease only after three quiet hours on main", () => {
-  const hour = 60 * 60 * 1000;
-  const now = Date.parse("2026-11-16T12:00:00Z");
-  const at = (hours) => new Date(now - hours * hour).toISOString();
-  const full = { tag_name: "0.4.28", draft: false, prerelease: false, published_at: at(48) };
-  const newest = { tag_name: "0.4.32", draft: false, prerelease: true, published_at: at(4) };
-  const releases = [full, { tag_name: "0.4.31", draft: false, prerelease: true, published_at: at(5) }, newest];
-  assert.deepEqual(promotionDecision(releases, tagsFor("0.4.32"), at(4), now), { action: "promote", version: "0.4.32" });
-  const recentCommit = promotionDecision(releases, "", at(1), now);
-  assert.equal(recentCommit.reason, "recent");
-  assert.equal(recentCommit.readyAt, new Date(now + 2 * hour).toISOString());
-  assert.equal(promotionDecision([full, { ...newest, published_at: at(2) }], "", at(4), now).reason, "recent");
-  assert.equal(promotionDecision([full, { ...newest, prerelease: false }], "", at(4), now).reason, "current");
-  assert.equal(promotionDecision([...releases, { tag_name: "0.4.33", draft: true }], "", at(4), now).reason, "publishing");
-  assert.equal(promotionDecision(releases, tagsFor("0.4.33"), at(4), now).reason, "publishing");
-  assert.throws(() => promotionDecision(releases, "", "not a date", now));
+test("promotion by hand picks the newest prerelease, never during publication", () => {
+  const full = { tag_name: "0.4.28", draft: false, prerelease: false };
+  const newest = { tag_name: "0.4.32", draft: false, prerelease: true };
+  const releases = [full, { tag_name: "0.4.31", draft: false, prerelease: true }, newest];
+  assert.deepEqual(promotionDecision(releases, tagsFor("0.4.32")), { action: "promote", version: "0.4.32" });
+  assert.equal(promotionDecision([full, { ...newest, prerelease: false }], "").reason, "current");
+  assert.equal(promotionDecision([...releases, { tag_name: "0.4.33", draft: true }], "").reason, "publishing");
+  assert.equal(promotionDecision(releases, tagsFor("0.4.33")).reason, "publishing");
 });
 
-test("promotion edits only the chosen release and only when it is due", () => {
-  const now = Date.parse("2026-11-16T12:00:00Z");
-  for (const [committedAt, expected] of [["2026-11-16T08:00:00Z", "promote"], ["2026-11-16T11:00:00Z", "none"]]) {
-    const calls = [];
+test("promotion edits only the chosen release", () => {
+  const calls = [];
+  const run = (...args) => {
+    calls.push(args);
+    if (args[0] === "gh" && args[1] === "api") return JSON.stringify([[{ tag_name: "0.4.3", draft: false, prerelease: true }, { ...baseline, prerelease: false }]]);
+    return "";
+  };
+  assert.equal(promoteRelease(run, environment).action, "promote");
+  assert.deepEqual(mutations(calls), [["gh", "release", "edit", "0.4.3", "--repo", "mdbase-dev/mdbase-obsidian", "--prerelease=false", "--latest"]]);
+});
+
+const hour = 60 * 60 * 1000;
+const now = Date.parse("2026-11-16T12:00:00Z");
+const hoursAgo = (hours) => new Date(now - hours * hour).toISOString();
+
+// main at `sha`, version 0.4.2 released from `older`; the diff and PRs are options.
+function quiet(options, callback) {
+  const directory = mkdtempSync(join(tmpdir(), "obsidian-quiet-test-"));
+  const original = process.cwd();
+  const version = options.version ?? "0.4.2";
+  const calls = [];
+  try {
+    process.chdir(directory);
+    writeFileSync("manifest.json", JSON.stringify({ id: "mdbase-sync", version, minAppVersion: "1.11.4" }));
+    writeFileSync("main.js", "current bundle");
+    writeFileSync("styles.css", "styles");
     const run = (...args) => {
       calls.push(args);
-      if (args[0] === "gh" && args[1] === "api" && args[2] === "--paginate") return JSON.stringify([[{ tag_name: "0.4.3", draft: false, prerelease: true, published_at: "2026-11-16T07:00:00Z" }, { ...baseline, prerelease: false, published_at: "2026-11-01T00:00:00Z" }]]);
-      if (args[0] === "gh" && args[1] === "api") return committedAt;
+      const command = args.slice(0, 3).join(" ");
+      if (command === `gh api repos/${environment.GITHUB_REPOSITORY}/commits/main`) return options.committedAt ?? hoursAgo(4);
+      if (command === "gh pr list") return JSON.stringify(options.pulls ?? []);
+      if (command === "git rev-parse HEAD") return sha;
+      if (command === "git ls-remote origin") return `${sha}\trefs/heads/main`;
+      if (command === "git ls-remote --tags") return tagsFor("0.4.2", older) + (options.tags ?? "");
+      if (command === "git ls-remote --heads") return options.held ? `${sha}\t${args[4]}` : "";
+      if (command === "gh api --paginate") return JSON.stringify([[{ tag_name: "0.4.2", draft: false, prerelease: true }, ...(options.releases ?? [])]]);
+      if (command === "git diff --name-only") return (options.changed ?? ["src/main.ts"]).join("\n");
+      if (command === "gh release download") {
+        const destination = args[args.indexOf("--dir") + 1];
+        writeFileSync(join(destination, "main.js"), options.sameBytes ? "current bundle" : "previous bundle");
+        writeFileSync(join(destination, "styles.css"), "styles");
+        writeFileSync(join(destination, "manifest.json"), JSON.stringify({ id: "mdbase-sync", version: "0.4.2", minAppVersion: "1.11.4" }));
+      }
+      if (command === "gh pr create") return "https://github.com/mdbase-dev/mdbase-obsidian/pull/200";
       return "";
     };
-    assert.equal(promoteRelease(run, environment, now).action, expected);
-    const edits = mutations(calls);
-    assert.deepEqual(edits, expected === "promote" ? [["gh", "release", "edit", "0.4.3", "--repo", "mdbase-dev/mdbase-obsidian", "--prerelease=false", "--latest"]] : []);
+    callback({ run, calls });
+  } finally {
+    process.chdir(original);
+    rmSync(directory, { recursive: true, force: true });
   }
+}
+const changes = (calls) => calls.filter((args) => ["push", "commit", "switch", "tag"].includes(args[1]) || (args[0] === "node") || (args[0] === "gh" && ["pr", "release"].includes(args[1]) && !["list", "download"].includes(args[2])));
+
+test("main is quiet three hours after its last commit", () => {
+  assert.equal(quietUntil(hoursAgo(1), now), new Date(now + 2 * hour).toISOString());
+  assert.equal(quietUntil(hoursAgo(3), now), null);
+  assert.throws(() => quietUntil("not a date", now));
+  assert.ok(!needsBuild(["README.md", "docs/sdk-sync.md", "test/sync.test.ts", ".github/workflows/build.yml"]));
+  assert.ok(needsBuild(["README.md", "src/main.ts"]));
+  assert.ok(needsBuild(["package-lock.json"]));
+});
+
+test("a busy main opens nothing and leaves an open release PR alone", () => {
+  quiet({ committedAt: hoursAgo(1), pulls: [{ number: 7, headRefName: "release/0.4.3", mergeStateStatus: "BEHIND", url: "u" }] }, ({ run, calls }) => {
+    const decision = quietCheck(run, environment, now);
+    assert.equal(decision.reason, "recent");
+    assert.equal(decision.readyAt, new Date(now + 2 * hour).toISOString());
+    assert.equal(changes(calls).length, 0);
+  });
+});
+
+test("a quiet main brings an open release PR up to date and asks it to merge", () => {
+  quiet({ pulls: [{ number: 7, headRefName: "feat/x", url: "x" }, { number: 8, headRefName: "release/0.4.3", mergeStateStatus: "BEHIND", url: "u" }] }, ({ run, calls }) => {
+    assert.deepEqual(quietCheck(run, environment, now), { action: "pending", url: "u" });
+    assert.deepEqual(changes(calls).map((args) => args.slice(0, 4)), [["gh", "pr", "update-branch", "8"], ["gh", "pr", "merge", "8"]]);
+    assert.ok(calls.at(-1).includes("--auto"));
+  });
+  quiet({ pulls: [{ number: 8, headRefName: "release/0.4.3", mergeStateStatus: "BLOCKED", autoMergeRequest: { mergeMethod: "MERGE" }, url: "u" }] }, ({ run, calls }) => {
+    assert.equal(quietCheck(run, environment, now).action, "pending");
+    assert.equal(changes(calls).length, 0);
+  });
+  quiet({ pulls: [{ number: 8, headRefName: "release/0.4.3", url: "u" }, { number: 9, headRefName: "release/0.4.4", url: "v" }] }, ({ run }) => {
+    assert.throws(() => quietCheck(run, environment, now), /More than one/);
+  });
+});
+
+test("a quiet main builds only when something that ships changed since the newest release", () => {
+  quiet({ changed: ["README.md", "docs/weekly-release.md"] }, ({ run }) => assert.equal(quietCheck(run, environment, now).reason, "unchanged"));
+  quiet({}, ({ run, calls }) => {
+    assert.deepEqual(quietCheck(run, environment, now), { action: "build", head: sha, baseline: "0.4.2" });
+    assert.deepEqual(calls.find((args) => args[1] === "diff").slice(3), [older, sha]);
+    assert.equal(changes(calls).length, 0);
+  });
+  quiet({ version: "0.4.3" }, ({ run }) => assert.equal(quietCheck(run, environment, now).reason, "version-unpublished"));
+  quiet({ version: "0.4.3", tags: "\n" + tagsFor("0.4.3") }, ({ run }) => assert.equal(quietCheck(run, environment, now).reason, "publishing"));
+});
+
+test("the version PR opens only when the built bytes differ, and is set to merge itself", () => {
+  quiet({ sameBytes: true }, ({ run, calls }) => {
+    assert.equal(quietOpen(run, environment, now).reason, "unchanged-assets");
+    assert.equal(changes(calls).length, 0);
+  });
+  quiet({ held: true }, ({ run, calls }) => {
+    assert.deepEqual(quietOpen(run, environment, now), { action: "none", reason: "held", branch: "release/0.4.3" });
+    assert.equal(changes(calls).length, 0);
+  });
+  quiet({}, ({ run, calls }) => {
+    assert.deepEqual(quietOpen(run, environment, now), { action: "open", version: "0.4.3", url: "https://github.com/mdbase-dev/mdbase-obsidian/pull/200" });
+    assert.deepEqual(changes(calls).map((args) => args.slice(0, 3)), [
+      ["node", "version-bump.mjs", "0.4.3"],
+      ["git", "switch", "--create"],
+      ["git", "commit", "--message"],
+      ["git", "push", "origin"],
+      ["gh", "pr", "create"],
+      ["gh", "pr", "merge"],
+    ]);
+    assert.ok(calls.find((args) => args[1] === "switch").includes("release/0.4.3"));
+    assert.ok(calls.at(-1).includes("--auto") && !calls.some((args) => args.includes("--force")));
+    assert.ok(!calls.some((args) => args[1] === "release" && args[2] !== "download"));
+  });
 });

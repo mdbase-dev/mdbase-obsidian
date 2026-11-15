@@ -42,14 +42,29 @@ test("manual version dispatch creates a normal PR without a merge-time bot branc
   for (const name of ["build", "version-bump"]) assert.ok(!JSON.stringify(workflow(name)).includes("automation/plugin-release"));
 });
 
-test("promotion runs on a schedule from main, apart from the publisher's queue", () => {
+test("full releases are promoted only by hand", () => {
   const definition = workflow("promote");
-  assert.ok(definition.on.schedule.length);
-  assert.ok("workflow_dispatch" in definition.on);
+  assert.deepEqual(Object.keys(definition.on), ["workflow_dispatch"]);
   assert.equal(definition.jobs.promote.if, "github.ref == 'refs/heads/main'");
   assert.notEqual(definition.concurrency.group, workflow("build").jobs.release.concurrency.group);
-  assert.equal(definition.concurrency["cancel-in-progress"], false);
   for (const step of definition.jobs.promote.steps.filter((value) => value.uses)) assert.match(step.uses, /@[0-9a-f]{40}$/);
   assert.match(definition.jobs.promote.steps.at(-1).run, /plugin-release.mjs promote/);
   assert.ok(!JSON.stringify(definition).includes("permission-pull-requests"));
+  for (const name of ["build", "version-bump", "prerelease"]) assert.ok(!JSON.stringify(workflow(name)).includes("--latest"));
+});
+
+test("quiet prereleases run on a schedule from main, apart from the publisher's queue", () => {
+  const definition = workflow("prerelease");
+  assert.ok(definition.on.schedule.length);
+  assert.ok("workflow_dispatch" in definition.on);
+  assert.equal(definition.jobs.quiet.if, "github.ref == 'refs/heads/main'");
+  assert.notEqual(definition.concurrency.group, workflow("build").jobs.release.concurrency.group);
+  assert.equal(definition.concurrency["cancel-in-progress"], false);
+  for (const step of definition.jobs.quiet.steps.filter((value) => value.uses)) assert.match(step.uses, /@[0-9a-f]{40}$/);
+  const [check, build, open] = definition.jobs.quiet.steps.slice(-3);
+  assert.match(check.run, /plugin-release.mjs quiet$/);
+  assert.equal(build.if, "steps.check.outputs.build == 'true'");
+  assert.match(build.run, /npm run build/);
+  assert.equal(open.if, "steps.check.outputs.build == 'true'");
+  assert.match(open.run, /plugin-release.mjs quiet-open/);
 });

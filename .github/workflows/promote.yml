@@ -1,10 +1,9 @@
 name: Promote plugin release
 
-# The newest published prerelease becomes the full, latest release once no
-# commit has landed on main for three hours (scripts/plugin-release.mjs).
+# Run by hand from the Actions tab: the newest published prerelease becomes the
+# full release marked Latest, which Obsidian's community list serves. Nothing
+# promotes a release automatically (scripts/plugin-release.mjs).
 on:
-  schedule:
-    - cron: "*/20 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +16,7 @@ concurrency:
 
 jobs:
   promote:
-    name: Promote quiet prerelease
+    name: Promote the newest prerelease
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -39,7 +38,7 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Promote the newest prerelease after three quiet hours
+      - name: Promote the newest prerelease
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: node scripts/plugin-release.mjs promote

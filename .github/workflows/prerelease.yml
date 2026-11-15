@@ -1,0 +1,61 @@
+name: Quiet prerelease
+
+# Merges to main don't publish by themselves. Once main has been quiet for three
+# hours and its plugin bytes differ from the newest release, this opens a
+# release/<version> PR that merges itself when required CI passes; that merge
+# publishes the prerelease (Build). See docs/weekly-release.md.
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Not the publisher's group: a queued run there would replace a pending publication.
+concurrency:
+  group: plugin-quiet-prerelease
+  cancel-in-progress: false
+
+jobs:
+  quiet:
+    name: Open a quiet prerelease
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Mint the release automation App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Check main is quiet and changed since the newest release
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: node scripts/plugin-release.mjs quiet
+      - name: Build main
+        if: steps.check.outputs.build == 'true'
+        run: |
+          npm ci
+          npm run build
+      - name: Open the version PR if the plugin bytes changed
+        if: steps.check.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: node scripts/plugin-release.mjs quiet-open

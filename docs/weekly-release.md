@@ -5,32 +5,35 @@ owns SDK intake for this plugin. It polls npm for the highest published
 `@mdbase-dev/sdk`, whose version is independent of the Connect release. It
 verifies Sigstore provenance and the signed source, vendors the exact archive and
 its metadata under `vendor/`, refreshes the npm lock and checks the exact pin,
-version and integrity. A trust rotation, invalid provenance or stuck plugin
-release refuses before any PR. Ops holds the updater and its tests.
+version and integrity. A trust rotation or invalid provenance refuses before
+any PR. Ops holds the updater and its tests.
 
-## One release PR, one publication
+## Quiet prereleases
 
-The **same** `automation/sdk-repin` PR contains the archive pin and plugin version
-bump, using `version-bump.mjs` to update `manifest.json`, `versions.json`,
-`package.json` and the root npm lock versions. The next patch is selected from
-the existing plugin version, not the Connect version. An already bumped but
-untagged version is reused, not incremented again. A stuck tag/draft blocks a
-new bump. The train merges this one PR after a later poll sees required,
-up-to-date **Obsidian plugin** CI pass on its reproduced bytes. There is no
-merge-time version PR, second automatic bot branch or branch-protection bypass.
+Merges to main, SDK repins included, do not publish by themselves. A repin PR
+carries only the archive pin and lock; it does not bump the plugin version.
 
-Ordinary human merges **do not release** when the manifest version already has
-a published release. A human preparing a release runs, in their own PR:
+`prerelease.yml` runs every 20 minutes (and on manual dispatch). Once no commit
+has landed on main for three hours, it compares main with the newest published
+release. A diff touching only Markdown, `docs/`, `test/` or `.github/` is a
+no-op. Otherwise it builds main and compares the bytes as publication does
+(below). If they differ, it runs `version-bump.mjs` with the next patch version,
+opens a `release/<plugin-version>` PR with the four version files and asks it to
+merge itself when required CI passes. Merging that PR publishes the prerelease.
+A burst of merges therefore ships once, about three hours after the last one.
 
-```sh
-node version-bump.mjs "$(node scripts/plugin-release.mjs next-version)"
-```
+- An open release PR is moved along only while main is quiet: brought up to
+  date if it is behind, and asked to merge itself if it isn't already.
+- To hold a release, close its PR and keep the `release/<version>` branch.
+  Deleting the branch lets the job open it again.
+- A bumped but unpublished version, or a tag or draft without a published
+  release, stops the job until publication finishes (see recovery below).
 
-Alternatively, manually dispatch `version-bump.yml` on main. It opens a normal
-`release/<plugin-version>` PR with the same four version files, no force push and
-**no auto-merge request**. A human reviews/merges it through normal CI. That
-workflow never tags or publishes. Dispatching Build on main is a publication
-retry, **not** a version bump or dry run.
+To publish sooner, manually dispatch `version-bump.yml` on main. It opens the
+same kind of `release/<plugin-version>` PR without asking it to merge itself.
+Merge it once CI passes (or let the next quiet run do so). That workflow never
+tags or publishes. Dispatching Build on main is a publication retry, **not** a
+version bump or dry run.
 
 After all main Build checks pass, publication:
 
@@ -47,22 +50,20 @@ After all main Build checks pass, publication:
    compares their SHA-256 hashes with the local validated files before publishing.
 4. Publishes as a **prerelease**, with `latest=false`.
 
-## Promotion to the full release
+## Full releases are promoted by hand
 
 Obsidian's community directory ignores prereleases, so a prerelease reaches
-directory users only once it is promoted. `promote.yml` runs every 20 minutes
-(and on manual dispatch). It promotes the newest published prerelease to a full
-release marked **Latest** once main has been quiet for three hours: no commit
-has landed on main and nothing newer was published in that time. A draft or a
-tag without a published release (unfinished publication) holds promotion back.
-A burst of merges therefore ships once, about three hours after the last one.
-
-To ship sooner, promote by hand:
+directory users only once it is promoted. Nothing promotes automatically. To
+ship the newest prerelease to everyone, dispatch `promote.yml` (**Promote plugin
+release**) on main from the Actions tab. It makes the newest published
+prerelease the full release marked **Latest**, and does nothing while a draft or
+a tag without a published release exists. By hand:
 `gh release edit <version> --prerelease=false --latest`.
 
 The release job is main-only, serialized without cancellation, and SHA-pins all
-actions. Only Contents write is needed for publication, not Pull requests write.
-PR CI never runs the publisher.
+actions. Only Contents write is needed for publication, not Pull requests write; the
+quiet prerelease job also needs Pull requests write to open its PR. PR CI never
+runs the publisher.
 
 ## Stuck publication and recovery
 
@@ -99,7 +100,7 @@ assets, not an accepted command or a green stale no-op.
 
 ## Setup and qualification
 
-- Require up-to-date **Obsidian plugin** CI on main. Require PRs, zero human approvals for automatic repins, no App bypass.
+- Require up-to-date **Obsidian plugin** CI on main. Require PRs, zero human approvals for automatic repin and release PRs, no App bypass.
 - Install **mdbase release automation** on this repo (Contents write, Pull
   requests write, Actions read).
   Provide `RELEASE_AUTOMATION_CLIENT_ID` and
