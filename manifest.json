@@ -1,7 +1,7 @@
 {
 	"id": "mdbase-sync",
 	"name": "mdbase",
-	"version": "0.4.31",
+	"version": "0.4.32",
 	"minAppVersion": "1.11.4",
 	"isDesktopOnly": false,
 	"description": "Edit mdbase types and mirror hosted collections through mdbase Connect.",
