@@ -203,3 +203,30 @@ desktop app (`mdbase --json …`) for setup and status. mdbase interop is pinned
 
 The plugin is not a general record editor, query dashboard, or Connect server
 administration client.
+
+## Lint checks
+
+Run `npm run lint` from the project root. It runs the 0.6.0 Obsidian recommended
+rules, the newest-submission scanner-equivalent rules, and Stylelint, all with
+`--max-warnings=0`. `npm run lint:scanner` runs the scanner lane separately.
+`eslint.scanner.config.mjs` follows the full configuration and newest-layer
+adjustments in the upstream 0.6.0 [configuration guide](https://github.com/obsidianmd/eslint-plugin/blob/0.6.0/docs/configuration.md#community-plugin-scanner-configuration).
+Build output, tests, and tooling are excluded as in the scanner. The TypeScript
+project includes `DOM.AsyncIterable` for the SDK's streaming downloads.
+
+Like the scanner, both lint lanes leave manifest submission validation separate.
+`npm run lint:metadata` reports the deferred finding verbatim:
+`The manifest is missing the required 'isDesktopOnly' property`
+The plugin ID, name, version, minimum app version and desktop/mobile declaration
+are unchanged. This command intentionally exits nonzero until that decision is
+made; the CI lint gate does not silently consider metadata submission-ready.
+There is no LICENSE file or `package.json` author field, and no existing repository
+copyright notice to identify an MIT holder. No holder has been invented; the
+upstream license rule only examines files that exist.
+
+Legacy v0.2 collection exclusion lists live in `src/legacyConfig.json`: these
+are persisted-format defaults, not a lookup of Obsidian's runtime config folder.
+Keeping them as data preserves migration and validation behavior for old vaults.
+Settings search definitions share the renderer used on Obsidian 1.11.4; no new
+settings APIs are called on older versions. Mobile sync still requires 1.12.3,
+now expressed through `requireApiVersion` as well as the adapter capability check.
