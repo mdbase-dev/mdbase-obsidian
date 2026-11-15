@@ -150,10 +150,47 @@ export function releasePlugin(run = execute, environment = process.env) {
   }
 }
 
+// A published prerelease becomes the full, latest release once main has been
+// quiet for three hours: no commit has landed and nothing newer was published.
+export const promotionQuietMs = 3 * 60 * 60 * 1000;
+
+export function promotionDecision(releases, tagOutput, mainCommittedAt, now) {
+  const numeric = releases.filter((release) => numericVersion.test(release.tag_name));
+  const published = numeric.filter((release) => !release.draft);
+  published.sort((left, right) => compareVersions(right.tag_name, left.tag_name));
+  const candidate = published[0];
+  if (!candidate) return { action: "none", reason: "no-release" };
+  if (!candidate.prerelease) return { action: "none", reason: "current", version: candidate.tag_name };
+  const tags = tagOutput.split("\n").map((line) => line.split(/\s+/)[1]?.replace(/^refs\/tags\//, "")).filter((name) => numericVersion.test(name ?? ""));
+  if (numeric.some((release) => release.draft) || tags.some((name) => !published.some((release) => release.tag_name === name))) {
+    return { action: "none", reason: "publishing" };
+  }
+  const quietSince = Math.max(Date.parse(mainCommittedAt), Date.parse(candidate.published_at));
+  assert.ok(Number.isFinite(quietSince), "Unreadable main commit or release time");
+  if (now - quietSince < promotionQuietMs) {
+    return { action: "none", reason: "recent", version: candidate.tag_name, readyAt: new Date(quietSince + promotionQuietMs).toISOString() };
+  }
+  return { action: "promote", version: candidate.tag_name };
+}
+
+export function promoteRelease(run = execute, environment = process.env, now = Date.now()) {
+  const repository = environment.GITHUB_REPOSITORY;
+  assert.equal(repository, "mdbase-dev/mdbase-obsidian");
+  const releases = JSON.parse(run("gh", "api", "--paginate", "--slurp", `repos/${repository}/releases?per_page=100`)).flat();
+  const mainCommittedAt = run("gh", "api", `repos/${repository}/commits/main`, "--jq", ".commit.committer.date");
+  const decision = promotionDecision(releases, run("git", "ls-remote", "--tags", "origin"), mainCommittedAt, now);
+  if (decision.action === "promote") {
+    run("gh", "release", "edit", decision.version, "--repo", repository, "--prerelease=false", "--latest");
+  }
+  return decision;
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   if (process.argv[2] === "next-version") {
     const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
     console.log(nextVersion(stateFor(execute, "mdbase-dev/mdbase-obsidian", version), version));
+  } else if (process.argv[2] === "promote") {
+    console.log(JSON.stringify(promoteRelease()));
   } else if (process.argv[2] === "target") {
     const target = releaseTarget();
     appendFileSync(process.env.GITHUB_OUTPUT, `ref=${target.sha ?? ""}\n`);

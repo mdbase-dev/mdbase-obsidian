@@ -6,7 +6,7 @@ The plugin should feel like an Obsidian core plugin: quiet lists, compact contro
 
 ## Surface model
 
-Use one first-class workspace view with three destinations, each implemented as its own pane module (`src/workspace/`) behind a small shell:
+Use one first-class workspace view with three destinations, each implemented as its own pane module (`src/workspace/`) behind a small shell (the Types pane delegates to the modules in `src/workspace/types/`):
 
 - Sync — this vault's sync status, setup and decisions. The first tab, and where the workspace opens (ribbon, Open workspace command): most people come to mdbase to sync, and type definitions are rarely edited by hand.
 - Types — searchable type list and editor.

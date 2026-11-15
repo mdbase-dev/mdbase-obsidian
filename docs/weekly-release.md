@@ -45,8 +45,20 @@ After all main Build checks pass, publication:
    tag (e.g. `0.4.3`, never `v0.4.3`) at the checked commit and a draft prerelease.
    It uploads `main.js`, `manifest.json` and `styles.css`, downloads all three and
    compares their SHA-256 hashes with the local validated files before publishing.
-4. Publishes as a **prerelease**, with `latest=false`, preserving releases
-   0.3.1–0.4.2's policy. Callum decides any stable/latest transition after listing.
+4. Publishes as a **prerelease**, with `latest=false`.
+
+## Promotion to the full release
+
+Obsidian's community directory ignores prereleases, so a prerelease reaches
+directory users only once it is promoted. `promote.yml` runs every 20 minutes
+(and on manual dispatch). It promotes the newest published prerelease to a full
+release marked **Latest** once main has been quiet for three hours: no commit
+has landed on main and nothing newer was published in that time. A draft or a
+tag without a published release (unfinished publication) holds promotion back.
+A burst of merges therefore ships once, about three hours after the last one.
+
+To ship sooner, promote by hand:
+`gh release edit <version> --prerelease=false --latest`.
 
 The release job is main-only, serialized without cancellation, and SHA-pins all
 actions. Only Contents write is needed for publication, not Pull requests write.

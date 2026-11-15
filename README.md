@@ -19,15 +19,13 @@ mdbase account.
 
 ## Install
 
-The plugin isn't in Obsidian's community plugin list yet. Until it is, install
-it one of these ways:
+In Obsidian, open **Settings → Community plugins**, choose **Browse**, search
+for **mdbase**, then choose **Install** and **Enable**.
 
-- **With BRAT:** install the [BRAT](https://github.com/TfTHacker/obsidian42-brat)
-  plugin, choose **Add beta plugin**, and enter `mdbase-dev/mdbase-obsidian`.
-- **By hand:** download `main.js`, `manifest.json` and `styles.css` from the
-  [latest release](https://github.com/mdbase-dev/mdbase-obsidian/releases), put
-  them in a folder called `mdbase-sync` inside your vault's `.obsidian/plugins/`
-  folder, then turn on **mdbase** under **Settings → Community plugins**.
+New versions appear here as prereleases first, and reach the community plugin
+list a few hours later. To get them straight away, install the
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin, choose **Add beta
+plugin**, and enter `mdbase-dev/mdbase-obsidian`.
 
 ## Get started
 

@@ -2,7 +2,9 @@ import * as assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { test } from "node:test";
-import { loadMdbaseConfig, loadTypeDefinitions, validateCollection } from "../src/mdbaseCore";
+import { loadMdbaseConfig } from "../src/collectionConfig";
+import { loadTypeDefinitions } from "../src/typeDefinitions";
+import { validateCollection } from "../src/validation";
 import { MemoryVault } from "./memoryVault";
 
 // mdbase-test-vault/ is the committed vault for trying the plugin in a real Obsidian.

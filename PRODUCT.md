@@ -2,22 +2,32 @@
 
 ## Product promise
 
-mdbase for Obsidian is the native Obsidian gateway to an mdbase collection. It makes type definitions understandable and safe to edit, and it syncs a vault without turning Obsidian into a second administration dashboard. When the mdbase desktop app owns the folder, Obsidian connects to it; otherwise the plugin uses the mdbase SDK.
+mdbase for Obsidian keeps a vault in sync with an mdbase collection, on desktop and on Android, without turning Obsidian into a second administration dashboard. It also makes the collection's type definitions understandable and safe to edit when someone needs to. When the mdbase desktop app owns the folder, Obsidian connects to it; otherwise the plugin syncs the vault itself through the mdbase SDK.
 
 The plugin supports two collection roles:
 
-- A local collection, initialized by writing a canonical mdbase v0.3 `mdbase.yaml`.
 - A synced collection (Cloud copy or Private), kept in sync by the folder’s owner: mdbase desktop or the plugin’s SDK replica.
+- A local collection, initialized by writing a canonical mdbase v0.3 `mdbase.yaml`.
 
 The local vault remains useful while offline. Sync should feel like a mature desktop sync client: it runs continuously, edits from other devices arrive in open notes, network failures are ridden out, and no edit is lost. Edits made in two places are merged where possible; otherwise the person chooses, and the plugin says so in plain words.
 
 ## Primary users
 
-- People who edit an mdbase collection in Obsidian and need a first-class way to understand and change its types.
-- People who want their mdbase collections available as ordinary Markdown in an Obsidian vault, synced across their devices.
+- People who want their mdbase collections available as ordinary Markdown in an Obsidian vault, synced across their devices and mdbase apps.
+- People who edit an mdbase collection in Obsidian and want a first-class way to understand and change its types.
 - Existing mdbase v0.2 users who need to inspect their collection and migrate safely to v0.3.
 
 ## Core jobs
+
+### Sync a vault
+
+- Sign in through the browser. The SDK keeps its account state in per-vault browser storage; credentials are never written into synced files.
+- Turn sync on as Cloud copy or Private, or add a collection already synced on another device.
+- Tell synced, sending, offline, waiting for approval, stopped and signed-out apart, with the next step. Every state has a way forward: no screen leaves the person with nothing to press.
+- Let the person decide about files changed in two places, and check merges mdbase made on its own.
+- Sign out of this vault, and say plainly if mdbase could not be told.
+- Keep record validation separate from sync; never silently repair records during sync.
+- Keep trust machinery (keys, devices, fingerprints) out of the plugin, and app access in mdbase (**Manage apps** links there).
 
 ### Work with types
 
@@ -35,24 +45,15 @@ The local vault remains useful while offline. Sync should feel like a mature des
 - Produce a migration plan from v0.2 to v0.3, including diagnostics and recovery information.
 - Apply migration only after explicit review. Do not rewrite records as part of schema migration.
 
-### Sync a vault
-
-- Sign in through the browser. The SDK keeps its account state in per-vault browser storage; credentials are never written into synced files.
-- Turn sync on as Cloud copy or Private, or add a collection already synced on another device.
-- Tell synced, sending, offline, waiting for approval, stopped and signed-out apart, with the next step.
-- Let the person decide about files changed in two places, and check merges mdbase made on its own.
-- Keep record validation separate from sync; never silently repair records during sync.
-- Keep trust machinery (keys, devices, fingerprints) out of the plugin.
-
 ## Product principles
 
 - Obsidian-native: use workspace views, commands, settings, notices, and vault APIs as users expect.
-- Type-first: the type workbench is the primary surface; sync management is important but secondary.
+- Sync first: most people come to mdbase to sync, so the workspace opens on Sync. Types are the power tool: most people rarely edit a type definition by hand, but when they do, the type workbench should make it fast and safe.
 - Files remain real: configuration, types, and records stay ordinary files in the vault.
 - Conservative writes: validate before saving and leave recovery artifacts for migration.
-- Mobile-capable: types and validation work on phones and tablets with touch-sized controls; desktop-only code loads only for sync.
+- Mobile-capable: types, validation and sync work on phones and tablets with touch-sized controls. Sync code loads only when sync is used; Node-only code loads only on desktop.
 - Quiet precision: prefer rows, rules, whitespace, and concise status text over cards, dashboards, or ornamental UI.
-- Honest state: never imply that a sync, migration, or save succeeded until it has completed and been verified.
+- Honest state: never imply that a sync, sign-out, migration, or save succeeded until it has completed and been verified.
 
 ## Compatibility contract
 
@@ -66,15 +67,17 @@ The local vault remains useful while offline. Sync should feel like a mature des
 
 - A general-purpose record editor or database dashboard.
 - Automatic background sync that cannot communicate failures to the user. Background sync reports problems in the status bar and Sync destination and backs off rather than failing silently.
-- Syncing on phones and tablets (not yet).
-- Server administration, collection creation, billing, or access-policy management.
+- Sync on iOS (not yet: it fails closed with an explanation).
+- Creating, approving or serving Private collections from Obsidian. Phones and Obsidian join and sync; the desktop app stays the always-on device.
+- Listing or suggesting other apps. Which apps can use a collection is managed in mdbase.
+- Server administration, billing, or access-policy management.
 - Silent or automatic v0.2 migration.
 
 ## Success criteria
 
-- A new user can start a collection or turn on sync without opening documentation.
+- A new user can turn on sync or start a collection without opening documentation.
+- No sync state is a dead end: each one names what happened and offers the next step.
 - Type definitions are faster and safer to edit than raw YAML alone.
 - A large vault remains responsive during scanning and synchronization.
 - Interrupted or failed operations do not leave an unverifiable success state.
 - Desktop and mobile expose the same essential capabilities with layouts appropriate to each.
-

@@ -10,14 +10,14 @@ import {
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import {
-  fieldsFromV03Schema,
   formatMarkdown,
-  getTypesForFile,
   parseFrontmatter,
   type MdbaseConfig,
   type MdbaseFieldDef,
   type MdbaseTypeDef,
 } from "./mdbaseCore";
+import { fieldsFromV03Schema } from "./typeDefinitions";
+import { getTypesForFile } from "./typeMatching";
 
 type Dict = Record<string, unknown>;
 

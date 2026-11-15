@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ValidationState } from "../src/validationState";
-import { coerceFieldInput, validateCollection, type MdbaseConfig } from "../src/mdbaseCore";
+import type { MdbaseConfig } from "../src/mdbaseCore";
+import { coerceFieldInput } from "../src/noteCreation";
+import { validateCollection } from "../src/validation";
 import { safeNotePath } from "../src/createTypedNoteModal";
 import { safePackPath, planPack, applyPack, recoverPackInstall, sha256, type CatalogPack } from "../src/contractCatalog";
 import { TFile } from "obsidian";
