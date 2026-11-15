@@ -10,13 +10,13 @@ const LOCAL_OVERRIDE_FILE = ".copy-files.local";
 const TASKNOTES_OVERRIDE_FILE = join(__dirname, "..", "tasknotes", ".copy-files.local");
 
 const defaultPaths = [
-  join(__dirname, "..", "tasknotes", "tasknotes-e2e-vault", ".obsidian", "plugins", "mdbase-obsidian"),
+  join(__dirname, "..", "tasknotes", "tasknotes-e2e-vault", ".obsidian", "plugins", "mdbase-sync"),
 ];
 
 const expandTilde = (p) => (p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 function toPluginPath(pathValue) {
-  if (pathValue.endsWith("/tasknotes")) return `${pathValue.slice(0, -"/tasknotes".length)}/mdbase-obsidian`;
+  if (pathValue.endsWith("/tasknotes")) return `${pathValue.slice(0, -"/tasknotes".length)}/mdbase-sync`;
   return pathValue;
 }
 

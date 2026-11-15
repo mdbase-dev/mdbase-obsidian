@@ -16,6 +16,11 @@ Sync runs inside the plugin on desktop and Android (see [Sync](#sync)). Node
 modules load only on desktop and only when sync is used, so the bundle stays
 safe on mobile (checked by `npm run check:mobile`).
 
+The plugin ID is `mdbase-sync`; its display name remains **mdbase**. Install it
+under `<configDir>/plugins/mdbase-sync/`. This is a fresh install: settings and
+sync state from the earlier ID are not migrated. Command hotkeys are keyed by
+the plugin ID, so hotkeys from the earlier ID must be assigned again.
+
 Canonical view files remain ordinary v0.3 records in this adapter. When a
 collection materializes `_types/view.md` (normally referring to
 `schemas/v0.3/view.schema.json`), the plugin validates their nested shared
@@ -137,7 +142,7 @@ Existing v0.3 collections are not offered migration.
 The plugin also hosts local application interoperability for companion plugins:
 
 ```ts
-const host = app.plugins.getPlugin("mdbase-obsidian");
+const host = app.plugins.getPlugin("mdbase-sync");
 const client = host?.api.interop.connect(yourPlugin);
 ```
 

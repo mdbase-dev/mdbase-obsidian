@@ -38,7 +38,7 @@ async function wait(code, description, timeout = 60000) {
 async function waitReady() {
   const start = Date.now();
   while (Date.now() - start < 60000) {
-    try { if (evaluate("return !!app.plugins.plugins['mdbase-obsidian']")) return; } catch { /* CLI registrations are temporarily unavailable during reload. */ }
+    try { if (evaluate("return !!app.plugins.plugins['mdbase-sync']")) return; } catch { /* CLI registrations are temporarily unavailable during reload. */ }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   throw new Error("Obsidian did not finish reloading.");
@@ -61,7 +61,7 @@ assert.equal(evaluate("return app.vault.adapter.basePath"), vaultPath, "Refusing
 evaluate("require('electron').remote.getCurrentWindow().focus();");
 await wait("activeWindow===window", "focus test vault");
 cli("dev:debug", "on");
-evaluate("window.uxPlugin=app.plugins.plugins['mdbase-obsidian'];if(!uxPlugin)throw Error('Plugin not loaded');window.uxView=await uxPlugin.openWorkspace('types');");
+evaluate("window.uxPlugin=app.plugins.plugins['mdbase-sync'];if(!uxPlugin)throw Error('Plugin not loaded');window.uxView=await uxPlugin.openWorkspace('types');");
 
 await check("first-run choices and contract-based onboarding", async () => {
   if (!evaluate("return !!app.vault.getAbstractFileByPath('mdbase.yaml')")) {
@@ -197,7 +197,7 @@ await check("mobile essentials and draft recovery survive real app reloads", asy
   try {
     await waitReady();
     cli("dev:debug", "on");
-    evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-obsidian'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(`_types/${id}.md`)});`);
+    evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-sync'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(`_types/${id}.md`)});`);
     assert.ok(evaluate("return [...uxView.containerEl.querySelectorAll('button')].some(b=>b.textContent==='New note')"));
     assert.match(evaluate("return uxView.types.model.description"), /Fresh draft after external change/);
     cli("dev:cdp", "method=Emulation.setDeviceMetricsOverride", 'params={"width":390,"height":844,"deviceScaleFactor":1,"mobile":true}');
@@ -213,15 +213,15 @@ await check("mobile essentials and draft recovery survive real app reloads", asy
     cli("dev:mobile", "off");
     await waitReady();
     cli("dev:debug", "on");
-    evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-obsidian'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(`_types/${id}.md`)});`);
+    evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-sync'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(`_types/${id}.md`)});`);
   }
 });
 
 await check("draft recovery survives a real plugin reload", async () => {
   const typePath = `_types/${id}.md`;
   const archived = evaluate(`return uxPlugin.getArchivedTypeDrafts(${JSON.stringify(typePath)}).length`);
-  cli("plugin:reload", "id=mdbase-obsidian");
-  evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-obsidian'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(typePath)});`);
+  cli("plugin:reload", "id=mdbase-sync");
+  evaluate(`window.uxPlugin=app.plugins.plugins['mdbase-sync'];window.uxView=await uxPlugin.openWorkspace('types');await uxView.editType(${JSON.stringify(typePath)});`);
   assert.equal(evaluate(`return uxPlugin.getArchivedTypeDrafts(${JSON.stringify(typePath)}).length`), archived);
   assert.match(evaluate("return uxView.types.model.description"), /Fresh draft after external change/);
 });
