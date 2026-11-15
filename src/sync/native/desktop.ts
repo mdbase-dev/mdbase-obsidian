@@ -67,7 +67,7 @@ export class DesktopHost implements EngineHost {
     validate(marker); this.checkLock();
   }
   hash(bytes: Uint8Array) { return `sha256:${this.crypto.createHash("sha256").update(bytes).digest("hex")}`; }
-  async publish(staged: string, target: string, expectedHash: string | undefined, guard: () => HostResult<void>, active?: () => void) {
+  async publish(staged: string, target: string, expectedHash: string | undefined, _digest: string, guard: () => HostResult<void>, active?: () => void) {
     const checked = guard();
     if (checked) await checked;
     let current: string | undefined;

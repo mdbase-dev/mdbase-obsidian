@@ -45,18 +45,38 @@ export class MobileHost implements EngineHost {
     if (!file || file.startsWith("/") || file.includes("\\") || file.split("/").some(part => !part || part === "." || part === ".."))
       throw new Error("Unsafe adapter path refused");
   }
-  async readText(file: string) { this.assertPath(file); if (!await this.adapter.exists(file)) throw missing(file); return this.adapter.read(file); }
+  private serializeIO<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.writes.then(operation);
+    this.writes = result.then(() => {}, () => {});
+    return result;
+  }
+  readText(file: string): Promise<string> {
+    this.assertPath(file);
+    return this.serializeIO(async () => {
+      if (!await this.adapter.exists(file)) {
+        const temporary = `${file}.tmp`;
+        if (!await this.adapter.exists(temporary)) throw missing(file);
+        const text = await this.adapter.read(temporary);
+        // All writeAtomic callers write JSON (state, ownership marker, activity).
+        // A first write can crash before completion, so only adopt valid JSON.
+        try { JSON.parse(text); }
+        catch { await this.adapter.remove(temporary); throw missing(file); }
+        await this.adapter.rename(temporary, file);
+      }
+      return this.adapter.read(file);
+    });
+  }
   async readBytes(file: string) { this.assertPath(file); if (!await this.adapter.exists(file)) throw missing(file); return new Uint8Array(await this.adapter.readBinary(file)); }
-  writeAtomic(file: string, text: string, exclusiveTemporary = false): Promise<void> {
+  writeAtomic(file: string, text: string, _exclusiveTemporary = false): Promise<void> {
     this.assertPath(file);
     if (this.closed) return Promise.reject(new Error("Sync host stopped"));
-    const write = this.writes.then(async () => {
-      const temporary = exclusiveTemporary ? `${file}.obsidian-${this.uuid()}.tmp` : `${file}.tmp`;
+    return this.serializeIO(async () => {
+      // Mobile has one serialized writer; even markers use a recoverable name.
+      const temporary = `${file}.tmp`;
       await this.adapter.write(temporary, text);
+      if (await this.adapter.exists(file)) await this.adapter.remove(file);
       await this.adapter.rename(temporary, file);
     });
-    this.writes = write.catch(() => {});
-    return write;
   }
   async writeBytes(file: string, bytes: Uint8Array, exclusive = false) {
     this.assertPath(file);
@@ -75,7 +95,11 @@ export class MobileHost implements EngineHost {
   }
   exists(file: string) { this.assertPath(file); return this.adapter.exists(file); }
   async remove(file: string) { this.assertPath(file); if (!await this.adapter.exists(file)) throw missing(file); await this.adapter.remove(file); }
-  rename(from: string, to: string) { this.assertPath(from); this.assertPath(to); return this.adapter.rename(from, to); }
+  async rename(from: string, to: string) {
+    this.assertPath(from); this.assertPath(to);
+    if (await this.adapter.exists(to)) throw new Error(`Mobile rename refuses an existing destination: ${to}`);
+    await this.adapter.rename(from, to);
+  }
   async list(directory: string) {
     if (directory) this.assertPath(directory);
     const listed = await this.adapter.list(directory);
@@ -96,14 +120,24 @@ export class MobileHost implements EngineHost {
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buffer(bytes)));
     return `sha256:${Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("")}`;
   }
-  async publish(staged: string, target: string, expectedHash: string | undefined, guard: () => HostResult<void>, active?: () => void) {
+  async publish(staged: string, target: string, expectedHash: string | undefined, digest: string, guard: () => HostResult<void>, active?: () => void) {
+    this.assertPath(staged); this.assertPath(target);
+    const stagedBytes = await this.readBytes(staged);
+    if (await this.hash(stagedBytes) !== digest) throw new Error("Downloaded file digest mismatch before publication");
     await guard();
     let current: string | undefined;
     try { current = await this.hash(await this.readBytes(target)); }
     catch (error) { if ((error as { code?: string }).code !== "ENOENT") throw error; }
     if (current !== expectedHash) throw Object.assign(new Error("Local file changed before publication; retained"), { code: "local_changed" });
     active?.();
-    await this.rename(staged, target);
+    if (current === undefined) await this.adapter.rename(staged, target);
+    else {
+      // No await between active() and starting the write: retain newer editors.
+      // Overwrite emits modify, not delete/create. A crash can tear the file,
+      // just as with Obsidian's own non-atomic mobile saves.
+      await this.adapter.writeBinary(target, buffer(stagedBytes));
+      await this.adapter.remove(staged);
+    }
   }
   async stageDownload(options: DownloadOptions) {
     const staged = this.join(options.directory, `${this.uuid()}.tmp`);

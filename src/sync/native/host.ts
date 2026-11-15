@@ -43,7 +43,7 @@ export interface EngineHost {
   checkLock(): HostResult<void>;
   checkOwnership(validate: (marker: string | null) => void): HostResult<void>;
   hash(bytes: Uint8Array): HostResult<string>;
-  publish(staged: string, target: string, expectedHash: string | undefined, guard: () => HostResult<void>, active?: () => void): Promise<void>;
+  publish(staged: string, target: string, expectedHash: string | undefined, digest: string, guard: () => HostResult<void>, active?: () => void): Promise<void>;
   stageDownload(options: DownloadOptions): Promise<void>;
   open(options: EngineOptions): Promise<{ origin: string; url: string }>;
   close(): Promise<void>;

@@ -1358,7 +1358,7 @@ export default class NativeSync extends Component {
         const current = await this.local(p);
         if (current?.hash !== initial?.hash) throw changed();
         if (await applyEditors()) return;
-        await this.host.publish(temp, this.host.join(this.root, vp), initial?.hash, () => this.checkOwnership(), () => this.publicationGuard(p, initial?.hash));
+        await this.host.publish(temp, this.host.join(this.root, vp), initial?.hash, nextHash, () => this.checkOwnership(), () => this.publicationGuard(p, initial?.hash));
       } finally { if (await this.host.exists(temp)) await this.host.remove(temp); }
     } finally { this.writingPaths.delete(p); }
   }
@@ -1469,7 +1469,7 @@ export default class NativeSync extends Component {
         if (current?.hash !== latest?.hash) throw new Error("Local file changed during download; retained");
         await this.ensureFolder(this.vaultPath(p));
         await this.assertMirror(); this.assertDiskPath(p);
-        await this.host.publish(staged, this.host.join(this.root, p), current?.hash, () => this.checkOwnership(), () => this.publicationGuard(p, current?.hash));
+        await this.host.publish(staged, this.host.join(this.root, p), current?.hash, r.digest!, () => this.checkOwnership(), () => this.publicationGuard(p, current?.hash));
         this.remember(p, r, r.digest!);
       },
     });
