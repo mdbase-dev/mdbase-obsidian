@@ -420,6 +420,39 @@ test("the shared reconciler uploads mobile notes with durable intent, preserves 
   assert.equal(await host.exists("note.md"), false);
   assert.equal(nodeLoads, 0);
 });
+test("mobile remote rename preserves an unindexed local occupant and continues syncing", async t => {
+  const { native, host, app, adapter } = fixture(t);
+  app.vault.rename = (file, to) => adapter.rename(file.path, to);
+  const lookup = app.vault.getAbstractFileByPath;
+  app.vault.getAbstractFileByPath = file => file === "target.md" ? null : lookup(file);
+  const source = "source\r\n", occupant = "unsynced café\r\n";
+  await host.writeBytes("source.md", encode(source)); await host.writeBytes("target.md", encode(occupant));
+  native.data.paths["source.md"] = { id: "source", kind: "record", revision: "r1", hash: digest(source) };
+  const remote = new Map([
+    ["target.md", { path: "target.md", id: "source", revision: "r2", document: source, confirmed: true }],
+    ["incoming.md", { path: "incoming.md", id: "incoming", revision: "r1", document: "independent", confirmed: true }],
+  ]);
+  native.call = async (method, ...args) => {
+    if (method === "inclusion") return null;
+    if (method === "all") return [...remote.values()];
+    if (["filesAll", "resourcesAll", "rejectedWrites"].includes(method)) return [];
+    if (method === "create") {
+      const item = { path: args[0], document: args[1], id: "copy", revision: "r1", confirmed: true };
+      remote.set(item.path, item); return item;
+    }
+    throw new Error(`Unexpected RPC ${method}`);
+  };
+  assert.equal(await native.reconcileAll(), true);
+  assert.equal(await adapter.read("target.md"), source);
+  const [copy] = native.view().conflicts;
+  assert.equal(copy.path, "target.md");
+  assert.deepEqual(new Uint8Array(await adapter.readBinary(copy.copy)), encode(occupant));
+  assert.equal(remote.get(copy.copy).document, occupant);
+  assert.equal(await adapter.read("incoming.md"), "independent");
+  assert.equal(await host.exists("source.md"), false);
+  assert.deepEqual(native.view().failures, []);
+  assert.equal(nodeLoads, 0);
+});
 test("mobile attachment sends retain recovery bytes and transfer identities until confirmation", async t => {
   const { native, host, adapter } = fixture(t);
   const bytes = Uint8Array.of(0, 255, 17, 42);

@@ -98,6 +98,183 @@ for (const scenario of ["offline edit plus remote edit", "remote delete versus l
     assert.ok(!f.native.data.pathFailures || !Object.keys(f.native.data.pathFailures).length);
   });
 }
+test("remote rename preserves an untracked, unindexed occupant and syncs unrelated paths", async t => {
+  const f = fixture(t); f.baseline();
+  const occupant = "---\r\ntitle: café\r\n---\r\nunsynced target\r\n";
+  f.put("target.md", occupant);
+  const lookup = f.native.app.vault.getAbstractFileByPath;
+  f.native.app.vault.getAbstractFileByPath = p => p === "target.md" ? null : lookup(p);
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("incoming.md", "other remote note", "r1", "incoming");
+  f.put("outgoing.md", "other local note");
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(fs.existsSync(path.join(f.root, "note.md")), false);
+  const copies = Object.values(f.native.data.conflictCopies);
+  assert.equal(copies.length, 1);
+  assert.equal(copies[0].path, "target.md");
+  assert.deepEqual(f.native.view().conflicts, [{ path: "target.md", copy: copies[0].copy }]);
+  assert.match(copies[0].copy, /target \(conflict .* test-v\)\.md$/);
+  assert.deepEqual(fs.readFileSync(path.join(f.root, copies[0].copy)), Buffer.from(occupant));
+  assert.equal(f.remote.get(copies[0].copy).document, occupant);
+  assert.equal(f.read("incoming.md"), "other remote note");
+  assert.equal(f.remote.get("outgoing.md").document, "other local note");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+  await f.native.reconcileAll();
+  assert.equal(Object.values(f.native.data.conflictCopies).length, 1);
+  assert.equal(f.read(copies[0].copy), occupant);
+  await f.native.keepConflictCopies(copies[0].copy);
+  assert.deepEqual(f.native.view().conflicts, []);
+  assert.equal(f.read(copies[0].copy), occupant); assert.equal(f.read("target.md"), "base");
+  assert.equal(f.remote.get(copies[0].copy).document, occupant);
+});
+for (const vacated of ["moved", "deleted"]) test(`remote rename onto a tracked path ${vacated} in the batch converges within two passes`, async t => {
+  const f = fixture(t); f.baseline();
+  f.put("target.md", "old target");
+  f.native.data.paths["target.md"] = { id: "target-id", kind: "record", revision: "r1", hash: digest("old target") };
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  if (vacated === "moved") f.putRemote("vacated.md", "old target", "r2", "target-id");
+  f.putRemote("incoming.md", "independent", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.paths["note.md"].id, "original");
+  assert.equal(f.read("note.md"), "base");
+  assert.equal(f.read("incoming.md"), "independent");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+  assert.equal(await f.native.reconcileAll(false, new Set(["incoming.md"])), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(fs.existsSync(path.join(f.root, "note.md")), false);
+  if (vacated === "moved") assert.equal(f.read("vacated.md"), "old target");
+  assert.equal(f.native.data.paths["target.md"].id, "original");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+});
+test("persistently blocked tracked renames report per-path failures without touching either source", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "old target");
+  f.native.data.paths["target.md"] = { id: "target-id", kind: "record", revision: "r1", hash: digest("old target") };
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("note.md", "old target", "r2", "target-id");
+  assert.equal(await f.native.reconcileAll(), false);
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.read("incoming.md"), "unrelated");
+  assert.equal(f.read("note.md"), "base"); assert.equal(f.read("target.md"), "old target");
+  assert.equal(f.native.data.pathFailures["note.md"].code, "remote_move_blocked");
+  assert.equal(f.native.data.pathFailures["target.md"].code, "remote_move_blocked");
+  assert.match(f.native.view().failures[0].detail, /occupies the rename destination/);
+  assert.match(f.native.view().failures.find(failure => failure.path === "note.md").detail, /Destination: target.md/);
+  f.put("outgoing.md", "still syncing");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.remote.get("outgoing.md").document, "still syncing");
+  assert.equal(f.native.data.paths["note.md"].id, "original");
+  assert.equal(f.native.data.paths["target.md"].id, "target-id");
+});
+test("a deferred tracked rename schedules its own follow-up without another remote event", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "old target");
+  f.native.data.paths["target.md"] = { id: "target-id", kind: "record", revision: "r1", hash: digest("old target") };
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  const reconcile = f.native.reconcilePass.bind(f.native);
+  let passes = 0;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Deferred rename did not retry")), 2000);
+    t.after(() => clearTimeout(timeout));
+    f.native.reconcilePass = async (...args) => {
+      try {
+        const result = await reconcile(...args);
+        if (++passes === 2) { clearTimeout(timeout); resolve(); }
+        return result;
+      } catch (error) { clearTimeout(timeout); reject(error); throw error; }
+    };
+    f.native.requestReconcile();
+  });
+  await f.native.jobs;
+  assert.equal(passes, 2); assert.equal(f.read("target.md"), "base");
+  assert.equal(Object.keys(f.native.data.pathFailures ?? {}).length, 0);
+});
+test("a folder blocking a remote rename is a retried path failure, cleared when vacated", async t => {
+  const f = fixture(t); f.baseline(); fs.mkdirSync(path.join(f.root, "target.md"));
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.pathFailures["note.md"].code, "remote_move_blocked");
+  assert.equal(f.read("note.md"), "base");
+  fs.rmdirSync(path.join(f.root, "target.md"));
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
+test("waiting for the source vault index does not stop unrelated sync", async t => {
+  const f = fixture(t); f.baseline();
+  const lookup = f.native.app.vault.getAbstractFileByPath;
+  f.native.app.vault.getAbstractFileByPath = p => p === "note.md" ? null : lookup(p);
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.pathFailures["note.md"].code, "vault_index_pending");
+  assert.equal(f.read("incoming.md"), "unrelated"); assert.equal(f.read("note.md"), "base");
+  assert.equal(fs.existsSync(path.join(f.root, "target.md")), false);
+  f.native.app.vault.getAbstractFileByPath = lookup;
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
+test("an occupant changed during preservation is never removed for a remote rename", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "original occupant");
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  const preserve = f.native.preserveConflict.bind(f.native);
+  f.native.preserveConflict = async (...args) => { const copy = await preserve(...args); f.put("target.md", "new occupant edit"); return copy; };
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.native.data.pathFailures["note.md"].code, "local_changed");
+  assert.equal(f.read("note.md"), "base"); assert.equal(f.read("target.md"), "new occupant edit");
+  const [copy] = Object.values(f.native.data.conflictCopies);
+  assert.equal(f.read(copy.copy), "original occupant");
+  assert.equal(f.remote.get(copy.copy).document, "original occupant");
+  assert.equal(f.read("incoming.md"), "unrelated");
+});
+test("a refused preservation upload leaves both rename paths untouched and retries the same copy", async t => {
+  const f = fixture(t); f.baseline(); f.put("target.md", "unsynced occupant");
+  f.remote.delete("note.md"); f.putRemote("target.md", "base", "r2");
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  const call = f.native.call;
+  f.native.call = async (method, ...args) => {
+    if (method === "create") throw Object.assign(new Error("Collection full"), { code: "quota_exceeded" });
+    return call(method, ...args);
+  };
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.read("note.md"), "base"); assert.equal(f.read("target.md"), "unsynced occupant");
+  assert.equal(f.read("incoming.md"), "unrelated");
+  const [copy] = Object.values(f.native.data.conflictCopies);
+  assert.equal(f.read(copy.copy), "unsynced occupant");
+  assert.equal(f.native.data.pathFailures["note.md"].code, "quota_exceeded");
+  await f.native.keepConflictCopies(copy.copy);
+  assert.equal(Object.values(f.native.data.conflictCopies).length, 1);
+  assert.equal(f.native.mirroring, true);
+  f.native.call = call;
+  assert.equal(await f.native.reconcileAll(), true);
+  assert.equal(f.read("target.md"), "base");
+  assert.equal(f.remote.get(copy.copy).document, "unsynced occupant");
+  assert.equal(Object.values(f.native.data.conflictCopies).length, 1);
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
+test("a refused local rename is per-path, retains its baseline and waits for retry", async t => {
+  const f = fixture(t); f.baseline();
+  fs.renameSync(path.join(f.root, "note.md"), path.join(f.root, "moved.md"));
+  f.putRemote("incoming.md", "unrelated", "r1", "incoming");
+  const call = f.native.call; let refused = 0;
+  f.native.call = async (method, ...args) => {
+    if (method === "replace") { refused++; throw Object.assign(new Error("Not allowed"), { code: "forbidden" }); }
+    return call(method, ...args);
+  };
+  assert.equal(await f.native.reconcileAll(), false);
+  assert.equal(f.read("moved.md"), "base"); assert.equal(f.remote.get("note.md").document, "base");
+  assert.equal(f.read("incoming.md"), "unrelated");
+  assert.equal(f.native.data.paths["note.md"].id, "original");
+  assert.equal(f.native.data.pathFailures["moved.md"].code, "forbidden");
+  assert.equal(await f.native.reconcileAll(), false); assert.equal(refused, 1);
+  f.native.call = call;
+  assert.equal(await f.native.reconcileAll(false, undefined, true), true);
+  assert.equal(f.remote.has("note.md"), false); assert.equal(f.remote.get("moved.md").document, "base");
+  assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
+});
 test("crash after upload submission resumes saved bytes with the same identity", async t => {
   const f = fixture(t); f.put("image.bin", "original bytes");
   const identities = [];

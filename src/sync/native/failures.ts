@@ -41,6 +41,10 @@ const firstIssue = (issues?: FailureIssue[] | null) => {
 export function describeFailure(f: PathFailureInfo): FailureText {
   const issue = firstIssue(f.issues);
   switch (f.code) {
+    case "remote_move_blocked":
+      return { title: "Rename is waiting", detail: `${issue ? `${issue}. ` : ""}${f.reason === "identity_mismatch" ? "The moved item's identity or kind doesn't match. Local files are unchanged; check the paths before trying again." : "Another local item still occupies the rename destination. Move it aside or resolve its sync problem, then try again. Both files are unchanged."}` };
+    case "vault_index_pending":
+      return { title: "Waiting for Obsidian", detail: "Obsidian hasn't indexed the file to rename yet. Local files are unchanged; sync will retry when the vault updates." };
     case "invalid_record":
       return { title: "Doesn't match its type", detail: invalidDetail(f.issues) };
     case "conflict":

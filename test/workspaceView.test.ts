@@ -886,6 +886,20 @@ function directFixture(phase: Record<string, unknown>, text: string, canStartOve
   return { ...f, calls };
 }
 
+test("native conflict copies are listed with non-destructive review and keep-both actions", async () => {
+  const f = directFixture({ kind: "ready" }, "Synced");
+  const kept: string[] = [];
+  Object.assign((f.sync.controller as unknown as { native: object }).native, { keepConflictCopies: async (copy: string) => { kept.push(copy); } });
+  const copy = "target (conflict 2026-11-15 0900 test-v).md";
+  f.sync.set({ direct: { text: "Synced", phase: { kind: "ready" }, conflicts: [{ path: "target.md", copy }] } });
+  f.state.render();
+  assert.match(f.text(), /Conflicts/); assert.match(f.text(), /target \(conflict 2026-11-15 0900 test-v\)\.md/);
+  assert.ok(button(f.root, "Open current file")); assert.ok(button(f.root, "Open conflict copy"));
+  button(f.root, "Keep both").click(); await tick();
+  assert.deepEqual(kept, [copy]);
+  f.dom.window.close();
+});
+
 test("where collections are chosen, a quiet line says when Private ones are listed (LAB F3)", () => {
   const choosing = directFixture({ kind: "choosing", collections: [{ id: "c", name: "Notes", private: false }] }, "Choose the collection to sync with this vault.");
   const hint = Array.from(choosing.root.querySelectorAll("p.mdbase-muted")).map((p) => p.textContent ?? "").find((t) => /Private collections/.test(t));

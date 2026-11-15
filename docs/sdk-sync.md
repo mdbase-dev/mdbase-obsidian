@@ -29,6 +29,20 @@ files. Preservation intent precedes local IO and remote publication, and recover
 reuses a confirmed copy rather than generating another one. The whole `.mdbase/`,
 Obsidian configuration directory, `.trash/` and `.git/` are excluded.
 
+A remote rename onto an unsynced local file first preserves and confirms that
+file as a conflict copy, then renames the incoming note without overwriting it.
+The Sync tab lists the two paths under **Conflicts**, with actions to open each
+and **Keep both** to acknowledge the copy without deleting either file. Native
+preservation journals were not previously exposed by the desktop-app conflict
+list; this list shows them directly, without inventing a server conflict.
+If the destination is tracked, the incoming move waits while the rest of the
+batch vacates it. A follow-up pass retries automatically; a persistent collision
+is a per-path failure, not a stopped mirror. Waiting for Obsidian's file index,
+or an IO failure during a remote rename, is also isolated to those paths.
+Non-conflict refusals while pairing a local rename are per-path failures too;
+unchanged refused moves wait for changed input or an explicit retry.
+Ownership, stopped-mirror and ambiguous-snapshot barriers remain pass-wide.
+
 Attachment uploads save exact recovery bytes and transfer/mutation identities
 before sending. A 180-second RPC timeout retries with those same identities;
 the iframe joins the existing operation rather than starting another write.

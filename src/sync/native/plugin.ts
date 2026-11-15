@@ -37,6 +37,7 @@ export interface MergePrompt { collectionId: string; name: string; local: number
 export interface SyncTotals { notes: number; attachments: number; definitions: number; attachmentBytes: number; notHere: number; byCollection: number }
 export interface NativeView {
   failures: DirectFailure[]; merge: MergePrompt | null;
+  conflicts: { path: string; copy: string }[];
   /** Most recent first. */
   activity: ActivityEntry[];
   /** When a full pass last finished with nothing left to send or fix. */
@@ -123,6 +124,7 @@ export default class NativeSync extends Component {
   reconcileQueued = false;
   reconcileFull = false;
   reconcilePaths = new Set<string>();
+  deferredRemoteMoves = new Map<string, string>();
   reconcileCursor?: string;
   startingMirror = false;
   syncingFiles = false;
@@ -975,13 +977,22 @@ export default class NativeSync extends Component {
     if (!this.mirroring) return;
     await this.checkOwnership();
     // Recovery journals require the original and preservation copy together.
-    if (Object.keys(this.data.handledRejections ?? {}).length || Object.keys(this.data.conflictCopies ?? {}).length || Object.keys(this.data.pathFailures ?? {}).length) affected = undefined;
+    if (this.deferredRemoteMoves.size || Object.keys(this.data.handledRejections ?? {}).length || Object.keys(this.data.conflictCopies ?? {}).length || Object.keys(this.data.pathFailures ?? {}).length) affected = undefined;
     if (!affected || this.inclusion === undefined) await this.readInclusion();
     await this.forgetSkipped();
     await this.resumeUploads();
     let remotes = await this.remoteAll(affected);
     await this.acknowledgeHandled(false, remotes);
     const failedBefore = new Set(Object.keys(this.data.pathFailures ?? {}));
+    // One path's failure is recorded for the Sync tab; the pass carries on.
+    const notSynced = async (p: string, signature: string, e: any): Promise<ActivityKind> => {
+      if (!this.mirroring || this.unloaded) throw e;
+      await this.checkOwnership();
+      (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: e?.code, reason: e?.reason, unknown: /unknown/.test(`${e?.code} ${e?.reason}`), ...(Array.isArray(e?.issues) ? { issues: e.issues } : {}) };
+      await this.persist();
+      this.log(`not synced: ${JSON.stringify(p)} ${[e?.code, e?.reason].filter(Boolean).join(" ")}`);
+      return "not_synced";
+    };
     if (affected) {
       // Remote definition changes arrive only through this listing.
       for (const r of remotes.values()) if (r.kind === "resource" && this.data.paths[r.path]?.revision !== r.revision) affected.add(r.path);
@@ -993,24 +1004,60 @@ export default class NativeSync extends Component {
     let definitionsChanged = false;
     // Index once, rather than allocating/scanning all remotes for every path.
     const byId = new Map([...remotes.values()].map(r => [`${r.kind}:${r.id}`, r]));
+    const previousMoves = this.deferredRemoteMoves;
+    this.deferredRemoteMoves = new Map();
+    const blockedSources = new Set<string>(), blockedTargets = new Set<string>();
+    let retryMoves = false, refreshRemotes = false;
     // Join by stable identity BEFORE treating a new path as a new remote item.
     for (const [from, k] of Object.entries(this.data.paths)) {
       const r = byId.get(`${k.kind}:${k.id}`);
       // A move into a folder this device skips reads as a removal at `from`.
       if (!r || r.path === from || !this.accessiblePath(from) || !this.accessiblePath(r.path) || this.skipped(r.path) || (affected && !affected.has(from) && !affected.has(r.path))) continue;
       affected?.add(from); affected?.add(r.path);
+      const signature = `remote-move:${JSON.stringify([k.id, k.kind, r.path, r.revision])}`;
+      try {
       const l = await this.local(from);
-      const decision = remoteMoveDecision(k, l?.hash, r, !!this.app.vault.getAbstractFileByPath(this.vaultPath(r.path)) || !!this.data.paths[r.path]);
-      if (decision === "blocked") throw new Error("Remote move destination occupied; local state retained");
+      const tracked = this.data.paths[r.path];
+      let occupied = !!tracked || !!this.app.vault.getAbstractFileByPath(this.vaultPath(r.path)) || await this.host.exists(this.host.join(this.root, r.path));
+      if (!tracked && occupied && k.id === r.id && k.kind === r.kind) {
+        if (l && !l.f) throw Object.assign(new Error("Waiting for vault index before remote rename"), { code: "vault_index_pending" });
+        const occupant = await this.local(r.path);
+        if (occupant) {
+          refreshRemotes = true;
+          const copy = await this.preserveConflict(r.path, occupant);
+          affected?.add(copy);
+          await this.removeLocal(r.path, occupant.hash);
+          occupied = false;
+          this.note("conflict", r.path);
+        }
+      }
+      const decision = remoteMoveDecision(k, l?.hash, r, occupied);
+      if (decision === "blocked") {
+        blockedSources.add(from); blockedTargets.add(r.path);
+        this.deferredRemoteMoves.set(from, signature);
+        if (previousMoves.get(from) === signature || this.data.pathFailures?.[from]?.signature === signature) {
+          await notSynced(from, signature, { code: "remote_move_blocked", reason: k.id !== r.id || k.kind !== r.kind ? "identity_mismatch" : "destination_occupied", issues: [{ message: `Destination: ${r.path}` }] });
+        } else retryMoves = true;
+        continue;
+      }
       if (decision === "rename") {
         await this.ensureFolder(this.vaultPath(r.path)); await this.assertMirror();
-        if (!l!.f) throw new Error("Waiting for vault index before remote rename");
+        if (!l!.f) throw Object.assign(new Error("Waiting for vault index before remote rename"), { code: "vault_index_pending" });
         await this.app.vault.rename(l!.f, this.vaultPath(r.path));
         this.data.paths[r.path] = k;
         this.note("moved", from, { to: r.path, from: "remote" });
         this.log(`remote ${r.kind} move: renamed locally (no download)`);
       }
+      delete this.data.pathFailures?.[from];
       delete this.data.paths[from]; await this.persist();
+      } catch (e: any) {
+        blockedSources.add(from); blockedTargets.add(r.path);
+        await notSynced(from, signature, e);
+      }
+    }
+    if (refreshRemotes) remotes = await this.remoteAll(affected);
+    for (const [p, failure] of Object.entries(this.data.pathFailures ?? {})) if (failure.signature.startsWith("remote-move:") && !blockedSources.has(p)) {
+      delete this.data.pathFailures![p]; await this.persist();
     }
     const paths = new Set([...(affected ?? [...Object.keys(this.data.paths), ...remotes.keys()])].filter(p => this.accessiblePath(p) && this.kindOf(p) !== "excluded"));
     if (!affected) for (const p of await this.localPaths()) paths.add(p);
@@ -1027,8 +1074,8 @@ export default class NativeSync extends Component {
       }
     }
     if (!affected) for (const p of Object.keys(this.data.pathFailures ?? {})) if (!paths.has(p)) { delete this.data.pathFailures![p]; await this.persist(); }
-    const missing = Object.entries(this.data.paths).filter(([p]) => paths.has(p) && !unreadable.has(p) && !locals.has(p)).map(([p, known]) => ({ path: p, known, remote: remotes.get(p) }));
-    const added = [...locals].filter(([p, l]) => !l.unsupportedEncoding && !this.data.paths[p] && !remotes.has(p)).map(([p, l]) => ({ path: p, kind: this.kindOf(p) as ItemKind, hash: l.hash, disk: this.diskIdentity(p) }));
+    const missing = Object.entries(this.data.paths).filter(([p]) => paths.has(p) && !blockedSources.has(p) && !blockedTargets.has(p) && !unreadable.has(p) && !locals.has(p)).map(([p, known]) => ({ path: p, known, remote: remotes.get(p) }));
+    const added = [...locals].filter(([p, l]) => !blockedSources.has(p) && !blockedTargets.has(p) && !l.unsupportedEncoding && !this.data.paths[p] && !remotes.has(p)).map(([p, l]) => ({ path: p, kind: this.kindOf(p) as ItemKind, hash: l.hash, disk: this.diskIdentity(p) }));
     // A content event can race disk moves whose create/delete watcher has not
     // arrived yet. Topology needs the whole disk for conservative move pairing.
     if (affected && (missing.length || added.length)) return this.reconcileAll(defer, undefined, retryFailed);
@@ -1039,14 +1086,24 @@ export default class NativeSync extends Component {
     for (const pair of localMovePairs(missing.filter(m => m.known.kind !== "resource"), [...added, ...intoSkipped].filter(a => a.kind !== "resource"))) {
       // Recheck disk state after async IO; never move a now-occupied source.
       const skippedTarget = this.skipped(pair.to);
-      if (await this.local(pair.from) || !(skippedTarget ? await this.host.exists(this.host.join(this.root, pair.to)) : await this.local(pair.to))) continue;
+      const signature = `local-move:${JSON.stringify([pair.from, pair.to, locals.get(pair.to)?.hash, remotes.get(pair.from)?.revision])}`;
+      if (this.data.pathFailures?.[pair.to]?.signature === signature && !retryFailed) {
+        blockedSources.add(pair.from); blockedTargets.add(pair.to); continue;
+      }
       try {
+        if (await this.local(pair.from) || !(skippedTarget ? await this.host.exists(this.host.join(this.root, pair.to)) : await this.local(pair.to))) continue;
         const moved = await this.moveLocal(pair.from, pair.to, this.data.paths[pair.from], remotes.get(pair.from)!);
         remotes.delete(pair.from);
         if (skippedTarget) { delete this.data.paths[pair.to]; await this.persist(); }
         else remotes.set(pair.to, moved);
         this.log(`external move paired by ${pair.via}`);
-      } catch (e) { if (!isConflict(e)) throw e; remotes = await this.remoteAll(); }
+      } catch (e) {
+        if (isConflict(e)) remotes = await this.remoteAll();
+        else {
+          blockedSources.add(pair.from); blockedTargets.add(pair.to);
+          await notSynced(pair.to, signature, e);
+        }
+      }
     }
     const pending = this.data.pendingPaths ??= Object.create(null);
     const unsettled = new Set([...missing.map(m => m.path), ...added.map(a => a.path)].filter(p =>
@@ -1066,25 +1123,16 @@ export default class NativeSync extends Component {
       if (outcome) this.note(outcome, p, outcome === "deleted_remote" ? { from: "here" } : outcome === "deleted_here" ? { from: "remote" } : {});
       if (Object.prototype.hasOwnProperty.call(pending, p)) { delete pending[p]; this.persistSoon(); }
     };
-    // One path's failure is recorded for the Sync tab; the pass carries on.
-    const notSynced = async (p: string, signature: string, e: any): Promise<ActivityKind> => {
-      if (!this.mirroring || this.unloaded) throw e;
-      await this.checkOwnership(); // ownership/stop failures remain pass-wide barriers
-      (this.data.pathFailures ??= Object.create(null))[p] = { signature, code: e?.code, reason: e?.reason, unknown: /unknown/.test(`${e?.code} ${e?.reason}`), ...(Array.isArray(e?.issues) ? { issues: e.issues } : {}) };
-      await this.persist();
-      this.log(`not synced: ${JSON.stringify(p)} ${[e?.code, e?.reason].filter(Boolean).join(" ")}`);
-      return "not_synced";
-    };
     // Plain note sends (new here, or changed here only) wait until everything
     // else has been handled one at a time, then go several at once.
     const sends: { p: string; signature: string }[] = [];
     // Settings first, then types, then the notes that use them.
     const rank = (p: string) => p === CONFIG_PATH ? 0 : this.kindOf(p) === "resource" ? 1 : 2;
     for (const p of [...paths].sort((a, b) => rank(a) - rank(b))) {
-      if (unreadable.has(p) || (defer && pending[p] > Date.now())) continue;
+      if (blockedSources.has(p) || (blockedTargets.has(p) && !this.data.paths[p]) || unreadable.has(p) || (defer && pending[p] > Date.now())) continue;
       await this.checkOwnership();
       if (!this.mirroring || this.unloaded) throw new Error("Mirror stopped");
-      const l = await this.local(p), r = remotes.get(p);
+      const l = await this.local(p), r = blockedTargets.has(p) ? undefined : remotes.get(p);
       let k = this.data.paths[p];
       // Over the collection's size limit: neither sent nor fetched, never deleted.
       if ((r?.kind ?? this.kindOf(p)) === "file" && collectionExcludes(p, "file", this.inclusion, l?.bytes.length ?? (r as any)?.size)) continue;
@@ -1179,14 +1227,14 @@ export default class NativeSync extends Component {
     const fresh = failed.filter(p => !failedBefore.has(p)).length;
     if (fresh) new Notice(`mdbase: ${fresh === 1 ? "1 file" : `${fresh} files`} couldn't sync. Open Sync to see why.`, 8000);
     if (!affected) this.totals = this.countTotals(remotes);
-    if (!failed.length && !Object.keys(this.data.pendingPaths ?? {}).length && !Object.keys(this.data.uploads ?? {}).length) {
+    if (!blockedSources.size && !failed.length && !Object.keys(this.data.pendingPaths ?? {}).length && !Object.keys(this.data.uploads ?? {}).length) {
       this.lastSynced = Date.now();
       if (this.activityTimer === null) this.activityTimer = window.setTimeout(() => { this.activityTimer = null; void this.writeActivity(); }, 2000);
     }
     this.passStatus(this.phase.sync ? readyText(this.phase.sync) : "Synced");
     // Notes refused under the old definitions get another chance now.
-    if (definitionsChanged && failed.length) window.setTimeout(() => this.requestReconcile(), 0);
-    return failed.length === 0;
+    if (retryMoves || (definitionsChanged && failed.length)) window.setTimeout(() => this.requestReconcile(), 0);
+    return failed.length === 0 && blockedSources.size === 0;
   }
   /**
    * Send plain note changes, several at a time. Each send is independent: its
@@ -1524,6 +1572,21 @@ export default class NativeSync extends Component {
     }
     return copy;
   }
+  async keepConflictCopies(copyPath: string) {
+    await this.enqueue(async () => {
+      await this.assertMirror();
+      const remotes = await this.remoteAll();
+      for (const [key, copy] of Object.entries(this.data.conflictCopies ?? {})) if (copy.copy === copyPath) {
+        const remote = remotes.get(copy.copy), local = await this.local(copy.copy);
+        const original = remotes.get(copy.path), current = await this.local(copy.path);
+        if (remote?.confirmed !== true || remote.hash !== copy.hash || local?.hash !== copy.hash || !this.data.paths[copy.path] || original?.confirmed !== true || !current || original.hash !== current.hash) {
+          new Notice("mdbase: both files must finish syncing before keeping them."); return;
+        }
+        delete this.data.conflictCopies![key];
+      }
+      await this.persist(); this.setStatus(this.statusText);
+    });
+  }
   // User-reviewed escape hatch for rejections the plugin cannot prove it preserved.
   // The user picks one entry; nothing is discarded automatically.
   async discardRejected() {
@@ -1631,7 +1694,8 @@ export default class NativeSync extends Component {
   passStatus(text: string) { this.setStatus(this.phase.kind === "ready" ? text : this.statusText); }
   view(): NativeView {
     const failures = Object.entries(this.data?.pathFailures ?? {}).map(([p, f]) => ({ path: p, ...describeFailure({ ...f, kind: this.data.paths[p]?.kind }) }));
-    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
+    const conflicts = Object.values(this.data?.conflictCopies ?? {}).map(({ path, copy }) => ({ path, copy }));
+    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), conflicts, merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
   }
   safeText(text: string) { return String(text).replace(/https?:\/\/[^\s"<>]+/g, value => { try { const u = new URL(value); return u.origin + u.pathname; } catch { return "[url]"; } }); }
   log(text: string) {

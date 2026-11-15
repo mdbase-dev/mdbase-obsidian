@@ -69,6 +69,7 @@ export interface SyncSnapshot {
     bound?: boolean;
     /** Paths that didn't sync, and why. Everything else is in sync. */
     failures?: DirectFailure[];
+    conflicts?: NativeView["conflicts"];
     /** Waiting for the user before combining a vault and collection that both have notes. */
     merge?: MergePrompt | null;
     /** What sync did here, most recent first. */
@@ -285,7 +286,7 @@ export class SyncController {
             const native: NativeSync = await this.host.createNative((text, phase, view) => {
               // A host already replaced or stopped says nothing more.
               if (this.native !== native) return;
-              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound } });
+              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], conflicts: view?.conflicts ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound } });
             }, this.lastDesktopCollection);
             if (this.stopped || this.native) { native.unload(); return; }
             this.native = native;
