@@ -41,8 +41,9 @@ Pack upgrades and custom mappings remain in mdbase editor.
 
 ### Sync
 
-Sync runs inside the plugin on desktop and Android, using the same Sync tab
-and settings. No desktop app is needed on a phone. On desktop, a vault already
+Sync runs inside the plugin on desktop, and on Android (still being tested on
+devices), using the same Sync tab and settings. No desktop app is needed on a
+phone. On desktop, a vault already
 owned by the mdbase app continues using its background service. Obsidian keeps
 saving files as usual, and edits from other devices arrive in open notes
 without losing the cursor. The synced copy on a phone is stored in Obsidian's

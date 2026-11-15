@@ -130,6 +130,10 @@ export class MobileHost implements EngineHost {
   }
   private async openPage(options: EngineOptions) {
     const stopped = () => this.closed || options.stopped();
+    // Downloads append in chunks (adapter.appendBinary, Obsidian 1.12.3);
+    // the plugin's minAppVersion is lower because desktop doesn't need it.
+    if (typeof this.adapter.appendBinary !== "function")
+      throw new Error("Sync on this device needs Obsidian 1.12.3 or later. Update Obsidian, then restart sync.");
     const origin = mobileOrigin(window.location.origin);
     const directory = this.join(this.pluginDir, "sync-engine");
     for (const [asset, packed] of Object.entries(packedAssets)) {

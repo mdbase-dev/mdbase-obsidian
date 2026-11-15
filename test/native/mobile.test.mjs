@@ -190,6 +190,13 @@ test("mobile boot serves a blob iframe with a resource base and exact blob Worke
   await assert.rejects(host.open({ ...options, stopped: () => true }), /stopped/);
   assert.equal(nodeLoads, 0);
 });
+test("mobile boot on an Obsidian without appendBinary stops with an update message and writes nothing", async t => {
+  const { host, adapter } = fixture(t);
+  adapter.appendBinary = undefined;
+  const options = { data: { vaultId: "first-vault" }, capability: "secret", stopped: () => false, save: async () => {}, log() {} };
+  await assert.rejects(host.open(options), /needs Obsidian 1\.12\.3 or later/);
+  assert.equal([...adapter.files.keys()].filter(file => file.includes("sync-engine")).length, 0);
+});
 test("mobile controller uses the shared SDK UI path without invoking desktop discovery", async t => {
   let created = 0;
   const controller = new SyncController({ vaultPath: () => null, vaultTopLevel: () => [], workspace: () => ({}), binaryOverride() { throw new Error("Desktop discovery on mobile"); }, appVersion: "test", openUrl() {},
