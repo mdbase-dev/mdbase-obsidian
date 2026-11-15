@@ -10,7 +10,7 @@ import {
   typeFieldsForModel,
 } from "../src/typeContracts";
 import { createDefaultTypeModel, frontmatterFromTypeModel, typeModelFromDocument } from "../src/typeModel";
-import { loadContractDefinitions } from "../src/mdbaseCore";
+import { loadContractDefinitions } from "../src/typeDefinitions";
 
 const contract = {
   contract_type: "record" as const,

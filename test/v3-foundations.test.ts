@@ -12,13 +12,13 @@ import {
   validateMdbaseTypeName,
 } from "../src/typeModel";
 import {
-  getTypesForFile,
-  schemaFromV03Fields,
   type MdbaseConfig,
   type MdbaseTypeDef,
   parseFrontmatter,
-  validateFile,
 } from "../src/mdbaseCore";
+import { schemaFromV03Fields } from "../src/typeDefinitions";
+import { getTypesForFile } from "../src/typeMatching";
+import { validateFile } from "../src/validation";
 
 class LaggyFolderMetadataVault extends MemoryVault {
   override getAbstractFileByPath(path: string): TFile | TFolder | null {
