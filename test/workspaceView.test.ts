@@ -9,6 +9,7 @@ import { Menu } from "obsidian";
 import { MdbaseSettingTab } from "../src/settingsTab";
 import type { SyncSnapshot } from "../src/sync/controller";
 import type { CollectionStatus } from "../src/sync/daemon";
+import { manageAppsUrl } from "../src/workspace/syncPane";
 
 type TypeModel = ReturnType<typeof createDefaultTypeModel>;
 
@@ -308,6 +309,16 @@ test("restoring an empty YAML draft preserves the unsaved empty text", async () 
   f.dom.window.close();
 });
 
+test("the workspace opens on Sync, the first tab", () => {
+  const f = fixture(true);
+  assert.equal(f.state.destination, "sync");
+  f.state.render();
+  const tabs = Array.from(f.root.querySelectorAll<HTMLButtonElement>("[role='tab']"));
+  assert.deepEqual(tabs.map((tab) => tab.textContent?.trim()), ["Sync", "Types", "Issues"]);
+  assert.equal(tabs[0].getAttribute("aria-selected"), "true");
+  f.dom.window.close();
+});
+
 test("destination tabs expose a labelled panel and native roving keyboard navigation", async () => {
   const f = fixture(true);
   f.state.destination = "issues";
@@ -320,7 +331,7 @@ test("destination tabs expose a labelled panel and native roving keyboard naviga
   assert.equal(panel.getAttribute("aria-labelledby"), selected().id);
   assert.equal(selected().getAttribute("aria-controls"), panel.id);
   selected().focus();
-  for (const [key, destination] of [["ArrowRight", "types"], ["ArrowLeft", "issues"], ["Home", "types"], ["End", "issues"], ["ArrowLeft", "sync"]]) {
+  for (const [key, destination] of [["ArrowRight", "sync"], ["ArrowLeft", "issues"], ["Home", "sync"], ["End", "issues"], ["ArrowLeft", "types"]]) {
     const event = new f.dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
     selected().dispatchEvent(event);
     assert.equal(event.defaultPrevented, true);
@@ -353,7 +364,7 @@ test("empty Issues has no redundant filters, counts, or empty panels", () => {
   const f = fixture();
   f.state.destination = "issues";
   f.state.render();
-  assert.equal(f.text(), "Types Sync Issues Validation Not checked yet Validate");
+  assert.equal(f.text(), "Sync Types Issues Validation Not checked yet Validate");
   assert.equal(f.root.querySelector(".mdbase-issue-controls"), null);
   f.dom.window.close();
 });
@@ -724,6 +735,38 @@ test("a synced vault says so in one heading and offers only the link and setting
   f.dom.window.close();
 });
 
+/** Records `window.open` calls on the fixture's window. */
+function captureOpen(f: ReturnType<typeof fixture>): string[] {
+  const opened: string[] = [];
+  Object.assign(f.dom.window, { open: (url: string) => { opened.push(url); return null; } });
+  return opened;
+}
+
+test("Manage apps opens the collection's access page on the account's server (desktop app)", () => {
+  const f = fixture(true);
+  f.sync.set({ ...f.sync.controller.snapshot, status: { ...f.sync.controller.snapshot.status!, account: { signed_in: true, online: true, computer_name: "Laptop", server: "https://connect.mdbase.dev/" } } });
+  f.state.render();
+  const opened = captureOpen(f);
+  button(f.root, "Manage apps").click();
+  assert.deepEqual(opened, ["https://connect.mdbase.dev/access?collection=0b6f1c1e-6f77-4a4b-9a57-7f2a1d1f0c11"]);
+  f.dom.window.close();
+});
+
+test("without a known server there is no Manage apps button (desktop app)", () => {
+  const f = fixture(true);
+  f.state.render();
+  assert.ok(!Array.from(f.root.querySelectorAll("button")).some((el) => el.textContent === "Manage apps"));
+  f.dom.window.close();
+});
+
+test("manageAppsUrl accepts https and loopback http only", () => {
+  assert.equal(manageAppsUrl("https://connect-lab.mdbase.dev", "a b"), "https://connect-lab.mdbase.dev/access?collection=a%20b");
+  assert.equal(manageAppsUrl("http://127.0.0.1:8787", "c"), "http://127.0.0.1:8787/access?collection=c");
+  for (const server of [undefined, "", "http://connect.mdbase.dev", "javascript:alert(1)", "https://user:pw@connect.mdbase.dev", "not a url"]) {
+    assert.equal(manageAppsUrl(server, "c"), null, String(server));
+  }
+});
+
 test("missing or stopped mdbase app offers one next step", async () => {
   const f = fixture();
   f.sync.set({ daemon: "not_installed", status: null });
@@ -937,6 +980,20 @@ test("native conflict copies are listed with non-destructive review and keep-bot
   button(f.root, "Keep both").click(); await tick();
   assert.deepEqual(kept, [copy]);
   f.dom.window.close();
+});
+
+test("in-plugin sync offers Manage apps with the SDK's access page, and only a safe one", () => {
+  const f = directFixture({ kind: "ready", manageAccess: "https://connect.mdbase.dev/access?collection=c1" }, "Synced");
+  const opened = captureOpen(f);
+  assert.match(f.text(), /Apps See which apps can use this collection/);
+  button(f.root, "Manage apps").click();
+  assert.deepEqual(opened, ["https://connect.mdbase.dev/access?collection=c1"]);
+  f.dom.window.close();
+  for (const manageAccess of [null, "javascript:alert(1)", "http://connect.mdbase.dev/access"]) {
+    const g = directFixture({ kind: "ready", manageAccess }, "Synced");
+    assert.ok(!Array.from(g.root.querySelectorAll("button")).some((el) => el.textContent === "Manage apps"), String(manageAccess));
+    g.dom.window.close();
+  }
 });
 
 test("where collections are chosen, a quiet line says when Private ones are listed (LAB F3)", () => {

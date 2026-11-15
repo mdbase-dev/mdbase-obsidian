@@ -73,6 +73,8 @@ export function phaseSummary() {
     // A Private collection without its key on this device: how the account
     // unlocks it, and whether an attempt is running. Never the secret.
     unlock: p.kind === "needs_unlock" ? { mode: p.mode, unlocking: !!p.unlocking, name: p.displayName ?? null } : null,
+    // The Connect page listing the apps that can reach the selected collection (SDK-4).
+    manageAccess: s.links?.manageAccess ?? null,
     collections: (s.collections ?? []).map((c) => ({ id: c.collectionId, name: c.displayName ?? ("name" in c && typeof c.name === "string" ? c.name : c.collectionId), availability: (isObject(c.availability) && "kind" in c.availability ? c.availability.kind : undefined) ?? c.availability ?? null, private: c.mode === "private" })),
   };
 }

@@ -8,8 +8,8 @@ The plugin should feel like an Obsidian core plugin: quiet lists, compact contro
 
 Use one first-class workspace view with three destinations, each implemented as its own pane module (`src/workspace/`) behind a small shell:
 
+- Sync — this vault's sync status, setup and decisions. The first tab, and where the workspace opens (ribbon, Open workspace command): most people come to mdbase to sync, and type definitions are rarely edited by hand.
 - Types — searchable type list and editor.
-- Sync — this vault's sync status, setup and decisions.
 - Issues — validation, migration, and synchronization problems.
 
 Destinations use standard tab-like controls or compact navigation. They are not dashboard cards.
@@ -71,6 +71,8 @@ The Sync destination presents one status, regardless of which app owns the folde
 The heading is one label and one sentence from the same summary the status bar uses (`src/sync/words.ts`), with a tone (ok, busy, quiet, attention, problem) carried by theme colours. Offline is quiet ("changes are saved here"); a stopped app, a declined link, a signed-out computer and a Private collection on a second computer each say what to do and where. Errors from mdbase are translated by code and reason, never shown raw.
 
 Setup is two choices on one surface: **Cloud copy** (recommended) or **Private**, and adding a collection from a link copied on another device. Keys, fingerprints, devices and escrow stay out of the plugin: Private is described by what it means for the person (only your devices can read it; for now it works on the first computer only).
+
+Which apps can use the collection is managed in mdbase, not in the plugin: once the vault is synced, **Manage apps** opens the collection's access page in Connect (the SDK's `links.manageAccess` when the plugin syncs, the account's server when desktop does). The plugin never lists or suggests apps itself.
 
 When desktop owns the folder, files changed in two places are listed by path with plain choices. When the plugin owns it, both versions are retained as ordinary conflict files beside the original. Merges mdbase made on its own are listed as "changes to check" until acknowledged. Sign-out, disconnect and the app location live in the settings tab, each behind a confirmation that says notes stay on this computer.
 

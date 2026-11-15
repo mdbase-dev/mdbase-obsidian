@@ -23,7 +23,7 @@ export const MDBASE_WORKSPACE_VIEW = "mdbase-workspace-view";
  * bookkeeping. Each destination's state and rendering lives in its own pane.
  */
 export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
-  destination: Destination = "types";
+  destination: Destination = "sync";
   message = "";
   pendingFocusKey: string | null = null;
   busy = false;
@@ -297,7 +297,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     const nav = topbar.createDiv({ cls: "nav-buttons-container mdbase-nav" });
     nav.setAttr("role", "tablist");
     nav.setAttr("aria-label", "mdbase destinations");
-    const destinations = [["types", "Types", "shapes"], ["sync", "Sync", "refresh-cw"], ["issues", "Issues", "alert-triangle"]] as const;
+    const destinations = [["sync", "Sync", "refresh-cw"], ["types", "Types", "shapes"], ["issues", "Issues", "alert-triangle"]] as const;
     for (const [index, [destination, label, icon]] of destinations.entries()) {
       const button = nav.createEl("button", { cls: "clickable-icon nav-action-button mdbase-nav-button" });
       setIcon(button.createSpan({ cls: "mdbase-nav-icon" }), icon);

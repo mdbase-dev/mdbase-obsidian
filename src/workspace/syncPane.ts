@@ -6,6 +6,28 @@ import { PRIVATE_COLLECTIONS_HINT, PRIVATE_SIGN_IN_HINT, errorText, holdReasonTe
 import { renderStatus, type WorkspaceContext } from "./shared";
 
 export const DOWNLOAD_URL = "https://mdbase.dev/downloads";
+export const MANAGE_APPS = "Manage apps";
+
+/** A Connect address safe to open: https, or http on this computer; null otherwise. */
+export function connectUrl(value: string | null | undefined): URL | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    return !url.username && !url.password && (url.protocol === "https:" || (url.protocol === "http:" && loopback)) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Connect page listing the apps that can use a collection, as the SDK
+ * builds it (`links.manageAccess`): the account's server, `/access?collection=`.
+ */
+export function manageAppsUrl(server: string | undefined, collectionId: string): string | null {
+  const url = connectUrl(server);
+  return url ? `${url.origin}/access?collection=${encodeURIComponent(collectionId)}` : null;
+}
 
 const MAX_FAILURES_SHOWN = 50;
 const TONE_ICONS: Record<string, string> = {
@@ -139,6 +161,7 @@ export class SyncPane {
         this.renderOverview(root, s.direct.lastSynced ?? null, s.direct.totals ?? null, s.direct.phase.sync);
         this.renderDevice(root, s.direct.device ?? { skip: [], folders: [] }, s.direct.inclusion ?? null, (next) => this.run(() => native.setDevice(next)));
         this.renderActivity(root, s.direct.activity ?? []);
+        this.renderApps(root, s.direct.phase.manageAccess ?? null);
         const advanced = this.group(root, "Advanced", undefined, true);
         new Setting(advanced).setName("Edits on two devices at once")
           .setDesc("Both versions are kept: the other one as a conflict file beside the original.");
@@ -684,13 +707,25 @@ export class SyncPane {
     row("Kind", modeName(collection.mode));
     if (s.prefix) row("Folder", s.prefix);
     if (s.status?.account.computer_name) row("This computer", s.status.account.computer_name);
+    const apps = manageAppsUrl(s.status?.account.server, collection.id);
     this.actions(root, [
       ["Copy link", false, () => {
         const link = `obsidian://mdbase-join?collection=${collection.id}&name=${encodeURIComponent(collection.name)}`;
         void navigator.clipboard.writeText(link).then(() => new Notice("Copied. Open the link on your other device, or paste it into the sync tab there."));
       }],
+      ...(apps ? [[MANAGE_APPS, false, () => window.open(apps)] as [string, boolean, () => void]] : []),
       ["Sync settings", false, () => this.ctx.host.openSettings()],
     ]);
+  }
+
+  /** Which apps can use this collection is managed in mdbase, not here. */
+  private renderApps(root: HTMLElement, link: string | null): void {
+    const url = connectUrl(link)?.href;
+    if (!url) return;
+    const list = this.group(root, undefined, "mdbase-sync-apps", true);
+    new Setting(list).setName("Apps")
+      .setDesc("See which apps can use this collection, and remove their access, on the mdbase website.")
+      .addButton((button) => button.setButtonText(MANAGE_APPS).onClick(() => window.open(url)));
   }
 }
 

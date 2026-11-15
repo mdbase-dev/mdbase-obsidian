@@ -64,6 +64,8 @@ export interface SyncSnapshot {
       unlock?: { mode: "password" | "strict" | "none"; unlocking: boolean; name: string | null } | null;
       /** Still starting after the plugin stopped waiting: offer Restart sync. */
       stalled?: boolean;
+      /** The Connect page listing the apps that can use this collection. */
+      manageAccess?: string | null;
     };
     /** This vault is bound to a collection (it has synced, or is about to). */
     bound?: boolean;
