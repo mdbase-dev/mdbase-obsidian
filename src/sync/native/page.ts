@@ -108,7 +108,10 @@ export const methods = {
   start: async () => { if (embedded?.collection) await mdbase.select(embedded.collection); await mdbase.start(); return phaseSummary(); },
   signIn: async () => { await mdbase.signIn(); return phaseSummary(); },
   // No discard flag: the SDK must refuse sign-out with unconfirmed writes.
-  signOut: async () => { await mdbase.signOut(); return phaseSummary(); },
+  // signOutResult says whether mdbase and this device's storage were both cleared.
+  signOut: async () => { await mdbase.signOut(); return { ...phaseSummary(), signOutResult: mdbase.getSnapshot().signOutResult ?? null }; },
+  // Close the open collection and list the account's collections again.
+  chooseAnother: async () => { await mdbase.chooseAnother(); return phaseSummary(); },
   addCollection: async () => { await mdbase.addCollection(); return phaseSummary(); },
   configure: async () => { await mdbase.configure(); return phaseSummary(); },
   approve: async (id?: string | null) => { await mdbase.approve(id ?? null); return phaseSummary(); },

@@ -6,7 +6,7 @@ import { DesktopHost } from "./desktop";
 import { MobileHost } from "./mobile";
 import type { EngineHost } from "./host";
 import { encode, decode, hash, validUtf8 } from "./encoding";
-import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, SIGN_IN_STOPPED, STARTING_STALLED, failedText, readyText, stoppedText, syncOffline } from "../words";
+import { AWAITING_APPROVAL, HANDED_OVER, NEEDS_APPROVAL, PRIVATE_COLLECTIONS_HINT, SIGN_IN_STOPPED, STARTING_STALLED, failedText, readyText, signOutText, stoppedText, syncOffline, type SignOutResult } from "../words";
 import { retryUpload, type UploadIdentity } from "./upload";
 import { conflictPath, reconcileDecision, remoteMoveDecision, localMovePairs, Synced } from "./reconcile";
 import { classifyPath, layoutFromConfig, CONFIG_PATH, DEFAULT_LAYOUT, type CollectionLayout, type PathKind } from "./classify";
@@ -139,6 +139,8 @@ export default class NativeSync extends Component {
   activity: ActivityEntry[] = [];
   lastSynced: number | null = null;
   totals: SyncTotals | null = null;
+  /** After Choose another collection or Sign out, the next list is the person's to pick from. */
+  pickManually = false;
   activityTimer: number | null = null;
   dirty = false; persistCost = 0;
   persistTimer: number | null = null; commitTimer: number | null = null;
@@ -458,7 +460,7 @@ export default class NativeSync extends Component {
       }
     }
   }
-  async select(id: string) { await this.claim(id); await this.call("select", id); }
+  async select(id: string) { this.pickManually = false; await this.claim(id); await this.call("select", id); }
   async onPhase(phase: NativePhase) {
     // After a handover the SDK is stopped; its closing notices change nothing here.
     if (this.phase.kind === "handed_over") return;
@@ -501,7 +503,7 @@ export default class NativeSync extends Component {
     if (this.admitting && phase.kind === "choosing") {
       const bound = phase.collections?.find((c: { id: string }) => c.id === this.data.collectionId);
       if (bound) await this.select(bound.id);
-      else if (!this.data.collectionId && phase.collections?.length === 1) await this.select(phase.collections[0].id);
+      else if (!this.data.collectionId && !this.pickManually && phase.collections?.length === 1) await this.select(phase.collections[0].id);
     }
     // select() can publish opening/ready before its promise settles. The older
     // choosing handler must not subsequently turn off the now-ready mirror.
@@ -675,11 +677,11 @@ export default class NativeSync extends Component {
   /**
    * Whether signing this vault out of mdbase loses nothing: no collection is
    * bound, nothing has synced, and nothing is waiting to be sent or preserved.
-   * Only then can a stuck sign-in be abandoned (see startOver).
+   * Only then can a stuck or waiting sign-in be abandoned (see startOver).
    */
   get canStartOver(): boolean {
     const d = this.data;
-    if (!d || this.phase.kind !== "problem" || this.mirroring || this.merge !== null) return false;
+    if (!d || !["problem", "authorizing"].includes(this.phase.kind) || this.mirroring || this.merge !== null) return false;
     const empty = (o?: object) => !o || Object.keys(o).length === 0;
     return !d.collectionId && d.cursor === undefined && empty(d.paths) && empty(d.uploads) && empty(d.pendingPaths)
       && empty(d.sending) && empty(d.handledRejections) && empty(d.conflictCopies) && empty(d.pathFailures);
@@ -694,9 +696,60 @@ export default class NativeSync extends Component {
     if (!this.canStartOver) return;
     this.signInUrl = null;
     this.log("start over: signing out of an unfinished sign-in (nothing bound)");
-    await this.call("signOut");
-    if (this.phase.kind === "problem")
+    const { signOutResult } = await this.call("signOut");
+    this.reportSignOut(signOutResult);
+    if (this.phase.kind === "problem" || this.phase.kind === "authorizing")
       throw Object.assign(new Error("Start over didn't finish. Choose Restart sync, then Start over again."), { code: "still_stopped" });
+  }
+  /**
+   * Stop syncing this vault and sign this device out of mdbase. The SDK refuses
+   * while changes it holds haven't reached mdbase (`sign_out_pending_writes`);
+   * then nothing changes here. Notes stay in the vault; the vault is released
+   * from its collection, so signing in again starts with a fresh comparison.
+   */
+  async signOut() {
+    if (!this.data || this.phase.kind === "signed_out" || this.phase.kind === "handed_over") return;
+    this.signInUrl = null;
+    await this.jobs;
+    this.log("sign out requested");
+    const { signOutResult } = await this.call("signOut");
+    await this.releaseCollection();
+    this.reportSignOut(signOutResult);
+    new Notice("mdbase: signed out. Your notes stay in this vault.");
+  }
+  reportSignOut(result: SignOutResult | null | undefined) {
+    this.log(`signed out: server=${result?.server ?? "unknown"} local=${result?.local ?? "unknown"}`);
+    const text = signOutText(result);
+    if (text) new Notice(`mdbase: ${text}`, 0);
+  }
+  /** Whether a stop asks for another collection: deleted, access removed, unavailable. */
+  get canChooseAgain(): boolean {
+    return this.phase.kind === "problem" && this.phase.problem?.action === "choose_collection";
+  }
+  /**
+   * After a stop that asks for another collection, release this vault from the
+   * one it synced with and list the collections. The notes stay as they are;
+   * the next collection compares them afresh, asking first if it has notes too.
+   */
+  async chooseAgain() {
+    if (!this.canChooseAgain) return;
+    this.log("choose another collection after a stop");
+    await this.jobs;
+    await this.releaseCollection();
+    await this.call("chooseAnother");
+  }
+  /**
+   * Forget everything this vault knew about its collection. Files on disk are
+   * not touched; what was unsent is still in them, and the next collection's
+   * first pass compares every file again (a differing copy becomes a conflict
+   * copy, never a loss). Device choices stay: they are about this device.
+   */
+  async releaseCollection() {
+    const { version, vaultId, port, vaultLocation, device } = this.data;
+    this.data = { version, vaultId, paths: {}, ...(port === undefined ? {} : { port }), ...(vaultLocation === undefined ? {} : { vaultLocation }), ...(device === undefined ? {} : { device }) };
+    this.merge = null; this.totals = null; this.lastSynced = null; this.pickManually = true;
+    await this.persist();
+    await this.writeMarker();
   }
   openSignIn(url: string) {
     this.signInUrl = url;
@@ -1316,6 +1369,11 @@ export default class NativeSync extends Component {
       settled(p, outcome);
     }
   }
+  /**
+   * What the Overview counts. `remotes` is the listing taken before the pass,
+   * so paths this pass sent (all of them, on a first sync into an empty
+   * collection) are counted from the journal; their sizes come with the next full pass.
+   */
   countTotals(remotes: Map<string, Remote & { size?: number }>): SyncTotals {
     const t: SyncTotals = { notes: 0, attachments: 0, definitions: 0, attachmentBytes: 0, notHere: 0, byCollection: 0 };
     for (const [p, r] of remotes) {
@@ -1325,6 +1383,12 @@ export default class NativeSync extends Component {
       if (r.kind === "record") t.notes++;
       else if (r.kind === "resource") t.definitions++;
       else { t.attachments++; t.attachmentBytes += typeof r.size === "number" ? r.size : 0; }
+    }
+    for (const [p, known] of Object.entries(this.data.paths)) {
+      if (remotes.has(p)) continue;
+      if (known.kind === "record") t.notes++;
+      else if (known.kind === "resource") t.definitions++;
+      else t.attachments++;
     }
     return t;
   }

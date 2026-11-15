@@ -95,6 +95,11 @@ Once it's running:
   other one is saved as a conflict copy beside the original. The **Conflicts**
   list in the Sync tab shows these copies so you can open them, or choose
   **Keep both** to keep them as ordinary notes.
+- **Sign out**, under **Advanced** in the Sync tab, stops syncing the vault and
+  signs this device out of mdbase. Your notes stay in the vault.
+- If the collection is deleted or you lose access to it, the Sync tab offers
+  **Choose another collection**. Your notes stay, and are combined with the
+  collection you choose.
 
 On phones, Android stops Obsidian soon after it goes into the background. Sync
 picks up again when you reopen it. Approving a sign-in in the browser can take

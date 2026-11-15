@@ -67,6 +67,24 @@ export const STARTING_STALLED = "Sync hasn't started. Your notes here are untouc
  * Sign-in broke before any collection was chosen. Restarting sync resumes the
  * same broken sign-in, so the way on is Start over.
  */
+export const CHOOSE_AGAIN_HINT = "Your notes stay in this vault. If the collection you choose already has notes, you're asked before they're combined.";
+
+export const SIGN_OUT_DESC = "Stop syncing this vault and sign this device out of mdbase. Your notes stay in this vault. To sync again, sign in and choose a collection.";
+
+/** Sign-out result fields the SDK reports (AppWebSignOutResult). */
+export interface SignOutResult { server?: string; local?: string }
+
+/**
+ * What to tell the person after signing out, beyond "signed out": the SDK
+ * signs this device out even when mdbase can't be reached, and says so here.
+ */
+export function signOutText(result: SignOutResult | null | undefined): string | null {
+  const parts: string[] = [];
+  if (result?.server === "incomplete") parts.push("mdbase couldn't be reached, so this device is still listed under your account with access to the collection. Remove it under Apps on the mdbase website.");
+  if (result?.local === "incomplete") parts.push("Some sign-in data on this device couldn't be removed.");
+  return parts.length ? `Signed out on this device. ${parts.join(" ")}` : null;
+}
+
 export const SIGN_IN_STOPPED = "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again.";
 
 /**
@@ -155,6 +173,8 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     if (phase.kind === "needs_approval") return { label: "Needs approval", detail: text, tone: "attention", syncing: true };
     // Request access again was chosen: the vault still syncs here, once approved.
     if (phase.kind === "authorizing" && s.direct.bound) return { label: "Waiting for approval", detail: text, tone: "attention", syncing: true };
+    // A sign-in waiting in the browser is the person's next step: show it.
+    if (phase.kind === "authorizing") return { label: "Finish sign-in", detail: text, tone: "attention", syncing: true };
     // Starting that never finishes must not look like nothing is wrong.
     if (phase.kind === "starting" && phase.stalled) return { label: "Sync not starting", detail: text, tone: "attention", syncing: true };
     const problem = phase.kind === "problem" || phase.kind === "blocked" || /blocked|failed|stopped|ownership/i.test(text);
@@ -243,6 +263,7 @@ export function errorText(error: { code: string; reason?: string; message: strin
     case "registration_mismatch": return "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched.";
     case "account_changed": return "You signed in to a different account. Try again.";
     case "sign_in_failed": return `Sign-in didn't finish: ${error.message}`;
+    case "sign_out_pending_writes": return "Some changes haven't reached mdbase yet, so you're still signed in. Wait until Sync says Synced, then sign out.";
     case "overlapping_state_dir": return "This folder can't be synced.";
     default: break;
   }

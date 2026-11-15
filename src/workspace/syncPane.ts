@@ -2,7 +2,7 @@ import { Notice, Setting, SuggestModal, TFolder, setIcon, type App } from "obsid
 import type { HeldFile, HoldChoice, SyncKind, SyncSnapshot } from "../sync/controller";
 import type { DirectFailure, MergePrompt, SyncTotals } from "../sync/native/plugin";
 import { MEDIA_CLASSES, type ActivityEntry, type ActivityKind, type CollectionInclusion, type DeviceFilter, type MediaClass } from "../sync/native/device";
-import { PRIVATE_COLLECTIONS_HINT, PRIVATE_SIGN_IN_HINT, errorText, holdReasonText, modeName, summarize, unlockProblemText } from "../sync/words";
+import { CHOOSE_AGAIN_HINT, PRIVATE_COLLECTIONS_HINT, PRIVATE_SIGN_IN_HINT, SIGN_OUT_DESC, errorText, holdReasonText, modeName, summarize, unlockProblemText } from "../sync/words";
 import { renderStatus, type WorkspaceContext } from "./shared";
 
 export const DOWNLOAD_URL = "https://mdbase.dev/downloads";
@@ -142,7 +142,10 @@ export class SyncPane {
         // Request access again is waiting in the browser; this reopens that page.
         this.actions(root, [["Open approval page", true, () => this.run(() => native.signIn())]]);
       } else if (phase === "signed_out" || phase === "authorizing") {
-        this.actions(root, [["Sign in", true, () => this.run(() => native.signIn())]]);
+        const buttons: [string, boolean, () => void][] = [["Sign in", true, () => this.run(() => native.signIn())]];
+        // A sign-in that can't finish (wrong account, closed page) can be dropped straight away.
+        if (phase === "authorizing" && native.canStartOver) buttons.push(["Cancel sign-in", false, () => this.run(() => controller.startOver())]);
+        this.actions(root, buttons);
         root.createEl("p", { cls: "mdbase-muted", text: PRIVATE_SIGN_IN_HINT });
       } else if (phase === "starting" && s.direct.phase.stalled) {
         this.actions(root, [[RESTART_SYNC, true, () => this.run(() => controller.restartNative())]]);
@@ -152,6 +155,7 @@ export class SyncPane {
         this.actions(root, [
           ["Choose collection", true, () => native.choose()],
           ["Add a collection", false, () => this.run(() => native.addCollection())],
+          [SIGN_OUT, false, () => this.run(() => native.signOut())],
         ]);
         root.createEl("p", { cls: "mdbase-muted", text: PRIVATE_COLLECTIONS_HINT });
       } else if (phase === "ready") {
@@ -168,19 +172,26 @@ export class SyncPane {
         const transfer = new Setting(advanced).setName("Move sync to the mdbase app")
           .setDesc("Obsidian is syncing this vault itself. To let the mdbase desktop app do it instead, Obsidian sends any remaining changes and stops. Then add this folder in the mdbase app and pick the same collection. If anything can't be sent, Obsidian carries on syncing.");
         transfer.addButton(button => button.setButtonText("Move to mdbase app").onClick(() => this.run(() => native.handover())));
+        new Setting(advanced).setName(SIGN_OUT).setDesc(SIGN_OUT_DESC)
+          .addButton(button => button.setButtonText(SIGN_OUT).onClick(() => this.run(() => native.signOut())));
       } else if (phase === "handed_over") {
         // Done on purpose; the heading says what's next.
         this.actions(root, [["Get the mdbase app", false, () => window.open(DOWNLOAD_URL)]]);
       } else if (phase === "needs_approval") {
         this.actions(root, [["Request access again", true, () => this.run(() => native.requestAccess())]]);
       } else if (phase === "problem") {
-        const problem = s.direct.phase.problem as { action?: unknown; code?: unknown } | null | undefined;
+        const problem = s.direct.phase.problem as { action?: unknown; code?: unknown; key?: unknown } | null | undefined;
         const step = problemStep(problem?.action, Boolean((s.direct.phase as { collectionId?: unknown }).collectionId), problem?.code);
         const buttons: [string, boolean, () => void][] = [];
         if (step === "sign_in") buttons.push(["Sign in again", true, () => this.run(() => native.signIn())]);
         else if (step === "approve") buttons.push(["Request access again", true, () => this.run(() => native.requestAccess())]);
         else if (step === "restart") buttons.push([RESTART_SYNC, true, () => this.run(() => controller.restartNative())]);
         else if (step === "retry") buttons.push(["Try again", false, () => this.run(() => native.retry())]);
+        else if (step === "choose") {
+          buttons.push([CHOOSE_ANOTHER, true, () => this.run(() => native.chooseAgain())]);
+          // Unavailable or access removed may come back; a deleted collection won't.
+          if (problem?.key !== "collection_deleted") buttons.push(["Try again", false, () => this.run(() => native.retry())]);
+        }
         // Nothing synced and nothing waiting: signing out can't lose anything.
         // With the SDK's Worker gone, the controller restarts the host first.
         const startOver = native.canStartOver;
@@ -192,6 +203,7 @@ export class SyncPane {
         if (startOver) buttons[brokenSignIn ? "unshift" : "push"](["Start over", brokenSignIn, () => this.run(() => controller.startOver())]);
         if (buttons.length) this.actions(root, buttons);
         if (startOver) root.createEl("p", { cls: "mdbase-muted", text: START_OVER_HINT });
+        if (step === "choose") root.createEl("p", { cls: "mdbase-muted", text: CHOOSE_AGAIN_HINT });
       }
       return;
     }
@@ -732,6 +744,9 @@ export class SyncPane {
 /** The button for a stop only a fresh sync host can get past (a page reload, for a web app). */
 export const RESTART_SYNC = "Restart sync";
 
+export const SIGN_OUT = "Sign out";
+export const CHOOSE_ANOTHER = "Choose another collection";
+
 export const START_OVER_HINT = "Start over signs this vault out of mdbase, so you can sign in again with any account. Nothing has synced yet, so your notes aren't affected.";
 
 /**
@@ -739,7 +754,7 @@ export const START_OVER_HINT = "Start over signs this vault out of mdbase, so yo
  * (describeError's MdbaseErrorAction). Actions the plugin can't carry out here
  * (update, free space, set up, contact support) get none: the words say what to do.
  */
-export function problemStep(action: unknown, hasCollection: boolean, code?: unknown): "sign_in" | "approve" | "restart" | "retry" | null {
+export function problemStep(action: unknown, hasCollection: boolean, code?: unknown): "sign_in" | "approve" | "restart" | "retry" | "choose" | null {
   // The SDK's Worker quarantined itself and refuses every call: only a fresh host helps.
   if (typeof code === "string" && /^application_worker_/.test(code)) return "restart";
   switch (action) {
@@ -750,7 +765,9 @@ export function problemStep(action: unknown, hasCollection: boolean, code?: unkn
     case "reload": return "restart";
     // Ask the engine to start again: it restarts a blocked sign-in or reopens the collection.
     case "retry": case "check_connection": case "wait": case "resolve_outcome": return "retry";
-    case "choose_collection": case "set_up": case "update_app": case "free_space": case "contact_support": case "none": return null;
+    // Deleted, access removed, unavailable: release this vault and list the collections.
+    case "choose_collection": return "choose";
+    case "set_up": case "update_app": case "free_space": case "contact_support": case "none": return null;
     default: return "retry";
   }
 }

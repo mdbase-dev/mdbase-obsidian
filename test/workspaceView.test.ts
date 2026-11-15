@@ -961,7 +961,7 @@ function directFixture(phase: Record<string, unknown>, text: string, canStartOve
   const record = (name: string) => () => { calls.push(name); return Promise.resolve(); };
   (f.sync.controller as unknown as { native: unknown }).native = {
     signIn: record("signIn"), choose: record("choose"), addCollection: record("addCollection"), requestAccess: record("requestAccess"),
-    retry: record("retry"), startOver: record("startOver"), canStartOver,
+    retry: record("retry"), startOver: record("startOver"), canStartOver, chooseAgain: record("chooseAgain"), signOut: record("signOut"),
   };
   f.sync.set({ direct: { text, phase, bound } as SyncSnapshot["direct"] });
   f.state.render();
@@ -1056,7 +1056,10 @@ test("each sync engine action gets a fitting button, or none", () => {
   // A page reload, for a web app; and whatever the action, a Worker that quarantined itself.
   assert.deepEqual(labels({ action: "reload" }), ["Restart sync"]);
   assert.deepEqual(labels({ action: "retry", code: "application_worker_binding" }), ["Restart sync"]);
-  for (const action of ["update_app", "free_space", "set_up", "contact_support", "choose_collection", "none"]) assert.deepEqual(labels({ action }), [], action);
+  for (const action of ["update_app", "free_space", "set_up", "contact_support", "none"]) assert.deepEqual(labels({ action }), [], action);
+  // Unavailable or access removed may come back; a deleted collection won't (issue 60).
+  assert.deepEqual(labels({ action: "choose_collection", key: "collection_unavailable" }), ["Choose another collection", "Try again"]);
+  assert.deepEqual(labels({ action: "choose_collection", key: "collection_deleted" }), ["Choose another collection"]);
 });
 
 test("when sign-in broke before anything was bound, Start over is the primary step and Restart sync the lesser one (prod retest 2)", async () => {
@@ -1170,4 +1173,40 @@ test("changes mdbase settled on its own can be checked, and a property switched"
   await tick();
   assert.deepEqual(f.sync.calls.map((c) => c[0]), ["useOtherValue", "dismissMerged"]);
   f.dom.window.close();
+});
+
+test("a deleted collection isn't a dead end: Choose another collection, notes kept (issue 60)", async () => {
+  const f = directFixture({ kind: "problem", collectionId: "c", problem: { key: "collection_deleted", action: "choose_collection" } }, "Sync stopped. This collection was deleted, so it can't be opened any more. Choose another collection.");
+  assert.ok(button(f.root, "Choose another collection").classList.contains("mod-cta"));
+  assert.match(f.text(), /Your notes stay in this vault/);
+  button(f.root, "Choose another collection").click();
+  await tick();
+  assert.deepEqual(f.calls, ["chooseAgain"]);
+  f.dom.window.close();
+});
+
+test("a sign-in waiting in the browser can be cancelled straight away (issue 62)", async () => {
+  const f = directFixture({ kind: "authorizing" }, "Finish signing in in your browser.", true);
+  assert.ok(button(f.root, "Sign in").classList.contains("mod-cta"));
+  button(f.root, "Cancel sign-in").click();
+  await tick();
+  assert.deepEqual(f.sync.calls.map((c) => c[0]), ["startOver"], "through the controller, as Start over");
+  f.dom.window.close();
+  const bound = directFixture({ kind: "authorizing", collectionId: "c" }, "Waiting for you to approve access in your browser.", false, true);
+  assert.equal(Array.from(bound.root.querySelectorAll("button")).some((b) => b.textContent === "Cancel sign-in"), false);
+  bound.dom.window.close();
+});
+
+test("Sign out is under Advanced once synced, and in the collection chooser (issue 65)", async () => {
+  const f = directFixture({ kind: "ready" }, "Synced");
+  assert.match(f.text(), /Sign out.*Stop syncing this vault and sign this device out of mdbase\. Your notes stay in this vault/);
+  button(f.root, "Sign out").click();
+  await tick();
+  assert.deepEqual(f.calls, ["signOut"]);
+  f.dom.window.close();
+  const choosing = directFixture({ kind: "choosing", collections: [] }, "Choose the collection to sync with this vault.");
+  button(choosing.root, "Sign out").click();
+  await tick();
+  assert.deepEqual(choosing.calls, ["signOut"]);
+  choosing.dom.window.close();
 });
