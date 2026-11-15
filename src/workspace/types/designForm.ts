@@ -1,0 +1,133 @@
+import type { MdbaseTypeDef } from "../../mdbaseCore";
+import type { TypeEditorModel } from "../../typeEditorTypes";
+import { describeTypeChanges, validateTypeDraft } from "../../typeDraft";
+import { inputRow, type WorkspaceContext } from "../shared";
+import { renderContractEditor } from "./contractEditor";
+import type { FieldEditor } from "./fieldEditor";
+import type { TypeImpact } from "./impact";
+
+/** What the design form reads from the Types pane. */
+export interface DesignFormEnv {
+  ctx: WorkspaceContext;
+  fields: FieldEditor;
+  impact: TypeImpact;
+  typeEntries(): MdbaseTypeDef[];
+  dirty(): boolean;
+  /** The saved type, or null for a new one. */
+  originalModel(): TypeEditorModel | null;
+  markDirty(render?: boolean): void;
+}
+
+/**
+ * The Design tab of the type editor: name and description, fields, matching,
+ * options, applications, and a review of the unsaved changes.
+ */
+export function renderDesignForm(container: HTMLElement, model: TypeEditorModel, readOnly: boolean, env: DesignFormEnv): void {
+  const { ctx, impact } = env;
+  const diagnostics = validateTypeDraft(model, {
+    knownTypes: env.typeEntries().map((type) => type.name),
+    contracts: ctx.schema?.contracts.values(),
+  });
+  const identity = container.createEl("section", { cls: "mdbase-editor-section" });
+  identity.id = "mdbase-section-identity";
+  const name = inputRow(identity, "Name", model.name, (value) => {
+    model.name = value;
+    env.markDirty();
+  });
+  name.disabled = readOnly;
+  const description = inputRow(identity, "Description", model.description, (value) => {
+    model.description = value;
+    env.markDirty();
+  }, { multiline: true });
+  description.disabled = readOnly;
+  const options = ctx.disclosure(container, "type-options", "Options");
+  const displayRow = options.createDiv({ cls: "mdbase-form-row" });
+  const displayLabel = displayRow.createEl("label", { text: "Display field" });
+  const display = displayRow.createEl("select");
+  displayLabel.htmlFor = display.id = "mdbase-display-field";
+  display.createEl("option", { value: "", text: "Use the file name" });
+  for (const field of model.fields) {
+    display.createEl("option", { value: field.name, text: field.name || "Unnamed field" });
+  }
+  if (model.displayNameKey && !model.fields.some((field) => field.name === model.displayNameKey)) {
+    display.createEl("option", { value: model.displayNameKey, text: `${model.displayNameKey} · missing` });
+  }
+  display.value = model.displayNameKey;
+  display.onchange = () => {
+    model.displayNameKey = display.value;
+    env.markDirty();
+  };
+  display.disabled = readOnly;
+  const strictRow = options.createEl("label", { cls: "mdbase-checkbox-row" });
+  const strict = strictRow.createEl("input", { type: "checkbox" });
+  strict.checked = model.strictMode === true;
+  strict.disabled = readOnly;
+  strict.onchange = () => {
+    model.strictMode = strict.checked;
+    env.markDirty();
+  };
+  strictRow.createSpan({ text: "Reject undeclared fields" });
+
+  const membership = ctx.disclosure(container, "type-matching", impact.matchingLabel());
+  membership.id = "mdbase-section-membership";
+  impact.fillMatchPreview(membership.createDiv({ cls: "mdbase-match-preview" }));
+  const glob = inputRow(membership, "Path glob", model.matchPathGlob, (value) => {
+    model.matchPathGlob = value;
+    env.markDirty();
+  }, { placeholder: "Projects/**/*.md" });
+  glob.disabled = readOnly;
+  const present = inputRow(membership, "Fields present", model.matchFieldsPresent, (value) => {
+    model.matchFieldsPresent = value;
+    env.markDirty();
+  }, { description: "Comma-separated frontmatter keys." });
+  present.disabled = readOnly;
+  const where = inputRow(membership, "Where", model.matchWhere, (value) => {
+    model.matchWhere = value;
+    env.markDirty();
+  }, {
+    multiline: true,
+    description: "YAML predicate, including contains and nested equality conditions.",
+    placeholder: "tags:\n  contains: task",
+  });
+  where.disabled = readOnly;
+
+  env.fields.renderSection(container, model, readOnly);
+
+  // Keep the common editing surface (name, description, fields) first.
+  if (membership.parentElement) container.appendChild(membership.parentElement);
+  if (options.parentElement) container.appendChild(options.parentElement);
+  const placement = options;
+  const path = inputRow(placement, "Path pattern", model.pathPattern, (value) => {
+    model.pathPattern = value;
+    env.markDirty();
+  }, { placeholder: "Notes/{title}.md" });
+  path.disabled = readOnly;
+
+  renderContractEditor(ctx, container, model, readOnly, (render) => env.markDirty(render));
+
+  if (!env.dirty() && !diagnostics.length) return;
+  const review = ctx.disclosure(container, "type-review", "Changes", diagnostics.some((item) => item.severity === "error"));
+  review.id = "mdbase-section-review";
+  if (env.dirty()) impact.fillImpact(review.createDiv({ cls: "mdbase-impact" }));
+  if (diagnostics.length) {
+    const diagnosticSummary = review.createDiv({ cls: "mdbase-diagnostic-summary" });
+    const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+    const warnings = diagnostics.length - errors;
+    diagnosticSummary.createEl("strong", {
+      text: `${errors} ${errors === 1 ? "error" : "errors"} · ${warnings} ${warnings === 1 ? "warning" : "warnings"}`,
+    });
+    for (const diagnostic of diagnostics.slice(0, 12)) {
+      const item = diagnosticSummary.createDiv({ cls: "mdbase-diagnostic-item" });
+      item.setAttr("data-severity", diagnostic.severity);
+      item.createEl("code", { text: diagnostic.path });
+      item.createSpan({ text: diagnostic.message });
+    }
+  }
+  if (env.dirty()) {
+    const list = review.createEl("ul");
+    for (const change of describeTypeChanges(env.originalModel(), model)) {
+      const item = list.createEl("li", { text: change.summary });
+      item.setAttr("data-risk", change.risk);
+    }
+  }
+}
