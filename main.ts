@@ -679,7 +679,7 @@ export default class MdbasePlugin extends Plugin {
     await this.openWorkspace("issues");
   }
 
-  async openWorkspace(destination: "types" | "sync" | "issues" = "types"): Promise<MdbaseWorkspaceView> {
+  async openWorkspace(destination: "types" | "sync" | "issues" = "sync"): Promise<MdbaseWorkspaceView> {
     const existing = this.app.workspace.getLeavesOfType(MDBASE_WORKSPACE_VIEW)[0];
     if (existing) {
       await this.app.workspace.revealLeaf(existing);

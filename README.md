@@ -32,12 +32,13 @@ it one of these ways:
 ## Get started
 
 Click the mdbase icon in the left ribbon, or run **mdbase: Open workspace** from
-the command palette. The first time, it asks where your collection lives:
+the command palette. The workspace opens on **Sync**, which connects the vault
+to mdbase. See [Sync](#sync).
 
-- **Start a collection** makes this vault an mdbase collection. It adds an
-  `mdbase.yaml` file and a `_types/` folder, and offers ready-made type packs
-  you can install. It doesn't create a type you didn't ask for.
-- **Sync** connects the vault to mdbase. See [Sync](#sync).
+To give your notes types, choose **Types**. The first time, **Start a
+collection** makes this vault an mdbase collection. It adds an `mdbase.yaml`
+file and a `_types/` folder, and offers ready-made type packs you can install.
+It doesn't create a type you didn't ask for.
 
 ## Types
 
