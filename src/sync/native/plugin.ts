@@ -125,6 +125,7 @@ export default class NativeSync extends Component {
   reconcileFull = false;
   reconcilePaths = new Set<string>();
   deferredRemoteMoves = new Map<string, string>();
+  sweptIncoming = false;
   reconcileCursor?: string;
   startingMirror = false;
   syncingFiles = false;
@@ -580,11 +581,32 @@ export default class NativeSync extends Component {
     // watch may synchronously replay/reset before its RPC reply. Fold that
     // into the mandatory startup snapshot instead of running two full scans.
     this.setStatus("Checking your files");
+    await this.sweepIncoming();
     this.startingMirror = true;
     try { await this.call("watch", this.data.cursor); }
     finally { this.startingMirror = false; }
     this.requestReconcile(undefined, undefined, true);
     await this.jobs;
+  }
+  /**
+   * `.mdbase/incoming` holds only staging copies of downloads, each removed by
+   * its own transfer. A transfer killed with the app (Android stops Obsidian
+   * without warning) leaves its partial copy behind. Sweep once per load,
+   * before the first pass: no transfer of this load has started yet, and a
+   * later restart of the mirror must not touch a transfer still running.
+   */
+  async sweepIncoming() {
+    if (this.sweptIncoming) return;
+    this.sweptIncoming = true;
+    const incoming = this.host.join(this.root, ".mdbase", "incoming");
+    try {
+      if (!await this.host.exists(incoming)) return;
+      for (const entry of await this.host.list(incoming)) {
+        if (!entry.file || !entry.name.endsWith(".tmp")) continue;
+        await this.host.remove(this.host.join(incoming, entry.name));
+        this.log("removed an interrupted download's staging copy");
+      }
+    } catch (e: any) { this.log(`staging cleanup skipped: ${e?.message ?? e}`); }
   }
   async signIn() {
     if (this.phase.kind === "authorizing" && this.signInUrl) {

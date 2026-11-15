@@ -275,6 +275,32 @@ test("a refused local rename is per-path, retains its baseline and waits for ret
   assert.equal(f.remote.has("note.md"), false); assert.equal(f.remote.get("moved.md").document, "base");
   assert.equal(Object.keys(f.native.data.pathFailures).length, 0);
 });
+test("starting the mirror removes downloads interrupted by a killed app, once per load", async t => {
+  const f = fixture(t);
+  const incoming = path.join(f.root, ".mdbase", "incoming");
+  fs.mkdirSync(incoming, { recursive: true });
+  fs.writeFileSync(path.join(incoming, "11111111-dead.tmp"), Buffer.alloc(4096));
+  fs.writeFileSync(path.join(incoming, "notes.txt"), "not a staging copy");
+  const call = f.native.call;
+  let leftAtWatch;
+  f.native.call = async (method, ...args) => {
+    if (method === "watch") { leftAtWatch = fs.readdirSync(incoming).sort(); return true; }
+    return call(method, ...args);
+  };
+  await f.native.startMirror();
+  assert.deepEqual(leftAtWatch, ["notes.txt"], "swept before the first pass can start a download");
+  // A restarted mirror in the same load may have a transfer running: leave it.
+  fs.writeFileSync(path.join(incoming, "22222222-active.tmp"), Buffer.alloc(16));
+  await f.native.startMirror();
+  assert.deepEqual(fs.readdirSync(incoming).sort(), ["22222222-active.tmp", "notes.txt"]);
+});
+test("a vault without an incoming folder starts the mirror normally", async t => {
+  const f = fixture(t);
+  const call = f.native.call;
+  f.native.call = async (method, ...args) => method === "watch" ? true : call(method, ...args);
+  await f.native.startMirror();
+  assert.equal(fs.existsSync(path.join(f.root, ".mdbase", "incoming")), false);
+});
 test("crash after upload submission resumes saved bytes with the same identity", async t => {
   const f = fixture(t); f.put("image.bin", "original bytes");
   const identities = [];
