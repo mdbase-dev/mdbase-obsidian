@@ -8,7 +8,6 @@
     "lint": "npm run lint:ts && npm run lint:scanner && npm run lint:css",
     "lint:ts": "eslint . --max-warnings=0",
     "lint:scanner": "eslint . --config eslint.scanner.config.mjs --max-warnings=0",
-    "lint:metadata": "eslint manifest.json --rule 'obsidianmd/validate-manifest:warn' --max-warnings=0",
     "lint:ts:fix": "eslint . --fix",
     "lint:css": "stylelint styles.css --max-warnings=0",
     "lint:css:fix": "stylelint styles.css --fix",

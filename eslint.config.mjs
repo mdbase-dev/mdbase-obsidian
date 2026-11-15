@@ -86,10 +86,6 @@ export default defineConfig([
   ]),
   ...obsidianmd.configs.recommended,
   {
-    files: ["manifest.json"],
-    rules: { "obsidianmd/validate-manifest": "off" },
-  },
-  {
     files: sourceFilePatterns,
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },

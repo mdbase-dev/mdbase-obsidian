@@ -214,15 +214,9 @@ adjustments in the upstream 0.6.0 [configuration guide](https://github.com/obsid
 Build output, tests, and tooling are excluded as in the scanner. The TypeScript
 project includes `DOM.AsyncIterable` for the SDK's streaming downloads.
 
-Like the scanner, both lint lanes leave manifest submission validation separate.
-`npm run lint:metadata` reports the deferred finding verbatim:
-`The manifest is missing the required 'isDesktopOnly' property`
-The plugin ID, name, version, minimum app version and desktop/mobile declaration
-are unchanged. This command intentionally exits nonzero until that decision is
-made; the CI lint gate does not silently consider metadata submission-ready.
-There is no LICENSE file or `package.json` author field, and no existing repository
-copyright notice to identify an MIT holder. No holder has been invented; the
-upstream license rule only examines files that exist.
+The repository lane also validates `manifest.json` and `LICENSE` with the
+plugin's `validate-manifest` and `validate-license` rules; the scanner lane
+leaves them off, as the scanner does.
 
 Legacy v0.2 collection exclusion lists live in `src/legacyConfig.json`: these
 are persisted-format defaults, not a lookup of Obsidian's runtime config folder.
