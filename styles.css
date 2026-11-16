@@ -1193,6 +1193,15 @@ button.mdbase-yaml-problem:disabled {
   color: var(--text-muted);
 }
 
+/* Overview and Activity, folded under the status. */
+.mdbase-sync-details {
+  padding-top: var(--size-4-3);
+}
+
+.mdbase-sync-details > .mdbase-sync-group:last-child {
+  margin-bottom: 0;
+}
+
 /* Sections are Obsidian settings groups: heading above, theme's setting-items card below. */
 .mdbase-sync-group {
   margin: 0 0 var(--size-4-6, 24px);
@@ -1267,11 +1276,6 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-sync-folder .setting-item-name {
   font-family: var(--font-monospace);
   font-size: var(--font-ui-small);
-}
-
-.mdbase-sync-device-note {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
 }
 
 .mdbase-activity-filters {
