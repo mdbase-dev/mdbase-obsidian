@@ -17,7 +17,8 @@ import type NativeSync from "./plugin";
 export const MARKER_STALE_MS = 10 * 60_000;
 
 /** Who holds this folder, in terms the Sync tab can put into plain words. */
-export type FolderOwner = "desktop" | "obsidian" | "unknown" | "unreadable";
+/** `copied`: this vault's sync settings came from another vault or device. */
+export type FolderOwner = "desktop" | "obsidian" | "unknown" | "unreadable" | "copied";
 
 /** Startup or a check found the folder held by someone else. */
 export interface OwnershipBlock {
@@ -35,6 +36,7 @@ export class FolderOwned extends Error {
 
 /** What the Sync tab and notices say. Never "marker" or "host". */
 export function ownerText(block: OwnershipBlock): string {
+  if (block.owner === "copied") return "This vault's sync settings came from another vault or device, so sync is off here. Set up sync here to start fresh. Your notes here are untouched.";
   if (block.takeover) return "This vault was set up for sync before, maybe by an earlier install of this plugin. Your notes here are untouched.";
   switch (block.owner) {
     case "desktop": return "Another app is already syncing this vault: the mdbase desktop app. Turn sync off there first. Your notes here are untouched.";

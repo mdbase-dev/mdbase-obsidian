@@ -65,7 +65,7 @@ export interface SyncSnapshot {
       /** Still starting after the plugin stopped waiting: offer Restart sync. */
       stalled?: boolean;
       /** `blocked`: who holds this folder, and whether Set up sync here is offered. */
-      owner?: "desktop" | "obsidian" | "unknown" | "unreadable";
+      owner?: "desktop" | "obsidian" | "unknown" | "unreadable" | "copied";
       takeover?: boolean;
       /** The Connect page listing the apps that can use this collection. */
       manageAccess?: string | null;
@@ -220,10 +220,11 @@ export class SyncController {
     const native = this.native;
     if (!native || native.phase.kind !== "blocked" || !native.phase.takeover) return;
     // The new host does it: the blocked one has already let go of its storage.
-    this.takeOverFrom = { marker: native.blockedMarker };
+    // Settings copied from another vault: start afresh, then claim the folder as usual.
+    this.takeOverFrom = { marker: native.blockedMarker, fresh: native.phase.owner === "copied" };
     try { await this.restartNative(); } finally { this.takeOverFrom = null; }
   }
-  private takeOverFrom: { marker: string | null } | null = null;
+  private takeOverFrom: { marker: string | null; fresh?: boolean } | null = null;
 
   /**
    * Start over from a stop. When the SDK's Worker is gone (it can't sign out),

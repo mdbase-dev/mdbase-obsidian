@@ -25,6 +25,8 @@ export interface EngineHost {
   readonly pluginDir: string;
   readonly processId?: number;
   location(): string;
+  /** Whether `previous` (an earlier location()) names a folder on this device that no longer exists: the vault was moved or renamed. */
+  movedFrom?(previous: string): boolean;
   join(...parts: string[]): string;
   dirname(file: string): string;
   uuid(): string;

@@ -137,6 +137,33 @@ for (const version of ["1.14.4", "1.11.4"]) {
     }
   });
 
+  test(`${version}: when Obsidian syncs, this device's choices, Move and Sign out are here, and Sign out and Move ask first`, async () => {
+    const f = fixture();
+    const native = {
+      signOut: async () => { f.calls.push("signOut"); },
+      handover: async () => { f.calls.push("handover"); },
+      setDevice: async (next: unknown) => { f.calls.push(`setDevice ${JSON.stringify(next)}`); },
+    };
+    (f.plugin.syncController as unknown as { native: unknown }).native = native;
+    f.set({ direct: { text: "Synced", phase: { kind: "ready", manageAccess: "https://connect.mdbase.dev/access?collection=c1" }, device: { skip: [], folders: ["Archive"] }, inclusion: null } as SyncSnapshot["direct"] });
+    const text = f.root.textContent!;
+    assert.match(text, /On this device/); assert.match(text, /Images/); assert.match(text, /Folders left out/); assert.match(text, /Archive/);
+    assert.ok(button(f.root, "Manage apps"));
+    for (const [label, action, call, words] of [["Sign out…", "Sign out", "signOut", /Your notes stay in this vault/], ["Move to mdbase app…", "Move to mdbase app", "handover", /sends any remaining changes/]] as const) {
+      f.calls.length = 0;
+      button(f.root, label).click();
+      assert.match(modal(f).textContent!, words);
+      button(modal(f), "Cancel").click();
+      await settle();
+      assert.deepEqual(f.calls.filter((c) => c !== "refresh"), [], `${label} does nothing until confirmed`);
+      button(f.root, label).click();
+      button(modal(f), action).click();
+      await settle();
+      assert.deepEqual(f.calls.filter((c) => c !== "refresh"), [call]);
+    }
+    f.dom.window.close();
+  });
+
   test(`${version}: signed out offers sign-in; a missing app offers its location`, async () => {
     const f = fixture(snapshot({ collection: null, status: { account: { signed_in: false, online: true }, collections: [] } }));
     button(f.root, "Sign in").click();

@@ -121,12 +121,20 @@ export default class NativeSync extends Component {
     // as first install destroys the only durable sync/rejection journal.
     try {
       this.data = await this.readData();
+      const fresh = this.takeOverFrom?.fresh === true;
+      if (fresh) this.takeOverFrom = null;
+      this.bindVault(fresh);
       this.data.paths = Object.assign(Object.create(null) as SyncState["paths"], this.data.paths);
       this.data.pathFailures = Object.assign(Object.create(null) as NonNullable<SyncState["pathFailures"]>, this.data.pathFailures);
-      this.bindVault();
       await this.readActivity();
       if (!this.data.collectionId && this.previousCollection) this.data.collectionId = this.previousCollection;
       if (this.takeOverFrom) { const seen = this.takeOverFrom.marker; this.takeOverFrom = null; await marker.takeOver(this, seen); }
+      else if (fresh) {
+        // The person chose Set up sync here. A marker copied in with the settings
+        // is replaced if it looks like an earlier install's; a live one still blocks.
+        const text = await marker.readMarkerText(this);
+        if (text !== null && marker.classify(text, this)[1]) await marker.takeOver(this, text);
+      }
       // A marker from desktop, an unknown host, or another installation is never
       // overridden, even when stale. Do not overwrite data before this check.
       await this.checkOwnership();
@@ -204,10 +212,26 @@ export default class NativeSync extends Component {
     this.released = Promise.all([this.persistence, this.jobs, this.host.close()]).then(() => {});
     void this.released.catch(() => this.log("sync host release failed; restart blocked"));
   }
-  bindVault() {
+  /**
+   * sync-state.json names the vault it belongs to, so a copy never shares
+   * another vault's replica storage. When it names another place:
+   *  - the old folder is gone from this device: the vault was moved or
+   *    renamed, and everything carries on;
+   *  - nothing was set up to sync: start this vault afresh, silently;
+   *  - set up to sync: stop, and start afresh only when the person chooses
+   *    Set up sync here (`fresh`). Notes on disk are never touched; the next
+   *    collection's first pass compares every file again.
+   * A fresh start keeps only this device's file choices, under a new vault id.
+   */
+  bindVault(fresh = false) {
     const location = this.host.location();
-    if (this.data.vaultLocation !== undefined && this.data.vaultLocation !== location)
-      throw new Error("sync-state.json belongs to another vault or host; refusing shared replica storage. Restore this vault's own settings (do not copy another vault's sync-state.json).");
+    const was = this.data.vaultLocation;
+    if (was !== undefined && was !== location && !this.host.movedFrom?.(was)) {
+      if (this.setUp && !fresh) throw new marker.FolderOwned("copied", true, null);
+      const { device } = this.data;
+      this.data = { version: 1, vaultId: this.host.uuid(), paths: {}, ...(device === undefined ? {} : { device }) };
+      this.log("sync settings came from another vault: starting this vault afresh");
+    }
     this.data.vaultLocation = location;
   }
   readData(): Promise<SyncState> { return readSyncState(this.host, this.pluginDir, p => this.validPath(p)); }
@@ -299,7 +323,8 @@ export default class NativeSync extends Component {
     if (this.blockTimer === null && !this.unloaded) this.blockTimer = window.setInterval(() => { void this.recheckBlock(); }, 15_000);
   }
   async recheckBlock() {
-    if (this.unloaded || this.phase.kind !== "blocked" || !this.phase.owner) return;
+    // Copied settings don't change by waiting; only Set up sync here helps.
+    if (this.unloaded || this.phase.kind !== "blocked" || !this.phase.owner || this.phase.owner === "copied") return;
     let next: marker.FolderOwned;
     try {
       const text = await marker.readMarkerText(this);
@@ -316,7 +341,7 @@ export default class NativeSync extends Component {
    * controller handed this new host the marker text that was offered. Startup
    * replaces that marker (if it's still the same) before its usual check.
    */
-  takeOverFrom: { marker: string | null } | null = null;
+  takeOverFrom: { marker: string | null; fresh?: boolean } | null = null;
 
   // ---- iframe RPC ----------------------------------------------------------
   call<Method extends NativeMethod>(method: Method, ...args: Parameters<NativeMethods[Method]>): Promise<NativeResult<Method>> {

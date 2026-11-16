@@ -986,7 +986,6 @@ test("native conflict copies are listed with non-destructive review and keep-bot
 test("in-plugin sync offers Manage apps with the SDK's access page, and only a safe one", () => {
   const f = directFixture({ kind: "ready", manageAccess: "https://connect.mdbase.dev/access?collection=c1" }, "Synced");
   const opened = captureOpen(f);
-  assert.match(f.text(), /Apps See which apps can use this collection/);
   button(f.root, "Manage apps").click();
   assert.deepEqual(opened, ["https://connect.mdbase.dev/access?collection=c1"]);
   f.dom.window.close();
@@ -1230,12 +1229,16 @@ test("a sign-in waiting in the browser can be cancelled straight away (issue 62)
   bound.dom.window.close();
 });
 
-test("Sign out is under Advanced once synced, and in the collection chooser (issue 65)", async () => {
+test("once synced, Sync is one status: Sync now, details folded away, and settings for the rest; Sign out is in the collection chooser (issue 65)", async () => {
   const f = directFixture({ kind: "ready" }, "Synced");
-  assert.match(f.text(), /Sign out.*Stop syncing this vault and sign this device out of mdbase\. Your notes stay in this vault/);
-  button(f.root, "Sign out").click();
-  await tick();
-  assert.deepEqual(f.calls, ["signOut"]);
+  const buttons = Array.from(f.root.querySelectorAll("button")).map((b) => b.textContent);
+  assert.ok(!buttons.includes("Sign out"), "Sign out lives in settings, behind a confirmation");
+  assert.ok(!buttons.includes("Move to mdbase app"));
+  assert.doesNotMatch(f.text(), /On this device|Edits on two devices|Advanced/);
+  const details = f.root.querySelector<HTMLDetailsElement>("details[data-disclosure='sync-details']");
+  assert.ok(details && !details.open, "Overview and Activity start folded");
+  button(f.root, "Sync settings").click();
+  assert.equal(f.settingsOpened(), 1);
   f.dom.window.close();
   const choosing = directFixture({ kind: "choosing", collections: [] }, "Choose the collection to sync with this vault.");
   button(choosing.root, "Sign out").click();
