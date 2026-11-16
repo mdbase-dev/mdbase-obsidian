@@ -3,7 +3,7 @@ import type { WorkspaceContext } from "../shared";
 
 /**
  * Give a `<details>` summary the chevron field rows use, in place of the
- * browser's ▶ marker, so every collapsible part of Types looks the same.
+ * browser's ▶ marker, so every collapsible part of the workspace looks the same.
  * Returns the span that holds the summary's label.
  */
 export function addChevron(summary: HTMLElement): HTMLElement {
@@ -18,7 +18,7 @@ export function addChevron(summary: HTMLElement): HTMLElement {
   return label;
 }
 
-/** A workspace disclosure (open state kept across renders) with the Types chevron. */
+/** A workspace disclosure (open state kept across renders); every one has the chevron. */
 export function typesDisclosure(
   ctx: WorkspaceContext,
   container: HTMLElement,
@@ -26,8 +26,5 @@ export function typesDisclosure(
   label: string,
   initiallyOpen = false,
 ): HTMLDivElement {
-  const body = ctx.disclosure(container, key, label, initiallyOpen);
-  const summary = body.parentElement?.querySelector<HTMLElement>(":scope > summary");
-  if (summary) addChevron(summary);
-  return body;
+  return ctx.disclosure(container, key, label, initiallyOpen);
 }

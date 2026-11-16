@@ -1,4 +1,5 @@
 import { ItemView, Notice, setIcon, WorkspaceLeaf } from "obsidian";
+import { addChevron } from "./workspace/types/disclosure";
 import type { CollectionRecord } from "./mdbaseCore";
 import { MDBASE_ICON_ID } from "./mdbaseIcon";
 import { IssuesPane } from "./workspace/issuesPane";
@@ -288,7 +289,9 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       this.disclosures.set(key, details.open);
       this.app.workspace?.requestSaveLayout();
     });
-    details.createEl("summary", { text: label }).setAttr("data-focus-key", `disclosure-${key}`);
+    const summary = details.createEl("summary", { text: label });
+    summary.setAttr("data-focus-key", `disclosure-${key}`);
+    addChevron(summary);
     return details.createDiv({ cls: "mdbase-disclosure-body" });
   }
 

@@ -504,8 +504,9 @@ export class SyncPane {
   private renderDirectFailures(root: HTMLElement, failures: DirectFailure[]): void {
     if (!failures.length) return;
     const native = this.ctx.host.syncController.native;
-    const section = this.group(root, failures.length === 1 ? "1 file not synced" : `${failures.length} files not synced`);
-    section.createEl("p", { cls: "mdbase-muted", text: "Everything else is in sync. These stay as they are on this device until they're fixed; sync tries them again when they change." });
+    // The heading already counts them and says everything else is in sync.
+    const section = this.group(root, "Not synced");
+    section.createEl("p", { cls: "mdbase-muted", text: "These stay as they are on this device until they're fixed. Sync tries them again when they change." });
     const list = section.createDiv({ cls: "mdbase-hold-list" });
     for (const failure of failures.slice(0, MAX_FAILURES_SHOWN)) {
       const row = list.createDiv({ cls: "mdbase-hold" });

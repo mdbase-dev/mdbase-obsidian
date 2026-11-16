@@ -668,8 +668,8 @@ details.mdbase-field-node {
 }
 
 .mdbase-field-chevron svg {
-  width: 14px;
-  height: 14px;
+  width: var(--icon-xs);
+  height: var(--icon-xs);
 }
 
 .mdbase-field-node[open] > summary > .mdbase-field-chevron,
@@ -677,7 +677,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
   transform: rotate(90deg);
 }
 
-/* Collapsible sections in Types use the field rows' chevron, not the ▶ marker. */
+/* Collapsible sections use the field rows' chevron, not the ▶ marker. */
 .mdbase-chevron-summary {
   display: flex;
   align-items: center;
