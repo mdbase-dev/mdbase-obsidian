@@ -64,7 +64,9 @@ enough to tap.
 
 With **Validate notes automatically** on (the default), notes are checked
 against their types when you open and save them. **mdbase: Validate collection**
-checks the whole vault, shows progress, and can be stopped. Many problems come
+checks the whole vault, shows progress, and can be stopped. A note without
+properties that no type matches, such as a plain note or an app's README, is
+fine and isn't reported. Many problems come
 with a fix you can apply in one click; it changes only the property it names.
 
 ## Sync
