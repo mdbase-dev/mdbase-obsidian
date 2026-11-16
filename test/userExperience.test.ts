@@ -12,9 +12,9 @@ test("validation starts unchecked, records coverage, and invalidates schema and 
   const state = new ValidationState();
   assert.equal(state.summary(["a", "b"]), "Not checked yet");
   state.markChecked("a");
-  assert.match(state.summary(["a", "b"]), /1 of 2.*uniqueness not checked/);
+  assert.match(state.summary(["a", "b"]), /1 of 2.*duplicate values not checked yet/);
   state.lastCompletedAt = new Date().toISOString(); state.completedRevision = state.revision;
-  assert.match(state.summary(["a", "b"]), /Validated/);
+  assert.match(state.summary(["a", "b"]), /Checked 2 notes at/);
   state.changed("a");
   assert.equal(state.isChecked("a"), false);
   assert.match(state.summary(["a", "b"]), /Changed since/);

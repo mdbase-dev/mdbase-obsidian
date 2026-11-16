@@ -4,7 +4,7 @@
 }
 
 .mdbase-type-picker-name {
-  font-weight: 600;
+  font-weight: var(--font-semibold);
 }
 
 .mdbase-type-picker-meta {
@@ -13,7 +13,7 @@
   justify-content: space-between;
   gap: 0.5rem;
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--font-ui-smaller);
 }
 
 .mdbase-type-picker-path {
@@ -48,12 +48,12 @@
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: var(--size-4-1, 4px);
+  gap: var(--size-4-1);
 }
 
 .mdbase-status-bar-icon {
   display: inline-flex;
-  --icon-size: var(--icon-xs, 14px);
+  --icon-size: var(--icon-xs);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -107,9 +107,9 @@
   display: flex;
   min-height: 42px;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  gap: var(--size-4-2);
+  padding: 0 var(--size-4-3);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
   background: var(--background-primary);
 }
 
@@ -136,8 +136,8 @@
 }
 
 .mdbase-nav-button.clickable-icon {
-  gap: var(--size-4-1, 4px);
-  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  gap: var(--size-4-1);
+  padding: var(--size-4-1) var(--size-4-2);
   font-size: var(--font-ui-small);
 }
 
@@ -147,13 +147,13 @@
 
 .mdbase-nav-icon {
   display: inline-flex;
-  --icon-size: var(--icon-s, 16px);
+  --icon-size: var(--icon-s);
 }
 
 .mdbase-count {
   min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 9px;
+  padding: 1px var(--size-2-3);
+  border-radius: var(--radius-l);
   background: var(--background-modifier-border);
   font-size: var(--font-ui-smaller);
   line-height: 16px;
@@ -177,31 +177,31 @@
 .mdbase-inline-message,
 .mdbase-inline-error,
 .mdbase-readonly-note {
-  padding: 9px 16px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-2) var(--size-4-4);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
   background: var(--background-secondary);
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
 
 .mdbase-inline-error {
-  border: 1px solid var(--background-modifier-error);
+  border: var(--border-width) solid var(--background-modifier-error);
   color: var(--text-error);
 }
 
 .mdbase-empty-state {
   max-width: 600px;
   margin: 0 auto;
-  padding: 64px 24px;
+  padding: var(--size-4-16) var(--size-4-6);
   text-align: center;
 }
 
 .mdbase-empty-state h2 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--size-4-2);
 }
 
 .mdbase-empty-state p {
-  margin: 0 auto 24px;
+  margin: 0 auto var(--size-4-6);
   color: var(--text-muted);
 }
 
@@ -214,8 +214,8 @@
 .mdbase-setup-choices {
   display: flex;
   flex-direction: column;
-  margin-top: 16px;
-  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-4);
+  border-top: var(--border-width) solid var(--background-modifier-border);
   text-align: start;
 }
 
@@ -223,13 +223,13 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px 24px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  gap: var(--size-4-3) var(--size-4-6);
+  padding: var(--size-4-3) 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-setup-choice .mdbase-muted {
-  margin-top: 2px;
+  margin-top: var(--size-2-1);
   font-size: var(--font-ui-small);
 }
 
@@ -243,20 +243,20 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px 24px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  gap: var(--size-4-3) var(--size-4-6);
+  padding: var(--size-4-3) var(--size-4-4);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
   background: var(--background-secondary);
 }
 
 .mdbase-legacy-banner p {
-  margin: 3px 0 0;
+  margin: var(--size-2-2) 0 0;
   color: var(--text-muted);
 }
 
 .mdbase-migration-review {
-  padding: 18px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-4);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-types-layout {
@@ -276,14 +276,14 @@
   display: flex;
   flex-direction: column;
   padding-bottom: var(--status-bar-height, 26px);
-  border-right: 1px solid var(--background-modifier-border);
+  border-right: var(--border-width) solid var(--background-modifier-border);
   background: var(--background-secondary);
 }
 
 .mdbase-pane-header {
   min-height: var(--header-height, 40px);
-  gap: var(--size-2-1, 2px);
-  padding: var(--size-4-1, 4px) var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+  gap: var(--size-2-1);
+  padding: var(--size-4-1) var(--size-4-2) 0 var(--size-4-3);
 }
 
 .mdbase-pane-header h2 {
@@ -306,7 +306,7 @@
 }
 
 .mdbase-type-search-box {
-  margin: var(--size-4-1, 4px) var(--size-4-2, 8px) var(--size-4-2, 8px);
+  margin: var(--size-4-1) var(--size-4-2) var(--size-4-2);
 }
 
 .mdbase-type-search-box .mdbase-type-search {
@@ -317,13 +317,13 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 0 var(--size-4-2, 8px) var(--size-4-3, 12px);
+  padding: 0 var(--size-4-2) var(--size-4-3);
 }
 
 /* Rows use Obsidian's tree-item markup; this only trims the file-tree indent. */
 .mdbase-type-row.tree-item-self {
   align-items: center;
-  padding-inline-start: var(--size-4-2, 8px);
+  padding-inline-start: var(--size-4-2);
 }
 
 .mdbase-type-name {
@@ -340,7 +340,7 @@
 }
 
 .mdbase-empty-list {
-  padding: 20px 16px;
+  padding: var(--size-4-5) var(--size-4-4);
   color: var(--text-muted);
   text-align: center;
 }
@@ -356,17 +356,17 @@
   position: relative;
   z-index: 2;
   top: 0;
-  min-height: 52px;
+  min-height: var(--touch-size-l, 52px);
   justify-content: space-between;
-  gap: 16px;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  gap: var(--size-4-4);
+  padding: var(--size-4-2) var(--size-4-5);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
   background: var(--background-primary);
 }
 
 .mdbase-editor-title-line {
   min-width: 0;
-  gap: 8px;
+  gap: var(--size-4-2);
 }
 
 .mdbase-editor-title-line h2 {
@@ -399,7 +399,7 @@
   justify-content: space-between;
   gap: var(--size-4-2) var(--size-4-3);
   padding: var(--size-4-2) var(--size-4-5);
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
   color: var(--text-muted);
   font-size: var(--font-ui-small);
 }
@@ -429,7 +429,7 @@
 /* Below the type list, outside its scroll. */
 .mdbase-type-list-footer {
   padding: var(--size-4-2);
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-type-catalog-button {
@@ -458,17 +458,17 @@
 .mdbase-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--size-4-2);
 }
 
 .mdbase-spec-badge {
   flex: 0 0 auto;
-  padding: 2px 6px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
+  padding: var(--size-2-1) var(--size-2-3);
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
   color: var(--text-muted);
   font-family: var(--font-monospace);
-  font-size: 10px;
+  font-size: var(--font-ui-smaller);
   font-weight: var(--font-normal);
 }
 
@@ -480,8 +480,8 @@
 .mdbase-mode-switch {
   display: flex;
   width: fit-content;
-  gap: 2px;
-  margin: 8px 20px 0;
+  gap: var(--size-2-1);
+  margin: var(--size-4-2) var(--size-4-5) 0;
   padding: 0;
   border: 0;
   border-radius: var(--button-radius);
@@ -504,7 +504,7 @@
   max-width: 760px;
   margin: 0 auto;
   /* Leave room for Obsidian's floating status bar so it never covers the last control. */
-  padding: 8px 24px calc(32px + var(--status-bar-height, 26px));
+  padding: var(--size-4-2) var(--size-4-6) calc(32px + var(--status-bar-height, 26px));
 }
 
 .mdbase-editor-document {
@@ -519,9 +519,9 @@
   min-height: 48px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 20px calc(8px + var(--status-bar-height, 26px));
-  border-top: 1px solid var(--background-modifier-border);
+  gap: var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-5) calc(8px + var(--status-bar-height, 26px));
+  border-top: var(--border-width) solid var(--background-modifier-border);
   background: var(--background-primary);
 }
 
@@ -529,7 +529,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--size-2-1);
 }
 
 .mdbase-draft-summary span {
@@ -538,8 +538,8 @@
 }
 
 .mdbase-editor-section {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-4) 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-editor-section:last-child {
@@ -547,14 +547,14 @@
 }
 
 .mdbase-editor-section h3 {
-  margin: 0 0 14px;
+  margin: 0 0 var(--size-4-3);
   font-size: var(--font-ui-medium);
 }
 
 .mdbase-section-header,
 .mdbase-document-header {
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--size-4-4);
 }
 
 .mdbase-section-header h3 {
@@ -562,12 +562,12 @@
 }
 
 .mdbase-document-header {
-  padding: 20px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-5) 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-document-header p {
-  margin: 4px 0 0;
+  margin: var(--size-4-1) 0 0;
   color: var(--text-muted);
 }
 
@@ -575,12 +575,12 @@
   display: grid;
   grid-template-columns: minmax(100px, 150px) minmax(0, 1fr);
   align-items: start;
-  gap: 5px 16px;
-  padding: 8px 0;
+  gap: var(--size-2-3) var(--size-4-4);
+  padding: var(--size-4-2) 0;
 }
 
 .mdbase-form-row > label {
-  padding-top: 6px;
+  padding-top: var(--size-2-3);
   font-weight: var(--font-medium);
 }
 
@@ -606,17 +606,17 @@
   display: flex;
   min-height: 36px;
   align-items: center;
-  gap: 9px;
-  padding: 8px 0;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) 0;
 }
 
 .mdbase-fields {
-  margin-top: 12px;
-  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-3);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-fields > .mdbase-field-node {
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-field-toolbar,
@@ -626,15 +626,15 @@
 }
 
 .mdbase-field-toolbar {
-  min-height: 44px;
+  min-height: var(--touch-size-m, 44px);
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
+  gap: var(--size-4-3);
+  margin-top: var(--size-4-2);
 }
 
 .mdbase-field-toolbar-actions {
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--size-4-2);
 }
 
 .mdbase-field-toolbar-actions input {
@@ -651,8 +651,8 @@ details.mdbase-field-node {
   min-height: 36px;
   grid-template-columns: 14px minmax(0, 1fr) minmax(60px, 80px) minmax(0, 1.2fr) 60px;
   align-items: center;
-  gap: 12px;
-  padding: 7px 8px 7px 4px;
+  gap: var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-2) var(--size-4-2) var(--size-4-1);
   cursor: pointer;
   list-style-position: outside;
 }
@@ -702,7 +702,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 
 @media (prefers-reduced-motion: no-preference) {
   .mdbase-field-chevron {
-    transition: transform 150ms ease;
+    transition: transform var(--anim-duration-fast) var(--anim-motion-smooth);
   }
 }
 
@@ -730,7 +730,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 
 .mdbase-field-node[open] > .mdbase-field-row {
   padding: var(--size-4-3) var(--size-4-2);
-  border-top: 1px solid var(--background-modifier-border-hover);
+  border-top: var(--border-width) solid var(--background-modifier-border-hover);
 }
 
 /* Rules, choices and link options line up with the name and type boxes above them. */
@@ -743,7 +743,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
   grid-template-columns: minmax(0, 1fr) 140px 34px;
   align-items: end;
   gap: var(--size-4-2);
-  padding: 10px 0;
+  padding: var(--size-4-3) 0;
 }
 
 .mdbase-field-cell {
@@ -784,7 +784,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 .mdbase-field-required {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--size-2-3);
   font-size: var(--font-ui-small);
   white-space: nowrap;
 }
@@ -807,7 +807,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 }
 
 .mdbase-field-role {
-  padding-left: 2px;
+  padding-left: var(--size-2-1);
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   font-weight: var(--font-medium);
@@ -817,8 +817,8 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
   display: grid;
   grid-template-columns: minmax(110px, 120px) minmax(180px, 1fr) auto;
   align-items: center;
-  gap: 8px 12px;
-  padding: 0 42px 10px 0;
+  gap: var(--size-4-2) var(--size-4-3);
+  padding: 0 42px var(--size-4-3) 0;
 }
 
 .mdbase-field-details > label:not(.mdbase-field-required) {
@@ -831,13 +831,13 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 }
 
 .mdbase-field-children {
-  margin: 2px 0 10px 7px;
-  padding: 5px 0 2px 10px;
-  border-left: 1px solid var(--background-modifier-border);
+  margin: var(--size-2-1) 0 var(--size-4-3) var(--size-4-2);
+  padding: var(--size-2-3) 0 var(--size-2-1) var(--size-4-3);
+  border-left: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-field-children > .mdbase-link-button {
-  margin: 6px 0 4px;
+  margin: var(--size-2-3) 0 var(--size-4-1);
 }
 
 .mdbase-field-children-label {
@@ -848,11 +848,11 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 
 .mdbase-field-children > .mdbase-field-node,
 .mdbase-nested-fields > .mdbase-field-node {
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-nested-fields > .mdbase-empty-list {
-  padding: 10px 0;
+  padding: var(--size-4-3) 0;
   text-align: left;
 }
 
@@ -862,31 +862,31 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 
 .mdbase-contract-empty,
 .mdbase-contract-unavailable {
-  margin-top: 12px;
-  padding: 12px 14px;
+  margin-top: var(--size-4-3);
+  padding: var(--size-4-3) var(--size-4-3);
   color: var(--text-muted);
   background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
+  border: var(--border-width) solid var(--background-modifier-border);
   line-height: 1.45;
 }
 
 .mdbase-contract-implementation {
-  margin-top: 14px;
-  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-3);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-contract-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
+  gap: var(--size-4-3);
+  padding: var(--size-4-3) 0;
 }
 
 .mdbase-contract-header > div {
   display: flex;
   align-items: baseline;
-  gap: 9px;
+  gap: var(--size-4-2);
   min-width: 0;
 }
 
@@ -901,30 +901,30 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 }
 
 .mdbase-contract-implementation details {
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-contract-implementation summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
+  gap: var(--size-4-3);
+  padding: var(--size-4-3) 0;
   cursor: pointer;
   color: var(--text-normal);
 }
 
 .mdbase-contract-mapping-list {
-  padding: 4px 0 14px;
+  padding: var(--size-4-1) 0 var(--size-4-3);
 }
 
 .mdbase-contract-mapping-row {
   display: grid;
   grid-template-columns: minmax(150px, .9fr) minmax(180px, 1fr) minmax(150px, .8fr);
   align-items: center;
-  gap: 12px;
-  padding: 11px 0;
-  border-top: 1px solid var(--background-modifier-border-hover);
+  gap: var(--size-4-3);
+  padding: var(--size-4-3) 0;
+  border-top: var(--border-width) solid var(--background-modifier-border-hover);
 }
 
 .mdbase-contract-mapping-row select {
@@ -935,7 +935,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 .mdbase-contract-mapping-status {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--size-2-2);
   min-width: 0;
 }
 
@@ -974,15 +974,15 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 }
 
 .mdbase-contract-settings-body {
-  padding: 3px 0 14px;
+  padding: var(--size-2-2) 0 var(--size-4-3);
 }
 
 .mdbase-contract-settings-body > p {
-  margin: 4px 0 12px;
+  margin: var(--size-4-1) 0 var(--size-4-3);
 }
 
 .mdbase-contract-schema-object {
-  margin: 8px 0 0;
+  margin: var(--size-4-2) 0 0;
   padding: 0;
   border: 0;
 }
@@ -997,10 +997,10 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 .mdbase-contract-schema-field {
   display: grid;
   grid-template-columns: minmax(140px, .6fr) minmax(180px, 1fr);
-  gap: 5px 14px;
+  gap: var(--size-2-3) var(--size-4-3);
   align-items: center;
-  padding: 8px 0;
-  border-top: 1px solid var(--background-modifier-border-hover);
+  padding: var(--size-4-2) 0;
+  border-top: var(--border-width) solid var(--background-modifier-border-hover);
 }
 
 .mdbase-contract-schema-field small {
@@ -1019,14 +1019,14 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 .mdbase-contract-schema-array {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--size-2-3);
 }
 
 .mdbase-contract-schema-array-item {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: var(--size-2-3);
 }
 
 .mdbase-contract-schema-array-item > span {
@@ -1038,8 +1038,8 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 .mdbase-contract-schema-add {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 10px;
+  gap: var(--size-4-2);
+  padding-top: var(--size-4-3);
 }
 
 .mdbase-contract-schema-add select {
@@ -1049,11 +1049,11 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 .mdbase-contract-add {
   display: grid;
   grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr) auto;
-  gap: 8px 12px;
+  gap: var(--size-4-2) var(--size-4-3);
   align-items: center;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-4);
+  padding-top: var(--size-4-3);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-contract-add select {
@@ -1073,21 +1073,21 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 }
 
 .mdbase-diagnostic-summary {
-  margin-bottom: 16px;
-  border-top: 1px solid var(--background-modifier-border);
+  margin-bottom: var(--size-4-4);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-diagnostic-summary > strong {
   display: block;
-  padding: 10px 0;
+  padding: var(--size-4-3) 0;
 }
 
 .mdbase-diagnostic-item {
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--background-modifier-border-hover);
+  gap: var(--size-4-3);
+  padding: var(--size-4-2) 0;
+  border-top: var(--border-width) solid var(--background-modifier-border-hover);
 }
 
 .mdbase-diagnostic-item code {
@@ -1106,7 +1106,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 }
 
 .mdbase-yaml-editor.cm-editor {
-  border: 1px solid var(--background-modifier-border);
+  border: var(--border-width) solid var(--background-modifier-border);
   border-radius: var(--radius-s);
   background: var(--background-primary);
 }
@@ -1123,7 +1123,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 }
 
 .mdbase-yaml-editor .cm-gutters {
-  border-right: 1px solid var(--background-modifier-border);
+  border-right: var(--border-width) solid var(--background-modifier-border);
   background: var(--background-secondary);
   /* --text-faint is too faint to read line numbers against the gutter. */
   color: var(--text-muted);
@@ -1144,7 +1144,7 @@ details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
 .mdbase-yaml-problems {
   display: flex;
   flex-direction: column;
-  padding-top: 8px;
+  padding-top: var(--size-4-2);
 }
 
 button.mdbase-yaml-problem {
@@ -1153,8 +1153,8 @@ button.mdbase-yaml-problem {
   min-height: 30px;
   align-items: baseline;
   justify-content: flex-start;
-  gap: 10px;
-  padding: 4px 2px;
+  gap: var(--size-4-3);
+  padding: var(--size-4-1) var(--size-2-1);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1184,15 +1184,15 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-yaml-problem[data-severity="warning"] .mdbase-yaml-problem-line-number { color: var(--text-warning); }
 
 .mdbase-status-list {
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-status-row {
   display: grid;
   grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
-  gap: 16px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  gap: var(--size-4-4);
+  padding: var(--size-4-2) 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-status-label {
@@ -1204,8 +1204,8 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-review-item {
-  padding: 10px 0;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-3) 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-review-item[data-severity="lossy"] .mdbase-review-code {
@@ -1214,7 +1214,7 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-review-code,
 .mdbase-review-ok {
-  margin-bottom: 3px;
+  margin-bottom: var(--size-2-2);
   color: var(--text-muted);
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
@@ -1222,12 +1222,12 @@ button.mdbase-yaml-problem:disabled {
 
 /* Default surfaces are quiet; configuration and diagnostics expand in place. */
 .mdbase-disclosure {
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-disclosure > summary {
   min-height: 40px;
-  padding: 10px 0;
+  padding: var(--size-4-3) 0;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   cursor: pointer;
@@ -1243,13 +1243,13 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-disclosure-body {
-  padding: 0 0 12px;
+  padding: 0 0 var(--size-4-3);
 }
 
 .mdbase-workspace .mdbase-icon-button {
   min-width: 28px;
   min-height: 28px;
-  padding: 4px;
+  padding: var(--size-4-1);
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -1264,18 +1264,18 @@ button.mdbase-yaml-problem:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--size-4-3);
 }
 
 /* Sync: one heading that says how this vault is, then only what can be done. */
 .mdbase-sync {
   max-width: 640px;
   margin: 0 auto;
-  padding: 8px 24px calc(32px + var(--status-bar-height, 26px));
+  padding: var(--size-4-2) var(--size-4-6) calc(32px + var(--status-bar-height, 26px));
 }
 
 .mdbase-sync p {
-  margin: 0 0 12px;
+  margin: 0 0 var(--size-4-3);
   line-height: var(--line-height-normal);
 }
 
@@ -1286,21 +1286,21 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-sync > .mdbase-actions {
   justify-content: flex-start;
-  margin: 4px 0 16px;
+  margin: var(--size-4-1) 0 var(--size-4-4);
 }
 
 .mdbase-sync-heading {
   display: flex;
   align-items: flex-start;
-  gap: var(--size-4-3, 12px);
-  margin: var(--size-4-4, 16px) 0 var(--size-4-6, 24px);
+  gap: var(--size-4-3);
+  margin: var(--size-4-4) 0 var(--size-4-6);
 }
 
 .mdbase-sync-heading-icon {
   display: flex;
-  padding-top: 2px;
+  padding-top: var(--size-2-1);
   color: var(--text-muted);
-  --icon-size: var(--icon-l, 20px);
+  --icon-size: var(--icon-l);
   --icon-stroke: var(--icon-l-stroke-width, 1.75px);
 }
 
@@ -1314,7 +1314,7 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-sync-heading h2 {
-  margin: 0 0 2px;
+  margin: 0 0 var(--size-2-1);
   font-size: var(--font-ui-large);
   overflow-wrap: anywhere;
 }
@@ -1335,7 +1335,7 @@ button.mdbase-yaml-problem:disabled {
 
 /* Sections are Obsidian settings groups: heading above, theme's setting-items card below. */
 .mdbase-sync-group {
-  margin: 0 0 var(--size-4-6, 24px);
+  margin: 0 0 var(--size-4-6);
 }
 
 .mdbase-sync-group > .setting-item-heading {
@@ -1343,7 +1343,7 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-sync-section {
-  padding: var(--size-4-3, 12px) var(--size-4-4, 16px);
+  padding: var(--size-4-3) var(--size-4-4);
 }
 
 .mdbase-sync-section > p:last-child {
@@ -1351,7 +1351,7 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-sync .mdbase-sync-section .setting-item {
-  padding: var(--size-4-2, 8px) 0;
+  padding: var(--size-4-2) 0;
   border-top: none;
 }
 
@@ -1361,21 +1361,21 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-sync-section .mdbase-actions {
   justify-content: flex-start;
-  margin-top: 8px;
+  margin-top: var(--size-4-2);
 }
 
 .mdbase-sync-now {
   flex-wrap: wrap;
-  gap: var(--size-4-3, 12px);
+  gap: var(--size-4-3);
 }
 
 .mdbase-sync-now-button {
-  gap: var(--size-4-2, 8px);
+  gap: var(--size-4-2);
 }
 
 .mdbase-sync-now-icon {
   display: inline-flex;
-  --icon-size: var(--icon-s, 16px);
+  --icon-size: var(--icon-s);
 }
 
 .mdbase-sync-now-result {
@@ -1411,13 +1411,13 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-activity-filters {
   flex-wrap: wrap;
-  gap: var(--size-2-1, 2px);
+  gap: var(--size-2-1);
 }
 
 /* Obsidian's flat nav-item look rather than filled buttons. */
 .mdbase-activity-filters button.mdbase-activity-filter {
   height: auto;
-  padding: var(--size-2-1, 2px) var(--size-4-2, 8px);
+  padding: var(--size-2-1) var(--size-4-2);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
@@ -1435,25 +1435,25 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-activity {
-  padding: var(--size-4-1, 4px) 0;
+  padding: var(--size-4-1) 0;
 }
 
 .mdbase-activity-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--size-4-3, 12px);
-  padding: var(--size-4-2, 8px) var(--size-4-4, 16px);
+  gap: var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-4);
 }
 
 .mdbase-activity-row + .mdbase-activity-row {
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-activity-icon {
   display: flex;
   color: var(--text-faint);
-  --icon-size: var(--icon-s, 16px);
+  --icon-size: var(--icon-s);
 }
 
 .mdbase-activity-row[data-kind="not_synced"] .mdbase-activity-icon,
@@ -1491,26 +1491,26 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-activity-empty {
-  padding: var(--size-4-3, 12px) var(--size-4-4, 16px);
+  padding: var(--size-4-3) var(--size-4-4);
 }
 
 .mdbase-sync-group > .mdbase-load-more {
-  margin-top: var(--size-4-2, 8px);
+  margin-top: var(--size-4-2);
 }
 
 .mdbase-sync-choice {
   display: grid;
-  gap: 8px;
-  margin: 8px 0;
+  gap: var(--size-4-2);
+  margin: var(--size-4-2) 0;
 }
 
 .mdbase-sync-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-s, 4px);
+  gap: var(--size-4-3);
+  padding: var(--size-4-3) var(--size-4-3);
+  border-radius: var(--radius-s);
   cursor: pointer;
 }
 
@@ -1523,15 +1523,15 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-sync-option input {
-  margin: 3px 0 0;
+  margin: var(--size-2-2) 0 0;
 }
 
 .mdbase-sync-option-title {
-  font-weight: var(--font-semibold, 600);
+  font-weight: var(--font-semibold);
 }
 
 .mdbase-sync-notice.callout {
-  margin: 0 0 var(--size-4-4, 16px);
+  margin: 0 0 var(--size-4-4);
 }
 
 .mdbase-sync-notice p:last-child,
@@ -1544,30 +1544,30 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-sync .mdbase-status-list {
-  margin-bottom: 12px;
+  margin-bottom: var(--size-4-3);
 }
 
 .mdbase-hold-list {
   display: grid;
-  gap: 12px;
+  gap: var(--size-4-3);
 }
 
 .mdbase-hold {
-  padding-top: 12px;
-  border-top: 1px solid var(--background-modifier-border);
+  padding-top: var(--size-4-3);
+  border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .mdbase-hold-path {
-  font-weight: var(--font-semibold, 600);
+  font-weight: var(--font-semibold);
   overflow-wrap: anywhere;
 }
 
 .mdbase-hold .mdbase-disclosure {
-  margin: 6px 0;
+  margin: var(--size-2-3) 0;
 }
 
 .mdbase-hold-label {
-  margin: 8px 0 4px;
+  margin: var(--size-4-2) 0 var(--size-4-1);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
 }
@@ -1575,9 +1575,9 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-hold-text {
   max-height: 240px;
   margin: 0;
-  padding: 8px;
+  padding: var(--size-4-2);
   overflow: auto;
-  border-radius: var(--radius-s, 4px);
+  border-radius: var(--radius-s);
   background: var(--background-secondary);
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
@@ -1585,61 +1585,38 @@ button.mdbase-yaml-problem:disabled {
   overflow-wrap: anywhere;
 }
 
-.mdbase-recovery-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 12px 14px;
-  border-left: 3px solid var(--text-warning);
-  background: var(--background-secondary);
-}
 
-.mdbase-recovery-card strong,
-.mdbase-recovery-card div div {
-  display: block;
-}
 
-.mdbase-recovery-card div div {
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-}
 
 /* Offline and paused clear up on their own or on resume; they are not alarms. */
-.mdbase-recovery-card[data-kind="offline"],
-.mdbase-recovery-card[data-kind="paused"] {
-  border-left-color: var(--text-muted);
-}
 
 /* Issues use Obsidian's search-result markup: a tree item per file or rule,
    and a bordered list of matches beneath it. */
 .mdbase-issue-group {
-  margin-bottom: var(--size-4-2, 8px);
+  margin-bottom: var(--size-4-2);
 }
 
 .mdbase-issue-group-header.tree-item-self {
   align-items: center;
-  padding-inline-start: var(--size-4-2, 8px);
+  padding-inline-start: var(--size-4-2);
 }
 
 .mdbase-issue-group-header .tree-item-inner {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: var(--size-4-2, 8px);
+  gap: var(--size-4-2);
 }
 
 .mdbase-issue-group-header .tree-item-flair-outer {
-  gap: var(--size-4-2, 8px);
+  gap: var(--size-4-2);
 }
 
 .mdbase-issue-file-icon {
   display: inline-flex;
   flex: 0 0 auto;
   color: var(--icon-color);
-  --icon-size: var(--icon-s, 16px);
+  --icon-size: var(--icon-s);
 }
 
 .mdbase-issue-file-path {
@@ -1652,8 +1629,8 @@ button.mdbase-yaml-problem:disabled {
   display: grid;
   grid-template-columns: 8px minmax(110px, 170px) minmax(0, 1fr) auto;
   align-items: start;
-  gap: var(--size-4-2, 8px);
-  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-3);
   cursor: default;
   white-space: normal;
 }
@@ -1666,7 +1643,7 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-issue-indicator {
   width: 7px;
   height: 7px;
-  margin-top: 5px;
+  margin-top: var(--size-2-3);
   border-radius: 50%;
   background: var(--text-muted);
 }
@@ -1695,7 +1672,7 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-issue-context {
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: var(--size-2-2);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   text-overflow: ellipsis;
@@ -1722,7 +1699,7 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-issue-row-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--size-2-3);
 }
 
 .mdbase-issue-row-actions button {
@@ -1734,8 +1711,8 @@ button.mdbase-yaml-problem:disabled {
   display: grid;
   grid-template-columns: max-content max-content minmax(180px, 1fr);
   align-items: center;
-  gap: var(--size-4-2, 8px);
-  padding: var(--size-4-4, 16px) 0 var(--size-4-3, 12px);
+  gap: var(--size-4-2);
+  padding: var(--size-4-4) 0 var(--size-4-3);
 }
 
 .mdbase-issue-search.search-input-container {
@@ -1744,13 +1721,13 @@ button.mdbase-yaml-problem:disabled {
 }
 
 .mdbase-issues-summary.search-results-info {
-  padding: 0 0 var(--size-4-2, 8px);
+  padding: 0 0 var(--size-4-2);
 }
 
 .mdbase-load-more {
   display: block;
   min-height: 40px;
-  margin: 18px auto;
+  margin: var(--size-4-4) auto;
 }
 
 /* Type list counts and unsaved drafts */
@@ -1760,13 +1737,13 @@ button.mdbase-yaml-problem:disabled {
   min-width: 0;
   flex: 1;
   align-items: center;
-  gap: 6px;
+  gap: var(--size-2-3);
 }
 
 .mdbase-type-meta {
   display: flex;
   align-items: center;
-  gap: var(--size-4-1, 4px);
+  gap: var(--size-4-1);
 }
 
 .mdbase-type-issues {
@@ -1786,7 +1763,7 @@ button.mdbase-yaml-problem:disabled {
 
 .mdbase-type-issues-icon {
   display: inline-flex;
-  --icon-size: var(--icon-xs, 12px);
+  --icon-size: var(--icon-xs);
 }
 
 .mdbase-unsaved-dot {
@@ -1821,7 +1798,7 @@ button.mdbase-link-button:hover {
 /* Matching preview and impact on notes */
 
 .mdbase-match-preview {
-  padding: 4px 0 10px;
+  padding: var(--size-4-1) 0 var(--size-4-3);
 }
 
 .mdbase-match-summary,
@@ -1829,7 +1806,7 @@ button.mdbase-link-button:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
+  gap: var(--size-4-1) var(--size-4-3);
   font-size: var(--font-ui-small);
 }
 
@@ -1840,8 +1817,8 @@ button.mdbase-link-button:hover {
 .mdbase-impact-list {
   display: flex;
   flex-direction: column;
-  margin: 6px 0;
-  border-top: 1px solid var(--background-modifier-border-hover);
+  margin: var(--size-2-3) 0;
+  border-top: var(--border-width) solid var(--background-modifier-border-hover);
 }
 
 button.mdbase-match-row {
@@ -1849,10 +1826,10 @@ button.mdbase-match-row {
   height: auto;
   min-height: 28px;
   justify-content: flex-start;
-  gap: 8px;
-  padding: 3px 4px;
+  gap: var(--size-4-2);
+  padding: var(--size-2-2) var(--size-4-1);
   border: 0;
-  border-bottom: 1px solid var(--background-modifier-border-hover);
+  border-bottom: var(--border-width) solid var(--background-modifier-border-hover);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -1878,7 +1855,7 @@ button.mdbase-match-row:hover {
 .mdbase-match-row[data-change="removed"] .mdbase-match-marker { color: var(--text-warning); }
 
 .mdbase-impact {
-  padding-bottom: 10px;
+  padding-bottom: var(--size-4-3);
 }
 
 .mdbase-impact-heading[data-tone="warning"] strong {
@@ -1888,9 +1865,9 @@ button.mdbase-match-row:hover {
 .mdbase-impact-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--background-modifier-border-hover);
+  gap: var(--size-2-1);
+  padding: var(--size-2-3) 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border-hover);
   font-size: var(--font-ui-small);
 }
 
@@ -1914,14 +1891,14 @@ button.mdbase-match-row:hover {
 .mdbase-field-details.mdbase-field-constraints {
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   align-items: start;
-  padding: 0 0 10px;
+  padding: 0 0 var(--size-4-3);
 }
 
 .mdbase-constraint {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--size-2-2);
 }
 
 .mdbase-constraint-wide {
@@ -1955,20 +1932,20 @@ button.mdbase-match-row:hover {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
-  padding: 0 0 10px;
+  gap: var(--size-4-1);
+  padding: 0 0 var(--size-4-3);
 }
 
 .mdbase-enum-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--size-4-1);
 }
 
 .mdbase-enum-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--size-4-1);
 }
 
 .mdbase-enum-row input {
@@ -1984,7 +1961,7 @@ button.mdbase-match-row:hover {
 
 .mdbase-enum-values > .mdbase-link-button {
   align-self: flex-start;
-  padding: 4px 0;
+  padding: var(--size-4-1) 0;
 }
 
 /* Issues grouped by rule */
@@ -2006,8 +1983,8 @@ button.mdbase-match-row:hover {
 
 @container mdbase-workspace (max-width: 760px) {
   .mdbase-topbar {
-    min-height: 52px;
-    padding: 0 8px 0 12px;
+    min-height: var(--touch-size-l, 52px);
+    padding: 0 var(--size-4-2) 0 var(--size-4-3);
   }
 
   .mdbase-nav {
@@ -2017,7 +1994,7 @@ button.mdbase-match-row:hover {
 
   .mdbase-nav-button {
     min-width: 62px;
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-legacy-banner {
@@ -2025,7 +2002,7 @@ button.mdbase-match-row:hover {
   }
 
   .mdbase-legacy-banner button {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-types-layout {
@@ -2047,7 +2024,7 @@ button.mdbase-match-row:hover {
   }
 
   .mdbase-type-row {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-mobile-back {
@@ -2057,15 +2034,15 @@ button.mdbase-match-row:hover {
   .mdbase-editor-header {
     position: static;
     min-height: 58px;
-    gap: 8px;
-    padding: 7px 10px;
+    gap: var(--size-4-2);
+    padding: var(--size-4-2) var(--size-4-3);
   }
 
   .mdbase-draft-bar {
     align-items: stretch;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px 14px calc(10px + var(--status-bar-height, 26px));
+    gap: var(--size-4-2);
+    padding: var(--size-4-3) var(--size-4-3) calc(10px + var(--status-bar-height, 26px));
   }
 
   .mdbase-draft-bar .mdbase-actions {
@@ -2079,12 +2056,12 @@ button.mdbase-match-row:hover {
   }
 
   .mdbase-editor-actions button {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-mode-switch {
     width: calc(100% - 24px);
-    margin: 12px;
+    margin: var(--size-4-3);
   }
 
   .mdbase-mode-switch button {
@@ -2095,13 +2072,13 @@ button.mdbase-match-row:hover {
   .mdbase-editor-document,
   .mdbase-issues-document,
   .mdbase-sync {
-    padding: 4px 14px 48px;
+    padding: var(--size-4-1) var(--size-4-3) var(--size-4-12);
   }
 
   .mdbase-form-row {
     grid-template-columns: 1fr;
-    gap: 5px;
-    padding: 10px 0;
+    gap: var(--size-2-3);
+    padding: var(--size-4-3) 0;
   }
 
   .mdbase-form-row > label,
@@ -2117,19 +2094,19 @@ button.mdbase-match-row:hover {
   .mdbase-form-row > select,
   .mdbase-actions button,
   .mdbase-section-header button {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-field-row {
     grid-template-columns: minmax(0, 1fr) 110px 44px;
-    gap: 8px;
-    padding: 12px 0;
+    gap: var(--size-4-2);
+    padding: var(--size-4-3) 0;
   }
 
   .mdbase-field-toolbar {
     align-items: stretch;
     flex-direction: column;
-    padding: 8px 0;
+    padding: var(--size-4-2) 0;
   }
 
   .mdbase-field-toolbar-actions,
@@ -2167,7 +2144,7 @@ button.mdbase-match-row:hover {
 
   .mdbase-diagnostic-item {
     grid-template-columns: 1fr;
-    gap: 4px;
+    gap: var(--size-4-1);
   }
 
   .mdbase-field-description-control,
@@ -2186,7 +2163,7 @@ button.mdbase-match-row:hover {
   .mdbase-field-menu {
     grid-column: 3;
     grid-row: 1;
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-field-details {
@@ -2199,18 +2176,18 @@ button.mdbase-match-row:hover {
   }
 
   .mdbase-field-children {
-    margin-left: 6px;
-    padding-left: 10px;
+    margin-left: var(--size-2-3);
+    padding-left: var(--size-4-3);
   }
 
   .mdbase-field-children > .mdbase-link-button,
   .mdbase-enum-values > .mdbase-link-button {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-contract-mapping-row {
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: var(--size-4-2);
   }
 
   .mdbase-contract-add {
@@ -2224,7 +2201,7 @@ button.mdbase-match-row:hover {
   .mdbase-contract-schema-field > input,
   .mdbase-contract-schema-field > select,
   .mdbase-contract-schema-array button {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-contract-schema-field {
@@ -2240,7 +2217,7 @@ button.mdbase-match-row:hover {
   }
 
   .mdbase-contract-header button {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-document-header {
@@ -2248,7 +2225,6 @@ button.mdbase-match-row:hover {
     flex-direction: column;
   }
 
-  .mdbase-recovery-card { grid-template-columns: 1fr; }
 
   .mdbase-status-row {
     grid-template-columns: 110px minmax(0, 1fr);
@@ -2256,8 +2232,8 @@ button.mdbase-match-row:hover {
 
   .mdbase-workspace .mdbase-icon-button,
   .mdbase-disclosure > summary {
-    min-height: 44px;
-    min-width: 44px;
+    min-height: var(--touch-size-m, 44px);
+    min-width: var(--touch-size-m, 44px);
   }
 
   .mdbase-issue-controls {
@@ -2267,11 +2243,11 @@ button.mdbase-match-row:hover {
   .mdbase-issue-controls input,
   .mdbase-issue-controls select,
   .mdbase-load-more {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .search-result-file-match.mdbase-issue-row {
-    min-height: 60px;
+    min-height: var(--touch-size-xl, 60px);
     grid-template-columns: 8px minmax(0, 1fr);
   }
 
@@ -2289,7 +2265,7 @@ button.mdbase-match-row:hover {
   }
 
   .mdbase-issue-row-actions button {
-    min-height: 44px;
+    min-height: var(--touch-size-m, 44px);
   }
 
   .mdbase-issue-file-count {
@@ -2302,7 +2278,7 @@ button.mdbase-match-row:hover {
   .mdbase-nav-button,
   .mdbase-type-row,
   .mdbase-mode-switch button {
-    transition: background-color 160ms ease, color 160ms ease;
+    transition: background-color var(--anim-duration-fast) var(--anim-motion-smooth), color var(--anim-duration-fast) var(--anim-motion-smooth);
   }
 }
 
@@ -2317,7 +2293,7 @@ button.mdbase-match-row:hover {
 .is-mobile .mdbase-issue-controls input,
 .is-mobile .mdbase-issue-controls select,
 .is-mobile .mdbase-load-more {
-  min-height: 44px;
+  min-height: var(--touch-size-m, 44px);
 }
 
 .is-mobile .mdbase-types-layout {
@@ -2340,8 +2316,8 @@ button.mdbase-match-row:hover {
 
 /* Touch-sized targets throughout Types (DESIGN.md: at least 44px). */
 .is-mobile .mdbase-types-layout .mdbase-icon-button {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: var(--touch-size-m, 44px);
+  min-height: var(--touch-size-m, 44px);
 }
 
 .is-mobile .mdbase-type-row,
@@ -2352,7 +2328,7 @@ button.mdbase-match-row:hover {
 .is-mobile .mdbase-draft-recovery button,
 .is-mobile .mdbase-field-row select,
 .is-mobile .mdbase-field-row input[type="text"] {
-  min-height: 44px;
+  min-height: var(--touch-size-m, 44px);
 }
 
 .is-mobile .mdbase-mobile-back {
@@ -2379,8 +2355,8 @@ button.mdbase-match-row:hover {
 
 .is-mobile .mdbase-field-row {
   grid-template-columns: minmax(0, 1fr) 110px 44px;
-  gap: 8px;
-  padding: 12px 0;
+  gap: var(--size-4-2);
+  padding: var(--size-4-3) 0;
 }
 
 .is-mobile .mdbase-field-description-control,
@@ -2399,7 +2375,7 @@ button.mdbase-match-row:hover {
 .is-mobile .mdbase-field-menu {
   grid-column: 3;
   grid-row: 1;
-  min-height: 44px;
+  min-height: var(--touch-size-m, 44px);
 }
 
 .is-mobile .mdbase-field-details {
@@ -2412,17 +2388,17 @@ button.mdbase-match-row:hover {
 }
 
 .is-mobile .mdbase-field-children {
-  margin-left: 6px;
-  padding-left: 10px;
+  margin-left: var(--size-2-3);
+  padding-left: var(--size-4-3);
 }
 
 .is-mobile .mdbase-field-children > .mdbase-link-button,
 .is-mobile .mdbase-enum-values > .mdbase-link-button {
-  min-height: 44px;
+  min-height: var(--touch-size-m, 44px);
 }
 
 .is-mobile button.mdbase-issue-row {
-  min-height: 60px;
+  min-height: var(--touch-size-xl, 60px);
   grid-template-columns: 8px minmax(0, 1fr);
 }
 
@@ -2437,13 +2413,13 @@ button.mdbase-match-row:hover {
 
 .is-mobile .mdbase-enum-row .mdbase-icon-button,
 .is-mobile button.mdbase-match-row {
-  min-height: 44px;
+  min-height: var(--touch-size-m, 44px);
 }
 
 .mdbase-prompt-field {
   display: grid;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: var(--size-2-3);
+  margin-bottom: var(--size-4-3);
 }
 
 .mdbase-prompt-field label {
@@ -2453,14 +2429,14 @@ button.mdbase-match-row:hover {
 .mdbase-section-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--size-2-1);
 }
 
 .mdbase-create-note .mdbase-form-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: var(--size-2-3);
+  margin-bottom: var(--size-4-2);
 }
 
 .mdbase-create-note .mdbase-form-row > * {
@@ -2514,7 +2490,7 @@ button.mdbase-match-row:hover {
 }
 
 .is-mobile .mdbase-create-note button {
-  min-height: 44px;
+  min-height: var(--touch-size-m, 44px);
 }
 
 /* Unlocking a Private collection */
@@ -2554,7 +2530,7 @@ button.mdbase-match-row:hover {
 
 .mdbase-choice-tag {
   margin-left: var(--size-4-2);
-  padding: 1px 6px;
+  padding: 1px var(--size-2-3);
   border-radius: var(--radius-s);
   background: var(--background-modifier-hover);
   color: var(--text-muted);

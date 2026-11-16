@@ -24,14 +24,14 @@ export class ValidationState {
 
   summary(paths: string[]): string {
     if (this.progress) return this.progress.phase === "uniqueness"
-      ? `Checked ${this.progress.completed} of ${this.progress.total} notes · checking uniqueness…`
+      ? `Checked ${this.progress.completed} of ${this.progress.total} notes · checking for duplicate values…`
       : `Checking ${this.progress.completed} of ${this.progress.total} notes…`;
     const checked = paths.filter(path => this.checked.has(path)).length;
     if (this.cancelled) return `Validation stopped · ${checked} of ${paths.length} notes checked · results incomplete`;
     if (this.lastCompletedAt && this.completedRevision === this.revision) {
-      return `Validated ${new Date(this.lastCompletedAt).toLocaleTimeString()} · ${paths.length} notes · including uniqueness`;
+      return `Checked ${paths.length} notes at ${new Date(this.lastCompletedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
     }
     if (this.lastCompletedAt) return `Changed since last collection validation · ${checked} of ${paths.length} notes checked`;
-    return checked ? `Checked ${checked} of ${paths.length} notes · collection uniqueness not checked` : "Not checked yet";
+    return checked ? `Checked ${checked} of ${paths.length} notes · duplicate values not checked yet` : "Not checked yet";
   }
 }
