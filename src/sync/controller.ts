@@ -64,6 +64,9 @@ export interface SyncSnapshot {
       unlock?: { mode: "password" | "strict" | "none"; unlocking: boolean; name: string | null } | null;
       /** Still starting after the plugin stopped waiting: offer Restart sync. */
       stalled?: boolean;
+      /** `blocked`: who holds this folder, and whether Set up sync here is offered. */
+      owner?: "desktop" | "obsidian" | "unknown" | "unreadable";
+      takeover?: boolean;
       /** The Connect page listing the apps that can use this collection. */
       manageAccess?: string | null;
     };
@@ -210,6 +213,19 @@ export class SyncController {
   }
 
   /**
+   * Set up sync here, after the person chose to: the folder's previous owner
+   * looks like an earlier install of this plugin. Then a fresh host claims it.
+   */
+  async takeOver(): Promise<void> {
+    const native = this.native;
+    if (!native || native.phase.kind !== "blocked" || !native.phase.takeover) return;
+    // The new host does it: the blocked one has already let go of its storage.
+    this.takeOverFrom = { marker: native.blockedMarker };
+    try { await this.restartNative(); } finally { this.takeOverFrom = null; }
+  }
+  private takeOverFrom: { marker: string | null } | null = null;
+
+  /**
    * Start over from a stop. When the SDK's Worker is gone (it can't sign out),
    * restart the host first and sign out on the fresh one, as a page reload
    * then Start over would. Throws, so the person sees it, if it can't finish.
@@ -275,10 +291,10 @@ export class SyncController {
         if (!this.mobile && vaultPath) {
           const { fs, path } = desktopModules();
           try { marker = JSON.parse(fs.readFileSync(path.join(vaultPath, ".mdbase/host.json"), "utf8")); }
-          catch (e) { if ((e as { code?: string }).code !== "ENOENT") throw new Error("Cannot read folder ownership. Sync is waiting; files are untouched."); }
+          catch (e) { if ((e as { code?: string }).code !== "ENOENT") throw new Error("Sync can't tell whether another app is already syncing this vault, so it's waiting. Your notes here are untouched."); }
         }
         const owner = folderHost(marker);
-        if (owner === "wait") throw new Error("This folder is owned by another app. Sync is waiting; files are untouched.");
+        if (owner === "wait") throw new Error("Another app is already syncing this vault. Turn sync off there first. Your notes here are untouched.");
         if (owner === "plugin") {
           this.closeLink();
           // A host being torn down still holds the port and the SDK's storage.
@@ -291,6 +307,7 @@ export class SyncController {
               this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], conflicts: view?.conflicts ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound } });
             }, this.lastDesktopCollection);
             if (this.stopped || this.native) { native.unload(); return; }
+            if (this.takeOverFrom) { native.takeOverFrom = this.takeOverFrom; this.takeOverFrom = null; }
             this.native = native;
             native.load();
           }

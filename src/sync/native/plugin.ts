@@ -126,6 +126,7 @@ export default class NativeSync extends Component {
       this.bindVault();
       await this.readActivity();
       if (!this.data.collectionId && this.previousCollection) this.data.collectionId = this.previousCollection;
+      if (this.takeOverFrom) { const seen = this.takeOverFrom.marker; this.takeOverFrom = null; await marker.takeOver(this, seen); }
       // A marker from desktop, an unknown host, or another installation is never
       // overridden, even when stale. Do not overwrite data before this check.
       await this.checkOwnership();
@@ -138,7 +139,12 @@ export default class NativeSync extends Component {
       // the daemon refuses host:"obsidian" regardless of that optional field.
       await this.claim(this.data.collectionId);
       if (this.unloaded) { this.closeServer(); return; }
-    } catch (e) { this.closeServer(); this.phase = { kind: "blocked" }; this.fail("startup", e); return; }
+    } catch (e) {
+      this.closeServer();
+      if (e instanceof marker.FolderOwned) { this.blockForOwner(e); return; }
+      if (errorInfo(e).code === "platform_unsupported") { this.phase = { kind: "unsupported" }; this.setStatus(errorInfo(e).message ?? ""); return; }
+      this.phase = { kind: "blocked" }; this.fail("startup", e); return;
+    }
     this.registerDomEvent(window, "message", (e: MessageEvent) => this.onMessage(e));
     this.frame = this.app.workspace.containerEl.createEl("iframe", { attr: { src: this.pageUrl(), "data-mdbase-native": "1" } });
     Object.assign(this.frame.style, { position: "fixed", width: "1px", height: "1px", border: "0", left: "-10px", top: "-10px" });
@@ -171,7 +177,7 @@ export default class NativeSync extends Component {
     this.unloaded = true; this.admitting = false; this.mirroring = false;
     const steps: (() => void)[] = [
       () => { for (const t of [this.settleTimer, this.reconcileRetryTimer, this.stallTimer]) if (t !== null) window.clearTimeout(t); },
-      () => { if (this.markerTimer !== null) window.clearInterval(this.markerTimer); },
+      () => { for (const t of [this.markerTimer, this.blockTimer]) if (t !== null) window.clearInterval(t); },
       // Memory is the truth; anything persistSoon() or durable() deferred goes to disk now.
       () => { if (this.data && (this.dirty || this.commitTimer !== null)) void this.persist().catch(error => this.fail("saving state", error)); },
       () => { if (this.activityTimer !== null) { window.clearTimeout(this.activityTimer); void this.writeActivity(); } },
@@ -182,7 +188,7 @@ export default class NativeSync extends Component {
     for (const step of steps) {
       try { step(); } catch (e: unknown) { this.log(`unload step failed: ${errorInfo(e).code ?? "error"}`); }
     }
-    this.markerTimer = this.settleTimer = this.reconcileRetryTimer = this.stallTimer = this.activityTimer = null;
+    this.markerTimer = this.blockTimer = this.settleTimer = this.reconcileRetryTimer = this.stallTimer = this.activityTimer = null;
     this.bridge = null; this.frame = null;
     // From here on a new host may own sync-state.json; this one must not write it.
     this.retired = true;
@@ -273,6 +279,44 @@ export default class NativeSync extends Component {
   claim(id?: string) { return marker.claim(this, id); }
   writeMarker() { return marker.writeMarker(this); }
   pauseForOwnership(e: unknown) { marker.pauseForOwnership(this, e); }
+  /** The marker text startup found, for Set up sync here to check it is still the same. */
+  blockedMarker: string | null = null;
+  blockTimer: number | null = null;
+  /** Set up to sync: bound to a collection, or anything already synced. */
+  get setUp(): boolean { return !!this.data?.collectionId || this.data?.cursor !== undefined || Object.keys(this.data?.paths ?? {}).length > 0; }
+  /**
+   * Startup found the folder held by someone else. A vault that isn't set up
+   * to sync says so only in the Sync tab: a fresh install gets no notice. While
+   * blocked, the marker is read again now and then, so Set up sync here
+   * appears once a quiet plugin marker grows stale.
+   */
+  blockForOwner(e: marker.FolderOwned) {
+    this.blockedMarker = e.marker;
+    this.phase = { kind: "blocked", owner: e.owner, takeover: e.takeover };
+    this.log(`folder held elsewhere: owner=${e.owner} takeover=${e.takeover}`);
+    if (this.setUp) this.fail("ownership", e, e.message, true);
+    else this.setStatus(e.message);
+    if (this.blockTimer === null && !this.unloaded) this.blockTimer = window.setInterval(() => { void this.recheckBlock(); }, 15_000);
+  }
+  async recheckBlock() {
+    if (this.unloaded || this.phase.kind !== "blocked" || !this.phase.owner) return;
+    let next: marker.FolderOwned;
+    try {
+      const text = await marker.readMarkerText(this);
+      // Gone: no one holds it now, and setting up here takes nothing from anyone.
+      next = text === null ? new marker.FolderOwned("unknown", true, null) : new marker.FolderOwned(...marker.classify(text, this));
+    } catch (e: unknown) { next = e instanceof marker.FolderOwned ? e : new marker.FolderOwned("unreadable", false, null); }
+    if (next.owner === this.phase.owner && next.takeover === this.phase.takeover && next.marker === this.blockedMarker) return;
+    this.blockedMarker = next.marker;
+    this.phase = { kind: "blocked", owner: next.owner, takeover: next.takeover };
+    this.setStatus(next.takeover && next.marker === null ? "Sync isn't set up in this vault." : next.message);
+  }
+  /**
+   * Set up sync here: the person chose it on the blocked host, and the
+   * controller handed this new host the marker text that was offered. Startup
+   * replaces that marker (if it's still the same) before its usual check.
+   */
+  takeOverFrom: { marker: string | null } | null = null;
 
   // ---- iframe RPC ----------------------------------------------------------
   call<Method extends NativeMethod>(method: Method, ...args: Parameters<NativeMethods[Method]>): Promise<NativeResult<Method>> {

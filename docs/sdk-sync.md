@@ -69,8 +69,23 @@ desktop automatically.
 
 After desktop gracefully stops/pause/removal and releases its marker and OS lock,
 Obsidian resumes its SDK host and reconciles before sending. A leftover desktop
-marker after a crash is deliberately not overridden. Copied/stale-marker takeover
-needs explicit recovery, not a timeout. The inherited OS-lock probe currently
+marker after a crash is deliberately not overridden. A plugin marker
+(`host: "obsidian"`) that isn't this host's is offered for takeover only when it
+looks like an earlier install of this plugin: its heartbeat is older than
+`MARKER_STALE_MS` (10 minutes; a running host beats every 5 s, a hidden window
+about once a minute, and a file-sync service usually carries the file within a
+few minutes), or, on desktop, its pid is this Obsidian process (an uninstalled
+or reloaded instance). A pid from another device means nothing, so a marker
+carried in by a file-sync service is judged by its heartbeat alone. Even then
+nothing happens until the person chooses **Set up sync here**: a phone
+suspended in the background looks just as stale. The click re-reads the marker
+and refuses if it changed since it was offered, saves a new `markerSince`,
+writes this host's marker and restarts the host, which claims as usual. The
+desktop app's marker, a live plugin marker and an unknown host's marker are
+never replaced. A host that loses its marker this way pauses, as before; it
+never writes back. When the vault isn't set up to sync here (no collection,
+nothing synced), a blocked startup says so only in the Sync tab, without a
+notice. The inherited OS-lock probe currently
 uses Linux `flock`; other systems fail closed if a desktop lock file exists.
 
 ## Mobile host
@@ -107,7 +122,8 @@ rename-over-existing semantics. Digest verification reads the completed staged
 file into memory; large-attachment memory behavior needs device qualification.
 
 iOS is untested. A `capacitor://localhost` origin currently fails closed before
-extracting assets or starting the SDK. Enabling it needs qualification of blob
+extracting assets, writing a marker or starting the SDK; the Sync tab says sync
+isn't available on iPhone and iPad yet, without a notice. Enabling it needs qualification of blob
 origin/message routing, secure module Workers, OPFS synchronous access handles,
 resource fetches and SDK/Connect origin admission, plus lifecycle and storage
 tests on WKWebView. No Android-specific filesystem API is used.
@@ -212,9 +228,12 @@ hasn't started" and offer Restart sync.
 The app declaration asks for the optional `offline.replica` capability. When the
 server has Private app devices switched on, the sign-in page in mdbase offers,
 per collection, to let this device keep that collection's key. A Private
-collection is listed in the plugin only if that was allowed. The SDK doesn't say
-whether the server offers this, so the plugin's hints are worded to hold either
-way and don't send people looking for the choice.
+collection is listed in the plugin only if that was allowed. The SDK lists only
+the collections this installation may open, so the plugin can't tell whether an
+account has Private collections it can't open. It therefore shows no hint about
+them, before or after sign-in: most accounts have none. Once the SDK reports a
+count of such collections, the Sync tab can say "2 private collections aren't
+shown because this device doesn't have their key" with a way to add it.
 
 - With its key, a Private collection syncs like any other.
 - Without it, Sync shows **Locked** and an unlock form for the encryption

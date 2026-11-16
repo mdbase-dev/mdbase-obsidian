@@ -67,7 +67,7 @@ The local vault remains useful while offline. Sync should feel like a mature des
 
 - A general-purpose record editor or database dashboard.
 - Automatic background sync that cannot communicate failures to the user. Background sync reports problems in the status bar and Sync destination and backs off rather than failing silently.
-- Sync on iOS (not yet: it fails closed with an explanation).
+- Sync on iPhone and iPad (not yet: the Sync tab says so in plain words). Obsidian serves plugins there from `capacitor://localhost`, which sync and Connect haven't been qualified for.
 - Creating, approving or serving Private collections from Obsidian. Phones and Obsidian join and sync; the desktop app stays the always-on device.
 - Listing or suggesting other apps. Which apps can use a collection is managed in mdbase.
 - Server administration, billing, or access-policy management.

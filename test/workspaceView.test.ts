@@ -10,6 +10,7 @@ import { MdbaseSettingTab } from "../src/settingsTab";
 import type { SyncSnapshot } from "../src/sync/controller";
 import type { CollectionStatus } from "../src/sync/daemon";
 import { manageAppsUrl } from "../src/workspace/syncPane";
+import { summarize } from "../src/sync/words";
 
 type TypeModel = ReturnType<typeof createDefaultTypeModel>;
 
@@ -996,16 +997,48 @@ test("in-plugin sync offers Manage apps with the SDK's access page, and only a s
   }
 });
 
-test("where collections are chosen, a quiet line says when Private ones are listed (LAB F3)", () => {
+test("no Private collections hint before or after signing in: most accounts have none", () => {
   const choosing = directFixture({ kind: "choosing", collections: [{ id: "c", name: "Notes", private: false }] }, "Choose the collection to sync with this vault.");
-  const hint = Array.from(choosing.root.querySelectorAll("p.mdbase-muted")).map((p) => p.textContent ?? "").find((t) => /Private collections/.test(t));
-  assert.equal(hint, "Private collections are listed only if mdbase let this device keep their key when you signed in. mdbase doesn't offer that everywhere yet.");
+  assert.doesNotMatch(choosing.text(), /Private|key/);
   choosing.dom.window.close();
   const signedOut = directFixture({ kind: "signed_out" }, "Sign in to sync this vault.");
-  assert.match(signedOut.text(), /Sign in Private collections sync here only if mdbase offers to let this device keep their key when you sign in\./);
-  // Production doesn't offer the choice yet: never send people looking for it (prod F2).
-  for (const t of [hint ?? "", signedOut.text()]) assert.doesNotMatch(t, /sign in again and allow|allow this device/i);
+  assert.doesNotMatch(signedOut.text(), /Private|key/);
+  assert.ok(button(signedOut.root, "Sign in"));
   signedOut.dom.window.close();
+});
+
+test("a fresh install over an earlier install's sync setup offers Set up sync here, calmly, and only acts on the click", async () => {
+  const text = "This vault was set up for sync before, maybe by an earlier install of this plugin. Your notes here are untouched.";
+  const f = directFixture({ kind: "blocked", owner: "obsidian", takeover: true }, text);
+  let takeOvers = 0;
+  (f.sync.controller as unknown as { takeOver: () => Promise<void> }).takeOver = async () => { takeOvers++; };
+  f.state.render();
+  assert.match(f.text(), /set up for sync before, maybe by an earlier install/);
+  assert.doesNotMatch(f.text(), /marker|host|owned/i);
+  const summary = summarize(f.sync.controller.snapshot);
+  assert.equal(summary.syncing, false, "nothing in the status bar for a vault that isn't set up");
+  assert.equal(summary.tone, "quiet");
+  assert.equal(takeOvers, 0);
+  button(f.root, "Set up sync here").click(); await tick();
+  assert.equal(takeOvers, 1);
+  f.dom.window.close();
+});
+
+test("a folder the desktop app or a live Obsidian syncs names the other app, with no Set up sync here", () => {
+  for (const [owner, words] of [["desktop", /Another app is already syncing this vault: the mdbase desktop app\. Turn sync off there first\./], ["obsidian", /Another copy of Obsidian is already syncing this vault/]] as const) {
+    const text = owner === "desktop"
+      ? "Another app is already syncing this vault: the mdbase desktop app. Turn sync off there first. Your notes here are untouched."
+      : "Another copy of Obsidian is already syncing this vault, on this device or another one. Turn sync off there first. If you just reinstalled this plugin, you can set up sync here in a few minutes.";
+    const f = directFixture({ kind: "blocked", owner, takeover: false }, text);
+    assert.match(f.text(), words);
+    assert.ok(!Array.from(f.root.querySelectorAll("button")).some((el) => el.textContent === "Set up sync here"), owner);
+    assert.doesNotMatch(f.text(), /marker|host\b|owned/i);
+    f.dom.window.close();
+    const bound = directFixture({ kind: "blocked", owner, takeover: false }, text, false, true);
+    const summary = summarize(bound.sync.controller.snapshot);
+    assert.equal(summary.label, "Sync paused"); assert.equal(summary.syncing, true);
+    bound.dom.window.close();
+  }
 });
 
 test("an unfinished sign-in offers Sign in again, which signs in through the SDK (prod F1)", async () => {

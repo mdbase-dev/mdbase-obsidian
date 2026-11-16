@@ -41,15 +41,11 @@ export function unlockProblemText(problem: unknown): string | null {
   return (typeof p.key === "string" && UNLOCK_PROBLEMS[p.key]) || (typeof p.message === "string" && p.message) || "Couldn't unlock this collection. Try again.";
 }
 
-/**
- * Shown where collections are chosen. mdbase lists a Private collection only
- * when this device may hold its key, so the plugin can't know one is missing.
- * The SDK doesn't say whether the server offers that choice (production
- * doesn't yet), so the words must hold either way and promise no option.
- */
-export const PRIVATE_COLLECTIONS_HINT = "Private collections are listed only if mdbase let this device keep their key when you signed in. mdbase doesn't offer that everywhere yet.";
-/** The same, before signing in, where the collection is chosen in the browser. */
-export const PRIVATE_SIGN_IN_HINT = "Private collections sync here only if mdbase offers to let this device keep their key when you sign in.";
+// No hint about Private collections before or after signing in. mdbase lists
+// only the collections this device may open, so the plugin can't tell whether
+// an account has Private ones it can't open; most accounts have none, and a
+// note shown to everyone would only puzzle them. When the SDK reports such
+// collections, say so then, with a count and a way to add the key.
 
 /** After "Move to mdbase app": Obsidian stopped on purpose. Not an error. */
 export const HANDED_OVER = "Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection.";
@@ -175,6 +171,13 @@ export function summarize(s: SyncSnapshot): SyncSummary {
     if (phase.kind === "authorizing" && s.direct.bound) return { label: "Waiting for approval", detail: text, tone: "attention", syncing: true };
     // A sign-in waiting in the browser is the person's next step: show it.
     if (phase.kind === "authorizing") return { label: "Finish sign-in", detail: text, tone: "attention", syncing: true };
+    // Another app holds the folder. Not set up here (a fresh install, say): calm,
+    // like sync being off. Set up here: sync has stopped, so it needs attention.
+    if (phase.kind === "blocked" && phase.owner) {
+      if (!s.direct.bound) return off(phase.takeover ? "Sync off" : phase.owner === "unreadable" ? "Sync waiting" : "Synced by another app", text);
+      return { label: "Sync paused", detail: text, tone: "attention", syncing: true };
+    }
+    if (phase.kind === "unsupported") return off("Sync off", text);
     // Starting that never finishes must not look like nothing is wrong.
     if (phase.kind === "starting" && phase.stalled) return { label: "Sync not starting", detail: text, tone: "attention", syncing: true };
     const problem = phase.kind === "problem" || phase.kind === "blocked" || /blocked|failed|stopped|ownership/i.test(text);

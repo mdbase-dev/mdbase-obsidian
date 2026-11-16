@@ -106,6 +106,8 @@ test("mobile sign-in opens through Obsidian's browser without Electron", async t
 test("mobile identity omits native platform and derives a stable isolated namespace", () => {
   assert.equal(mobileOrigin("http://localhost"), "http://localhost");
   for (const origin of ["http://localhost:48300", "https://evil.example", "null", "capacitor://localhost", "http://localhost/"]) assert.throws(() => mobileOrigin(origin));
+  // iPhone and iPad say so in plain words, without a notice (see plugin startup).
+  assert.throws(() => mobileOrigin("capacitor://localhost"), { code: "platform_unsupported", message: /isn't available on iPhone and iPad yet/ });
   assert.equal(vaultNamespace("a-123"), vaultNamespace("a-123"));
   assert.notEqual(vaultNamespace("a-123"), vaultNamespace("b-456"));
   assert.throws(() => vaultNamespace("../other"));
@@ -566,19 +568,19 @@ test("the engine page uses the SDK Worker factory and explicit selection without
 test("mobile ownership refuses missing, foreign, unreadable, and desktop-locked markers", async t => {
   const { native, host, adapter } = fixture(t);
   const check = () => NativeSync.prototype.checkOwnership.call(native);
-  await assert.rejects(check(), /owned elsewhere/);
+  await assert.rejects(check(), { code: "folder_owned", owner: "unknown" });
   await host.mkdir(".mdbase");
   await host.writeAtomic(".mdbase/host.json", JSON.stringify({ host: "daemon" }));
-  await assert.rejects(check(), /owned elsewhere/);
+  await assert.rejects(check(), { code: "folder_owned", owner: "desktop", takeover: false, message: /the mdbase desktop app/ });
   assert.deepEqual(JSON.parse(await adapter.read(".mdbase/host.json")), { host: "daemon" });
   await adapter.write(".mdbase/host.json", "corrupt");
-  await assert.rejects(check(), /Unreadable ownership/);
+  await assert.rejects(check(), { code: "folder_owned", owner: "unreadable" });
   native.data.markerSince = 123;
   await native.writeMarker(); await check();
   const own = JSON.parse(await adapter.read(".mdbase/host.json"));
   assert.equal("pid" in own, false);
   await host.writeBytes(".mdbase/host.lock", new Uint8Array());
-  await assert.rejects(check(), /cannot verify/);
+  await assert.rejects(check(), { code: "folder_owned", owner: "desktop", takeover: false });
   assert.deepEqual(JSON.parse(await adapter.read(".mdbase/host.json")), own);
 });
 test("mobile restart waits for old asynchronous journal IO instead of starting a second writer", async t => {
@@ -625,4 +627,48 @@ test("an editor opened during the final async disk read keeps its newer buffer a
   await assert.rejects(native.put("note.md", encode("remote"), digest("initial")), { code: "local_changed" });
   assert.equal(await adapter.read("note.md"), "initial");
   assert.equal(views[0].view.getViewData(), "new typing");
+});
+test("a fresh mobile install over an earlier install's quiet marker raises no notice; the desktop app's still blocks", async t => {
+  for (const [marker, owner, takeover] of [
+    [{ host: "obsidian", collection_id: null, since_ms: 1, heartbeat_ms: Date.now() - 60 * 60_000 }, "obsidian", true],
+    [{ host: "obsidian", collection_id: null, since_ms: 1, heartbeat_ms: Date.now() }, "obsidian", false],
+    [{ host: "daemon", heartbeat_ms: 0 }, "desktop", false],
+  ]) {
+    const { native, adapter } = fixture(t);
+    delete native.checkOwnership; native.mirroring = false;
+    const failures = []; native.fail = (...args) => failures.push(args);
+    native.registerDomEvent = () => {}; native.registerEvent = () => {};
+    await adapter.mkdir(".mdbase"); await adapter.write(".mdbase/host.json", JSON.stringify(marker));
+    await native.initialize();
+    t.after(() => native.onunload());
+    assert.deepEqual([native.phase.kind, native.phase.owner, native.phase.takeover], ["blocked", owner, takeover]);
+    assert.deepEqual(failures, []);
+    assert.deepEqual(JSON.parse(await adapter.read(".mdbase/host.json")), marker);
+  }
+});
+test("on iPhone and iPad, sync says it isn't available yet, without a notice or a marker", async t => {
+  const { native, adapter } = fixture(t);
+  delete native.checkOwnership; native.mirroring = false;
+  const failures = [], statuses = []; native.fail = (...args) => failures.push(args); native.changed = text => statuses.push(text);
+  const origin = window.location.origin; window.location.origin = "capacitor://localhost";
+  t.after(() => { window.location.origin = origin; });
+  await native.initialize();
+  assert.equal(native.phase.kind, "unsupported");
+  assert.equal(statuses.at(-1), "Sync isn't available on iPhone and iPad yet. Types and checking work as usual.");
+  assert.deepEqual(failures, []);
+  assert.equal(await adapter.exists(".mdbase/host.json"), false);
+});
+test("on mobile, Set up sync here replaces an earlier install's quiet marker from the fresh host", async t => {
+  const { native, adapter, app } = fixture(t);
+  delete native.checkOwnership; native.mirroring = false;
+  native.registerDomEvent = () => {}; native.registerEvent = () => {};
+  app.workspace.containerEl = { createEl() { return { style: {}, remove() {} }; } };
+  const old = JSON.stringify({ host: "obsidian", collection_id: null, since_ms: 1, heartbeat_ms: Date.now() - 60 * 60_000 });
+  await adapter.mkdir(".mdbase"); await adapter.write(".mdbase/host.json", old);
+  native.takeOverFrom = { marker: old };
+  await native.initialize();
+  t.after(() => native.onunload());
+  const mine = JSON.parse(await adapter.read(".mdbase/host.json"));
+  assert.equal(mine.since_ms, native.data.markerSince);
+  assert.notEqual(native.phase.kind, "blocked");
 });

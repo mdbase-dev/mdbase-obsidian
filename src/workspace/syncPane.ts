@@ -2,11 +2,12 @@ import { Notice, Setting, SuggestModal, TFolder, setIcon, type App } from "obsid
 import type { HeldFile, HoldChoice, SyncKind, SyncSnapshot } from "../sync/controller";
 import type { DirectFailure, MergePrompt, SyncTotals } from "../sync/native/plugin";
 import { MEDIA_CLASSES, type ActivityEntry, type ActivityKind, type CollectionInclusion, type DeviceFilter, type MediaClass } from "../sync/native/device";
-import { CHOOSE_AGAIN_HINT, PRIVATE_COLLECTIONS_HINT, PRIVATE_SIGN_IN_HINT, SIGN_OUT_DESC, errorText, holdReasonText, modeName, summarize, unlockProblemText } from "../sync/words";
+import { CHOOSE_AGAIN_HINT, SIGN_OUT_DESC, errorText, holdReasonText, modeName, summarize, unlockProblemText } from "../sync/words";
 import { renderStatus, type WorkspaceContext } from "./shared";
 
 export const DOWNLOAD_URL = "https://mdbase.dev/downloads";
 export const MANAGE_APPS = "Manage apps";
+export const SET_UP_HERE = "Set up sync here";
 
 /** A Connect address safe to open: https, or http on this computer; null otherwise. */
 export function connectUrl(value: string | null | undefined): URL | null {
@@ -146,7 +147,9 @@ export class SyncPane {
         // A sign-in that can't finish (wrong account, closed page) can be dropped straight away.
         if (phase === "authorizing" && native.canStartOver) buttons.push(["Cancel sign-in", false, () => this.run(() => controller.startOver())]);
         this.actions(root, buttons);
-        root.createEl("p", { cls: "mdbase-muted", text: PRIVATE_SIGN_IN_HINT });
+      } else if (phase === "blocked" && s.direct.phase.takeover) {
+        // Only ever on the person's click: the folder's last owner looks like an earlier install of this plugin.
+        this.actions(root, [[SET_UP_HERE, true, () => this.run(() => controller.takeOver())]]);
       } else if (phase === "starting" && s.direct.phase.stalled) {
         this.actions(root, [[RESTART_SYNC, true, () => this.run(() => controller.restartNative())]]);
       } else if (phase === "needs_unlock") {
@@ -157,7 +160,6 @@ export class SyncPane {
           ["Add a collection", false, () => this.run(() => native.addCollection())],
           [SIGN_OUT, false, () => this.run(() => native.signOut())],
         ]);
-        root.createEl("p", { cls: "mdbase-muted", text: PRIVATE_COLLECTIONS_HINT });
       } else if (phase === "ready") {
         this.renderSyncNow(root, () => native.enqueue(() => native.reconcileAll(false, undefined, true)));
         this.renderDirectFailures(root, s.direct.failures ?? []);

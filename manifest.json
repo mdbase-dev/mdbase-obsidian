@@ -4,7 +4,7 @@
 	"version": "0.4.33",
 	"minAppVersion": "1.11.4",
 	"isDesktopOnly": false,
-	"description": "Edit mdbase types and mirror hosted collections through mdbase Connect.",
+	"description": "Sync your vault across devices and use it in mdbase apps like TaskNotes. Also lets you define note types and check notes against them.",
 	"author": "calluma",
 	"authorUrl": "https://github.com/callumalpass"
 }
