@@ -451,6 +451,7 @@ function typesFixture() {
   };
   inner.records = records;
   const view = {
+    create: () => (inner.types as unknown as { createType(): Promise<void> }).createType(),
     selectType: (path: string) => inner.types.selectType(path),
     openTypeField: (path: string, field?: string) => inner.openTypeField(path, field),
     onClose: () => inner.onClose(),
@@ -473,9 +474,96 @@ test("the type list shows note and issue counts, and field rows show their const
   await f.view.selectType("_types/task.md");
   const rows = Array.from(f.root.querySelectorAll(".mdbase-type-row")).map((row) =>
     [row.querySelector(".mdbase-type-name")?.textContent, ...Array.from(row.querySelectorAll(".tree-item-flair")).map((flair) => flair.getAttribute("aria-label"))].join(" "));
-  assert.deepEqual(rows, ["note 1 note", "task 1 issue 2 notes"]);
-  assert.match(visibleText(fieldNode(f.root, "priority").querySelector("summary")!), /priority Integer ≤ 3/);
-  assert.match(visibleText(fieldNode(f.root, "status").querySelector("summary")!), /status Enum 1, 2, done, later/);
+  assert.deepEqual(rows, ["note 1 note", "task 1 error 2 notes"]);
+  const taskRow = Array.from(f.root.querySelectorAll<HTMLElement>(".mdbase-type-row")).find((row) => row.textContent?.includes("task"))!;
+  assert.match(visibleText(taskRow), /task 1 2 notes/, "the note count says what it counts");
+  assert.equal(taskRow.querySelector(".mdbase-type-issues")?.getAttribute("data-severity"), "error", "errors take the Issues tab's error colour");
+  assert.match(visibleText(fieldNode(f.root, "priority").querySelector("summary")!), /priority Integer At most 3/);
+  assert.match(visibleText(fieldNode(f.root, "status").querySelector("summary")!), /status Choice 1, 2, done, later/);
+  f.dom.window.close();
+});
+
+test("a field with a fixed value shows the value, and field boxes have visible labels", async () => {
+  const f = typesFixture();
+  await f.view.selectType("_types/task.md");
+  f.state.model.fields.push({ name: "kind", definition: { const: "task" } });
+  f.state.render();
+  const kind = fieldNode(f.root, "kind");
+  assert.match(visibleText(kind.querySelector("summary")!), /kind Fixed value Always task/);
+  assert.doesNotMatch(visibleText(kind.querySelector("summary")!), /Any value/);
+  kind.open = true;
+  const labels = Array.from(kind.querySelectorAll<HTMLLabelElement>(".mdbase-field-cell > label")).map((label) => label.textContent);
+  assert.deepEqual(labels, ["Name", "Type", "Description"]);
+  for (const label of kind.querySelectorAll<HTMLLabelElement>(".mdbase-field-cell > label")) {
+    assert.ok(kind.querySelector(`#${label.htmlFor}`), `${label.textContent} labels its box`);
+  }
+  f.dom.window.close();
+});
+
+test("the editor header says when there are unsaved changes", async () => {
+  const f = typesFixture();
+  await f.view.selectType("_types/task.md");
+  assert.equal(f.root.querySelector(".mdbase-editor-dirty"), null);
+  const description = f.root.querySelector<HTMLTextAreaElement>("[data-focus-key='form-description']")!;
+  description.value = "Edited";
+  description.dispatchEvent(new f.dom.window.Event("input"));
+  assert.match(visibleText(f.root.querySelector(".mdbase-editor-header")!), /task Unsaved changes/);
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
+test("a new type starts in Name and holds the missing-name error until Name loses focus", async () => {
+  const f = typesFixture();
+  await f.view.selectType("_types/task.md");
+  await (f.view as unknown as { create(): Promise<void> }).create();
+  const name = f.root.querySelector<HTMLInputElement>("[data-focus-key='form-name']")!;
+  assert.equal(f.root.ownerDocument.activeElement, name, "focus is in Name");
+  assert.doesNotMatch(f.text(), /error|name is required|Give the type a name/i);
+  name.dispatchEvent(new f.dom.window.Event("blur"));
+  assert.match(visibleText(f.root.querySelector(".mdbase-draft-bar")!), /1 error/);
+  assert.match(f.text(), /Give the type a name/);
+  assert.equal(button(f.root, "Save").disabled, true);
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
+test("Discard asks first, names what would be lost, and can be cancelled", async () => {
+  const f = typesFixture();
+  await f.view.selectType("_types/task.md");
+  const description = f.root.querySelector<HTMLTextAreaElement>("[data-focus-key='form-description']")!;
+  description.value = "Edited";
+  description.dispatchEvent(new f.dom.window.Event("input"));
+  const body = f.root.ownerDocument.body;
+  button(f.root, "Discard").click();
+  assert.match(body.textContent ?? "", /Discard changes to task\?/);
+  assert.match(body.textContent ?? "", /_types\/task\.md goes back to how it was last saved/);
+  assert.ok(body.querySelector(".mdbase-confirm-change-list li"), "the changes are listed");
+  button(body, "Keep editing").click();
+  await settle();
+  assert.equal(f.state.dirty, true);
+  assert.equal(f.state.model.description, "Edited");
+  button(f.root, "Discard").click();
+  button(body, "Discard changes").click();
+  await settle();
+  assert.equal(f.state.dirty, false);
+  assert.equal(f.state.model.description, "");
+  await f.view.onClose();
+  f.dom.window.close();
+});
+
+test("YAML opens at its top; Design keeps its own scroll position", async () => {
+  const f = typesFixture();
+  await f.view.selectType("_types/task.md");
+  const documentEl = () => f.root.querySelector<HTMLElement>(".mdbase-editor-document")!;
+  assert.equal(documentEl().getAttribute("data-scroll-key"), "type-document-design");
+  documentEl().scrollTop = 400;
+  button(f.root, "YAML").click();
+  assert.equal(documentEl().getAttribute("data-scroll-key"), "type-document-yaml");
+  assert.equal(documentEl().scrollTop, 0);
+  button(f.root, "Design").click();
+  assert.equal(documentEl().getAttribute("data-scroll-key"), "type-document-design");
+  assert.equal(documentEl().scrollTop, 400);
+  await f.view.onClose();
   f.dom.window.close();
 });
 
@@ -668,7 +756,8 @@ test("empty collections offer contract packs rather than invented starter types"
   const f = fixture(); f.state.destination = "types";
   f.state.schema = { config: { spec_version: "0.3.0" }, types: new Map(), contracts: new Map() };
   f.state.render();
-  assert.match(f.text(), /mdbase-contracts/);
+  assert.match(f.text(), /ready-made type/);
+  assert.doesNotMatch(f.text(), /mdbase-contracts|contracts/);
   assert.ok(button(f.root, "Browse ready-made types"));
   assert.ok(button(f.root, "Design a custom type"));
   f.dom.window.close();
@@ -698,7 +787,14 @@ test("native-style creation modal retains inputs across errors and preserves boo
   assert.equal(created, null);
   set("mdbase-note-count", "12");
   await new Promise<void>(resolve => setImmediate(resolve));
+  const titleLabel = root.querySelector<HTMLLabelElement>("label[for='mdbase-note-title']")!;
+  assert.equal(titleLabel.firstChild?.textContent, "title", "the label is the field name, without a bare asterisk");
+  assert.equal(titleLabel.querySelector(".mdbase-required-tag")?.textContent, "Required");
+  assert.equal(root.querySelector("#mdbase-note-title")!.getAttribute("aria-required"), "true");
+  const reset = button(root, "Use suggested location");
+  assert.ok(reset.classList.contains("mdbase-hidden"), "nothing to reset while the suggestion is in the field");
   set("mdbase-note-location", "created.md");
+  assert.ok(!reset.classList.contains("mdbase-hidden"), "offered once the location differs");
   button(root, "Create note").click();
   await new Promise<void>(resolve => setImmediate(resolve));
   assert.deepEqual(created, { type: "sample", title: "Keep this text", count: 12, active: false, status: 10 });

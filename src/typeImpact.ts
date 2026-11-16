@@ -13,6 +13,8 @@ import type { TypeEditorModel } from "./typeEditorTypes";
 export interface TypeStats {
   notes: number;
   issues: number;
+  /** How many of the issues are errors; the rest are warnings. */
+  errors: number;
 }
 
 export interface FailingRecord {
@@ -63,14 +65,18 @@ export function typeStats(
   const entry = (name: string): TypeStats => {
     let current = stats.get(name);
     if (!current) {
-      current = { notes: 0, issues: 0 };
+      current = { notes: 0, issues: 0, errors: 0 };
       stats.set(name, current);
     }
     return current;
   };
   for (const names of recordTypes.values()) for (const name of names) entry(name).notes += 1;
   for (const issue of issues) {
-    for (const name of issueTypeNames(issue, recordTypes)) entry(name).issues += 1;
+    for (const name of issueTypeNames(issue, recordTypes)) {
+      const stat = entry(name);
+      stat.issues += 1;
+      if (issue.severity === "error") stat.errors += 1;
+    }
   }
   return stats;
 }

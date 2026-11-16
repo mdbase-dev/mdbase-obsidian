@@ -27,8 +27,11 @@
 }
 
 .mdbase-type-picker-match {
-  color: var(--text-faint);
-  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.mdbase-type-picker-match code {
   font-family: var(--font-monospace);
 }
 
@@ -372,6 +375,85 @@
   white-space: nowrap;
 }
 
+/* Unsaved state in the header, in words as well as the accent colour. */
+.mdbase-editor-dirty {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--size-4-1);
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.mdbase-editor-dirty-icon {
+  display: inline-flex;
+  --icon-size: var(--icon-xs);
+}
+
+/* Older drafts kept for recovery: a plain row with an icon, not a card. */
+.mdbase-draft-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-2) var(--size-4-3);
+  padding: var(--size-4-2) var(--size-4-5);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.mdbase-draft-recovery-message {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 240px;
+  align-items: flex-start;
+  gap: var(--size-4-2);
+}
+
+.mdbase-draft-recovery-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding-top: var(--size-2-1);
+  color: var(--icon-color);
+  --icon-size: var(--icon-s);
+}
+
+.mdbase-draft-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+/* Below the type list, outside its scroll. */
+.mdbase-type-list-footer {
+  padding: var(--size-4-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mdbase-type-catalog-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--size-4-2);
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.mdbase-type-catalog-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.mdbase-type-catalog-icon {
+  display: inline-flex;
+  --icon-size: var(--icon-s);
+}
+
 .mdbase-editor-actions,
 .mdbase-actions {
   flex-wrap: wrap;
@@ -590,8 +672,38 @@ details.mdbase-field-node {
   height: 14px;
 }
 
-.mdbase-field-node[open] > summary > .mdbase-field-chevron {
+.mdbase-field-node[open] > summary > .mdbase-field-chevron,
+details[open] > .mdbase-chevron-summary > .mdbase-field-chevron {
   transform: rotate(90deg);
+}
+
+/* Collapsible sections in Types use the field rows' chevron, not the ▶ marker. */
+.mdbase-chevron-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  list-style: none;
+}
+
+.mdbase-chevron-summary::-webkit-details-marker,
+.mdbase-chevron-summary::marker {
+  display: none;
+  content: "";
+}
+
+.mdbase-chevron-summary-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mdbase-field-chevron {
+    transition: transform 150ms ease;
+  }
 }
 
 .mdbase-field-summary-name {
@@ -617,16 +729,37 @@ details.mdbase-field-node {
 }
 
 .mdbase-field-node[open] > .mdbase-field-row {
-  padding: 12px 8px;
+  padding: var(--size-4-3) var(--size-4-2);
   border-top: 1px solid var(--background-modifier-border-hover);
+}
+
+/* Rules, choices and link options line up with the name and type boxes above them. */
+.mdbase-field-node > .mdbase-field-details {
+  padding-inline: var(--size-4-2);
 }
 
 .mdbase-field-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px 34px;
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 140px 34px;
+  align-items: end;
+  gap: var(--size-4-2);
   padding: 10px 0;
+}
+
+.mdbase-field-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+
+.mdbase-field-cell > label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.mdbase-field-fixed {
+  grid-column: 1 / -1;
 }
 
 .mdbase-field-row input[type="text"],
@@ -634,16 +767,16 @@ details.mdbase-field-node {
   width: 100%;
 }
 
-.mdbase-field-name-control,
+.mdbase-field-name-cell,
 .mdbase-field-role {
   grid-column: 1;
 }
 
-.mdbase-field-type-control {
+.mdbase-field-type-cell {
   grid-column: 2;
 }
 
-.mdbase-field-description-control {
+.mdbase-field-description-cell {
   grid-column: 1 / -1;
   grid-row: 2;
 }
@@ -710,9 +843,7 @@ details.mdbase-field-node {
 .mdbase-field-children-label {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
-  font-weight: var(--font-semibold);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-weight: var(--font-medium);
 }
 
 .mdbase-field-children > .mdbase-field-node,
@@ -860,8 +991,7 @@ details.mdbase-field-node {
   padding: 0;
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
-  font-weight: var(--font-semibold);
-  text-transform: uppercase;
+  font-weight: var(--font-medium);
 }
 
 .mdbase-contract-schema-field {
@@ -995,7 +1125,8 @@ details.mdbase-field-node {
 .mdbase-yaml-editor .cm-gutters {
   border-right: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
-  color: var(--text-faint);
+  /* --text-faint is too faint to read line numbers against the gutter. */
+  color: var(--text-muted);
 }
 
 .mdbase-yaml-editor .cm-content {
@@ -1637,7 +1768,15 @@ button.mdbase-yaml-problem:disabled {
 .mdbase-type-issues {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--size-2-1);
+}
+
+/* The same colours the Issues tab uses for each severity. */
+.mdbase-type-issues[data-severity="error"] {
+  color: var(--text-error);
+}
+
+.mdbase-type-issues[data-severity="warn"] {
   color: var(--text-warning);
 }
 
@@ -2195,6 +2334,23 @@ button.mdbase-match-row:hover {
   display: none;
 }
 
+/* Touch-sized targets throughout Types (DESIGN.md: at least 44px). */
+.is-mobile .mdbase-types-layout .mdbase-icon-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.is-mobile .mdbase-type-row,
+.is-mobile .mdbase-type-catalog-button,
+.is-mobile .mdbase-field-summary,
+.is-mobile .mdbase-type-editor-pane .mdbase-chevron-summary,
+.is-mobile .mdbase-mode-switch button,
+.is-mobile .mdbase-draft-recovery button,
+.is-mobile .mdbase-field-row select,
+.is-mobile .mdbase-field-row input[type="text"] {
+  min-height: 44px;
+}
+
 .is-mobile .mdbase-mobile-back {
   display: inline-flex;
 }
@@ -2312,6 +2468,26 @@ button.mdbase-match-row:hover {
   display: none;
 }
 
+.mdbase-create-note-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-4-2);
+}
+
+.mdbase-required-tag {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+}
+
+.mdbase-create-note .mdbase-form-row > .mdbase-location-reset {
+  justify-self: start;
+}
+
+.mdbase-create-note .mdbase-location-reset.mdbase-hidden {
+  display: none;
+}
+
 .mdbase-editor-heading {
   min-width: 0;
   flex: 1;
@@ -2379,4 +2555,9 @@ button.mdbase-match-row:hover {
   background: var(--background-modifier-hover);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
+}
+
+/* The missing-name message sits under the Name box, not its label. */
+.mdbase-form-row > .mdbase-name-error {
+  grid-column: 2;
 }

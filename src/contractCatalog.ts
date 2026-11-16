@@ -1,4 +1,5 @@
 import { App, Modal, TFile, requestUrl, parseYaml } from "obsidian";
+import { addChevron } from "./workspace/types/disclosure";
 
 const CATALOG_URL = "https://mdbase.dev/contracts/catalog.json";
 const LOCK = "mdbase.lock.yaml";
@@ -171,45 +172,60 @@ async function applyPackExclusive(app: App, plan: PackPlan, assertWritable: () =
   } catch (error) { await recoverPackInstall(app); throw error; }
 }
 
+/**
+ * A pack's caution in plain words. Engine requirements are written for
+ * developers ("Requires an mdbase engine with … (mdbase 0.3.0-rc.6)"); say
+ * what they mean for the person instead.
+ */
+export function plainCaution(caution: string): string {
+  if (/^Requires an mdbase engine\b/i.test(caution)) {
+    return "Needs a recent version of mdbase on every device that uses this collection. Older versions can't read this type.";
+  }
+  return caution;
+}
+
 export class ContractCatalogModal extends Modal {
   private dismissed = false;
   constructor(app: App, private readonly assertWritable: () => void, private readonly installed: (primaryType: string | null) => Promise<void>) { super(app); }
-  onOpen(): void { this.titleEl.setText("Ready-made types · mdbase-contracts"); void this.load(); }
+  onOpen(): void { this.titleEl.setText("Ready-made types"); void this.load(); }
   private async load(): Promise<void> {
     this.contentEl.empty();
-    this.contentEl.createEl("p", { text: "Loading first-party contract catalog…" });
+    this.contentEl.createEl("p", { text: "Loading ready-made types…" });
     try {
       const packs = await loadCatalog();
       if (this.dismissed) return;
       this.contentEl.empty();
-      this.contentEl.createEl("p", { text: "Install standard application contracts plus editable starter types. Nothing grants applications access to your vault. Existing starter types are preserved." });
-      const advanced = this.contentEl.createEl("details"); advanced.createEl("summary", { text: "Advanced and integration packs" });
+      this.contentEl.createEl("p", { text: "Each one adds a type you can edit and a format other apps can read. Installing doesn't give any app access to your vault, and types you already have are kept." });
+      const advanced = this.contentEl.createEl("details"); addChevron(advanced.createEl("summary", { text: "For integrations" }));
       for (const pack of packs.filter(pack => pack.installation.visibility !== "hidden")) {
         const row = (pack.installation.visibility === "default" ? this.contentEl : advanced).createDiv({ cls: "mdbase-editor-section" });
         row.createEl("h3", { text: pack.display.name }); row.createDiv({ cls: "mdbase-muted", text: `Version ${pack.version}` }); row.createEl("p", { text: pack.display.summary });
-        if (pack.installation.caution) row.createEl("p", { text: pack.installation.caution });
-        const review = row.createEl("button", { text: "Review installation" });
+        if (pack.installation.caution) row.createEl("p", { text: plainCaution(pack.installation.caution) });
+        const review = row.createEl("button", { text: "Review" });
         const detail = row.createDiv();
         review.onclick = () => {
           review.disabled = true;
           void preparePack(this.app, pack).then(plan => {
             if (this.dismissed) return;
             detail.empty();
-            for (const file of plan.files) detail.createDiv({ text: `${file.action} · ${file.path}` });
-            const apply = detail.createEl("button", { text: "Install reviewed pack", cls: "mod-cta" });
+            for (const file of plan.files) detail.createDiv({ text: file.action === "create" ? `Add ${file.path}` : file.action === "preserve" ? `Keep your ${file.path}` : `Already up to date: ${file.path}` });
+            const apply = detail.createEl("button", { text: "Install", cls: "mod-cta" });
             apply.onclick = () => {
               apply.disabled = true;
               void applyPack(this.app, plan, this.assertWritable, (completed, total) => { apply.textContent = `Installing ${completed} of ${total} files…`; }).then(async () => {
                 await this.installed(pack.installation.primary_type); this.close();
-              }).catch(error => { detail.createDiv({ cls: "mdbase-inline-error", text: String(error) }); apply.disabled = false; apply.textContent = "Install reviewed pack"; });
+              }).catch(error => { detail.createDiv({ cls: "mdbase-inline-error", text: String(error) }); apply.disabled = false; apply.textContent = "Install"; });
             };
           }).catch(error => { detail.createDiv({ cls: "mdbase-inline-error", text: String(error) }); }).finally(() => { review.disabled = false; });
         };
       }
+      // Integration packs come after the ones most people want, and only when there are some.
+      if (advanced.childElementCount > 1) this.contentEl.appendChild(advanced);
+      else advanced.remove();
     } catch (error) {
       if (this.dismissed) return;
       this.contentEl.empty(); this.contentEl.createEl("p", { cls: "mdbase-inline-error", text: String(error) });
-      this.contentEl.createEl("button", { text: "Retry catalog" }).onclick = () => void this.load();
+      this.contentEl.createEl("button", { text: "Try again" }).onclick = () => void this.load();
     }
   }
   onClose(): void { this.dismissed = true; }

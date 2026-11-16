@@ -40,3 +40,18 @@ test("type draft changes identify high-impact schema edits", () => {
   assert.equal(typeModelsEqual(original, current), false);
   assert.equal(typeModelsEqual(original, structuredClone(original)), true);
 });
+
+test("a fixed (const) field is shown in the editor and saved unchanged", async () => {
+  const { typeModelFromDocument, frontmatterFromTypeModel } = await import("../src/typeModel");
+  const frontmatter = {
+    kind: "mdbase.type", name: "book", version: 1,
+    schema: { dialect: "json-schema-2020-12", value: { type: "object", additionalProperties: true, properties: {
+      type: { const: "book" }, title: { type: "string", minLength: 1 },
+    } } },
+  };
+  const model = typeModelFromDocument(frontmatter, "", "book");
+  assert.deepEqual(model.fields.find((field) => field.name === "type")?.definition.const, "book");
+  const saved = frontmatterFromTypeModel(model) as { schema: { value: { properties: Record<string, unknown> } } };
+  assert.deepEqual(saved.schema.value.properties.type, { const: "book" });
+  assert.deepEqual(saved.schema.value.properties.title, { type: "string", minLength: 1 });
+});

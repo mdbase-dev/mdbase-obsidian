@@ -16,6 +16,7 @@ import {
   typeFieldsForModel,
 } from "../../typeContracts";
 import { isRecord, type WorkspaceContext } from "../shared";
+import { addChevron, typesDisclosure } from "./disclosure";
 
 /**
  * The Applications section of the design form: the contracts a type implements,
@@ -28,7 +29,7 @@ export function renderContractEditor(
   readOnly: boolean,
   markDirty: (render?: boolean) => void,
 ): void {
-  const section = ctx.disclosure(container, "type-applications", "Applications");
+  const section = typesDisclosure(ctx, container, "type-applications", "Applications");
   section.addClass("mdbase-contracts-section");
   section.id = "mdbase-section-applications";
 
@@ -39,7 +40,7 @@ export function renderContractEditor(
   if (!contracts.length) {
     section.createDiv({
       cls: "mdbase-contract-empty",
-      text: "No application contracts installed.",
+      text: "No app formats installed. Ready-made types add them.",
     });
   }
 
@@ -51,13 +52,13 @@ export function renderContractEditor(
 
   if (available.length) {
     const add = section.createDiv({ cls: "mdbase-contract-add" });
-    const label = add.createEl("label", { text: "Installed contract" });
+    const label = add.createEl("label", { text: "App format" });
     const select = add.createEl("select");
     label.htmlFor = select.id = `mdbase-contract-${Math.random().toString(36).slice(2)}`;
     for (const contract of available) {
       select.createEl("option", { value: contractKey(contract), text: `${contract.id} · ${contract.version}` });
     }
-    const button = add.createEl("button", { text: "Add contract" });
+    const button = add.createEl("button", { text: "Add format" });
     button.disabled = readOnly;
     button.onclick = () => {
       const selected = available.find((candidate) => contractKey(candidate) === select.value);
@@ -95,7 +96,7 @@ function renderContractImplementation(
   if (!contract) {
     article.createDiv({
       cls: "mdbase-contract-unavailable",
-      text: "This exact contract is not installed in the collection. Restore it or remove this implementation before saving.",
+      text: "This app format isn't installed in the collection. Install it again or remove it before saving.",
     });
     return;
   }
@@ -111,13 +112,14 @@ function renderContractImplementation(
   summary.createSpan({ text: "Field mappings" });
   summary.createSpan({
     cls: "mdbase-contract-summary",
-    text: `${requiredMapped}/${required.length} required · ${mapped.length}/${fields.length} total`,
+    text: `${requiredMapped} of ${required.length} required · ${mapped.length} of ${fields.length} mapped`,
   });
+  addChevron(summary);
   const mappingList = details.createDiv({ cls: "mdbase-contract-mapping-list" });
   if (!fields.length) {
     mappingList.createDiv({
       cls: "mdbase-contract-unavailable",
-      text: "This contract does not expose simple top-level properties. Configure its field references in YAML.",
+      text: "This format's fields can only be mapped in YAML.",
     });
   }
   for (const field of fields) {
@@ -159,15 +161,16 @@ function renderContractImplementation(
     const settings = article.createEl("details", { cls: "mdbase-contract-settings" });
     settings.open = Boolean(implementation.binding);
     const settingsSummary = settings.createEl("summary");
-    settingsSummary.createSpan({ text: "Contract settings" });
+    settingsSummary.createSpan({ text: "Settings" });
     settingsSummary.createSpan({
       cls: "mdbase-contract-summary",
       text: implementation.binding ? "Configured" : "Optional",
     });
+    addChevron(settingsSummary);
     const body = settings.createDiv({ cls: "mdbase-contract-settings-body" });
     body.createEl("p", {
       cls: "mdbase-form-description",
-      text: "Control how compatible applications interpret this type. Values follow the contract's schema.",
+      text: "How apps that read this format treat this type.",
     });
     if (!implementation.binding) {
       const configure = body.createEl("button", { text: "Configure settings" });
@@ -209,7 +212,7 @@ function renderContractSchemaValue(
       if (!isRecord(childSchema)) continue;
       const row = fieldset.createDiv({ cls: "mdbase-contract-schema-field" });
       const description = typeof childSchema.description === "string" ? childSchema.description : undefined;
-      row.createEl("label", { text: `${name}${required.has(name) ? " · required" : ""}` });
+      row.createEl("label", { text: `${name}${required.has(name) ? " (required)" : ""}` });
       if (description) row.createEl("small", { text: description });
       renderContractSchemaControl(row, childSchema, object[name], (next) => {
         onChange({ ...object, [name]: next });
