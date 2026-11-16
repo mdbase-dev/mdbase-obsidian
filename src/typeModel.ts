@@ -175,6 +175,14 @@ export function typeModelFromDocument(
   const pathPolicy = isRecord(collection.path) ? collection.path : {};
   const fields = toFields(isV03 ? fieldsFromV03Schema(schema) : frontmatter.fields);
   if (isV03) applyCollectionLinks(fields, collection.links);
+  // Show a fixed (`const`) value in the editor. Saving keeps the schema's own
+  // `const`, so this copy is for display only.
+  if (isV03 && isRecord(schema.properties)) {
+    for (const field of fields) {
+      const property = schema.properties[field.name];
+      if (isRecord(property) && "const" in property) field.definition.const = clone(property.const);
+    }
+  }
   const match = isRecord(frontmatter.match) ? frontmatter.match : {};
   const strict = isV03 ? schema.additionalProperties === false : frontmatter.strict;
   const known = new Set([

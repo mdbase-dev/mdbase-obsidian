@@ -6,12 +6,22 @@ function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function range(min: number | null, max: number | null, unit = ""): string | null {
-  const suffix = unit ? ` ${unit}` : "";
-  if (min !== null && max !== null) return min === max ? `${min}${suffix}` : `${min}–${max}${suffix}`;
-  if (min !== null) return `≥ ${min}${suffix}`;
-  if (max !== null) return `≤ ${max}${suffix}`;
+/** Bounds in words, e.g. `1–3 items`, `At least 1 character`, `At most 80 characters`. */
+function range(min: number | null, max: number | null, unit?: [singular: string, plural: string]): string | null {
+  const units = (count: number) => unit ? ` ${count === 1 ? unit[0] : unit[1]}` : "";
+  if (min !== null && max !== null) return min === max ? `${min}${units(min)}` : `${min}–${max}${units(max)}`;
+  if (min !== null) return `At least ${min}${units(min)}`;
+  if (max !== null) return `At most ${max}${units(max)}`;
   return null;
+}
+
+/** The label for a field's data shape, as shown in the editor. */
+export function fieldTypeLabel(type: string): string {
+  if (type === "any") return "Any value";
+  if (type === "string") return "Text";
+  if (type === "enum") return "Choice";
+  if (type === "datetime") return "Date and time";
+  return type ? type[0].toUpperCase() + type.slice(1) : type;
 }
 
 /** Display text for a YAML scalar (or JSON for anything structured). */
@@ -28,11 +38,12 @@ function shortValue(value: unknown): string {
 
 /**
  * Compact, human-readable rules for a field row, e.g. `1–3`, `open, done, +2`,
- * `→ project`. Returns an empty list when the field has no constraints.
+ * `→ project`, `Always note`. Returns an empty list when the field has no constraints.
  */
 export function fieldConstraintSummary(definition: Record<string, unknown>): string[] {
   const type = typeof definition.type === "string" ? definition.type : "any";
   const parts: string[] = [];
+  if ("const" in definition) parts.push(`Always ${shortValue(definition.const)}`);
   if (type === "enum" && Array.isArray(definition.values)) {
     const values = definition.values.map(shortValue);
     parts.push(values.length > 3 ? `${values.slice(0, 3).join(", ")}, +${values.length - 3}` : values.join(", ") || "no values");
@@ -42,11 +53,13 @@ export function fieldConstraintSummary(definition: Record<string, unknown>): str
     if (bounds) parts.push(bounds);
   }
   if (type === "list") {
-    const bounds = range(num(definition.min_length), num(definition.max_length), "items");
+    const bounds = range(num(definition.min_length), num(definition.max_length), ["item", "items"]);
     if (bounds) parts.push(bounds);
-    if (isRecord(definition.items) && typeof definition.items.type === "string") parts.push(`of ${definition.items.type}`);
+    if (isRecord(definition.items) && typeof definition.items.type === "string") {
+      parts.push(`of ${fieldTypeLabel(definition.items.type).toLowerCase()}`);
+    }
   } else {
-    const bounds = range(num(definition.min_length), num(definition.max_length), "chars");
+    const bounds = range(num(definition.min_length), num(definition.max_length), ["character", "characters"]);
     if (bounds) parts.push(bounds);
   }
   if (typeof definition.pattern === "string" && definition.pattern) parts.push(`/${shortValue(definition.pattern)}/`);
@@ -92,4 +105,17 @@ export function parseDefaultValue(text: string, type: string): { value?: unknown
     return { error: "Default must be true or false." };
   }
   return { value: text };
+}
+
+// A path glob in plain words where that is simple, e.g. `Library/**/*.md` is
+// "Notes in Library and its subfolders"; null when it is not.
+export function describePathGlob(glob: string): string | null {
+  const pattern = glob.trim().replace(/^\.\//, "");
+  if (pattern === "**/*.md" || pattern === "**") return "All notes";
+  if (pattern === "*.md") return "Notes at the top of the vault";
+  const folder = /^([^*?[\]{}]+)\/(\*\*\/\*\.md|\*\*)$/.exec(pattern);
+  if (folder) return `Notes in ${folder[1]} and its subfolders`;
+  const direct = /^([^*?[\]{}]+)\/\*\.md$/.exec(pattern);
+  if (direct) return `Notes in ${direct[1]}`;
+  return null;
 }
