@@ -28,6 +28,10 @@ export class DesktopHost implements EngineHost {
     this.pluginDir = this.join(this.root, manifest.dir ?? "");
   }
   location() { return `${this.os.hostname()}:${this.fs.realpathSync(this.root)}`; }
+  movedFrom(previous: string) {
+    const host = `${this.os.hostname()}:`;
+    return previous.startsWith(host) && !this.fs.existsSync(previous.slice(host.length));
+  }
   join(...parts: string[]) { return this.path.join(...parts); }
   dirname(file: string) { return this.path.dirname(file); }
   uuid() { return this.crypto.randomUUID(); }

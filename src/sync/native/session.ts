@@ -30,7 +30,7 @@ export async function onPhase(sync: NativeSync, phase: NativePhase) {
     choosing: "Choose the collection to sync with this vault.", opening: "Getting your collection ready.",
     needs_unlock: phase.unlock?.unlocking ? "Unlocking your collection." : LOCKED_TEXT[phase.unlock?.mode ?? "password"],
     needs_approval: NEEDS_APPROVAL,
-    problem: "Sync needs attention. Your files are kept on this computer.", closed: "Sync stopped. Your files stay here.",
+    problem: "Sync needs attention. Your files are kept on this device.", closed: "Sync stopped. Your files stay here.",
   };
   // A later notice of the same stop (its sync counts or collection list
   // changed) keeps the words saying why, not the generic problem text.

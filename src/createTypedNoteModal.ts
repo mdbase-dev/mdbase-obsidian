@@ -20,6 +20,8 @@ export class CreateTypedNoteModal extends Modal {
   private problem: HTMLElement;
   private submit: HTMLButtonElement;
   private customPath = false;
+  private suggestedPath = "";
+  private reset: HTMLButtonElement;
   private suggestionVersion = 0;
   private creating = false;
   private dismissed = false;
@@ -41,7 +43,8 @@ export class CreateTypedNoteModal extends Modal {
     }
     for (const [name, definition] of fields) {
       const row = this.contentEl.createDiv({ cls: "mdbase-form-row" });
-      const label = row.createEl("label", { text: `${name}${definition.required ? " *" : ""}` });
+      const label = row.createEl("label", { cls: "mdbase-create-note-label", text: name });
+      if (definition.required) label.createSpan({ cls: "mdbase-required-tag", text: "Required" });
       if (definition.description) row.createDiv({ cls: "mdbase-form-description", text: definition.description });
       let input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       if (definition.type === "boolean" || definition.type === "enum") {
@@ -65,6 +68,7 @@ export class CreateTypedNoteModal extends Modal {
         }
       }
       label.htmlFor = input.id = `mdbase-note-${name}`;
+      if (definition.required) input.setAttr("aria-required", "true");
       const error = row.createDiv({ cls: "mdbase-inline-error", attr: { "aria-live": "polite" } });
       input.addEventListener("input", () => { this.readInputs(); void this.suggestPath(); });
       input.addEventListener("change", () => { this.readInputs(); void this.suggestPath(); });
@@ -74,9 +78,15 @@ export class CreateTypedNoteModal extends Modal {
     const label = location.createEl("label", { text: "Location" });
     this.pathInput = location.createEl("input", { type: "text" });
     label.htmlFor = this.pathInput.id = "mdbase-note-location";
-    this.pathInput.addEventListener("input", () => { this.customPath = true; this.problem.textContent = ""; });
-    const reset = location.createEl("button", { text: "Use suggested location" });
-    reset.onclick = () => { this.customPath = false; void this.suggestPath(); };
+    this.pathInput.addEventListener("input", () => {
+      this.customPath = true;
+      this.problem.textContent = "";
+      this.syncReset();
+    });
+    // Offered only once the location differs from the suggestion.
+    this.reset = location.createEl("button", { cls: "mdbase-location-reset", text: "Use suggested location" });
+    this.reset.onclick = () => { this.customPath = false; void this.suggestPath(); };
+    this.syncReset();
     this.problem = this.contentEl.createDiv({ cls: "mdbase-inline-error", attr: { role: "alert" } });
     const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
     actions.createEl("button", { text: "Cancel" }).onclick = () => { if (!this.creating) this.close(); };
@@ -112,10 +122,17 @@ export class CreateTypedNoteModal extends Modal {
     const version = ++this.suggestionVersion;
     try {
       const path = await buildUniqueNotePath(this.app.vault, this.type, this.frontmatter);
-      if (!this.dismissed && version === this.suggestionVersion && !this.customPath) this.pathInput.value = path;
+      if (this.dismissed || version !== this.suggestionVersion) return;
+      this.suggestedPath = path;
+      if (!this.customPath) this.pathInput.value = path;
+      this.syncReset();
     } catch (error) {
       if (!this.dismissed && version === this.suggestionVersion) this.problem.textContent = String(error);
     }
+  }
+
+  private syncReset(): void {
+    this.reset.toggleClass("mdbase-hidden", !this.suggestedPath || this.pathInput.value === this.suggestedPath);
   }
 
   private async save(): Promise<void> {

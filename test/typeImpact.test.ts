@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MdbaseConfig } from "../src/mdbaseCore";
 import { validateRecordAgainstType } from "../src/validation";
-import { fieldConstraintSummary, parseDefaultValue, parseEnumValue } from "../src/fieldSummary";
+import { describePathGlob, fieldConstraintSummary, parseDefaultValue, parseEnumValue } from "../src/fieldSummary";
 import { groupIssuesByRule } from "../src/issuePresentation";
 import { analyzeTypeImpact, indexRecordTypes, typeDefFromDraft, typeStats } from "../src/typeImpact";
 import { createDefaultTypeModel } from "../src/typeModel";
@@ -80,7 +80,7 @@ test("type stats count notes and attribute issues to their type", () => {
     { path: "tasks/b.md", code: "no_type_field", message: "", severity: "warn" },
     { path: "notes/d.md", code: "no_matching_type", message: "", severity: "warn" },
   ]);
-  assert.deepEqual(stats.get("task"), { notes: 3, issues: 2 });
+  assert.deepEqual(stats.get("task"), { notes: 3, issues: 2, errors: 1 });
 });
 
 test("schema issues are plain language and keep the technical text for tooltips", () => {
@@ -112,7 +112,10 @@ test("enum edits keep value types and never split on commas", () => {
 test("field summaries surface constraints that were previously hidden in design mode", () => {
   assert.deepEqual(fieldConstraintSummary({ type: "integer", min: 1, max: 3 }), ["1–3"]);
   assert.deepEqual(fieldConstraintSummary({ type: "enum", values: ["a", "b", "c", "d", "e"] }), ["a, b, c, +2"]);
-  assert.deepEqual(fieldConstraintSummary({ type: "string", max_length: 80, pattern: "^A" }), ["≤ 80 chars", "/^A/"]);
+  assert.deepEqual(fieldConstraintSummary({ type: "string", max_length: 80, pattern: "^A" }), ["At most 80 characters", "/^A/"]);
+  assert.deepEqual(fieldConstraintSummary({ type: "string", min_length: 1 }), ["At least 1 character"]);
+  assert.deepEqual(fieldConstraintSummary({ type: "list", min_length: 1, max_length: 3, items: { type: "string" } }), ["1–3 items", "of text"]);
+  assert.deepEqual(fieldConstraintSummary({ const: "note" }), ["Always note"]);
   assert.deepEqual(fieldConstraintSummary({ type: "link", target: "project" }), ["→ project"]);
   assert.deepEqual(fieldConstraintSummary({ type: "string" }), []);
 });
@@ -147,4 +150,11 @@ test("issues group by type, field and rule, most frequent first", () => {
     ["task · title · missing", 2],
     ["task · priority · above maximum", 1],
   ]);
+});
+
+test("simple path globs read as plain words; others are left to the pattern", () => {
+  assert.equal(describePathGlob("Library/**/*.md"), "Notes in Library and its subfolders");
+  assert.equal(describePathGlob("Projects/Active/*.md"), "Notes in Projects/Active");
+  assert.equal(describePathGlob("**/*.md"), "All notes");
+  assert.equal(describePathGlob("notes/*-{a,b}.md"), null);
 });

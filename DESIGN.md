@@ -24,7 +24,8 @@ On mobile, the list and editor become separate navigation states. Controls remai
 ## Information and copy
 
 - Types opens with name, description, and fields. Matching, options, application contracts, and detailed change review expand in place.
-- Sync opens with its status sentence and only the actions that apply now. Account, disconnect and app location live in the plugin settings tab.
+- Sync opens with its status sentence and only the actions that apply now: Sync now, then anything not synced and any conflicts. Overview and Activity fold under Details. Account, disconnect, app location and what syncs to this device (attachment kinds, limits, folders left out) live in the plugin settings tab.
+- Styles use Obsidian's own tokens (spacing, radii, border width, type sizes, weights, touch sizes, motion) rather than raw pixel values, so the plugin follows the user's theme.
 - Issues has one count and one validation action. Do not show empty filters, repeated summaries, or a second empty-state panel.
 - Prefer labels to explanations. Remove sentences that merely describe the adjacent control or promise implementation details such as checkpoint precision.
 - Keep concise, explicit warnings at upload, authority-transfer, schema-change, and deletion boundaries. Fewer words must not mean less informed consent.
@@ -74,7 +75,7 @@ Setup is two choices on one surface: **Cloud copy** (recommended) or **Private**
 
 Which apps can use the collection is managed in mdbase, not in the plugin: once the vault is synced, **Manage apps** opens the collection's access page in Connect (the SDK's `links.manageAccess` when the plugin syncs, the account's server when desktop does). The plugin never lists or suggests apps itself.
 
-When desktop owns the folder, files changed in two places are listed by path with plain choices. When the plugin owns it, both versions are retained as ordinary conflict files beside the original. Merges mdbase made on its own are listed as "changes to check" until acknowledged. Sign-out, disconnect and the app location live in the settings tab, each behind a confirmation that says notes stay on this computer.
+When desktop owns the folder, files changed in two places are listed by path with plain choices. When the plugin owns it, both versions are retained as ordinary conflict files beside the original. Merges mdbase made on its own are listed as "changes to check" until acknowledged. Sign-out, disconnect and the app location live in the settings tab, each behind a confirmation that says notes stay in the vault.
 
 ## Migration
 

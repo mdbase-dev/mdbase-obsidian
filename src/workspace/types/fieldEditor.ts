@@ -194,7 +194,11 @@ export class FieldEditor {
     chevron.setAttr("aria-hidden", "true");
     setIcon(chevron, "chevron-right");
     summary.createSpan({ cls: "mdbase-field-summary-name", text: label });
-    summary.createSpan({ cls: "mdbase-field-summary-type", text: fieldTypeLabel(definitionType(definition)) });
+    const fixed = "const" in definition;
+    summary.createSpan({
+      cls: "mdbase-field-summary-type",
+      text: fixed && definitionType(definition) === "any" ? "Fixed value" : fieldTypeLabel(definitionType(definition)),
+    });
     const rules = summary.createSpan({ cls: "mdbase-field-summary-rules" });
     const refreshSummary = () => {
       rules.textContent = fieldConstraintSummary(definition).join(" · ");
@@ -214,17 +218,24 @@ export class FieldEditor {
     if (options.staticLabel) {
       row.createDiv({ cls: "mdbase-field-role", text: options.staticLabel });
     } else {
-      const name = row.createEl("input", { type: "text", cls: "mdbase-field-name-control" });
+      const nameCell = row.createDiv({ cls: "mdbase-field-cell mdbase-field-name-cell" });
+      const nameLabel = nameCell.createEl("label", { text: "Name" });
+      const name = nameCell.createEl("input", { type: "text", cls: "mdbase-field-name-control" });
+      name.id = `mdbase-${fieldId}-name`;
+      nameLabel.htmlFor = name.id;
       name.setAttr("data-focus-key", `field-${fieldId}-name`);
       name.setAttr("aria-label", options.nameLabel);
-      name.placeholder = "Field name";
       name.value = options.name ?? "";
       name.disabled = options.readOnly;
       if (options.onNameInput) name.oninput = () => options.onNameInput?.(name.value);
       if (options.onNameCommit) name.onchange = () => options.onNameCommit?.(name.value, name);
     }
 
-    const type = row.createEl("select", { cls: "mdbase-field-type-control" });
+    const typeCell = row.createDiv({ cls: "mdbase-field-cell mdbase-field-type-cell" });
+    const typeLabel = typeCell.createEl("label", { text: "Type" });
+    const type = typeCell.createEl("select", { cls: "mdbase-field-type-control" });
+    type.id = `mdbase-${fieldId}-type`;
+    typeLabel.htmlFor = type.id;
     type.setAttr("data-focus-key", `field-${fieldId}-type`);
     type.setAttr("aria-label", `${options.name || options.staticLabel || "Field"} type`);
     for (const value of FIELD_TYPES) type.createEl("option", { value, text: fieldTypeLabel(value) });
@@ -255,10 +266,13 @@ export class FieldEditor {
       this.deps.markDirty(true);
     };
 
-    const description = row.createEl("input", { type: "text", cls: "mdbase-field-description-control" });
+    const descriptionCell = row.createDiv({ cls: "mdbase-field-cell mdbase-field-description-cell" });
+    const descriptionLabel = descriptionCell.createEl("label", { text: "Description" });
+    const description = descriptionCell.createEl("input", { type: "text", cls: "mdbase-field-description-control" });
+    description.id = `mdbase-${fieldId}-description`;
+    descriptionLabel.htmlFor = description.id;
     description.setAttr("data-focus-key", `field-${fieldId}-description`);
     description.setAttr("aria-label", `${options.name || options.staticLabel || "Field"} description`);
-    description.placeholder = "Description";
     description.value = typeof definition.description === "string" ? definition.description : "";
     description.disabled = options.readOnly;
     description.oninput = () => {
@@ -266,6 +280,13 @@ export class FieldEditor {
       else delete definition.description;
       this.deps.markDirty();
     };
+
+    if (fixed) {
+      row.createDiv({
+        cls: "mdbase-field-fixed mdbase-form-description",
+        text: `Always ${scalarText(definition.const)}. Change the fixed value in YAML.`,
+      });
+    }
 
     if (options.onRequiredChange) {
       const required = row.createEl("label", { cls: "mdbase-field-required" });
@@ -447,7 +468,7 @@ export class FieldEditor {
     refreshSummary: () => void,
   ): void {
     const details = node.createDiv({ cls: "mdbase-field-details mdbase-enum-values" });
-    const fieldLabel = options.name || options.staticLabel || "Enum";
+    const fieldLabel = options.name || options.staticLabel || "Choice";
     const fieldId = this.fieldId(definition);
     details.createDiv({ cls: "mdbase-field-children-label", text: "Allowed values" });
     const values: unknown[] = Array.isArray(definition.values) ? definition.values : [];

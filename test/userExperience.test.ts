@@ -5,16 +5,16 @@ import type { MdbaseConfig } from "../src/mdbaseCore";
 import { coerceFieldInput } from "../src/noteCreation";
 import { validateCollection } from "../src/validation";
 import { safeNotePath } from "../src/createTypedNoteModal";
-import { safePackPath, planPack, applyPack, recoverPackInstall, sha256, type CatalogPack } from "../src/contractCatalog";
+import { safePackPath, planPack, applyPack, recoverPackInstall, sha256, plainCaution, type CatalogPack } from "../src/contractCatalog";
 import { TFile } from "obsidian";
 
 test("validation starts unchecked, records coverage, and invalidates schema and changed notes", () => {
   const state = new ValidationState();
   assert.equal(state.summary(["a", "b"]), "Not checked yet");
   state.markChecked("a");
-  assert.match(state.summary(["a", "b"]), /1 of 2.*uniqueness not checked/);
+  assert.match(state.summary(["a", "b"]), /1 of 2.*duplicate values not checked yet/);
   state.lastCompletedAt = new Date().toISOString(); state.completedRevision = state.revision;
-  assert.match(state.summary(["a", "b"]), /Validated/);
+  assert.match(state.summary(["a", "b"]), /Checked 2 notes at/);
   state.changed("a");
   assert.equal(state.isChecked("a"), false);
   assert.match(state.summary(["a", "b"]), /Changed since/);
@@ -119,4 +119,12 @@ test("restart recovery preserves competing edits and retains evidence", async ()
   await assert.rejects(recoverPackInstall(f.app as never), /changed/);
   assert.equal(f.contents.get("_types/example.md"), "edited after crash");
   assert.ok(f.contents.has(".mdbase/obsidian-pack-install.json"));
+});
+
+test("pack cautions about engine versions read as plain advice; others are shown as written", () => {
+  const engine = "Requires an mdbase engine with path-stored fields (mdbase 0.3.0-rc.6). Older engines reject the Daily note type.";
+  assert.doesNotMatch(plainCaution(engine), /engine|path-stored|0\.3\.0|rc/);
+  assert.match(plainCaution(engine), /recent version of mdbase/);
+  const other = "Most collections do not need this pack.";
+  assert.equal(plainCaution(other), other);
 });

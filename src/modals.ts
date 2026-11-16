@@ -1,6 +1,7 @@
 import { type App, Modal, SuggestModal } from "obsidian";
 import type { MdbaseIssue, MdbaseTypeDef } from "./mdbaseCore";
 import type { TypeDraftChange } from "./typeDraft";
+import { describePathGlob } from "./fieldSummary";
 
 interface TextPromptOptions {
   title: string;
@@ -98,14 +99,14 @@ class TypeSuggestModal extends SuggestModal<MdbaseTypeDef> {
     super(app);
     this.typeDefs = [...typeDefs].sort((a, b) => a.name.localeCompare(b.name));
     this.onResult = onResult;
-    this.setPlaceholder("Type to search...");
+    this.setPlaceholder("Search types");
     this.setInstructions([
       { command: "↑↓", purpose: "navigate" },
       { command: "↵", purpose: "select" },
       { command: "esc", purpose: "cancel" },
     ]);
     this.containerEl.addClass("mdbase-type-picker-modal");
-    this.titleEl.setText("Select type definition");
+    this.titleEl.setText("Choose a type");
   }
 
   getSuggestions(query: string): MdbaseTypeDef[] {
@@ -130,20 +131,22 @@ class TypeSuggestModal extends SuggestModal<MdbaseTypeDef> {
     });
 
     const meta = wrap.createDiv({ cls: "mdbase-type-picker-meta" });
+    const fieldCount = Object.keys(typeDef.fields ?? {}).length;
     meta.createSpan({
       cls: "mdbase-type-picker-path",
       text: typeDef.filePath,
     });
     meta.createSpan({
       cls: "mdbase-type-picker-count",
-      text: `${Object.keys(typeDef.fields ?? {}).length} fields`,
+      text: `${fieldCount} ${fieldCount === 1 ? "field" : "fields"}`,
     });
 
     if (typeDef.match?.path_glob) {
-      wrap.createDiv({
-        cls: "mdbase-type-picker-match",
-        text: `match: ${typeDef.match.path_glob}`,
-      });
+      const match = wrap.createDiv({ cls: "mdbase-type-picker-match" });
+      const plain = describePathGlob(typeDef.match.path_glob);
+      match.createSpan({ text: plain ?? "Notes matching " });
+      if (plain) match.appendText(" · ");
+      match.createEl("code", { text: typeDef.match.path_glob });
     }
   }
 
@@ -242,6 +245,47 @@ export class BulkFixConfirmationModal extends Modal {
       apply.addClass("mod-cta");
       apply.onclick = () => this.finish(true);
       this.open();
+    });
+  }
+
+  onClose(): void {
+    if (!this.settled) this.finish(false, false);
+    this.contentEl.empty();
+  }
+
+  private finish(confirmed: boolean, close = true): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolve?.(confirmed);
+    this.resolve = null;
+    if (close) this.close();
+  }
+}
+
+/** Ask before throwing away unsaved type edits, naming what would be lost. */
+export class DiscardChangesModal extends Modal {
+  private resolve: ((confirmed: boolean) => void) | null = null;
+  private settled = false;
+
+  confirm(title: string, lost: readonly string[], note: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.resolve = resolve;
+      this.titleEl.setText(title);
+      if (lost.length) {
+        this.contentEl.createEl("p", { text: "These unsaved changes will be lost:" });
+        const list = this.contentEl.createEl("ul", { cls: "mdbase-confirm-change-list" });
+        for (const item of lost.slice(0, 8)) list.createEl("li", { text: item });
+        if (lost.length > 8) list.createEl("li", { text: `${lost.length - 8} more` });
+      }
+      this.contentEl.createEl("p", { text: note });
+      const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
+      const cancel = actions.createEl("button", { text: "Keep editing" });
+      cancel.onclick = () => this.finish(false);
+      const discard = actions.createEl("button", { text: "Discard changes" });
+      discard.addClass("mod-warning");
+      discard.onclick = () => this.finish(true);
+      this.open();
+      cancel.focus();
     });
   }
 

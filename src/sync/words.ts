@@ -100,7 +100,7 @@ export function stoppedText(problem: unknown): string {
   if (!known && p.action === "reload") words = `${words ? `${words} ` : ""}Choose Restart sync to continue.`;
   // An unfinished sign-in didn't stop anything: say what happened, not "Sync stopped".
   if (p.action === "sign_in" && words) return words;
-  return `Sync stopped. ${words || "Your files are kept on this computer."}`;
+  return `Sync stopped. ${words || "Your files are kept on this device."}`;
 }
 
 /** The status sentence for a stop the plugin itself noticed (not the sync engine). */

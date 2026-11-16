@@ -145,7 +145,12 @@ test("journals serialize async writes and copied vault state cannot share a name
   const copiedAdapter = new Adapter(); copiedAdapter.getResourcePath = file => `http://localhost/_capacitor_file_/other/${file}`;
   const other = new NativeSync({ ...app, vault: { ...app.vault, adapter: copiedAdapter } }, { dir: ".plugin" }, () => {});
   other.data = await native.readData();
-  assert.throws(() => other.bindVault(), /another vault or host/);
+  other.log = () => {};
+  other.bindVault();
+  assert.notEqual(other.data.vaultId, native.data.vaultId, "settings that never synced start afresh");
+  native.data.collectionId = "c1"; await native.persist();
+  other.data = await native.readData();
+  assert.throws(() => other.bindVault(), e => e.code === "folder_owned" && e.owner === "copied");
   assert.equal(other.data.vaultId, native.data.vaultId);
 });
 test("the Android adapter refuses replacement but permits case-only renames", async () => {

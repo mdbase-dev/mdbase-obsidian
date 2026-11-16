@@ -7,7 +7,7 @@ export interface CallMessage { type: "call"; id: number; method: NativeMethod; a
 export type NativePhase = Partial<Omit<ReturnType<typeof phaseSummary>, "kind">> & {
   kind: string; stalled?: boolean;
   /** `blocked`: who holds this folder, and whether Set up sync here is offered. */
-  owner?: "desktop" | "obsidian" | "unknown" | "unreadable"; takeover?: boolean;
+  owner?: "desktop" | "obsidian" | "unknown" | "unreadable" | "copied"; takeover?: boolean;
 };
 export type PageMessage =
   | { type: "hello"; origin: string; opfs: boolean; isSecureContext: boolean }

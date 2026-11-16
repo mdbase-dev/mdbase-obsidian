@@ -466,13 +466,45 @@ test("controller starts the SDK only without a desktop marker and changes both d
   fs.unlinkSync(marker); await controller.refresh(); assert.equal(created, 2); assert.equal(events.at(-1), "same-collection");
   fs.writeFileSync(marker, "unreadable JSON"); await controller.refresh(); assert.equal(controller.native, null); assert.equal(created, 2);
 });
+/** A host on `root` given another vault's saved journal. */
+function copiedTo(f, root, saved) {
+  const app = { ...f.native.app, vault: { ...f.native.app.vault, adapter: new FileSystemAdapter(root) } };
+  const other = new NativeSync(app, {}, () => {}); other.root = root; other.data = structuredClone(saved); other.log = () => {};
+  return other;
+}
 test("copied vault journals cannot share a writable SDK namespace", async t => {
+  const f = fixture(t); f.native.bindVault();
+  f.native.data.collectionId = "c1"; f.native.data.cursor = "k"; f.native.data.device = { skip: ["video"], folders: [] };
+  const saved = structuredClone(f.native.data);
+  const otherRoot = path.join(f.root, "another-vault"); fs.mkdirSync(otherRoot);
+  const other = copiedTo(f, otherRoot, saved);
+  assert.throws(() => other.bindVault(), e => e.code === "folder_owned" && e.owner === "copied" && e.takeover === true && !/sync-state|host\b|replica/.test(e.message));
+  assert.equal(other.data.vaultId, saved.vaultId, "refusal does not reset or discard the old journal");
+  // Set up sync here: a new identity; only this device's file choices stay.
+  other.bindVault(true);
+  assert.notEqual(other.data.vaultId, saved.vaultId);
+  assert.equal(other.data.collectionId, undefined); assert.equal(other.data.cursor, undefined); assert.equal(other.data.port, undefined);
+  assert.deepEqual(other.data.device, saved.device);
+  assert.equal(other.data.vaultLocation, other.host.location());
+});
+test("copied settings that never synced start afresh without asking", async t => {
   const f = fixture(t); f.native.bindVault(); const saved = structuredClone(f.native.data);
   const otherRoot = path.join(f.root, "another-vault"); fs.mkdirSync(otherRoot);
-  const app = { ...f.native.app, vault: { ...f.native.app.vault, adapter: new FileSystemAdapter(otherRoot) } };
-  const other = new NativeSync(app, {}, () => {}); other.root = otherRoot; other.data = saved;
-  assert.throws(() => other.bindVault(), /another vault or host/);
-  assert.equal(other.data.vaultId, f.native.data.vaultId, "refusal does not reset or discard the old journal");
+  const other = copiedTo(f, otherRoot, saved);
+  other.bindVault();
+  assert.notEqual(other.data.vaultId, saved.vaultId, "never the original vault's sign-in or storage");
+});
+test("a vault moved or renamed on this device keeps syncing as before", async t => {
+  const f = fixture(t);
+  const oldRoot = path.join(f.root, "old-place"); fs.mkdirSync(oldRoot);
+  const before = copiedTo(f, oldRoot, f.native.data); before.bindVault();
+  before.data.collectionId = "c1"; before.data.cursor = "k";
+  const saved = structuredClone(before.data);
+  const newRoot = path.join(f.root, "new-place"); fs.renameSync(oldRoot, newRoot);
+  const after = copiedTo(f, newRoot, saved);
+  after.bindVault();
+  assert.equal(after.data.vaultId, saved.vaultId); assert.equal(after.data.collectionId, "c1"); assert.equal(after.data.cursor, "k");
+  assert.equal(after.data.vaultLocation, after.host.location());
 });
 test("a vault reuses its saved port and refuses to move when it is occupied", async t => {
   const f = fixture(t); await f.native.startServer(); const port = f.native.data.port;
@@ -1185,7 +1217,7 @@ test("the controller hands Set up sync here to the fresh host, and only for an o
   natives[0].phase = { kind: "blocked", owner: "obsidian", takeover: true };
   await controller.takeOver();
   assert.equal(natives.length, 2);
-  assert.deepEqual(natives[1].takeOverFrom, { marker: "seen" });
+  assert.deepEqual(natives[1].takeOverFrom, { marker: "seen", fresh: false });
   await controller.restartNative();
   assert.equal(natives[2].takeOverFrom, null, "a later restart takes nothing over");
 });

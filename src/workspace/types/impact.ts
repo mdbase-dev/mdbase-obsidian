@@ -107,7 +107,8 @@ export class TypeImpact {
       this.fillMatchPreview(preview);
     }
     const summary = this.ctx.containerEl.querySelector<HTMLElement>("[data-disclosure='type-matching'] > summary");
-    if (summary) summary.textContent = this.matchingLabel();
+    const label = summary?.querySelector<HTMLElement>(".mdbase-chevron-summary-label") ?? summary;
+    if (label) label.textContent = this.matchingLabel();
     const effect = this.ctx.containerEl.querySelector<HTMLElement>(".mdbase-impact");
     if (effect) {
       effect.empty();
@@ -150,7 +151,7 @@ export class TypeImpact {
       if (!this.ctx.records || !name || (result && "error" in result && this.deps.dirty())) {
         container.createDiv({
           cls: "mdbase-muted",
-          text: !this.ctx.records ? "Counting notes…" : result && "error" in result ? "Fix errors to preview matching notes." : "Save the type to preview matching notes.",
+          text: !this.ctx.records ? "Counting notes…" : result && "error" in result ? `${fixFirst(result.error)} to preview matching notes.` : "Save the type to preview matching notes.",
         });
         return;
       }
@@ -208,7 +209,7 @@ export class TypeImpact {
       return;
     }
     if ("error" in result) {
-      container.createDiv({ cls: "mdbase-muted", text: "Fix errors to check existing notes." });
+      container.createDiv({ cls: "mdbase-muted", text: `${fixFirst(result.error)} to check existing notes.` });
       return;
     }
     const { impact } = result;
@@ -240,4 +241,9 @@ export class TypeImpact {
       list.createDiv({ cls: "mdbase-muted", text: `${newlyFailing.length - 10} more notes` });
     }
   }
+}
+
+/** What to do before notes can be checked: name a nameless type, otherwise fix its errors. */
+function fixFirst(error: string): string {
+  return /name is required/i.test(error) ? "Name the type" : "Fix errors";
 }

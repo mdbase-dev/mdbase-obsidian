@@ -105,11 +105,7 @@ export function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export function fieldTypeLabel(type: string): string {
-  if (type === "any") return "Any value";
-  if (type === "datetime") return "Date and time";
-  return type ? type[0].toUpperCase() + type.slice(1) : type;
-}
+export { fieldTypeLabel } from "../fieldSummary";
 
 export function definitionType(definition: Record<string, unknown>): string {
   return typeof definition.type === "string" ? definition.type : "any";

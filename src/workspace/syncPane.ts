@@ -1,8 +1,8 @@
-import { Notice, Setting, SuggestModal, TFolder, setIcon, type App } from "obsidian";
+import { Notice, Setting, setIcon } from "obsidian";
 import type { HeldFile, HoldChoice, SyncKind, SyncSnapshot } from "../sync/controller";
 import type { DirectFailure, MergePrompt, SyncTotals } from "../sync/native/plugin";
-import { MEDIA_CLASSES, type ActivityEntry, type ActivityKind, type CollectionInclusion, type DeviceFilter, type MediaClass } from "../sync/native/device";
-import { CHOOSE_AGAIN_HINT, SIGN_OUT_DESC, errorText, holdReasonText, modeName, summarize, unlockProblemText } from "../sync/words";
+import type { ActivityEntry, ActivityKind, CollectionInclusion } from "../sync/native/device";
+import { CHOOSE_AGAIN_HINT, errorText, holdReasonText, modeName, summarize, unlockProblemText } from "../sync/words";
 import { renderStatus, type WorkspaceContext } from "./shared";
 
 export const DOWNLOAD_URL = "https://mdbase.dev/downloads";
@@ -37,13 +37,6 @@ const TONE_ICONS: Record<string, string> = {
   attention: "alert-triangle",
   problem: "alert-circle",
   quiet: "cloud",
-};
-const MEDIA_NAMES: Record<MediaClass, [string, string]> = {
-  image: ["Images", "png, jpg, gif, svg, webp and other pictures"],
-  audio: ["Audio", "mp3, m4a, wav, ogg and other recordings"],
-  video: ["Videos", "mp4, mov, webm and other video"],
-  pdf: ["PDFs", "PDF documents"],
-  other: ["Other files", "Any other attachment, such as canvas, zip or csv files"],
 };
 const ACTIVITY: Record<ActivityKind, [string, string]> = {
   uploaded: ["upload", "Sent"],
@@ -164,18 +157,17 @@ export class SyncPane {
         this.renderSyncNow(root, () => native.enqueue(() => native.reconcileAll(false, undefined, true)));
         this.renderDirectFailures(root, s.direct.failures ?? []);
         this.renderDirectConflicts(root, s.direct.conflicts ?? []);
-        this.renderOverview(root, s.direct.lastSynced ?? null, s.direct.totals ?? null, s.direct.phase.sync);
-        this.renderDevice(root, s.direct.device ?? { skip: [], folders: [] }, s.direct.inclusion ?? null, (next) => this.run(() => native.setDevice(next)));
-        this.renderActivity(root, s.direct.activity ?? []);
-        this.renderApps(root, s.direct.phase.manageAccess ?? null);
-        const advanced = this.group(root, "Advanced", undefined, true);
-        new Setting(advanced).setName("Edits on two devices at once")
-          .setDesc("Both versions are kept: the other one as a conflict file beside the original.");
-        const transfer = new Setting(advanced).setName("Move sync to the mdbase app")
-          .setDesc("Obsidian is syncing this vault itself. To let the mdbase desktop app do it instead, Obsidian sends any remaining changes and stops. Then add this folder in the mdbase app and pick the same collection. If anything can't be sent, Obsidian carries on syncing.");
-        transfer.addButton(button => button.setButtonText("Move to mdbase app").onClick(() => this.run(() => native.handover())));
-        new Setting(advanced).setName(SIGN_OUT).setDesc(SIGN_OUT_DESC)
-          .addButton(button => button.setButtonText(SIGN_OUT).onClick(() => this.run(() => native.signOut())));
+        // The heading already says whether it's synced; the rest is there when wanted.
+        const details = this.ctx.disclosure(root, "sync-details", "Details");
+        details.addClass("mdbase-sync-details");
+        this.renderOverview(details, s.direct.lastSynced ?? null, s.direct.totals ?? null, s.direct.phase.sync);
+        this.renderActivity(details, s.direct.activity ?? []);
+        // What this device syncs, Sign out and moving to the mdbase app live in settings.
+        const apps = connectUrl(s.direct.phase.manageAccess ?? null)?.href;
+        this.actions(root, [
+          ...(apps ? [[MANAGE_APPS, false, () => window.open(apps)] as [string, boolean, () => void]] : []),
+          [SYNC_SETTINGS, false, () => this.ctx.host.openSettings()],
+        ]);
       } else if (phase === "handed_over") {
         // Done on purpose; the heading says what's next.
         this.actions(root, [["Get the mdbase app", false, () => window.open(DOWNLOAD_URL)]]);
@@ -323,37 +315,6 @@ export class SyncPane {
     if (totals.notHere) row("Not on this device", count(totals.notHere, "file"), totals.byCollection === totals.notHere ? "In the collection, but its own file settings leave them out." : "In the collection, but left out here by your choices below or the collection's file settings.");
   }
 
-  private renderDevice(root: HTMLElement, device: DeviceFilter, inclusion: CollectionInclusion | null, save: (next: DeviceFilter) => void): void {
-    const list = this.group(root, "On this device", "mdbase-sync-device", true);
-    new Setting(list).setName("Notes and types").setDesc("Always synced, apart from the folders you leave out below.");
-    for (const media of MEDIA_CLASSES) {
-      const [name, desc] = MEDIA_NAMES[media];
-      // The collection's own setting wins: a kind it doesn't sync is off on every device.
-      const collectionOff = inclusion !== null && !inclusion.include.includes(media);
-      new Setting(list).setName(name)
-        .setDesc(collectionOff ? "Not synced in this collection. Change this in the mdbase app." : desc)
-        .addToggle((toggle) => toggle
-          .setValue(!collectionOff && !device.skip.includes(media))
-          .setDisabled(collectionOff)
-          .onChange((on) => save({ ...device, skip: on ? device.skip.filter((m) => m !== media) : [...device.skip, media] })));
-    }
-    const limits = collectionLimits(inclusion);
-    if (limits) new Setting(list).setName("Collection limits").setDesc(`${limits} Set for every device in the mdbase app.`);
-    const folders = new Setting(list).setName("Folders left out")
-      .setDesc(device.folders.length ? "Nothing in these folders syncs to or from this device." : "Choose folders whose notes and files stay off this device.");
-    folders.addButton((button) => button.setButtonText("Add folder").onClick(() => {
-      new FolderPicker(this.ctx.app, device.folders, (folder) => save({ ...device, folders: [...device.folders, folder] })).open();
-    }));
-    for (const folder of device.folders) {
-      const row = new Setting(list).setName(folder);
-      row.settingEl.addClass("mdbase-sync-folder");
-      row.addExtraButton((button) => button
-        .setIcon("x").setTooltip(`Sync ${folder} again`)
-        .onClick(() => save({ ...device, folders: device.folders.filter((f) => f !== folder) })));
-    }
-    list.createDiv({ cls: "setting-item mdbase-sync-device-note", text: "These choices apply to this device only. Turning something off never deletes it, here or anywhere else; turning it back on brings it here again." });
-  }
-
   private renderActivity(root: HTMLElement, activity: ActivityEntry[]): void {
     const group = root.createDiv({ cls: "setting-group mdbase-sync-group" });
     const heading = group.createDiv({ cls: "setting-item setting-item-heading" });
@@ -466,7 +427,7 @@ export class SyncPane {
       text.createDiv({ cls: "mdbase-muted", text: description });
     };
     option("cloud", "Cloud copy (recommended)", "mdbase keeps a copy online, so your notes open in mdbase apps on the web and arrive on a new device straight away.");
-    option("private", "Private", "Encrypted so only your devices can read it. For now it works on this computer only: other computers can't be added yet. Web apps work only while this computer is on.");
+    option("private", "Private", "Encrypted so only your devices can read it. For now it works on this computer only, and web apps work only while it's on.");
     this.actions(section, [["Turn on sync", true, () => this.run(async () => {
       await controller.setUp(this.kind, this.name);
       new Notice("Sync is on for this vault.");
@@ -474,7 +435,7 @@ export class SyncPane {
 
     if (isCollection) return;
     const join = this.group(root, "Add a collection you already sync");
-    join.createEl("p", { cls: "mdbase-muted", text: "On a device that already syncs it, copy the link from the sync tab of the mdbase view, then paste it here. For now, private collections work on the first computer only, so only cloud copy collections can be added here." });
+    join.createEl("p", { cls: "mdbase-muted", text: "On a device that already syncs it, choose Copy link in mdbase's Sync tab, then paste the link here. Only Cloud copy collections can be added for now." });
     new Setting(join).setName("Link or ID").addText((text) => {
       text.setPlaceholder("Paste the collection link").setValue(this.joinText).onChange((value) => { this.joinText = value; });
       text.inputEl.setAttr("data-focus-key", "sync-join-link");
@@ -543,8 +504,9 @@ export class SyncPane {
   private renderDirectFailures(root: HTMLElement, failures: DirectFailure[]): void {
     if (!failures.length) return;
     const native = this.ctx.host.syncController.native;
-    const section = this.group(root, failures.length === 1 ? "1 file not synced" : `${failures.length} files not synced`);
-    section.createEl("p", { cls: "mdbase-muted", text: "Everything else is in sync. These stay as they are on this computer until they're fixed; sync tries them again when they change." });
+    // The heading already counts them and says everything else is in sync.
+    const section = this.group(root, "Not synced");
+    section.createEl("p", { cls: "mdbase-muted", text: "These stay as they are on this device until they're fixed. Sync tries them again when they change." });
     const list = section.createDiv({ cls: "mdbase-hold-list" });
     for (const failure of failures.slice(0, MAX_FAILURES_SHOWN)) {
       const row = list.createDiv({ cls: "mdbase-hold" });
@@ -728,18 +690,8 @@ export class SyncPane {
         void navigator.clipboard.writeText(link).then(() => new Notice("Copied. Open the link on your other device, or paste it into the sync tab there."));
       }],
       ...(apps ? [[MANAGE_APPS, false, () => window.open(apps)] as [string, boolean, () => void]] : []),
-      ["Sync settings", false, () => this.ctx.host.openSettings()],
+      [SYNC_SETTINGS, false, () => this.ctx.host.openSettings()],
     ]);
-  }
-
-  /** Which apps can use this collection is managed in mdbase, not here. */
-  private renderApps(root: HTMLElement, link: string | null): void {
-    const url = connectUrl(link)?.href;
-    if (!url) return;
-    const list = this.group(root, undefined, "mdbase-sync-apps", true);
-    new Setting(list).setName("Apps")
-      .setDesc("See which apps can use this collection, and remove their access, on the mdbase website.")
-      .addButton((button) => button.setButtonText(MANAGE_APPS).onClick(() => window.open(url)));
   }
 }
 
@@ -747,6 +699,7 @@ export class SyncPane {
 export const RESTART_SYNC = "Restart sync";
 
 export const SIGN_OUT = "Sign out";
+export const SYNC_SETTINGS = "Sync settings";
 export const CHOOSE_ANOTHER = "Choose another collection";
 
 export const START_OVER_HINT = "Start over signs this vault out of mdbase, so you can sign in again with any account. Nothing has synced yet, so your notes aren't affected.";
@@ -814,27 +767,10 @@ export function differingLines(a: string, b: string): [string, string] {
   return [cut(x), cut(y)];
 }
 
-class FolderPicker extends SuggestModal<string> {
-  constructor(app: App, private readonly taken: string[], private readonly pick: (folder: string) => void) {
-    super(app);
-    this.setPlaceholder("Folder to leave off this device");
-  }
-  getSuggestions(query: string): string[] {
-    const q = query.toLowerCase();
-    return this.app.vault.getAllLoadedFiles()
-      .filter((f): f is TFolder => f instanceof TFolder && !f.isRoot() && !f.path.split("/").some((part) => part.startsWith(".")))
-      .map((f) => f.path)
-      .filter((p) => !this.taken.includes(p) && p.toLowerCase().includes(q))
-      .sort((a, b) => a.localeCompare(b))
-      .slice(0, 100);
-  }
-  renderSuggestion(folder: string, el: HTMLElement): void { el.setText(folder); }
-  onChooseSuggestion(folder: string): void { this.pick(folder); }
-}
 
-const count = (n: number, noun: string) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
+export const count = (n: number, noun: string) => `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 
-function size(bytes: number): string {
+export function size(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let value = bytes / 1024, unit = 0;
