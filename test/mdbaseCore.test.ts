@@ -669,3 +669,19 @@ test("rejects explicit and policy-generated path traversal", async () => {
     (error: unknown) => error instanceof MdbasePathError && error.code === "path_traversal",
   );
 });
+
+test("a note without frontmatter matching no type is a valid untyped record", async () => {
+  // TaskNotes 5 writes `_mdbase/README.md` (no frontmatter) outside its excluded types folder.
+  const vault = new MockVault();
+  await vault.writeNote("_types/task.md", v03TaskType());
+  const readme = await vault.create("_mdbase/README.md", "# mdbase\n\nThis folder holds the setup for this collection.\n");
+  const stray = await vault.writeNote("notes/stray.md", { title: "Has frontmatter, no type" });
+  const config = createV03Config();
+  const types = await loadTypeDefinitions(vault as unknown as any, config);
+
+  assert.deepEqual(await validateFile(vault as unknown as any, readme, config, types), []);
+  const strayIssues = await validateFile(vault as unknown as any, stray, config, types);
+  assert.deepEqual(strayIssues.map((issue) => issue.code), ["no_matching_type"]);
+  const all = await validateCollection(vault as unknown as any, config, types);
+  assert.ok(!all.some((issue) => issue.path === "_mdbase/README.md"), JSON.stringify(all));
+});

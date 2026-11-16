@@ -12,6 +12,7 @@ const result = await build({
   stdin: { contents: `export {default as NativeSync} from './src/sync/native/plugin.ts';
     export * from './src/sync/native/download.ts'; export * from './src/sync/native/downloadPull.ts';
     export * from './src/sync/native/upload.ts'; export * from './src/sync/ownership.ts';
+    export { classifyMarker, MARKER_STALE_MS } from './src/sync/native/marker.ts';
     export { SyncController } from './src/sync/controller.ts';
     export {TFile, FileSystemAdapter} from 'obsidian';`, resolveDir: process.cwd() },
   bundle: true, platform: "node", format: "esm", write: false,
@@ -25,7 +26,7 @@ const result = await build({
     ` : 'export default {};', loader: "js" }));
   } }],
 });
-const { NativeSync, TFile, FileSystemAdapter, stageDownload, DownloadPull, BRIDGE_CHUNK_BYTES, RetryUploads, retryUpload, folderHost, SyncController } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
+const { NativeSync, TFile, FileSystemAdapter, stageDownload, DownloadPull, BRIDGE_CHUNK_BYTES, RetryUploads, retryUpload, folderHost, SyncController, classifyMarker, MARKER_STALE_MS } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
 const digest = bytes => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 function fixture(t) {
   const root = fs.mkdtempSync(path.resolve("test/native/.fixture-"));
@@ -1104,4 +1105,131 @@ test("a sign-in waiting in the browser can start over while nothing is bound (is
   assert.deepEqual(calls, ["signOut"]);
   f.native.phase = { kind: "authorizing", collectionId: "c" }; f.native.data.collectionId = "c";
   assert.equal(f.native.canStartOver, false, "Request access again on a bound vault is not a sign-in to drop");
+});
+
+// ---- A marker left behind (reinstall, lost data.json, or carried in by a file-sync service) ----
+/** A real host starting on a vault whose .mdbase/host.json is `marker`, counting what would raise a notice. */
+async function startOver(t, f, marker, journal, takeOverFrom) {
+  fs.mkdirSync(path.join(f.root, ".mdbase"), { recursive: true });
+  const markerPath = path.join(f.root, ".mdbase/host.json");
+  const text = marker === null ? null : JSON.stringify(marker);
+  if (text !== null) fs.writeFileSync(markerPath, text);
+  if (journal) fs.writeFileSync(path.join(f.root, ".plugin/sync-state.json"), JSON.stringify(journal));
+  const frames = [], notices = [], statuses = [];
+  const native = host(f, frames);
+  if (takeOverFrom !== undefined) native.takeOverFrom = { marker: takeOverFrom };
+  delete native.checkOwnership; // the real check, not the fixture's stub
+  native.changed = text => statuses.push(text);
+  const fail = native.fail.bind(native);
+  native.fail = (...args) => { notices.push(args); return fail(...args); };
+  t.after(() => { native.onunload(); if (native.host.server) native.host.server.close(); });
+  await native.initialize();
+  return { native, frames, notices, statuses, markerPath, text, read: () => fs.readFileSync(markerPath, "utf8") };
+}
+const HOUR = 60 * 60_000;
+const otherPid = process.pid + 1;
+
+test("a fresh install over an earlier install's stale marker shows no notice, only Set up sync here", async t => {
+  const f = fixture(t);
+  const s = await startOver(t, f, { host: "obsidian", pid: otherPid, collection_id: null, since_ms: Date.now() - 2 * HOUR, heartbeat_ms: Date.now() - HOUR });
+  assert.deepEqual(s.notices, [], "a vault that isn't set up to sync raises no notice");
+  assert.equal(s.native.phase.kind, "blocked");
+  assert.equal(s.native.phase.owner, "obsidian"); assert.equal(s.native.phase.takeover, true);
+  assert.match(s.statuses.at(-1), /^This vault was set up for sync before, maybe by an earlier install of this plugin\./);
+  for (const text of s.statuses) assert.doesNotMatch(text, /marker|host\b|owned/i);
+  assert.equal(s.frames.length, 0, "nothing starts");
+  assert.equal(s.read(), s.text, "the marker is untouched without the click");
+  await s.native.recheckBlock();
+  assert.equal(s.read(), s.text, "re-checking never touches it either");
+});
+
+test("a stale marker is replaced only after Set up sync here, and the next host then syncs", async t => {
+  const f = fixture(t);
+  const marker = { host: "obsidian", pid: otherPid, collection_id: null, since_ms: 1, heartbeat_ms: Date.now() - HOUR };
+  const s = await startOver(t, f, marker);
+  assert.equal(s.read(), s.text);
+  s.native.onunload(); await s.native.released;
+  // The click: the controller restarts with the marker text that was offered.
+  const fresh = await startOver(t, f, marker, undefined, s.native.blockedMarker);
+  const mine = JSON.parse(fresh.read());
+  assert.equal(mine.host, "obsidian"); assert.equal(mine.pid, process.pid);
+  assert.equal(mine.since_ms, fresh.native.data.markerSince);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.root, ".plugin/sync-state.json"), "utf8")).markerSince, mine.since_ms, "saved before the marker is written");
+  assert.notEqual(fresh.native.phase.kind, "blocked");
+  assert.equal(fresh.frames.length, 1, "the fresh host started sync");
+  assert.deepEqual(fresh.notices, []);
+});
+
+test("Set up sync here refuses when the marker changed or came alive since it was offered", async t => {
+  const f = fixture(t);
+  const s = await startOver(t, f, { host: "obsidian", pid: otherPid, collection_id: null, since_ms: 1, heartbeat_ms: Date.now() - HOUR });
+  s.native.onunload(); await s.native.released;
+  const live = { host: "obsidian", pid: otherPid, collection_id: null, since_ms: 1, heartbeat_ms: Date.now() };
+  // The other install woke up and wrote its heartbeat before the click.
+  const fresh = await startOver(t, f, live, undefined, s.native.blockedMarker);
+  assert.equal(fresh.read(), JSON.stringify(live), "a live marker is never replaced");
+  assert.equal(fresh.native.phase.kind, "blocked");
+  assert.equal(fresh.native.phase.takeover, false, "and the offer goes away");
+  assert.equal(fresh.frames.length, 0);
+});
+
+test("the controller hands Set up sync here to the fresh host, and only for an offered takeover", async t => {
+  const natives = [];
+  const controller = new SyncController({ vaultPath: () => null, vaultTopLevel: () => [], workspace: () => ({}), binaryOverride: () => "", appVersion: "test", openUrl() {},
+    createNative: async () => { const n = { phase: { kind: "blocked", owner: "desktop", takeover: false }, blockedMarker: "seen", takeOverFrom: null, load() {}, unload() {}, released: Promise.resolve() }; natives.push(n); return n; },
+  }, true);
+  controller.stopped = false; t.after(() => controller.stop());
+  await controller.refresh();
+  await controller.takeOver();
+  assert.equal(natives.length, 1, "not offered: nothing restarts");
+  natives[0].phase = { kind: "blocked", owner: "obsidian", takeover: true };
+  await controller.takeOver();
+  assert.equal(natives.length, 2);
+  assert.deepEqual(natives[1].takeOverFrom, { marker: "seen" });
+  await controller.restartNative();
+  assert.equal(natives[2].takeOverFrom, null, "a later restart takes nothing over");
+});
+
+for (const [name, marker, words] of [
+  ["the desktop app's marker, however old", { host: "daemon", pid: otherPid, collection_id: "c", heartbeat_ms: 0 }, /^Another app is already syncing this vault: the mdbase desktop app\. Turn sync off there first\./],
+  ["a live Obsidian marker from another process or device", { host: "obsidian", pid: otherPid, collection_id: null, since_ms: 1, heartbeat_ms: Date.now() }, /^Another copy of Obsidian is already syncing this vault/],
+  ["an unknown app's marker", { host: "other" }, /^Another app is already syncing this vault\. Turn sync off there first\./],
+]) test(`${name} still blocks, in plain words, and is never replaced`, async t => {
+  const f = fixture(t);
+  const s = await startOver(t, f, marker);
+  assert.equal(s.native.phase.kind, "blocked"); assert.equal(s.native.phase.takeover, false);
+  assert.match(s.statuses.at(-1), words);
+  assert.doesNotMatch(s.statuses.at(-1), /marker|host\b|owned/i);
+  assert.deepEqual(s.notices, [], "not set up here: no notice");
+  s.native.onunload(); await s.native.released;
+  // Even a forced takeover is refused by the check made at the click.
+  const forced = await startOver(t, f, marker, undefined, s.text);
+  assert.equal(forced.native.phase.kind, "blocked"); assert.equal(forced.native.phase.takeover, false);
+  assert.equal(forced.frames.length, 0);
+  assert.equal(s.read(), s.text);
+});
+
+test("a marker this same desktop process wrote (uninstall and reinstall without restarting) is offered at once", async t => {
+  const f = fixture(t);
+  const s = await startOver(t, f, { host: "obsidian", pid: process.pid, collection_id: null, since_ms: 1, heartbeat_ms: Date.now() });
+  assert.equal(s.native.phase.takeover, true);
+  assert.equal(s.read(), s.text);
+});
+
+test("a vault set up to sync here still says, with a notice, that another app holds it", async t => {
+  const f = fixture(t);
+  const s = await startOver(t, f, { host: "daemon", collection_id: "c" }, { version: 1, vaultId: "v", paths: {}, collectionId: "c", markerSince: 5 });
+  assert.equal(s.notices.length, 1);
+  assert.match(s.notices[0][2], /the mdbase desktop app/);
+  assert.equal(s.read(), s.text);
+});
+
+test("a stale marker that a file-sync service carried from another device is judged by its heartbeat, not its pid", () => {
+  const now = Date.now();
+  const fromAnotherDevice = { host: "obsidian", pid: 4242, collection_id: "c", since_ms: 1 };
+  assert.equal(classifyMarker({ ...fromAnotherDevice, heartbeat_ms: now - 60_000 }, now, 9999).takeover, false, "a phone backgrounded a minute ago may still be syncing");
+  assert.equal(classifyMarker({ ...fromAnotherDevice, heartbeat_ms: now - 11 * 60_000 }, now, 9999).takeover, true);
+  assert.equal(classifyMarker({ host: "obsidian", collection_id: null, since_ms: 1 }, now).takeover, false, "no heartbeat: never offered");
+  assert.equal(classifyMarker({ host: "daemon", heartbeat_ms: 0 }, now).takeover, false);
+  assert.equal(MARKER_STALE_MS, 10 * 60_000);
 });

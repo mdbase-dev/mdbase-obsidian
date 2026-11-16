@@ -5,8 +5,11 @@ import type { DownloadOptions, EngineHost, EngineOptions, HostResult } from "./h
 import { vaultNamespace } from "./host";
 import { BRIDGE_CHUNK_BYTES } from "./downloadPull";
 
+/** iPhone and iPad: Obsidian's page runs at capacitor://localhost, which sync hasn't been qualified for (docs/sdk-sync.md). */
+export const IOS_NOT_YET = "Sync isn't available on iPhone and iPad yet. Types and checking work as usual.";
 export function mobileOrigin(origin: string): string {
   const url = new URL(origin);
+  if (url.protocol === "capacitor:") throw Object.assign(new Error(IOS_NOT_YET), { code: "platform_unsupported" });
   if (url.origin !== origin || url.protocol !== "http:" || url.hostname !== "localhost" || url.port)
     throw new Error("Mobile sync needs a supported secure WebView origin. This origin has not been qualified.");
   return origin;
@@ -109,7 +112,7 @@ export class MobileHost implements EngineHost {
   }
   identity() { return undefined; }
   async checkLock() {
-    if (await this.exists(".mdbase/host.lock")) throw new Error("Desktop folder lock exists; mobile cannot verify it. Waiting for manual recovery.");
+    if (await this.exists(".mdbase/host.lock")) throw Object.assign(new Error("Desktop folder lock exists; mobile cannot verify it. Waiting for manual recovery."), { code: "folder_locked" });
   }
   async checkOwnership(validate: (marker: string | null) => void) {
     let marker: string | null = null;

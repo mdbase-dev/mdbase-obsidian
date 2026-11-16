@@ -57,7 +57,7 @@ export class DesktopHost implements EngineHost {
   checkLock() {
     const lock = this.join(this.root, ".mdbase/host.lock");
     if (this.exists(lock) && (process.platform !== "linux" || this.spawnSync("flock", ["-n", lock, "true"], { timeout: 1000 }).status !== 0))
-      throw new Error("Desktop folder lock held or lock probe unavailable; waiting");
+      throw Object.assign(new Error("Desktop folder lock held or lock probe unavailable; waiting"), { code: "folder_locked" });
   }
   checkOwnership(validate: (marker: string | null) => void) {
     this.assertPath(".mdbase/host.json"); this.assertPath(".mdbase/host.lock");

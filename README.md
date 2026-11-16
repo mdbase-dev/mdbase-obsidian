@@ -1,21 +1,26 @@
 # mdbase for Obsidian
 
-Give your notes types, check them, and sync them with
-[mdbase](https://mdbase.dev).
+Sync your vault across devices and use it in [mdbase](https://mdbase.dev) apps
+like TaskNotes. The plugin can also give your notes types and check notes
+against them.
 
-mdbase treats a folder of Markdown notes as a collection of typed records. A
-*type* says what properties a kind of note has (a book has a title, an author
-and a rating from 1 to 5, say). This plugin lets you:
-
-- **design types** with a form, or in YAML if you prefer;
-- **create notes from a type**, with a form that fills in the properties for you;
-- **check notes against their types** as you open and save them, or check the
-  whole vault at once, with one-click fixes for common problems;
-- **sync the vault** with mdbase on desktop and Android, so it's available on
-  your other devices and in mdbase web apps.
+- **Sync the vault** with mdbase, so it's on your other devices and in mdbase
+  apps. Sync runs inside the plugin on Windows, macOS, Linux and Android, so
+  you don't need anything else installed.
+- **Design types** with a form, or in YAML if you prefer. A *type* says what
+  properties a kind of note has (a book has a title, an author and a rating
+  from 1 to 5, say).
+- **Create notes from a type**, with a form that fills in the properties for
+  you.
+- **Check notes against their types** as you open and save them, or check the
+  whole vault at once, with one-click fixes for common problems.
 
 Types and checking work offline and without an account. Only sync needs an
 mdbase account.
+
+**Using TaskNotes App on your phone?** You only need this plugin on one
+device, such as your computer. Your phone uses TaskNotes App and gets your
+tasks through mdbase.
 
 ## Install
 
@@ -59,14 +64,17 @@ enough to tap.
 
 With **Validate notes automatically** on (the default), notes are checked
 against their types when you open and save them. **mdbase: Validate collection**
-checks the whole vault, shows progress, and can be stopped. Many problems come
+checks the whole vault, shows progress, and can be stopped. A note without
+properties that no type matches, such as a plain note or an app's README, is
+fine and isn't reported. Many problems come
 with a fix you can apply in one click; it changes only the property it names.
 
 ## Sync
 
 Sync keeps the vault in step with an mdbase collection. It runs inside the
 plugin on desktop and on Android, so a phone doesn't need anything else
-installed.
+installed. It isn't available on iPhone and iPad yet (see
+[Requirements](#requirements)).
 
 1. Open the **Sync** tab in the workspace and choose **Sign in**. Your browser
    opens an mdbase page. Approve Obsidian there and pick the collection this
@@ -79,8 +87,9 @@ There are two kinds of collection:
 - **Cloud copy** keeps a copy online, so mdbase web apps and new devices get
   your notes straight away.
 - **Private** collections are end-to-end encrypted. Obsidian asks for your
-  encryption password to unlock one. They're only offered when mdbase lets this
-  device keep the collection's key, which it doesn't do everywhere yet.
+  encryption password to unlock one. They're only listed when mdbase lets this
+  device keep the collection's key, which it doesn't do everywhere yet. If a
+  Private collection you expect isn't listed, this device doesn't have its key.
 
 Once it's running:
 
@@ -102,6 +111,15 @@ Once it's running:
 On phones, Android stops Obsidian soon after it goes into the background. Sync
 picks up again when you reopen it. Approving a sign-in in the browser can take
 two tries if you take a while to come back to Obsidian.
+
+### Reinstalling, or another app syncing the vault
+
+Only one app syncs a vault at a time. If the plugin finds that the vault was
+set up for sync before, for example by an earlier install of this plugin, the
+Sync tab says so and offers **Set up sync here**. Nothing changes until you
+choose it. If another app is syncing the vault right now, such as the mdbase
+desktop app or Obsidian on another device, the Sync tab names it. Turn sync off
+there first.
 
 ### The mdbase desktop app
 
@@ -148,7 +166,11 @@ collection's settings and types.
 - Types and checking work on desktop and mobile.
 - Sync works on Windows, macOS and Linux, and on Android with Obsidian 1.12.3 or
   later. Android sync has been tested on an emulator, not yet on physical
-  phones. Sync isn't available on iOS yet.
+  phones.
+- Sync isn't available on iPhone and iPad yet. Obsidian runs plugins there
+  from a different kind of web address, which mdbase sync doesn't accept yet.
+  Types and checking work there as usual, and the Sync tab says sync isn't
+  available instead of showing an error.
 - Collections in mdbase v0.3. v0.2 collections open read-only until you
   upgrade them.
 

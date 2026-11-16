@@ -4,7 +4,11 @@ export type NativeMethods = typeof methods;
 export type NativeMethod = keyof NativeMethods;
 export type NativeResult<Method extends NativeMethod> = Awaited<ReturnType<NativeMethods[Method]>>;
 export interface CallMessage { type: "call"; id: number; method: NativeMethod; args?: unknown[] }
-export type NativePhase = Partial<Omit<ReturnType<typeof phaseSummary>, "kind">> & { kind: string; stalled?: boolean };
+export type NativePhase = Partial<Omit<ReturnType<typeof phaseSummary>, "kind">> & {
+  kind: string; stalled?: boolean;
+  /** `blocked`: who holds this folder, and whether Set up sync here is offered. */
+  owner?: "desktop" | "obsidian" | "unknown" | "unreadable"; takeover?: boolean;
+};
 export type PageMessage =
   | { type: "hello"; origin: string; opfs: boolean; isSecureContext: boolean }
   | { type: "phase"; phase: NativePhase }

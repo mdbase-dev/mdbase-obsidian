@@ -718,7 +718,12 @@ export async function validateFile(
   const typeNames = getTypesForFile(file.path, frontmatter, config, typeMap);
 
   if (typeNames.length === 0) {
-    pushIssue(issues, file.path, "warn", "no_matching_type", "No type could be resolved for this file");
+    // An untyped record is valid (spec Chapter 02). Only warn when frontmatter
+    // suggests the note was meant to be a record, so a plain note or an app's
+    // README such as TaskNotes' `_mdbase/README.md` raises no issue.
+    if (parsed.hasFrontmatter) {
+      pushIssue(issues, file.path, "warn", "no_matching_type", "No type could be resolved for this file");
+    }
     return issues;
   }
 
