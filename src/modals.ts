@@ -237,10 +237,12 @@ export class BulkFixConfirmationModal extends Modal {
       this.resolve = resolve;
       const paths = [...new Set(issues.map((issue) => issue.path))];
       const noteCount = paths.length;
-      const field = issues[0]?.field ?? t`affected`;
+      const field = issues[0]?.field;
       this.titleEl.setText(t`${label} in ${plural(noteCount, { one: "# note", other: "# notes" })}?`);
       this.contentEl.createEl("p", {
-        text: t`Only the '${field}' frontmatter field changes in each note. Notes that changed since validation are skipped.`,
+        text: field
+          ? t`Only the '${field}' frontmatter field changes in each note. Notes that changed since validation are skipped.`
+          : t`Only the affected frontmatter field changes in each note. Notes that changed since validation are skipped.`,
       });
       const list = this.contentEl.createEl("ul", { cls: "mdbase-confirm-change-list" });
       for (const path of paths.slice(0, 8)) list.createEl("li", { text: path });

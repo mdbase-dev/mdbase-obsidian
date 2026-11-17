@@ -1,4 +1,3 @@
-import { t } from "@lingui/core/macro";
 import { formatNumber } from "../i18n/runtime";
 import type { App, TFile } from "obsidian";
 import type { SyncController } from "../sync/controller";
@@ -164,9 +163,7 @@ export function renderStatus(container: HTMLElement, label: string, value: strin
   row.createSpan({ cls: "mdbase-status-value", text: value });
 }
 
+/** A short count for tight badges: 1.5K in English, 1万 in Japanese. */
 export function compactCount(value: number): string {
-  if (value < 1_000) return formatNumber(value);
-  const digits = value < 10_000 ? 1 : 0;
-  const count = formatNumber(value / 1_000, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-  return t`${count}k`;
+  return formatNumber(value, { notation: "compact", maximumFractionDigits: value < 10_000 ? 1 : 0 });
 }
