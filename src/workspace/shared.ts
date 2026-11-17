@@ -77,7 +77,7 @@ export interface WorkspaceContext {
   openTypeField(typePath: string, fieldPath: string | undefined): Promise<void>;
   /** Which types each record matches, keyed by path. */
   recordTypes(): Map<string, string[]>;
-  iconButton(container: HTMLElement, icon: string, label: string): HTMLButtonElement;
+  iconButton(container: HTMLElement, icon: string, label: string, focusKey?: string): HTMLButtonElement;
   disclosure(container: HTMLElement, key: string, label: string, initiallyOpen?: boolean): HTMLDivElement;
 }
 
