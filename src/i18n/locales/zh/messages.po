@@ -9,934 +9,934 @@ msgstr ""
 
 #: src/validation.ts
 msgid "''{fieldPath}'' has length {length}; limit is {maximum}"
-msgstr ""
+msgstr "“{fieldPath}”的长度为 {length}；上限为 {maximum}"
 
 #: src/validation.ts
 msgid "''{fieldPath}'' has length {length}; needs at least {minimum}"
-msgstr ""
+msgstr "“{fieldPath}”的长度为 {length}；至少需要 {minimum}"
 
 #: src/validation.ts
 msgid "''{fieldPath}'' is {actual}; does not match /{pattern}/"
-msgstr ""
+msgstr "“{fieldPath}”为 {actual}；与 /{pattern}/ 不匹配"
 
 #: src/validation.ts
 msgid "''{fieldPath}'' is {value}; must be at least {minimum}"
-msgstr ""
+msgstr "“{fieldPath}”为 {value}；不能小于 {minimum}"
 
 #: src/validation.ts
 msgid "''{fieldPath}'' is {value}; must be at most {maximum}"
-msgstr ""
+msgstr "“{fieldPath}”为 {value}；不能大于 {maximum}"
 
 #: src/workspace/syncPane.ts
 msgid "\"{field}\" was set to {kept}. The other device set it to {lost}."
-msgstr ""
+msgstr "“{field}”被设为 {kept}。另一台设备将其设为 {lost}。"
 
 #. placeholder {0}: errors.length
 #: src/workspace/typesPane.ts
 msgid "{0, plural, one {# error must be fixed before saving.} other {# errors must be fixed before saving.}}"
-msgstr ""
+msgstr "{0, plural, other {保存前必须修复 # 个错误。}}"
 
 #. placeholder {0}: newlyFailing.length - 10
 #: src/workspace/types/impact.ts
 msgid "{0, plural, one {# more note} other {# more notes}}"
-msgstr ""
+msgstr "{0, plural, other {另外 # 篇笔记}}"
 
 #. placeholder {0}: impact.matched.length
 #: src/workspace/types/impact.ts
 msgid "{0, plural, one {# note checked} other {# notes checked}}"
-msgstr ""
+msgstr "{0, plural, other {已检查 # 篇笔记}}"
 
 #. placeholder {0}: matched.length
 #: src/workspace/types/impact.ts
 msgid "{0, plural, one {# note matches} other {# notes match}}"
-msgstr ""
+msgstr "{0, plural, other {# 篇笔记匹配}}"
 
 #. placeholder {0}: newlyFailing.length
 #: src/workspace/types/impact.ts
 msgid "{0, plural, one {# note would fail} other {# notes would fail}}"
-msgstr ""
+msgstr "{0, plural, other {# 篇笔记将无法通过验证}}"
 
 #: src/workspace/types/impact.ts
 msgid "{addedCount} added"
-msgstr ""
+msgstr "已添加 {addedCount} 项"
 
 #: src/workspace/types/impact.ts
 msgid "{alreadyFailing} already failing"
-msgstr ""
+msgstr "已有 {alreadyFailing} 项未通过验证"
 
 #: src/workspaceView.ts
 msgid "{approvalCount, plural, one {# device wants to join} other {# devices want to join}}"
-msgstr ""
+msgstr "{approvalCount, plural, other {# 台设备请求加入}}"
 
 #: src/workspace/syncPane.ts
 msgid "{attachmentSize} in total"
-msgstr ""
+msgstr "总计 {attachmentSize}"
 
 #: src/workspace/syncPane.ts
 msgid "{busy}…"
-msgstr ""
+msgstr "{busy}…"
 
 #: src/workspace/syncPane.ts
 msgid "{conflicts, plural, one {# file kept as two versions} other {# files kept as two versions}}"
-msgstr ""
+msgstr "{conflicts, plural, other {# 个文件保留为两个版本}}"
 
 #: src/typeContracts.ts
 msgid "{contractId} {version} is already implemented."
-msgstr ""
+msgstr "{contractId} {version} 已实现。"
 
 #: src/workspace/types/contractEditor.ts
 msgid "{contractName} {fieldName} source field"
-msgstr ""
+msgstr "{contractName} {fieldName} 源字段"
 
 #: src/fieldSummary.ts
 msgid "{count, plural, one {# character} other {# characters}}"
-msgstr ""
+msgstr "{count, plural, other {# 个字符}}"
 
 #: src/fieldSummary.ts
 msgid "{count, plural, one {# field} other {# fields}}"
-msgstr ""
+msgstr "{count, plural, other {# 个字段}}"
 
 #: src/fieldSummary.ts
 msgid "{count, plural, one {# item} other {# items}}"
-msgstr ""
+msgstr "{count, plural, other {# 项}}"
 
 #: src/sync/native/failures.ts
 msgid "{count, plural, one {One problem} other {# problems}}, such as {text}. Run Validate in the Issues tab to see which fields. Fix the note and it will sync."
-msgstr ""
+msgstr "{count, plural, other {# 个问题}}，例如 {text}。在“问题”选项卡中运行验证以查看涉及的字段。修复笔记后即可同步。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{currentName} nested field name"
-msgstr ""
+msgstr "{currentName} 嵌套字段名称"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{currentTarget} · missing"
-msgstr ""
+msgstr "{currentTarget} · 缺失"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{defaultValue} · not allowed"
-msgstr ""
+msgstr "{defaultValue} · 不允许"
 
 #: src/workspace/syncPane.ts
 msgid "{deleted, plural, one {# file deleted} other {# files deleted}}"
-msgstr ""
+msgstr "{deleted, plural, other {已删除 # 个文件}}"
 
 #: main.ts
 msgid "{detail} Open mdbase sync."
-msgstr ""
+msgstr "{detail} 打开 mdbase 同步。"
 
 #: src/workspace/types/designForm.ts
 msgid "{displayField} · missing"
-msgstr ""
+msgstr "{displayField} · 缺失"
 
 #: src/workspace/types/typeList.ts
 msgid "{errors, plural, one {# error} other {# errors}}"
-msgstr ""
+msgstr "{errors, plural, other {# 个错误}}"
 
 #: src/workspace/types/designForm.ts
 msgid "{errors, plural, one {# error} other {# errors}} · {warnings, plural, one {# warning} other {# warnings}}"
-msgstr ""
+msgstr "{errors, plural, other {# 个错误}} · {warnings, plural, other {# 个警告}}"
 
 #: src/workspace/syncPane.ts
 msgid "{failed, plural, one {# file couldn't sync} other {# files couldn't sync}}"
-msgstr ""
+msgstr "{failed, plural, other {# 个文件无法同步}}"
 
 #: src/sync/words.ts
 msgid "{failed, plural, one {# file} other {# files}} not synced"
-msgstr ""
+msgstr "{failed, plural, other {# 个文件}}未同步"
 
 #: src/workspace/typesPane.ts
 msgid "{failing, plural, one {# note would fail} other {# notes would fail}}"
-msgstr ""
+msgstr "{failing, plural, other {# 篇笔记将无法通过验证}}"
 
 #: src/modals.ts
 msgid "{failingCount, plural, one {# existing note} other {# existing notes}} would fail validation. Only the type definition will be saved; notes are not changed."
-msgstr ""
+msgstr "{failingCount, plural, other {# 篇现有笔记}}将无法通过验证。只会保存类型定义，不会更改笔记。"
 
 #: src/migration.ts
 msgid "{feature} cannot be expressed as canonical v0.3 write behavior and was retained as legacy metadata where possible."
-msgstr ""
+msgstr "{feature} 无法表示为规范的 v0.3 写入行为，已尽可能保留为旧版元数据。"
 
 #: src/modals.ts
 msgid "{fieldCount, plural, one {# field} other {# fields}}"
-msgstr ""
+msgstr "{fieldCount, plural, other {# 个字段}}"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{fieldLabel} {constraintLabel}"
-msgstr ""
+msgstr "{fieldLabel} {constraintLabel}"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{fieldLabel} allowed value {valueNumber}"
-msgstr ""
+msgstr "{fieldLabel} 允许值 {valueNumber}"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{fieldLabel} default"
-msgstr ""
+msgstr "{fieldLabel} 默认值"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{fieldLabel} description"
-msgstr ""
+msgstr "{fieldLabel} 描述"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{fieldLabel} pattern"
-msgstr ""
+msgstr "{fieldLabel} 模式"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{fieldLabel} target type"
-msgstr ""
+msgstr "{fieldLabel} 目标类型"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{fieldLabel} type"
-msgstr ""
+msgstr "{fieldLabel} 类型"
 
 #: src/typeContracts.ts
 msgid "{fieldReference} is {fieldType}, but the contract expects {contractType}."
-msgstr ""
+msgstr "{fieldReference} 的类型为 {fieldType}，但契约要求 {contractType}。"
 
 #: src/typeContracts.ts
 msgid "{fieldReference} is optional in this type, so the contract value may be absent."
-msgstr ""
+msgstr "{fieldReference} 在此类型中为可选，因此契约值可能不存在。"
 
 #: main.ts
 msgid "{fileName} is a {typeNames} note. Edit the type."
-msgstr ""
+msgstr "{fileName} 是一篇 {typeNames} 类型的笔记。编辑类型。"
 
 #: main.ts
 msgid "{fileName}: {issueCount, plural, one {# issue} other {# issues}}. Open issues for this note."
-msgstr ""
+msgstr "{fileName}：{issueCount, plural, other {# 个问题}}。打开此笔记的问题。"
 
 #: src/workspace/issuesPane.ts
 msgid "{files, plural, one {# note} other {# notes}}"
-msgstr ""
+msgstr "{files, plural, other {# 篇笔记}}"
 
 #: src/workspace/types/impact.ts
 msgid "{fixed} fixed"
-msgstr ""
+msgstr "已修复 {fixed} 项"
 
 #: src/workspace/issuesPane.ts
 msgid "{fixLabel} · {fixableNotes, plural, one {# note} other {# notes}}"
-msgstr ""
+msgstr "{fixLabel} · {fixableNotes, plural, other {# 篇笔记}}"
 
 #: src/workspace/syncPane.ts
 msgid "{h, plural, one {# hour ago} other {# hours ago}}"
-msgstr ""
+msgstr "{h, plural, other {# 小时前}}"
 
 #: src/workspace/typesPane.ts
 msgid "{highRiskCount, plural, one {# high-impact change} other {# high-impact changes}}"
-msgstr ""
+msgstr "{highRiskCount, plural, other {# 项高影响更改}}"
 
 #: src/workspaceView.ts
 msgid "{holdCount, plural, one {# file needs your choice} other {# files need your choice}}"
-msgstr ""
+msgstr "{holdCount, plural, other {# 个文件需要你选择}}"
 
 #: src/sync/words.ts
 msgid "{holds, plural, one {# file needs you} other {# files need you}}"
-msgstr ""
+msgstr "{holds, plural, other {# 个文件需要处理}}"
 
 #: src/sync/words.ts
 msgid "{holds, plural, one {# file was changed in two places. Choose which version to keep.} other {# files were changed in two places. Choose which version to keep.}}"
-msgstr ""
+msgstr "{holds, plural, other {# 个文件在两个位置均有更改。请选择要保留的版本。}}"
 
 #: src/sync/native/failures.ts
 msgid "{issue}. Another local item still occupies the rename destination. Move it aside or resolve its sync problem, then try again. Both files are unchanged."
-msgstr ""
+msgstr "{issue}。另一个本地项目仍占用重命名目标位置。请将其移开或解决其同步问题，然后重试。两个文件均未更改。"
 
 #: src/sync/native/failures.ts
 msgid "{issue}. The moved item's identity or kind doesn't match. Local files are unchanged; check the paths before trying again."
-msgstr ""
+msgstr "{issue}。移动项目的身份或种类不匹配。本地文件未更改；请检查路径后重试。"
 
 #: src/workspace/issuesPane.ts
 msgid "{issueCount, plural, one {# issue} other {# issues}}"
-msgstr ""
+msgstr "{issueCount, plural, other {# 个问题}}"
 
 #: src/workspace/issuesPane.ts
 msgid "{issueCount, plural, one {# issue} other {# issues}} · {allFiles, plural, one {# file} other {# files}}"
-msgstr ""
+msgstr "{issueCount, plural, other {# 个问题}} · {allFiles, plural, other {# 个文件}}"
 
 #: src/workspaceView.ts
 msgid "{issueCount} issues"
-msgstr ""
+msgstr "{issueCount} 个问题"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{label} actions"
-msgstr ""
+msgstr "{label} 操作"
 
 #: src/modals.ts
 msgid "{label} in {noteCount, plural, one {# note} other {# notes}}?"
-msgstr ""
+msgstr "{label}，涉及 {noteCount, plural, other {# 篇笔记}}？"
 
 #: src/workspace/types/contractEditor.ts
 msgid "{label} item {itemNumber}"
-msgstr ""
+msgstr "{label} 项目 {itemNumber}"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "{label}: {valueText}"
-msgstr ""
+msgstr "{label}：{valueText}"
 
 #: src/workspace/issuesPane.ts
 msgid "{label}: updated {changed, plural, one {# note} other {# notes}}."
-msgstr ""
+msgstr "{label}：已更新 {changed, plural, other {# 篇笔记}}。"
 
 #: src/workspace/issuesPane.ts
 msgid "{label}: updated {changed} of {notes, plural, one {# note} other {# notes}}. {skipped, plural, one {# note changed since validation and was left as it is.} other {# notes changed since validation and were left as they are.}}"
-msgstr ""
+msgstr "{label}：已更新 {notes, plural, other {# 篇笔记}}中的 {changed} 篇。{skipped, plural, other {# 篇笔记在验证后发生更改，已保持原样。}}"
 
 #: src/settingsTab.ts
 msgid "{limits} Set for every device in the mdbase app."
-msgstr ""
+msgstr "{limits} 在 mdbase 应用中为每台设备设置。"
 
 #: src/workspace/syncPane.ts
 msgid "{m, plural, one {# minute ago} other {# minutes ago}}"
-msgstr ""
+msgstr "{m, plural, other {# 分钟前}}"
 
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "{mergedCount, plural, one {# change to check} other {# changes to check}}"
-msgstr ""
+msgstr "{mergedCount, plural, other {# 项更改待检查}}"
 
 #: src/workspace/types/impact.ts
 msgid "{message} · +{moreCount} more"
-msgstr ""
+msgstr "{message} · 另外 {moreCount} 项"
 
 #: src/fieldSummary.ts
 msgid "{min}–{max, plural, one {# character} other {# characters}}"
-msgstr ""
+msgstr "{min}–{max, plural, other {# 个字符}}"
 
 #: src/fieldSummary.ts
 msgid "{min}–{max, plural, one {# item} other {# items}}"
-msgstr ""
+msgstr "{min}–{max, plural, other {# 项}}"
 
 #: src/settingsTab.ts
 msgid "{mode} · in the folder \"{prefix}\""
-msgstr ""
+msgstr "{mode} · 在文件夹“{prefix}”中"
 
 #: src/modals.ts
 msgid "{moreCount} more"
-msgstr ""
+msgstr "另外 {moreCount} 项"
 
 #: src/workspace/syncPane.ts
 msgid "{moved, plural, one {# file moved} other {# files moved}}"
-msgstr ""
+msgstr "{moved, plural, other {已移动 # 个文件}}"
 
 #: src/workspace/types/contractEditor.ts
 msgid "{name} (required)"
-msgstr ""
+msgstr "{name}（必填）"
 
 #: src/workspace/syncPane.ts
 msgid "{name} is Private, and your account approves each new device from one you already use instead of with an encryption password. Obsidian can't be approved that way yet."
-msgstr ""
+msgstr "{name} 是私有集合，你的账户通过已有设备而不是加密密码来批准每台新设备。Obsidian 暂不支持通过此方式批准。"
 
 #: src/workspace/syncPane.ts
 msgid "{name} is Private, and your account has no encryption password yet. Set one in the mdbase app on a computer that already has this collection."
-msgstr ""
+msgstr "{name} 是私有集合，而你的账户尚未设置加密密码。请在已有此集合的电脑上，通过 mdbase 应用设置密码。"
 
 #: src/workspace/syncPane.ts
 msgid "{name} is Private: only your own devices can read it. To open it in this vault, enter your encryption password."
-msgstr ""
+msgstr "{name} 是私有集合：只有你自己的设备可以读取。要在此仓库中打开它，请输入加密密码。"
 
 #: src/workspace/syncPane.ts
 msgid "{name} is Private: only your own devices can read it. To open it in this vault, enter your recovery key."
-msgstr ""
+msgstr "{name} 是私有集合：只有你自己的设备可以读取。要在此仓库中打开它，请输入恢复密钥。"
 
 #: src/workspace/syncPane.ts
 msgid "{name} wants to join"
-msgstr ""
+msgstr "{name} 请求加入"
 
 #: src/sync/native/failures.ts
 msgid "{name}: {message}, and {more, plural, one {# more problem} other {# more problems}}. Fix the note and it will sync."
-msgstr ""
+msgstr "{name}：{message}，以及{more, plural, other {另外 # 个问题}}。修复笔记后即可同步。"
 
 #: src/sync/native/failures.ts
 msgid "{name}: {message}. Fix the note and it will sync."
-msgstr ""
+msgstr "{name}：{message}。修复笔记后即可同步。"
 
 #: src/workspace/types/typeList.ts
 msgid "{notes, plural, one {# note} other {# notes}}"
-msgstr ""
+msgstr "{notes, plural, other {# 篇笔记}}"
 
 #: src/workspace/syncPane.ts
 msgid "{notHere, plural, one {# file} other {# files}}"
-msgstr ""
+msgstr "{notHere, plural, other {# 个文件}}"
 
 #: src/migration.ts
 msgid "{path} already looks like a v0.3 type."
-msgstr ""
+msgstr "{path} 看起来已是 v0.3 类型。"
 
 #: src/contractCatalog.ts
 msgid "{path} appeared during installation."
-msgstr ""
+msgstr "{path} 在安装过程中出现。"
 
 #: src/migration.ts
 msgid "{path} changed after migration analysis. Run the review again."
-msgstr ""
+msgstr "{path} 在迁移分析后发生更改。请重新运行检查。"
 
 #: src/contractCatalog.ts
 msgid "{path} changed during installation. Recovery will preserve competing edits."
-msgstr ""
+msgstr "{path} 在安装过程中发生更改。恢复操作将保留冲突的编辑。"
 
 #: src/contractCatalog.ts
 msgid "{path} changed. Review again."
-msgstr ""
+msgstr "{path} 已更改。请重新检查。"
 
 #: src/migration.ts
 msgid "{path} is not a v0.2 type with a name and fields."
-msgstr ""
+msgstr "{path} 不是包含名称和字段的 v0.2 类型。"
 
 #: src/workspace/syncPane.ts
 msgid "{pending, plural, one {# change} other {# changes}}"
-msgstr ""
+msgstr "{pending, plural, other {# 项更改}}"
 
 #: src/sync/words.ts
 msgid "{pending, plural, one {# change} other {# changes}} waiting to send."
-msgstr ""
+msgstr "{pending, plural, other {# 项更改}}等待发送。"
 
 #: src/sync/words.ts
 msgid "{pending, plural, one {Connecting to mdbase. # change is saved here meanwhile.} other {Connecting to mdbase. # changes are saved here meanwhile.}}"
-msgstr ""
+msgstr "{pending, plural, other {正在连接 mdbase。期间 # 项更改已保存在此处。}}"
 
 #: src/sync/words.ts
 msgid "{pending, plural, one {Offline. # change is saved here and will sync when you're back online.} other {Offline. # changes are saved here and will sync when you're back online.}}"
-msgstr ""
+msgstr "{pending, plural, other {离线。# 项更改已保存在此处，重新联网后将同步。}}"
 
 #: src/validation.ts
 msgid "{previous} or {next}"
-msgstr ""
+msgstr "{previous}或{next}"
 
 #: src/workspace/syncPane.ts
 msgid "{received, plural, one {# file received} other {# files received}}"
-msgstr ""
+msgstr "{received, plural, other {已接收 # 个文件}}"
 
 #: src/workspace/types/contractEditor.ts
 msgid "{reference} · {candidateType} · review"
-msgstr ""
+msgstr "{reference} · {candidateType} · 检查"
 
 #: src/workspace/types/impact.ts
 msgid "{removedCount} no longer match"
-msgstr ""
+msgstr "{removedCount} 项不再匹配"
 
 #: src/workspace/types/contractEditor.ts
 msgid "{requiredMapped} of {requiredCount} required · {mappedCount} of {fieldCount} mapped"
-msgstr ""
+msgstr "{requiredCount} 个必填项中已映射 {requiredMapped} 个 · {fieldCount} 个字段中已映射 {mappedCount} 个"
 
 #: src/workspace/typesPane.ts
 msgid "{selectedPath} goes back to how it was last saved. This can't be undone."
-msgstr ""
+msgstr "{selectedPath} 将恢复为上次保存的状态。此操作无法撤销。"
 
 #: src/workspace/syncPane.ts
 msgid "{sent, plural, one {# file sent} other {# files sent}}"
-msgstr ""
+msgstr "{sent, plural, other {已发送 # 个文件}}"
 
 #: src/workspace/issuesPane.ts
 msgid "{severityLabel} · {field}"
-msgstr ""
+msgstr "{severityLabel} · {field}"
 
 #: src/workspace/issuesPane.ts
 msgid "{shown} of {filteredCount, plural, one {# issue} other {# issues}} · {filteredFiles, plural, one {# file} other {# files}}"
-msgstr ""
+msgstr "{filteredFiles, plural, other {# 个文件}}中有 {filteredCount, plural, other {# 个问题}} · 显示 {shown} 个"
 
 #: src/workspace/typesPane.ts
 msgid "{shownErrors, plural, one {# error} other {# errors}}"
-msgstr ""
+msgstr "{shownErrors, plural, other {# 个错误}}"
 
 #: src/validation.ts
 msgid "{subject} contains duplicate items"
-msgstr ""
+msgstr "{subject} 包含重复项"
 
 #: src/validation.ts
 msgid "{subject} has {itemCount, plural, one {# item} other {# items}}; limit is {limit}"
-msgstr ""
+msgstr "{subject} 包含 {itemCount, plural, other {# 项}}；上限为 {limit}"
 
 #: src/validation.ts
 msgid "{subject} has {itemCount, plural, one {# item} other {# items}}; needs at least {limit}"
-msgstr ""
+msgstr "{subject} 包含 {itemCount, plural, other {# 项}}；至少需要 {limit} 项"
 
 #: src/validation.ts
 msgid "{subject} is {actual}; does not match {pattern}"
-msgstr ""
+msgstr "{subject} 为 {actual}；与 {pattern} 不匹配"
 
 #: src/validation.ts
 msgid "{subject} is {actual}; expected {expected}"
-msgstr ""
+msgstr "{subject} 为 {actual}；应为 {expected}"
 
 #: src/validation.ts
 msgid "{subject} is {actual}; expected one of {listed}"
-msgstr ""
+msgstr "{subject} 为 {actual}；应为 {listed} 之一"
 
 #: src/validation.ts
 msgid "{subject} is {actual}; must be at least {limit}"
-msgstr ""
+msgstr "{subject} 为 {actual}；不能小于 {limit}"
 
 #: src/validation.ts
 msgid "{subject} is {actual}; must be at most {limit}"
-msgstr ""
+msgstr "{subject} 为 {actual}；不能大于 {limit}"
 
 #: src/validation.ts
 msgid "{subject} is {actual}; must be less than {limit}"
-msgstr ""
+msgstr "{subject} 为 {actual}；必须小于 {limit}"
 
 #: src/validation.ts
 msgid "{subject} is {actual}; must be more than {limit}"
-msgstr ""
+msgstr "{subject} 为 {actual}；必须大于 {limit}"
 
 #: src/validation.ts
 msgid "{subject} is {characterCount, plural, one {# character} other {# characters}}; limit is {limit}"
-msgstr ""
+msgstr "{subject} 包含 {characterCount, plural, other {# 个字符}}；上限为 {limit}"
 
 #: src/validation.ts
 msgid "{subject} is {characterCount, plural, one {# character} other {# characters}}; needs at least {limit}"
-msgstr ""
+msgstr "{subject} 包含 {characterCount, plural, other {# 个字符}}；至少需要 {limit} 个"
 
 #: src/validation.ts
 msgid "{subject}: {detail}"
-msgstr ""
+msgstr "{subject}：{detail}"
 
 #: src/workspace/syncPane.ts
 msgid "{summary} · {time}"
-msgstr ""
+msgstr "{summary} · {time}"
 
 #: src/contractCatalog.ts
 msgid "{target} already exists with different contents. Nothing was overwritten."
-msgstr ""
+msgstr "{target} 已存在，但内容不同。未覆盖任何内容。"
 
 #: src/contractCatalog.ts
 msgid "{target} belongs to another installed pack."
-msgstr ""
+msgstr "{target} 属于另一个已安装的包。"
 
 #: src/sync/native/failures.ts
 msgid "{text}, and {more, plural, one {# more problem} other {# more problems}}. Run Validate in the Issues tab to see them all. Fix the note and it will sync."
-msgstr ""
+msgstr "{text}，以及{more, plural, other {另外 # 个问题}}。在“问题”选项卡中运行验证以查看全部问题。修复笔记后即可同步。"
 
 #: src/sync/native/failures.ts
 msgid "{text}. Fix the note and it will sync."
-msgstr ""
+msgstr "{text}。修复笔记后即可同步。"
 
 #: main.ts
 msgid "{typeNames} · {issueCount, plural, one {# issue} other {# issues}}"
-msgstr ""
+msgstr "{typeNames} · {issueCount, plural, other {# 个问题}}"
 
 #: main.ts
 msgid "{typeNames} · checked"
-msgstr ""
+msgstr "{typeNames} · 已检查"
 
 #: main.ts
 msgid "{typeNames} · not checked"
-msgstr ""
+msgstr "{typeNames} · 未检查"
 
 #: src/sync/words.ts
 msgid "{unresolved, plural, one {Synced. # edit made on two devices at once is worth a look.} other {Synced. # edits made on two devices at once are worth a look.}}"
-msgstr ""
+msgstr "{unresolved, plural, other {已同步。# 项在两台设备上同时进行的编辑值得检查。}}"
 
 #: src/workspace/types/typeList.ts
 msgid "{warnings, plural, one {# warning} other {# warnings}}"
-msgstr ""
+msgstr "{warnings, plural, other {# 个警告}}"
 
 #: src/sync/words.ts
 msgid "{words} Choose Restart sync to continue."
-msgstr ""
+msgstr "{words} 选择“重新开始同步”以继续。"
 
 #: src/validation.ts
 msgid "a boolean"
-msgstr ""
+msgstr "布尔值"
 
 #: src/validation.ts
 msgid "a date (YYYY-MM-DD)"
-msgstr ""
+msgstr "日期（YYYY-MM-DD）"
 
 #: src/validation.ts
 msgid "a date and time"
-msgstr ""
+msgstr "日期和时间"
 
 #: src/validation.ts
 msgid "a datetime string"
-msgstr ""
+msgstr "日期时间字符串"
 
 #: src/createTypedNoteModal.ts
 msgid "A file already exists at this location. Choose another path."
-msgstr ""
+msgstr "此位置已有文件。请选择其他路径。"
 
 #: src/contractCatalog.ts
 msgid "A folder occupies {path}."
-msgstr ""
+msgstr "文件夹占用了 {path}。"
 
 #: src/validation.ts
 msgid "a link string"
-msgstr ""
+msgstr "链接字符串"
 
 #: src/validation.ts
 msgid "a list"
-msgstr ""
+msgstr "列表"
 
 #: src/validation.ts
 msgid "a list of {count}"
-msgstr ""
+msgstr "包含 {count} 项的列表"
 
 #: src/sync/controller.ts
 msgid "A new device"
-msgstr ""
+msgstr "新设备"
 
 #: src/workspace/syncPane.ts
 msgid "A note that was since removed"
-msgstr ""
+msgstr "已删除的笔记"
 
 #: src/validation.ts
 msgid "a number"
-msgstr ""
+msgstr "数字"
 
 #: src/validation.ts
 msgid "a string"
-msgstr ""
+msgstr "字符串"
 
 #: src/validation.ts
 msgid "a tag string or list of strings"
-msgstr ""
+msgstr "标签字符串或字符串列表"
 
 #: src/validation.ts
 msgid "a time (HH:MM)"
-msgstr ""
+msgstr "时间（HH:MM）"
 
 #: src/validation.ts
 msgid "a time string (HH:MM)"
-msgstr ""
+msgstr "时间字符串（HH:MM）"
 
 #: src/validation.ts
 msgid "a URI"
-msgstr ""
+msgstr "URI"
 
 #: src/validation.ts
 msgid "a whole number"
-msgstr ""
+msgstr "整数"
 
 #: src/issuePresentation.ts
 msgid "above maximum"
-msgstr ""
+msgstr "超过最大值"
 
 #: src/sync/words.ts
 msgid "Access to this collection was removed in mdbase. Your notes here are untouched. To sync again, choose Request access again and approve it in your browser."
-msgstr ""
+msgstr "此集合的访问权限已在 mdbase 中移除。此处的笔记不受影响。要再次同步，请选择“重新请求访问权限”并在浏览器中批准。"
 
 #: src/settingsTab.ts
 msgid "Account"
-msgstr ""
+msgstr "账户"
 
 #: src/workspace/syncPane.ts
 msgid "Activity"
-msgstr ""
+msgstr "活动"
 
 #. placeholder {0}: added.length
 #: src/typeDraft.ts
 msgid "Add {0, plural, one {field} other {fields}}: {fieldNames}."
-msgstr ""
+msgstr "添加{0, plural, other {字段}}：{fieldNames}。"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Add {itemLabel} item"
-msgstr ""
+msgstr "添加 {itemLabel} 项"
 
 #: src/contractCatalog.ts
 msgid "Add {path}"
-msgstr ""
+msgstr "添加 {path}"
 
 #: src/workspace/syncPane.ts
 msgid "Add a collection"
-msgstr ""
+msgstr "添加集合"
 
 #: src/workspace/syncPane.ts
 msgid "Add a collection you already sync"
-msgstr ""
+msgstr "添加已同步的集合"
 
 #: src/typeDraft.ts
 msgid "Add an object field or change this field's type."
-msgstr ""
+msgstr "添加对象字段或更改此字段的类型。"
 
 #: src/typeDraft.ts
 msgid "Add at least one allowed value, or use String for an unrestricted value."
-msgstr ""
+msgstr "请至少添加一个允许值，或使用字符串类型允许任意值。"
 
 #: src/workspace/syncPane.ts
 msgid "Add collection"
-msgstr ""
+msgstr "添加集合"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Add field"
-msgstr ""
+msgstr "添加字段"
 
 #: src/settingsTab.ts
 msgid "Add folder"
-msgstr ""
+msgstr "添加文件夹"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Add format"
-msgstr ""
+msgstr "添加格式"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Add nested field"
-msgstr ""
+msgstr "添加嵌套字段"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Add optional setting"
-msgstr ""
+msgstr "添加可选设置"
 
 #: src/quickFix.ts
 msgid "Add placeholder"
-msgstr ""
+msgstr "添加占位符"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Add value"
-msgstr ""
+msgstr "添加值"
 
 #: src/workspace/typesPane.ts
 msgid "Add your first type"
-msgstr ""
+msgstr "添加第一个类型"
 
 #: src/workspace/types/impact.ts
 msgid "Added"
-msgstr ""
+msgstr "已添加"
 
 #: src/workspace/syncPane.ts
 msgid "Added. Notes arrive in \"{folder}\"."
-msgstr ""
+msgstr "已添加。笔记将出现在“{folder}”中。"
 
 #: src/workspace/syncPane.ts
 msgid "Added. Notes arrive in this vault."
-msgstr ""
+msgstr "已添加。笔记将出现在此仓库中。"
 
 #: src/sync/controller.ts
 msgid "Adding the collection"
-msgstr ""
+msgstr "正在添加集合"
 
 #: src/workspace/syncPane.ts
 msgid "All"
-msgstr ""
+msgstr "全部"
 
 #: src/fieldSummary.ts
 msgid "All notes"
-msgstr ""
+msgstr "所有笔记"
 
 #: src/workspace/issuesPane.ts
 msgid "All severities"
-msgstr ""
+msgstr "所有严重程度"
 
 #: src/typeDraft.ts
 msgid "Allow fields that are not declared by this type."
-msgstr ""
+msgstr "允许此类型未声明的字段。"
 
 #: src/workspace/syncPane.ts
 msgid "Allow Obsidian"
-msgstr ""
+msgstr "允许 Obsidian"
 
 #: src/settingsTab.ts
 msgid "Allow plugin integrations"
-msgstr ""
+msgstr "允许插件集成"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Allowed values"
-msgstr ""
+msgstr "允许值"
 
 #: src/typeDraft.ts
 msgid "Allowed values must be unique."
-msgstr ""
+msgstr "允许值必须唯一。"
 
 #: src/workspace/syncPane.ts
 msgid "Already up to date"
-msgstr ""
+msgstr "已是最新"
 
 #: src/contractCatalog.ts
 msgid "Already up to date: {path}"
-msgstr ""
+msgstr "已是最新：{path}"
 
 #: src/fieldSummary.ts
 msgid "Always {value}"
-msgstr ""
+msgstr "始终为 {value}"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Always {value}. Change the fixed value in YAML."
-msgstr ""
+msgstr "始终为 {value}。请在 YAML 中更改固定值。"
 
 #: src/settingsTab.ts
 msgid "Always synced, apart from folders you leave out. These choices apply to this device only, and turning something off never deletes it."
-msgstr ""
+msgstr "始终同步，但不包括你排除的文件夹。这些选择仅适用于此设备，关闭某项同步不会删除任何内容。"
 
 #: src/validation.ts
 msgid "an email address"
-msgstr ""
+msgstr "电子邮件地址"
 
 #: src/validation.ts
 msgid "an integer"
-msgstr ""
+msgstr "整数"
 
 #: src/validation.ts
 msgid "an object"
-msgstr ""
+msgstr "对象"
 
 #: src/workspace/typesPane.ts
 msgid "An older draft for {path} was kept, but the source changed. The current file is shown."
-msgstr ""
+msgstr "已保留 {path} 的旧草稿，但源文件已更改。现显示当前文件。"
 
 #: src/workspace/syncPane.ts
 msgid "And {remaining} more."
-msgstr ""
+msgstr "以及另外 {remaining} 项。"
 
 #: src/sync/native/marker.ts
 msgid "Another app is already syncing this vault: the mdbase desktop app. Turn sync off there first. Your notes here are untouched."
-msgstr ""
+msgstr "另一个应用（mdbase 桌面应用）已在同步此仓库。请先在那里关闭同步。此处的笔记不受影响。"
 
 #: src/sync/controller.ts
 #: src/sync/native/marker.ts
 msgid "Another app is already syncing this vault. Turn sync off there first. Your notes here are untouched."
-msgstr ""
+msgstr "另一个应用已在同步此仓库。请先在那里关闭同步。此处的笔记不受影响。"
 
 #: src/sync/native/plugin.ts
 msgid "Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched."
-msgstr ""
+msgstr "另一个应用可能正在同步此文件夹，因此 Obsidian 正在等待。此处的文件不受影响。"
 
 #: src/contractCatalog.ts
 msgid "Another contract pack is installing. Wait for it to finish."
-msgstr ""
+msgstr "另一个契约包正在安装。请等待安装完成。"
 
 #: src/sync/native/marker.ts
 msgid "Another copy of Obsidian is already syncing this vault, on this device or another one. Turn sync off there first. If you just reinstalled this plugin, you can set up sync here in a few minutes."
-msgstr ""
+msgstr "此设备或另一台设备上的另一个 Obsidian 实例已在同步此仓库。请先在那里关闭同步。如果刚刚重新安装此插件，几分钟后即可在此设置同步。"
 
 #: src/sync/native/failures.ts
 msgid "Another local item still occupies the rename destination. Move it aside or resolve its sync problem, then try again. Both files are unchanged."
-msgstr ""
+msgstr "另一个本地项目仍占用重命名目标位置。请将其移开或解决其同步问题，然后重试。两个文件均未更改。"
 
 #: src/sync/words.ts
 msgid "Another sync tool is also changing these files. Use one sync tool per vault."
-msgstr ""
+msgstr "另一个同步工具也在更改这些文件。每个仓库请只使用一个同步工具。"
 
 #: src/workspace/types/designForm.ts
 msgid "Any folder"
-msgstr ""
+msgstr "任意文件夹"
 
 #: src/settingsTab.ts
 msgid "Any other attachment, such as canvas, zip or csv files"
-msgstr ""
+msgstr "任何其他附件，例如 canvas、zip 或 csv 文件"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Any type"
-msgstr ""
+msgstr "任意类型"
 
 #: src/fieldSummary.ts
 #: src/typeContracts.ts
 msgid "Any value"
-msgstr ""
+msgstr "任意值"
 
 #: src/workspace/types/contractEditor.ts
 msgid "App format"
-msgstr ""
+msgstr "应用格式"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Applications"
-msgstr ""
+msgstr "应用程序"
 
 #: src/workspace/types/setup.ts
 msgid "Apply migration"
-msgstr ""
+msgstr "应用迁移"
 
 #: src/workspace/syncPane.ts
 msgid "Approve"
-msgstr ""
+msgstr "批准"
 
 #: src/workspace/syncPane.ts
 msgid "Approved. The new device is syncing."
-msgstr ""
+msgstr "已批准。新设备正在同步。"
 
 #: src/sync/controller.ts
 msgid "Approving the device"
-msgstr ""
+msgstr "正在批准设备"
 
 #: src/settingsTab.ts
 msgid "Apps"
-msgstr ""
+msgstr "应用"
 
 #: src/fieldSummary.ts
 msgid "At least {count, plural, one {# character} other {# characters}}"
-msgstr ""
+msgstr "{count, plural, other {至少 # 个字符}}"
 
 #: src/fieldSummary.ts
 msgid "At least {count, plural, one {# item} other {# items}}"
-msgstr ""
+msgstr "{count, plural, other {至少 # 项}}"
 
 #: src/fieldSummary.ts
 msgid "At least {count}"
-msgstr ""
+msgstr "至少 {count}"
 
 #: src/fieldSummary.ts
 msgid "At most {count, plural, one {# character} other {# characters}}"
-msgstr ""
+msgstr "{count, plural, other {最多 # 个字符}}"
 
 #: src/fieldSummary.ts
 msgid "At most {count, plural, one {# item} other {# items}}"
-msgstr ""
+msgstr "{count, plural, other {最多 # 项}}"
 
 #: src/fieldSummary.ts
 msgid "At most {count}"
-msgstr ""
+msgstr "最多 {count}"
 
 #: src/workspace/syncPane.ts
 msgid "Attachments"
-msgstr ""
+msgstr "附件"
 
 #: src/workspace/syncPane.ts
 msgid "Attachments in {paths} don't sync."
-msgstr ""
+msgstr "{paths} 中的附件不会同步。"
 
 #: src/workspace/syncPane.ts
 msgid "Attachments over {maximum} don't sync."
-msgstr ""
+msgstr "超过 {maximum} 的附件不会同步。"
 
 #: src/settingsTab.ts
 msgid "Audio"
-msgstr ""
+msgstr "音频"
 
 #: src/settingsTab.ts
 msgid "Automatic"
-msgstr ""
+msgstr "自动"
 
 #: src/workspace/typesPane.ts
 msgid "Back to type list"
-msgstr ""
+msgstr "返回类型列表"
 
 #: src/issuePresentation.ts
 msgid "below minimum"
-msgstr ""
+msgstr "低于最小值"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "boolean"
-msgstr ""
+msgstr "布尔值"
 
 #: src/fieldSummary.ts
 #: src/typeContracts.ts
 msgid "Boolean"
-msgstr ""
+msgstr "布尔值"
 
 #: src/workspace/syncPane.ts
 msgid "Both versions are kept. Review the current file and its conflict copy before choosing to keep both."
-msgstr ""
+msgstr "两个版本均已保留。选择同时保留前，请检查当前文件及其冲突副本。"
 
 #: src/workspace/syncPane.ts
 msgid "Both versions kept"
-msgstr ""
+msgstr "已保留两个版本"
 
 #: src/workspace/types/setup.ts
 msgid "Bring a collection you already use elsewhere into this vault."
-msgstr ""
+msgstr "将你在其他地方使用的集合添加到此仓库。"
 
 #: src/workspace/types/typeList.ts
 #: src/workspace/typesPane.ts
 msgid "Browse ready-made types"
-msgstr ""
+msgstr "浏览预设类型"
 
 #: src/workspace/issuesPane.ts
 msgid "By file"
-msgstr ""
+msgstr "按文件"
 
 #: src/workspace/issuesPane.ts
 msgid "By rule"
-msgstr ""
+msgstr "按规则"
 
 #: src/modals.ts
 msgid "cancel"
-msgstr ""
+msgstr "取消"
 
 #: src/createTypedNoteModal.ts
 #: src/modals.ts
@@ -944,3310 +944,3311 @@ msgstr ""
 #: src/workspace/syncPane.ts
 #: src/workspace/types/drafts.ts
 msgid "Cancel"
-msgstr ""
+msgstr "取消"
 
 #: src/workspace/syncPane.ts
 msgid "Cancel sign-in"
-msgstr ""
+msgstr "取消登录"
 
 #: src/migration.ts
 msgid "Cannot migrate {path}: {reason}."
-msgstr ""
+msgstr "无法迁移 {path}：{reason}。"
 
 #: main.ts
 msgid "Cannot rename type file to {targetPath}; file already exists."
-msgstr ""
+msgstr "无法将类型文件重命名为 {targetPath}；文件已存在。"
 
 #: src/workspace/types/yamlSource.ts
 msgid "Canonical v0.3 type YAML requires kind: mdbase.type."
-msgstr ""
+msgstr "规范的 v0.3 类型 YAML 要求 kind: mdbase.type。"
 
 #: main.ts
 msgid "Catalog packs require the standard _types and _contracts folders. Use mdbase editor for custom target mappings."
-msgstr ""
+msgstr "目录包需要标准的 _types 和 _contracts 文件夹。自定义目标映射请使用 mdbase 编辑器。"
 
 #: src/contractCatalog.ts
 msgid "Catalog unavailable ({status}). Your vault is unchanged. Try again when online."
-msgstr ""
+msgstr "目录不可用（{status}）。你的仓库未更改。请联网后重试。"
 
 #: src/typeDraft.ts
 msgid "Change '{name}' from {previousType} to {nextType}."
-msgstr ""
+msgstr "将 '{name}' 从 {previousType} 更改为 {nextType}。"
 
 #: src/typeDraft.ts
 msgid "Change the suggested path for new records."
-msgstr ""
+msgstr "更改新记录的建议路径。"
 
 #: src/typeDraft.ts
 msgid "Change which records belong to this type."
-msgstr ""
+msgstr "更改属于此类型的记录。"
 
 #: src/sync/words.ts
 msgid "Changed by another program"
-msgstr ""
+msgstr "已被其他程序更改"
 
 #: src/sync/native/failures.ts
 msgid "Changed here and in the collection"
-msgstr ""
+msgstr "此处和集合中均有更改"
 
 #: src/sync/words.ts
 msgid "Changed here and on another device"
-msgstr ""
+msgstr "此处和另一台设备上均有更改"
 
 #: src/sync/native/failures.ts
 msgid "Changed in two places"
-msgstr ""
+msgstr "两处均有更改"
 
 #: src/validationState.ts
 msgid "Changed since last collection validation · {checked} of {total, plural, one {# note} other {# notes}} checked"
-msgstr ""
+msgstr "自上次集合验证后已更改 · {total, plural, other {# 篇笔记}}中已检查 {checked} 篇"
 
 #: src/sync/words.ts
 msgid "Changed while mdbase wasn't watching"
-msgstr ""
+msgstr "在 mdbase 未监测期间发生更改"
 
 #: src/workspace/types/designForm.ts
 msgid "Changes"
-msgstr ""
+msgstr "更改"
 
 #: src/workspace/syncPane.ts
 msgid "Changes from other devices arrive when Obsidian is in front, or when you choose Sync now."
-msgstr ""
+msgstr "当 Obsidian 位于前台或选择“立即同步”时，将接收来自其他设备的更改。"
 
 #: src/workspaceView.ts
 msgctxt "sync status"
 msgid "Check"
-msgstr ""
+msgstr "检查"
 
 #: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 msgid "Check again"
-msgstr ""
+msgstr "再次检查"
 
 #: src/contractCatalog.ts
 msgid "Check files"
-msgstr ""
+msgstr "检查文件"
 
 #: src/settingsTab.ts
 msgid "Check notes against their types when they are opened or saved."
-msgstr ""
+msgstr "打开或保存笔记时，根据其类型进行检查。"
 
 #: src/sync/native/failures.ts
 msgid "Check that the file isn't locked or restricted, then try again."
-msgstr ""
+msgstr "请确认文件未被锁定或受限，然后重试。"
 
 #: src/validationState.ts
 msgid "Checked {checked} of {total, plural, one {# note} other {# notes}} · duplicate values not checked yet"
-msgstr ""
+msgstr "{total, plural, other {# 篇笔记}}中已检查 {checked} 篇 · 尚未检查重复值"
 
 #: src/validationState.ts
 msgid "Checked {completed} of {total, plural, one {# note} other {# notes}} · checking for duplicate values…"
-msgstr ""
+msgstr "{total, plural, other {# 篇笔记}}中已检查 {completed} 篇 · 正在检查重复值…"
 
 #: src/validationState.ts
 msgid "Checked {total, plural, one {# note} other {# notes}} at {time}"
-msgstr ""
+msgstr "已于 {time} 检查 {total, plural, other {# 篇笔记}}"
 
 #: src/validationState.ts
 msgid "Checking {completed} of {total, plural, one {# note} other {# notes}}…"
-msgstr ""
+msgstr "正在检查 {total, plural, other {# 篇笔记}}中的第 {completed} 篇…"
 
 #: src/workspace/syncPane.ts
 msgid "Checking every file against the collection…"
-msgstr ""
+msgstr "正在根据集合检查每个文件…"
 
 #: src/sync/words.ts
 msgid "Checking mdbase on this computer."
-msgstr ""
+msgstr "正在检查此电脑上的 mdbase。"
 
 #: src/workspace/types/impact.ts
 msgid "Checking notes…"
-msgstr ""
+msgstr "正在检查笔记…"
 
 #: src/sync/words.ts
 msgid "Checking sync"
-msgstr ""
+msgstr "正在检查同步"
 
 #: src/sync/native/plugin.ts
 #: src/sync/native/session.ts
 msgid "Checking your files"
-msgstr ""
+msgstr "正在检查文件"
 
 #: src/sync/native/plugin.ts
 msgid "Checking your files: catching up with changes from other devices"
-msgstr ""
+msgstr "正在检查文件：正在获取其他设备的更改"
 
 #: src/fieldSummary.ts
 #: src/workspace/types/fieldEditor.ts
 msgid "Choice"
-msgstr ""
+msgstr "选项"
 
 #: src/createTypedNoteModal.ts
 msgid "Choose a location included in this collection, not a definition or excluded folder."
-msgstr ""
+msgstr "请选择集合中包含的位置，不要选择定义文件夹或排除的文件夹。"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Choose a source field"
-msgstr ""
+msgstr "选择源字段"
 
 #: src/modals.ts
 msgid "Choose a type"
-msgstr ""
+msgstr "选择类型"
 
 #: src/createTypedNoteModal.ts
 msgid "Choose a visible, vault-relative note path without .. or empty folders."
-msgstr ""
+msgstr "请选择仓库内可见的相对笔记路径，不得包含 .. 或空文件夹。"
 
 #: src/workspace/syncPane.ts
 msgid "Choose another collection"
-msgstr ""
+msgstr "选择其他集合"
 
 #: src/sync/words.ts
 #: src/workspace/syncPane.ts
 msgid "Choose collection"
-msgstr ""
+msgstr "选择集合"
 
 #: src/settingsTab.ts
 msgid "Choose folders whose notes and files stay off this device."
-msgstr ""
+msgstr "选择不保留在此设备上的笔记和文件所在的文件夹。"
 
 #: src/sync/words.ts
 msgid "Choose Restart sync to continue."
-msgstr ""
+msgstr "选择“重新开始同步”以继续。"
 
 #: src/sync/native/session.ts
 msgid "Choose the collection to sync with this vault."
-msgstr ""
+msgstr "选择要与此仓库同步的集合。"
 
 #: src/typeDraft.ts
 msgid "Choose the shape of each list item."
-msgstr ""
+msgstr "选择每个列表项的结构。"
 
 #: src/createTypedNoteModal.ts
 msgid "Choose…"
-msgstr ""
+msgstr "选择…"
 
 #: src/workspace/issuesPane.ts
 msgid "Clear filter"
-msgstr ""
+msgstr "清除筛选"
 
 #: src/workspace/types/typeList.ts
 msgid "Clear search"
-msgstr ""
+msgstr "清除搜索"
 
 #: src/workspace/types/setup.ts
 msgid "Close review"
-msgstr ""
+msgstr "关闭检查"
 
 #: src/sync/words.ts
 msgid "Cloud copy"
-msgstr ""
+msgstr "云端副本"
 
 #: src/workspace/syncPane.ts
 msgid "Cloud copy (recommended)"
-msgstr ""
+msgstr "云端副本（推荐）"
 
 #: src/workspace/syncPane.ts
 msgid "Code"
-msgstr ""
+msgstr "代码"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Collapse all fields"
-msgstr ""
+msgstr "折叠所有字段"
 
 #: src/workspace/syncPane.ts
 msgid "Collection"
-msgstr ""
+msgstr "集合"
 
 #: src/sync/native/failures.ts
 msgid "Collection is full"
-msgstr ""
+msgstr "集合已满"
 
 #: src/settingsTab.ts
 msgid "Collection limits"
-msgstr ""
+msgstr "集合限制"
 
 #: main.ts
 msgid "Collection validation passed with no issues."
-msgstr ""
+msgstr "集合验证通过，没有问题。"
 
 #: main.ts
 msgid "Collection validation: {issueCount, plural, one {# issue} other {# issues}}"
-msgstr ""
+msgstr "集合验证：{issueCount, plural, other {# 个问题}}"
 
 #: src/workspace/syncPane.ts
 msgid "Combine and sync"
-msgstr ""
+msgstr "合并并同步"
 
 #: src/workspace/syncPane.ts
 msgid "Combine this vault with “{name}”?"
-msgstr ""
+msgstr "将此仓库与“{name}”合并？"
 
 #: src/workspace/syncPane.ts
 msgid "Combining copies the collection's notes into this vault and this vault's notes into the collection. Nothing is deleted. If the same file differs on each side, both versions are kept."
-msgstr ""
+msgstr "合并会将集合中的笔记复制到此仓库，并将此仓库中的笔记复制到集合。不会删除任何内容。如果两侧的同一文件不同，将保留两个版本。"
 
 #: src/workspace/types/drafts.ts
 msgid "Compare draft"
-msgstr ""
+msgstr "比较草稿"
 
 #: src/workspace/syncPane.ts
 msgid "Compare versions"
-msgstr ""
+msgstr "比较版本"
 
 #: src/workspace/types/designForm.ts
 msgid "Conditions written in YAML."
-msgstr ""
+msgstr "在 YAML 中编写的条件。"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Configure settings"
-msgstr ""
+msgstr "配置设置"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Configured"
-msgstr ""
+msgstr "已配置"
 
 #: src/modals.ts
 msgid "Confirm high-impact type changes"
-msgstr ""
+msgstr "确认高影响类型更改"
 
 #: src/workspace/syncPane.ts
 msgid "Conflicts"
-msgstr ""
+msgstr "冲突"
 
 #: src/sync/words.ts
 msgid "Connecting"
-msgstr ""
+msgstr "正在连接"
 
 #: src/sync/words.ts
 msgid "Connecting to mdbase."
-msgstr ""
+msgstr "正在连接 mdbase。"
 
 #: src/contractCatalog.ts
 msgid "Contract catalog is too large."
-msgstr ""
+msgstr "契约目录过大。"
 
 #: main.ts
 msgid "Contract pack recovery needs attention: {errorMessage}"
-msgstr ""
+msgstr "契约包恢复需要处理：{errorMessage}"
 
 #: src/workspace/syncPane.ts
 msgid "Copied. Open the link on your other device, or paste it into the sync tab there."
-msgstr ""
+msgstr "已复制。在另一台设备上打开链接，或将其粘贴到该设备的同步选项卡中。"
 
 #: src/workspace/syncPane.ts
 msgid "Copied. Paste it into your browser."
-msgstr ""
+msgstr "已复制。请粘贴到浏览器中。"
 
 #: src/workspace/syncPane.ts
 msgid "Copy link"
-msgstr ""
+msgstr "复制链接"
 
 #: src/workspace/syncPane.ts
 msgid "Copy sign-in link"
-msgstr ""
+msgstr "复制登录链接"
 
 #: src/workspace/types/drafts.ts
 msgid "Copy the parts you want into the current definition, then review before saving."
-msgstr ""
+msgstr "将所需部分复制到当前定义中，保存前进行检查。"
 
 #: src/sync/words.ts
 msgid "Couldn't reach mdbase. Check your connection and try again."
-msgstr ""
+msgstr "无法连接 mdbase。请检查网络连接后重试。"
 
 #: src/sync/native/failures.ts
 msgid "Couldn't read this file"
-msgstr ""
+msgstr "无法读取此文件"
 
 #: src/sync/native/failures.ts
 #: src/workspace/syncPane.ts
 msgid "Couldn't sync"
-msgstr ""
+msgstr "无法同步"
 
 #: src/sync/words.ts
 msgid "Couldn't unlock this collection. Try again."
-msgstr ""
+msgstr "无法解锁此集合。请重试。"
 
 #: src/workspace/types/impact.ts
 msgid "Counting notes…"
-msgstr ""
+msgstr "正在统计笔记…"
 
 #: src/workspace/syncPane.ts
 msgid "Counting…"
-msgstr ""
+msgstr "正在统计…"
 
 #: src/createTypedNoteModal.ts
 msgid "Create note"
-msgstr ""
+msgstr "创建笔记"
 
 #: src/commands.ts
 msgid "Create note from type"
-msgstr ""
+msgstr "根据类型创建笔记"
 
 #: src/typeDraft.ts
 msgid "Create the type '{typeName}'."
-msgstr ""
+msgstr "创建类型 '{typeName}'。"
 
 #: src/workspace/types/typeList.ts
 msgid "Create type"
-msgstr ""
+msgstr "创建类型"
 
 #: src/workspace/types/typeList.ts
 msgid "Create type · {createBlocked}"
-msgstr ""
+msgstr "创建类型 · {createBlocked}"
 
 #: src/commands.ts
 msgid "Create type definition"
-msgstr ""
+msgstr "创建类型定义"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
-msgstr ""
+msgstr "当前源文件"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source and recovered draft"
-msgstr ""
+msgstr "当前源文件和恢复的草稿"
 
 #: src/fieldSummary.ts
 msgid "Date"
-msgstr ""
+msgstr "日期"
 
 #: src/fieldSummary.ts
 msgid "Date and time"
-msgstr ""
+msgstr "日期和时间"
 
 #: src/workspace/syncPane.ts
 msgid "Decline"
-msgstr ""
+msgstr "拒绝"
 
 #: src/sync/controller.ts
 msgid "Declining the device"
-msgstr ""
+msgstr "正在拒绝设备"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Default"
-msgstr ""
+msgstr "默认值"
 
 #: src/fieldSummary.ts
 msgid "default {value}"
-msgstr ""
+msgstr "默认值 {value}"
 
 #: src/fieldSummary.ts
 msgid "Default must be a number."
-msgstr ""
+msgstr "默认值必须是数字。"
 
 #: src/fieldSummary.ts
 msgid "Default must be a whole number."
-msgstr ""
+msgstr "默认值必须是整数。"
 
 #: src/fieldSummary.ts
 msgid "Default must be true or false."
-msgstr ""
+msgstr "默认值必须为 true 或 false。"
 
 #: src/workspace/syncPane.ts
 msgid "Delete it"
-msgstr ""
+msgstr "删除"
 
 #: src/workspace/syncPane.ts
 msgid "Deleted and moved"
-msgstr ""
+msgstr "已删除和移动"
 
 #: src/workspace/syncPane.ts
 msgid "Deleted everywhere"
-msgstr ""
+msgstr "各处均已删除"
 
 #: src/workspace/syncPane.ts
 msgid "Deleted here (removed on another device)"
-msgstr ""
+msgstr "此处已删除（在另一台设备上移除）"
 
 #: src/sync/words.ts
 msgid "Deleted on another device, changed here"
-msgstr ""
+msgstr "另一台设备上已删除，此处已更改"
 
 #: src/fieldSummary.ts
 msgid "deprecated"
-msgstr ""
+msgstr "已弃用"
 
 #: src/workspace/types/setup.ts
 msgid "Describe your notes with types in this vault. You can sync it later."
-msgstr ""
+msgstr "使用类型描述此仓库中的笔记。你可以稍后同步。"
 
 #: src/workspace/types/designForm.ts
 #: src/workspace/types/fieldEditor.ts
 msgid "Description"
-msgstr ""
+msgstr "描述"
 
 #: src/workspace/typesPane.ts
 msgid "Design"
-msgstr ""
+msgstr "设计"
 
 #: src/workspace/typesPane.ts
 msgid "Design a custom type"
-msgstr ""
+msgstr "设计自定义类型"
 
 #: src/workspace/syncPane.ts
 msgid "Details"
-msgstr ""
+msgstr "详情"
 
 #: src/workspace/typesPane.ts
 msgid "Discard"
-msgstr ""
+msgstr "放弃"
 
 #: src/modals.ts
 msgid "Discard changes"
-msgstr ""
+msgstr "放弃更改"
 
 #: src/workspace/typesPane.ts
 msgid "Discard changes to {name}?"
-msgstr ""
+msgstr "放弃对 {name} 的更改？"
 
 #: src/workspace/typesPane.ts
 msgid "Discard changes to this type?"
-msgstr ""
+msgstr "放弃对此类型的更改？"
 
 #: src/workspace/types/drafts.ts
 msgid "Discard old draft"
-msgstr ""
+msgstr "放弃旧草稿"
 
 #: src/workspace/typesPane.ts
 msgid "Discard the new type {name}?"
-msgstr ""
+msgstr "放弃新类型 {name}？"
 
 #: src/workspace/typesPane.ts
 msgid "Discard this new type?"
-msgstr ""
+msgstr "放弃此新类型？"
 
 #: src/workspace/types/drafts.ts
 msgid "Discard this recovered draft?"
-msgstr ""
+msgstr "放弃此恢复的草稿？"
 
 #: src/sync/native/choosers.ts
 msgid "Discard: {name}"
-msgstr ""
+msgstr "放弃：{name}"
 
 #: src/settingsTab.ts
 msgid "Disconnect…"
-msgstr ""
+msgstr "断开连接…"
 
 #: src/sync/controller.ts
 msgid "Disconnecting"
-msgstr ""
+msgstr "正在断开连接"
 
 #: src/workspaceView.ts
 msgid "Dismiss message"
-msgstr ""
+msgstr "关闭消息"
 
 #: src/workspace/types/designForm.ts
 msgid "Display field"
-msgstr ""
+msgstr "显示字段"
 
 #: src/sync/native/failures.ts
 msgid "Doesn't match its type"
-msgstr ""
+msgstr "与其类型不匹配"
 
 #: src/workspace/syncPane.ts
 msgid "Download mdbase"
-msgstr ""
+msgstr "下载 mdbase"
 
 #: src/sync/native/plugin.ts
 msgid "downloading {percent}% ({size} MiB)"
-msgstr ""
+msgstr "正在下载 {percent}%（{size} MiB）"
 
 #: src/sync/words.ts
 msgid "Downloading the collection."
-msgstr ""
+msgstr "正在下载集合。"
 
 #: src/typeModel.ts
 msgid "Duplicate field name: {name}"
-msgstr ""
+msgstr "重复的字段名称：{name}"
 
 #: src/contractCatalog.ts
 msgid "Duplicate pack source."
-msgstr ""
+msgstr "重复的包来源。"
 
 #: src/issuePresentation.ts
 msgid "duplicate value"
-msgstr ""
+msgstr "重复值"
 
 #: src/contractCatalog.ts
 msgid "Each one adds a type you can edit and a format other apps can read. Installing doesn't give any app access to your vault, and types you already have are kept."
-msgstr ""
+msgstr "每个包都会添加一种可编辑的类型以及其他应用可读取的格式。安装不会让任何应用访问你的仓库，已有类型也会保留。"
 
 #: src/workspace/issuesPane.ts
 msgid "Edit {field} in {typeNameLabel}"
-msgstr ""
+msgstr "编辑 {typeNameLabel} 中的 {field}"
 
 #: src/workspace/issuesPane.ts
 msgid "Edit type {typeNameLabel}"
-msgstr ""
+msgstr "编辑类型 {typeNameLabel}"
 
 #: src/commands.ts
 msgid "Edit type definition"
-msgstr ""
+msgstr "编辑类型定义"
 
 #: src/validation.ts
 msgid "empty"
-msgstr ""
+msgstr "空"
 
 #: src/workspace/syncPane.ts
 msgid "Encrypted so only your devices can read it. For now it works on this computer only, and web apps work only while it's on."
-msgstr ""
+msgstr "已加密，只有你的设备可以读取。目前仅在此电脑上可用，且仅在此电脑开启时 Web 应用才能使用。"
 
 #: src/workspace/syncPane.ts
 msgid "Encryption password"
-msgstr ""
+msgstr "加密密码"
 
 #: src/sync/native/session.ts
 msgid "Enter your encryption password to sync this Private collection."
-msgstr ""
+msgstr "输入加密密码以同步此私有集合。"
 
 #: src/workspace/issuesPane.ts
 msgid "Error"
-msgstr ""
+msgstr "错误"
 
 #: src/workspace/issuesPane.ts
 msgid "Errors"
-msgstr ""
+msgstr "错误"
 
 #: src/typeDraft.ts
 #: src/typeModel.ts
 msgid "Every field needs a name."
-msgstr ""
+msgstr "每个字段都需要名称。"
 
 #: src/typeDraft.ts
 msgid "Every nested field needs a name."
-msgstr ""
+msgstr "每个嵌套字段都需要名称。"
 
 #: src/sync/words.ts
 msgid "Everything else is in sync."
-msgstr ""
+msgstr "其他内容均已同步。"
 
 #: src/sync/words.ts
 msgid "Everything is up to date."
-msgstr ""
+msgstr "所有内容均为最新。"
 
 #: src/migration.ts
 msgid "Exclude pattern \"{pattern}\" is not a portable v0.3 glob; review it."
-msgstr ""
+msgstr "排除模式“{pattern}”不是可移植的 v0.3 glob；请检查。"
 
 #: src/contractCatalog.ts
 msgid "Existing pack lock cannot be read safely."
-msgstr ""
+msgstr "无法安全读取现有的包锁定文件。"
 
 #: src/noteCreation.ts
 msgid "Expected a finite number"
-msgstr ""
+msgstr "应为有限数字"
 
 #: src/noteCreation.ts
 msgid "Expected a whole integer"
-msgstr ""
+msgstr "应为整数"
 
 #: src/noteCreation.ts
 msgid "Expected a YAML or JSON list"
-msgstr ""
+msgstr "应为 YAML 或 JSON 列表"
 
 #: src/migration.ts
 msgid "Expected an mdbase v0.2.x collection, found {version}."
-msgstr ""
+msgstr "应为 mdbase v0.2.x 集合，实际为 {version}。"
 
 #: src/noteCreation.ts
 msgid "Expected boolean input: true/false"
-msgstr ""
+msgstr "应输入布尔值：true/false"
 
 #: src/noteCreation.ts
 msgid "Expected YAML object value"
-msgstr ""
+msgstr "应为 YAML 对象值"
 
 #: src/workspace/types/drafts.ts
 msgid "Export draft"
-msgstr ""
+msgstr "导出草稿"
 
 #: src/workspace/types/drafts.ts
 msgid "Exported recovery draft to {path}. The original draft is still retained."
-msgstr ""
+msgstr "已将恢复草稿导出到 {path}。原草稿仍予以保留。"
 
 #: main.ts
 msgid "field"
-msgstr ""
+msgstr "字段"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Field"
-msgstr ""
+msgstr "字段"
 
 #: src/validation.ts
 msgid "Field ''{field}'' must reference type ''{targetType}''"
-msgstr ""
+msgstr "字段“{field}”必须引用类型“{targetType}”"
 
 #: src/validation.ts
 msgid "Field ''{field}'' references a missing note"
-msgstr ""
+msgstr "字段“{field}”引用了不存在的笔记"
 
 #: src/validation.ts
 msgid "Field ''{fieldName}'' is not declared by type ''{typeName}''"
-msgstr ""
+msgstr "类型“{typeName}”未声明字段“{fieldName}”"
 
 #: src/validation.ts
 msgid "Field ''{fieldName}'' must be unique across the collection. Duplicate found in: {otherPaths}"
-msgstr ""
+msgstr "字段“{fieldName}”在整个集合中必须唯一。在以下位置发现重复值：{otherPaths}"
 
 #: src/validation.ts
 msgid "Field ''{fieldName}'' must be unique for type ''{typeName}''. Duplicate found in: {otherPaths}"
-msgstr ""
+msgstr "字段“{fieldName}”在类型“{typeName}”中必须唯一。在以下位置发现重复值：{otherPaths}"
 
 #: src/validation.ts
 msgid "Field ''{fieldPath}'' expected {expected}"
-msgstr ""
+msgstr "字段“{fieldPath}”应为 {expected}"
 
 #: src/validation.ts
 msgid "Field ''{fieldPath}'' has invalid regex pattern: {reason}"
-msgstr ""
+msgstr "字段“{fieldPath}”的正则表达式无效：{reason}"
 
 #: src/validation.ts
 msgid "Field ''{fieldPath}'' is marked deprecated"
-msgstr ""
+msgstr "字段“{fieldPath}”已标记为弃用"
 
 #: src/validation.ts
 msgid "Field ''{fieldPath}'' must be one of: {allowed}"
-msgstr ""
+msgstr "字段“{fieldPath}”必须为以下值之一：{allowed}"
 
 #: src/validation.ts
 msgid "Field ''{fieldPath}'' references a missing note"
-msgstr ""
+msgstr "字段“{fieldPath}”引用了不存在的笔记"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Field {fieldNumber} name"
-msgstr ""
+msgstr "字段 {fieldNumber} 的名称"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Field mappings"
-msgstr ""
+msgstr "字段映射"
 
 #: src/workspace/types/designForm.ts
 msgid "Field values"
-msgstr ""
+msgstr "字段值"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Fields"
-msgstr ""
+msgstr "字段"
 
 #: src/noteCreation.ts
 msgid "File already exists: {normalized}"
-msgstr ""
+msgstr "文件已存在：{normalized}"
 
 #: main.ts
 msgid "File not found: {path}"
-msgstr ""
+msgstr "找不到文件：{path}"
 
 #: main.ts
 msgid "Files changed during validation. Validate again for a complete result."
-msgstr ""
+msgstr "验证期间文件发生了更改。请重新验证以获得完整结果。"
 
 #: src/workspace/types/setup.ts
 msgid "Files replaced"
-msgstr ""
+msgstr "已替换文件"
 
 #: src/workspace/syncPane.ts
 msgid "Files sent and received appear here."
-msgstr ""
+msgstr "发送和接收的文件将显示在这里。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Filter fields"
-msgstr ""
+msgstr "筛选字段"
 
 #: src/workspace/issuesPane.ts
 msgid "Filter issues"
-msgstr ""
+msgstr "筛选问题"
 
 #: src/sync/words.ts
 msgid "Finish sign-in"
-msgstr ""
+msgstr "完成登录"
 
 #: src/workspace/syncPane.ts
 msgid "Finish signing in in your browser, then come back here. If no page opened, copy the sign-in link into your browser."
-msgstr ""
+msgstr "请在浏览器中完成登录，然后返回此处。如果没有打开页面，请将登录链接复制到浏览器中。"
 
 #: src/sync/native/session.ts
 msgid "Finish signing in in your browser."
-msgstr ""
+msgstr "请在浏览器中完成登录。"
 
 #: src/workspace/types/impact.ts
 msgid "Fix errors to check existing notes."
-msgstr ""
+msgstr "修复错误以检查现有笔记。"
 
 #: src/workspace/types/impact.ts
 msgid "Fix errors to preview matching notes."
-msgstr ""
+msgstr "修复错误以预览匹配的笔记。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Fixed value"
-msgstr ""
+msgstr "固定值"
 
 #: src/workspace/syncPane.ts
 msgid "Folder"
-msgstr ""
+msgstr "文件夹"
 
 #: src/workspace/syncPane.ts
 msgid "Folder name"
-msgstr ""
+msgstr "文件夹名称"
 
 #: src/settingsTab.ts
 msgid "Folder to leave off this device"
-msgstr ""
+msgstr "不保留在此设备上的文件夹"
 
 #: src/settingsTab.ts
 msgid "Folders left out"
-msgstr ""
+msgstr "已排除的文件夹"
 
 #: src/contractCatalog.ts
 msgid "For integrations"
-msgstr ""
+msgstr "供集成使用"
 
 #: src/commands.ts
 msgid "Found {issueCount, plural, one {# issue} other {# issues}} in current note."
-msgstr ""
+msgstr "在当前笔记中发现 {issueCount, plural, other {# 个问题}}。"
 
 #: src/sync/native/failures.ts
 msgid "Free up space in the collection, then try again."
-msgstr ""
+msgstr "请释放集合空间后重试。"
 
 #: src/workspace/syncPane.ts
 msgid "From your other device"
-msgstr ""
+msgstr "来自你的其他设备"
 
 #: main.ts
 #: src/migration.ts
 msgid "frontmatter is missing"
-msgstr ""
+msgstr "缺少 frontmatter"
 
 #: src/workspace/syncPane.ts
 msgid "Get the mdbase app"
-msgstr ""
+msgstr "获取 mdbase 应用"
 
 #: src/sync/words.ts
 msgid "Getting changes from your other devices."
-msgstr ""
+msgstr "正在获取其他设备的更改。"
 
 #: src/sync/words.ts
 msgid "Getting the latest changes from your other devices."
-msgstr ""
+msgstr "正在获取其他设备的最新更改。"
 
 #: src/sync/native/session.ts
 msgid "Getting your collection ready."
-msgstr ""
+msgstr "正在准备集合。"
 
 #: src/workspace/types/designForm.ts
 msgid "Give the type a name."
-msgstr ""
+msgstr "为类型命名。"
 
 #: src/workspace/issuesPane.ts
 msgid "Group issues"
-msgstr ""
+msgstr "问题分组"
 
 #: src/workspace/types/designForm.ts
 msgid "Has fields"
-msgstr ""
+msgstr "包含字段"
 
 #: src/workspace/types/contractEditor.ts
 msgid "How apps that read this format treat this type."
-msgstr ""
+msgstr "读取此格式的应用如何处理此类型。"
 
 #: src/workspace/syncPane.ts
 msgid "How this vault appears on your other devices."
-msgstr ""
+msgstr "此仓库在你的其他设备上的显示方式。"
 
 #: src/workspace/types/setup.ts
 msgid "I reviewed the lossy diagnostics and want to apply this migration."
-msgstr ""
+msgstr "我已检查有损转换的诊断结果，希望应用此迁移。"
 
 #: src/workspace/syncPane.ts
 msgid "If mdbase asks whether Obsidian may use this vault, allow it. Obsidian then shows live status and keeps open notes in step."
-msgstr ""
+msgstr "如果 mdbase 询问是否允许 Obsidian 使用此仓库，请选择允许。之后 Obsidian 会显示实时状态并保持打开的笔记同步。"
 
 #: src/workspace/syncPane.ts
 msgid "If you're setting up a new device, type the six-digit code it shows. Only approve devices you own."
-msgstr ""
+msgstr "如果正在设置新设备，请输入该设备显示的六位数代码。只批准你自己的设备。"
 
 #: src/settingsTab.ts
 msgid "Images"
-msgstr ""
+msgstr "图片"
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
-msgstr ""
+msgstr "包含在集合中，但集合自身的文件设置排除了它们。"
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but left out here by your choices below or the collection's file settings."
-msgstr ""
+msgstr "包含在集合中，但被下方选择或集合的文件设置排除。"
 
 #: src/typeContracts.ts
 msgid "Incompatible"
-msgstr ""
+msgstr "不兼容"
 
+#: main.ts
 #: src/commands.ts
 msgid "Initialize collection"
-msgstr ""
+msgstr "初始化集合"
 
 #: main.ts
 msgid "Initialize or migrate this collection first."
-msgstr ""
+msgstr "请先初始化或迁移此集合。"
 
 #: main.ts
 msgid "Initialized mdbase collection: {createdPaths}"
-msgstr ""
+msgstr "已初始化 mdbase 集合：{createdPaths}"
 
 #: src/contractCatalog.ts
 msgid "Install"
-msgstr ""
+msgstr "安装"
 
 #: src/sync/words.ts
 msgid "Install the mdbase app to sync this vault."
-msgstr ""
+msgstr "安装 mdbase 应用以同步此仓库。"
 
 #: main.ts
 msgid "Installed contract pack. Edit its type or create a note to try it."
-msgstr ""
+msgstr "已安装契约包。编辑其类型或创建笔记来试用。"
 
 #: src/workspace/syncPane.ts
 msgid "Installed it somewhere unusual? Set its location in settings."
-msgstr ""
+msgstr "安装在其他位置？请在设置中指定其位置。"
 
 #: src/contractCatalog.ts
 msgid "Installed."
-msgstr ""
+msgstr "已安装。"
 
 #: src/contractCatalog.ts
 msgid "Installing {completed} of {total} files…"
-msgstr ""
+msgstr "正在安装文件：{completed}/{total}…"
 
 #: src/fieldSummary.ts
 #: src/typeContracts.ts
 msgid "Integer"
-msgstr ""
+msgstr "整数"
 
 #: src/noteCreation.ts
 msgid "Invalid collection-relative path: {input}"
-msgstr ""
+msgstr "无效的集合相对路径：{input}"
 
 #: src/contractCatalog.ts
 msgid "Invalid contract catalog or type pack."
-msgstr ""
+msgstr "无效的契约目录或类型包。"
 
 #: src/issuePresentation.ts
 msgid "invalid format"
-msgstr ""
+msgstr "格式无效"
 
 #: src/issuePresentation.ts
 msgid "invalid frontmatter"
-msgstr ""
+msgstr "frontmatter 无效"
 
 #: src/contractCatalog.ts
 msgid "Invalid pack digest."
-msgstr ""
+msgstr "包摘要无效。"
 
 #: src/contractCatalog.ts
 msgid "Invalid pack recovery journal."
-msgstr ""
+msgstr "包恢复日志无效。"
 
 #: src/contractCatalog.ts
 msgid "Invalid pack resource count."
-msgstr ""
+msgstr "包资源数量无效。"
 
 #: src/contractCatalog.ts
 msgid "Invalid pack resource or duplicate target."
-msgstr ""
+msgstr "包资源无效或目标重复。"
 
 #: main.ts
 msgid "Invalid type frontmatter: {reason}"
-msgstr ""
+msgstr "类型的 frontmatter 无效：{reason}"
 
 #: src/validation.ts
 msgid "invalid value"
-msgstr ""
+msgstr "值无效"
 
 #: src/workspace/types/yamlSource.ts
 msgid "Invalid YAML: {message}"
-msgstr ""
+msgstr "YAML 无效：{message}"
 
 #: src/sync/native/failures.ts
 msgid "is empty"
-msgstr ""
+msgstr "为空"
 
 #: src/workspace/issuesPane.ts
 msgid "Issue severity"
-msgstr ""
+msgstr "问题严重程度"
 
 #: src/workspaceView.ts
 msgid "Issues"
-msgstr ""
+msgstr "问题"
 
 #: src/workspaceView.ts
 msgid "Issues · {issueCount, plural, one {# validation issue} other {# validation issues}}"
-msgstr ""
+msgstr "问题 · {issueCount, plural, other {# 个验证问题}}"
 
 #: src/workspace/typesPane.ts
 msgid "It hasn't been saved, so it will be gone. This can't be undone."
-msgstr ""
+msgstr "尚未保存，因此将会丢失。此操作无法撤销。"
 
 #: src/sync/words.ts
 msgid "It stopped to keep your data safe. Your notes here are untouched. Choose Restart sync to continue."
-msgstr ""
+msgstr "为保护数据，同步已停止。此处的笔记不受影响。请选择“重新开始同步”以继续。"
 
 #: src/workspace/syncPane.ts
 msgid "It was changed on two devices. mdbase kept one version."
-msgstr ""
+msgstr "它在两台设备上均有更改。mdbase 保留了一个版本。"
 
 #: src/workspace/syncPane.ts
 msgid "It was deleted on one device and changed on another."
-msgstr ""
+msgstr "它在一台设备上被删除，在另一台设备上被更改。"
 
 #: src/workspace/syncPane.ts
 msgid "It was renamed or moved on two devices. mdbase kept one name."
-msgstr ""
+msgstr "它在两台设备上被重命名或移动。mdbase 保留了一个名称。"
 
 #: src/workspace/syncPane.ts
 msgid "It's used once and isn't saved."
-msgstr ""
+msgstr "仅使用一次，不会保存。"
 
 #: src/workspace/syncPane.ts
 msgid "It's used once and isn't saved. The recovery key is the one mdbase showed when you set your encryption password."
-msgstr ""
+msgstr "仅使用一次，不会保存。恢复密钥是你设置加密密码时 mdbase 显示的密钥。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Item"
-msgstr ""
+msgstr "项目"
 
 #: src/workspace/syncPane.ts
 msgid "Just now"
-msgstr ""
+msgstr "刚刚"
 
 #: src/workspace/syncPane.ts
 msgid "Keep both"
-msgstr ""
+msgstr "两者都保留"
 
 #: src/modals.ts
 msgid "Keep editing"
-msgstr ""
+msgstr "继续编辑"
 
 #: src/workspace/syncPane.ts
 msgid "Keep it"
-msgstr ""
+msgstr "保留"
 
 #: src/modals.ts
 msgid "Keep reviewing"
-msgstr ""
+msgstr "继续检查"
 
 #: src/workspace/syncPane.ts
 msgid "Keep the collection's"
-msgstr ""
+msgstr "保留集合的版本"
 
 #: src/workspace/syncPane.ts
 msgid "Keep this computer's"
-msgstr ""
+msgstr "保留此电脑的版本"
 
 #: src/workspace/syncPane.ts
 msgid "Keep this vault's"
-msgstr ""
+msgstr "保留此仓库的版本"
 
 #: src/contractCatalog.ts
 msgid "Keep your {path}"
-msgstr ""
+msgstr "保留你的 {path}"
 
 #: src/workspace/syncPane.ts
 msgid "Kept"
-msgstr ""
+msgstr "已保留"
 
 #: src/workspace/syncPane.ts
 msgid "Kind"
-msgstr ""
+msgstr "种类"
 
 #: src/workspace/syncPane.ts
 msgid "Last synced"
-msgstr ""
+msgstr "上次同步"
 
 #: src/settingsTab.ts
 msgid "Leave empty to find the mdbase app automatically."
-msgstr ""
+msgstr "留空以自动查找 mdbase 应用。"
 
 #: src/sync/native/failures.ts
 msgid "Left out by the collection"
-msgstr ""
+msgstr "被集合排除"
 
 #: src/settingsTab.ts
 msgid "Let other installed plugins exchange mdbase events and actions in this vault."
-msgstr ""
+msgstr "允许其他已安装的插件在此仓库中交换 mdbase 事件和操作。"
 
 #: src/settingsTab.ts
 msgid "Let the mdbase desktop app sync this vault instead of Obsidian."
-msgstr ""
+msgstr "改用 mdbase 桌面应用同步此仓库，而不是使用 Obsidian。"
 
 #: src/workspace/types/yamlSource.ts
 msgid "Line {line}"
-msgstr ""
+msgstr "第 {line} 行"
 
 #: src/fieldSummary.ts
 #: src/workspace/types/fieldEditor.ts
 msgid "Link"
-msgstr ""
+msgstr "链接"
 
 #: src/workspace/syncPane.ts
 msgid "Link or ID"
-msgstr ""
+msgstr "链接或 ID"
 
 #: src/issuePresentation.ts
 msgid "link to wrong type"
-msgstr ""
+msgstr "链接到错误的类型"
 
 #: src/fieldSummary.ts
 #: src/typeContracts.ts
 msgid "List"
-msgstr ""
+msgstr "列表"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "List item"
-msgstr ""
+msgstr "列表项"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "List items"
-msgstr ""
+msgstr "列表项"
 
 #: src/workspace/syncPane.ts
 msgid "Live updates"
-msgstr ""
+msgstr "实时更新"
 
 #: src/workspace/issuesPane.ts
 msgid "Load {remaining} more"
-msgstr ""
+msgstr "再加载 {remaining} 项"
 
 #: src/contractCatalog.ts
 msgid "Loading ready-made types…"
-msgstr ""
+msgstr "正在加载预设类型…"
 
 #: src/createTypedNoteModal.ts
 msgid "Location"
-msgstr ""
+msgstr "位置"
 
 #: src/sync/words.ts
 msgid "Locked"
-msgstr ""
+msgstr "已锁定"
 
 #: src/typeDraft.ts
 msgid "Make '{name}' required. Existing records may become invalid."
-msgstr ""
+msgstr "将 '{name}' 设为必填。现有记录可能变为无效。"
 
 #: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 msgid "Manage apps"
-msgstr ""
+msgstr "管理应用"
 
 #: src/typeContracts.ts
 msgid "Map required contract field {fieldReference}."
-msgstr ""
+msgstr "映射必填契约字段 {fieldReference}。"
 
 #: src/typeModel.ts
 msgid "Match where must be a YAML mapping."
-msgstr ""
+msgstr "匹配条件必须是 YAML 映射。"
 
 #: src/workspace/types/impact.ts
 msgid "Matching"
-msgstr ""
+msgstr "匹配"
 
 #: src/workspace/types/impact.ts
 msgid "Matching · {count, plural, one {# note} other {# notes}}"
-msgstr ""
+msgstr "匹配 · {count, plural, other {# 篇笔记}}"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Max items"
-msgstr ""
+msgstr "最多项目数"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Max length"
-msgstr ""
+msgstr "最大长度"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Maximum"
-msgstr ""
+msgstr "最大值"
 
 #: src/settingsTab.ts
 msgid "mdbase app location"
-msgstr ""
+msgstr "mdbase 应用位置"
 
 #: src/sync/words.ts
 msgid "mdbase can't reach the server right now. Check your connection and try again."
-msgstr ""
+msgstr "mdbase 目前无法连接服务器。请检查网络连接后重试。"
 
 #: src/sync/words.ts
 msgid "mdbase can't reach this computer's password store. Unlock it, or sign in to your desktop session again."
-msgstr ""
+msgstr "mdbase 无法访问此电脑的密码存储。请将其解锁，或重新登录桌面会话。"
 
 #: main.ts
 msgid "mdbase collection already initialized."
-msgstr ""
+msgstr "mdbase 集合已初始化。"
 
 #: src/sync/words.ts
 msgid "mdbase couldn't find that collection in your account."
-msgstr ""
+msgstr "mdbase 在你的账户中找不到该集合。"
 
 #: src/sync/words.ts
 msgid "mdbase couldn't find that collection in your account. Check the link and the account you're signed in to."
-msgstr ""
+msgstr "mdbase 在你的账户中找不到该集合。请检查链接和当前登录的账户。"
 
 #: src/workspaceView.ts
 msgid "mdbase destinations"
-msgstr ""
+msgstr "mdbase 目标"
 
 #: src/sync/words.ts
 msgid "mdbase didn't answer."
-msgstr ""
+msgstr "mdbase 未响应。"
 
 #: src/sync/native/failures.ts
 msgid "mdbase didn't confirm whether this change arrived. It will check again before resending."
-msgstr ""
+msgstr "mdbase 未确认是否收到此更改。重新发送前会再次检查。"
 
 #: src/workspace/syncPane.ts
 msgid "mdbase didn't overwrite anything. Until you choose, the version on this computer stays as it is."
-msgstr ""
+msgstr "mdbase 未覆盖任何内容。在你选择之前，此电脑上的版本保持不变。"
 
 #: src/sync/controller.ts
 msgid "mdbase didn't return a sign-in page."
-msgstr ""
+msgstr "mdbase 未返回登录页面。"
 
 #: src/sync/words.ts
 msgid "mdbase found a problem with the synced data and stopped to keep your notes safe."
-msgstr ""
+msgstr "mdbase 发现同步数据存在问题，已停止同步以保护笔记。"
 
 #: src/sync/words.ts
 msgid "mdbase found a problem with this collection's keys and stopped to keep your notes safe."
-msgstr ""
+msgstr "mdbase 发现此集合的密钥存在问题，已停止同步以保护笔记。"
 
 #: src/sync/words.ts
 msgid "mdbase is busy. Sync carries on shortly."
-msgstr ""
+msgstr "mdbase 正忙。同步稍后继续。"
 
 #: src/sync/words.ts
 msgid "mdbase is getting this vault ready."
-msgstr ""
+msgstr "mdbase 正在准备此仓库。"
 
 #: src/sync/words.ts
 msgid "mdbase is still preparing this collection."
-msgstr ""
+msgstr "mdbase 仍在准备此集合。"
 
 #: src/sync/words.ts
 msgid "mdbase is uploading this vault for the first time."
-msgstr ""
+msgstr "mdbase 正在首次上传此仓库。"
 
 #: src/sync/daemon.ts
 msgid "mdbase isn't running on this computer."
-msgstr ""
+msgstr "mdbase 未在此电脑上运行。"
 
 #: src/workspace/syncPane.ts
 msgid "mdbase keeps a copy online, so your notes open in mdbase apps on the web and arrive on a new device straight away."
-msgstr ""
+msgstr "mdbase 在线保留一个副本，因此你的笔记可以在 Web 版 mdbase 应用中打开，并立即发送到新设备。"
 
 #: src/sync/words.ts
 msgid "mdbase needs attention for this collection."
-msgstr ""
+msgstr "此集合需要在 mdbase 中处理。"
 
 #: src/sync/native/failures.ts
 msgid "mdbase refused this change."
-msgstr ""
+msgstr "mdbase 拒绝了此更改。"
 
 #: src/sync/daemon.ts
 msgid "mdbase reported a problem."
-msgstr ""
+msgstr "mdbase 报告了一个问题。"
 
 #: src/sync/words.ts
 msgid "mdbase stopped"
-msgstr ""
+msgstr "mdbase 已停止"
 
 #: src/sync/words.ts
 msgid "mdbase stopped syncing this vault. Your files are untouched."
-msgstr ""
+msgstr "mdbase 已停止同步此仓库。你的文件不受影响。"
 
 #: src/workspace/syncPane.ts
 msgid "mdbase syncs this vault through the mdbase app. It runs in the background and keeps your notes on this computer in step with your other devices."
-msgstr ""
+msgstr "mdbase 通过 mdbase 应用同步此仓库。该应用在后台运行，使此电脑上的笔记与其他设备保持同步。"
 
 #: src/sync/daemon.ts
 msgid "mdbase took too long to answer."
-msgstr ""
+msgstr "mdbase 响应超时。"
 
 #: src/sync/words.ts
 msgid "mdbase took too long to answer. Try again."
-msgstr ""
+msgstr "mdbase 响应超时。请重试。"
 
 #: src/typeModel.ts
 msgid "mdbase v0.2 type definitions are read-only. Migrate the collection before editing."
-msgstr ""
+msgstr "mdbase v0.2 类型定义为只读。请先迁移集合再编辑。"
 
 #: main.ts
 msgid "mdbase v0.2 type definitions are read-only. Migrate the collection first."
-msgstr ""
+msgstr "mdbase v0.2 类型定义为只读。请先迁移集合。"
 
 #: src/sync/native/pass.ts
 msgid "mdbase: {fresh, plural, one {# file} other {# files}} couldn't sync. Open Sync to see why."
-msgstr ""
+msgstr "mdbase：{fresh, plural, other {# 个文件}}无法同步。打开“同步”查看原因。"
 
 #: main.ts
 msgid "mdbase: {issueCount, plural, one {# issue} other {# issues}} in {fileName}"
-msgstr ""
+msgstr "mdbase：{fileName} 中有 {issueCount, plural, other {# 个问题}}"
 
 #: src/sync/native/session.ts
 msgid "mdbase: {text}"
-msgstr ""
+msgstr "mdbase：{text}"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: {userMessage}"
-msgstr ""
+msgstr "mdbase：{userMessage}"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: a non-nfc filename cannot sync. Rename it to unicode nfc; existing files were not changed."
-msgstr ""
+msgstr "mdbase：非 NFC 文件名无法同步。请将其重命名为 Unicode NFC 格式；现有文件未更改。"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: a symlink in the mirror was skipped. Its target will not be read or changed."
-msgstr ""
+msgstr "mdbase：已跳过镜像中的符号链接。不会读取或更改其目标。"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: add collection: {detail}"
-msgstr ""
+msgstr "mdbase：添加集合：{detail}"
 
 #: src/sync/native/conflicts.ts
 msgid "mdbase: both files must finish syncing before keeping them."
-msgstr ""
+msgstr "mdbase：两个文件都必须完成同步后才能保留。"
 
 #: src/sync/native/conflicts.ts
 msgid "mdbase: conflict preserved in a separate file; remote version kept at original path."
-msgstr ""
+msgstr "mdbase：冲突已保存在单独文件中；远程版本保留在原路径。"
 
 #: src/sync/native/conflicts.ts
 msgid "mdbase: discard failed"
-msgstr ""
+msgstr "mdbase：放弃失败"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: discard rejected: {detail}"
-msgstr ""
+msgstr "mdbase：放弃请求被拒绝：{detail}"
 
 #: src/sync/native/session.ts
 msgid "mdbase: everything is sent. Add this folder in the mdbase app to keep syncing it."
-msgstr ""
+msgstr "mdbase：所有内容均已发送。在 mdbase 应用中添加此文件夹以继续同步。"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: handover (marker retained): {detail}"
-msgstr ""
+msgstr "mdbase：交接（标记已保留）：{detail}"
 
 #: src/sync/native/conflicts.ts
 msgid "mdbase: no rejected writes"
-msgstr ""
+msgstr "mdbase：没有被拒绝的写入"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: open sign-in: {detail}"
-msgstr ""
+msgstr "mdbase：打开登录页面：{detail}"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: ownership: {detail}"
-msgstr ""
+msgstr "mdbase：所有权：{detail}"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: phase: {detail}"
-msgstr ""
+msgstr "mdbase：阶段：{detail}"
 
 #: src/sync/native/conflicts.ts
 msgid "mdbase: rejected write discarded"
-msgstr ""
+msgstr "mdbase：已放弃被拒绝的写入"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: saving state: {detail}"
-msgstr ""
+msgstr "mdbase：正在保存状态：{detail}"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: select: {detail}"
-msgstr ""
+msgstr "mdbase：选择：{detail}"
 
 #: src/sync/native/session.ts
 msgid "mdbase: sign-in is still pending. Reopened the existing approval link; finish or cancel it in your browser."
-msgstr ""
+msgstr "mdbase：登录仍在等待中。已重新打开现有批准链接；请在浏览器中完成或取消。"
 
 #: src/sync/native/session.ts
 msgid "mdbase: signed out. Your notes stay in this vault."
-msgstr ""
+msgstr "mdbase：已退出登录。你的笔记仍保留在此仓库中。"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: start: {detail}"
-msgstr ""
+msgstr "mdbase：开始：{detail}"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: startup: {detail}"
-msgstr ""
+msgstr "mdbase：启动：{detail}"
 
 #: src/sync/native/session.ts
 msgid "mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns."
-msgstr ""
+msgstr "mdbase：无法连接同步服务。更改已保存在此设备上，连接恢复后将同步。"
 
 #: src/sync/native/plugin.ts
 msgid "mdbase: sync: {detail}"
-msgstr ""
+msgstr "mdbase：同步：{detail}"
 
 #: src/migration.ts
 msgid "mdbase.yaml must contain a YAML mapping."
-msgstr ""
+msgstr "mdbase.yaml 必须包含 YAML 映射。"
 
 #: src/sync/daemon.ts
 msgid "mdbase's connection files on this computer are incomplete. Restart the mdbase app."
-msgstr ""
+msgstr "此电脑上的 mdbase 连接文件不完整。请重启 mdbase 应用。"
 
 #: src/sync/words.ts
 msgid "mdbase's server didn't allow that. Try again later."
-msgstr ""
+msgstr "mdbase 服务器未允许此操作。请稍后重试。"
 
 #: src/workspace/typesPane.ts
 msgid "Migrate this v0.2 collection to edit types."
-msgstr ""
+msgstr "迁移此 v0.2 集合以编辑类型。"
 
 #: src/workspace/types/setup.ts
 msgid "Migrate to edit types."
-msgstr ""
+msgstr "迁移后才能编辑类型。"
 
 #: src/workspace/types/typeList.ts
 msgid "Migrate to v0.3 to create types"
-msgstr ""
+msgstr "迁移到 v0.3 后才能创建类型"
 
 #: main.ts
 msgid "Migrated to mdbase v0.3. Recovery manifest: {manifestPath}"
-msgstr ""
+msgstr "已迁移到 mdbase v0.3。恢复清单：{manifestPath}"
 
 #: main.ts
 msgid "Migration failed and all writes were rolled back. {errorMessage}"
-msgstr ""
+msgstr "迁移失败，所有写入均已回滚。{errorMessage}"
 
 #: main.ts
 msgid "Migration needs manual recovery. See {manifestPath}. {errorMessage}"
-msgstr ""
+msgstr "迁移需要手动恢复。请参阅 {manifestPath}。{errorMessage}"
 
 #: src/workspace/types/setup.ts
 msgid "Migration review"
-msgstr ""
+msgstr "迁移检查"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Min items"
-msgstr ""
+msgstr "最少项目数"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Min length"
-msgstr ""
+msgstr "最小长度"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Minimum"
-msgstr ""
+msgstr "最小值"
 
 #: src/typeDraft.ts
 msgid "Minimum is greater than the maximum."
-msgstr ""
+msgstr "最小值大于最大值。"
 
 #: src/typeDraft.ts
 msgid "Minimum length is greater than the maximum."
-msgstr ""
+msgstr "最小长度大于最大长度。"
 
 #: src/issuePresentation.ts
 #: src/validation.ts
 msgid "missing"
-msgstr ""
+msgstr "缺失"
 
 #: src/contractCatalog.ts
 msgid "Missing catalog field."
-msgstr ""
+msgstr "缺少目录字段。"
 
 #: src/issuePresentation.ts
 msgid "missing link target"
-msgstr ""
+msgstr "缺少链接目标"
 
 #: src/validation.ts
 msgid "Missing required field ''{fieldName}''"
-msgstr ""
+msgstr "缺少必填字段“{fieldName}”"
 
 #: src/validation.ts
 msgid "Missing required field ''{fieldName}'' for type ''{typeName}''"
-msgstr ""
+msgstr "类型“{typeName}”缺少必填字段“{fieldName}”"
 
 #: src/validation.ts
 msgid "Missing required field ''{nestedPath}''"
-msgstr ""
+msgstr "缺少必填字段“{nestedPath}”"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Move down"
-msgstr ""
+msgstr "下移"
 
 #: src/settingsTab.ts
 msgid "Move sync to the mdbase app"
-msgstr ""
+msgstr "将同步转移到 mdbase 应用"
 
 #: src/settingsTab.ts
 msgid "Move sync to the mdbase app?"
-msgstr ""
+msgstr "将同步转移到 mdbase 应用？"
 
 #: src/settingsTab.ts
 msgid "Move to mdbase app"
-msgstr ""
+msgstr "转移到 mdbase 应用"
 
 #: src/settingsTab.ts
 msgid "Move to mdbase app…"
-msgstr ""
+msgstr "转移到 mdbase 应用…"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Move up"
-msgstr ""
+msgstr "上移"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Move value down"
-msgstr ""
+msgstr "下移值"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Move value up"
-msgstr ""
+msgstr "上移值"
 
 #: src/workspace/syncPane.ts
 msgid "Moved"
-msgstr ""
+msgstr "已移动"
 
 #: src/workspace/syncPane.ts
 msgid "Moved from {path}"
-msgstr ""
+msgstr "从 {path} 移动"
 
 #: src/workspace/syncPane.ts
 msgid "Moved from {path} on another device"
-msgstr ""
+msgstr "在另一台设备上从 {path} 移动"
 
 #: src/sync/words.ts
 msgid "Moved to mdbase app"
-msgstr ""
+msgstr "已转移到 mdbase 应用"
 
 #: src/settingsTab.ts
 msgid "mp3, m4a, wav, ogg and other recordings"
-msgstr ""
+msgstr "mp3、m4a、wav、ogg 和其他录音文件"
 
 #: src/settingsTab.ts
 msgid "mp4, mov, webm and other video"
-msgstr ""
+msgstr "mp4、mov、webm 和其他视频文件"
 
 #: src/workspace/syncPane.ts
 msgctxt "collection"
 msgid "Name"
-msgstr ""
+msgstr "名称"
 
 #: src/workspace/types/fieldEditor.ts
 msgctxt "field property label"
 msgid "Name"
-msgstr ""
+msgstr "名称"
 
 #: src/workspace/types/designForm.ts
 msgctxt "type property label"
 msgid "Name"
-msgstr ""
+msgstr "名称"
 
 #: src/workspace/types/impact.ts
 msgid "Name the type to check existing notes."
-msgstr ""
+msgstr "为类型命名以检查现有笔记。"
 
 #: src/workspace/types/impact.ts
 msgid "Name the type to preview matching notes."
-msgstr ""
+msgstr "为类型命名以预览匹配的笔记。"
 
 #: src/modals.ts
 msgid "navigate"
-msgstr ""
+msgstr "导航"
 
 #: src/contractCatalog.ts
 msgid "Needs a recent version of mdbase on every device that uses this collection. Older versions can't read this type."
-msgstr ""
+msgstr "使用此集合的每台设备都需要较新版本的 mdbase。旧版本无法读取此类型。"
 
 #: src/sync/words.ts
 msgid "Needs approval"
-msgstr ""
+msgstr "需要批准"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Nested field already exists: {nextName}"
-msgstr ""
+msgstr "嵌套字段已存在：{nextName}"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Nested field name is required."
-msgstr ""
+msgstr "嵌套字段名称为必填项。"
 
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
-msgstr ""
+msgstr "新建 {typeName}"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
-msgstr ""
+msgstr "新建集合…"
 
 #: src/workspace/typesPane.ts
 msgid "New note"
-msgstr ""
+msgstr "新建笔记"
 
 #: src/workspace/types/designForm.ts
 msgid "New note location"
-msgstr ""
+msgstr "新笔记位置"
 
 #: src/workspace/typesPane.ts
 msgid "New type"
-msgstr ""
+msgstr "新建类型"
 
 #: src/workspace/types/contractEditor.ts
 msgid "No app formats installed. Ready-made types add them."
-msgstr ""
+msgstr "未安装应用格式。预设类型会添加这些格式。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "No fields declared."
-msgstr ""
+msgstr "未声明字段。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "No fields match this filter."
-msgstr ""
+msgstr "没有字段匹配此筛选条件。"
 
 #: src/commands.ts
 msgid "No issues in current note."
-msgstr ""
+msgstr "当前笔记没有问题。"
 
 #: src/workspace/issuesPane.ts
 msgid "No issues match these filters."
-msgstr ""
+msgstr "没有问题匹配这些筛选条件。"
 
 #: src/workspace/issuesPane.ts
 msgid "No known issues"
-msgstr ""
+msgstr "没有已知问题"
 
 #: src/workspace/types/impact.ts
 msgid "No longer matches"
-msgstr ""
+msgstr "不再匹配"
 
 #: src/issuePresentation.ts
 msgid "no matching type"
-msgstr ""
+msgstr "没有匹配的类型"
 
 #: src/workspace/types/typeList.ts
 msgid "No matching types."
-msgstr ""
+msgstr "没有匹配的类型。"
 
 #: main.ts
 msgid "No mdbase.yaml found."
-msgstr ""
+msgstr "未找到 mdbase.yaml。"
 
 #: main.ts
-msgid "No mdbase.yaml found. Run 'mdbase: Initialize collection' first."
-msgstr ""
+msgid "No mdbase.yaml found. Run 'mdbase: {command}' first."
+msgstr "未找到 mdbase.yaml。请先运行 'mdbase: {command}'。"
 
 #: src/workspace/types/setup.ts
 msgid "No migration diagnostics."
-msgstr ""
+msgstr "没有迁移诊断信息。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "No nested fields."
-msgstr ""
+msgstr "没有嵌套字段。"
 
 #: src/workspace/types/impact.ts
 msgid "No notes newly fail"
-msgstr ""
+msgstr "没有新增未通过验证的笔记"
 
 #: src/workspace/types/contractEditor.ts
 msgid "No settings declared."
-msgstr ""
+msgstr "未声明设置。"
 
 #: src/validation.ts
 msgid "No type could be resolved for this file"
-msgstr ""
+msgstr "无法确定此文件的类型"
 
 #: src/commands.ts
 msgid "No type definitions found."
-msgstr ""
+msgstr "未找到类型定义。"
 
 #: src/workspace/types/typeList.ts
 msgid "No type definitions."
-msgstr ""
+msgstr "没有类型定义。"
 
 #: main.ts
 msgid "No types found in {typesFolder}"
-msgstr ""
+msgstr "在 {typesFolder} 中未找到类型"
 
 #: src/migration.ts
 msgid "No v0.2 type files were found in {typesFolder}."
-msgstr ""
+msgstr "在 {typesFolder} 中未找到 v0.2 类型文件。"
 
 #: src/fieldSummary.ts
 msgid "no values"
-msgstr ""
+msgstr "没有值"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "None"
-msgstr ""
+msgstr "无"
 
 #: src/sync/native/failures.ts
 msgid "Not allowed"
-msgstr ""
+msgstr "不允许"
 
 #: src/issuePresentation.ts
 msgid "not an allowed value"
-msgstr ""
+msgstr "不是允许值"
 
 #: src/validationState.ts
 msgid "Not checked yet"
-msgstr ""
+msgstr "尚未检查"
 
 #: src/issuePresentation.ts
 msgid "not declared"
-msgstr ""
+msgstr "未声明"
 
 #: src/typeContracts.ts
 #: src/workspace/types/contractEditor.ts
 msgid "Not exposed"
-msgstr ""
+msgstr "未公开"
 
 #: src/workspace/syncPane.ts
 msgid "Not on this device"
-msgstr ""
+msgstr "不在此设备上"
 
 #: src/sync/native/failures.ts
 msgid "Not plain text"
-msgstr ""
+msgstr "非纯文本"
 
 #: src/workspace/typesPane.ts
 msgid "Not saved yet"
-msgstr ""
+msgstr "尚未保存"
 
 #: src/settingsTab.ts
 msgid "Not signed in."
-msgstr ""
+msgstr "未登录。"
 
 #: src/workspace/syncPane.ts
 msgid "Not synced"
-msgstr ""
+msgstr "未同步"
 
 #: src/settingsTab.ts
 msgid "Not synced in this collection. Change this in the mdbase app."
-msgstr ""
+msgstr "未在此集合中同步。请在 mdbase 应用中更改。"
 
 #: src/workspace/syncPane.ts
 msgid "Not yet"
-msgstr ""
+msgstr "尚未"
 
 #: src/workspace/syncPane.ts
 msgid "Notes"
-msgstr ""
+msgstr "笔记"
 
 #: src/settingsTab.ts
 msgid "Notes and types"
-msgstr ""
+msgstr "笔记和类型"
 
 #: src/fieldSummary.ts
 msgid "Notes at the top of the vault"
-msgstr ""
+msgstr "仓库顶层的笔记"
 
 #: src/fieldSummary.ts
 msgid "Notes in {folderName}"
-msgstr ""
+msgstr "{folderName} 中的笔记"
 
 #: src/fieldSummary.ts
 msgid "Notes in {folderName} and its subfolders"
-msgstr ""
+msgstr "{folderName} 及其子文件夹中的笔记"
 
 #: src/modals.ts
 msgid "Notes matching {pathGlob}"
-msgstr ""
+msgstr "匹配 {pathGlob} 的笔记"
 
 #: src/workspace/types/designForm.ts
 msgid "Notes whose path matches this pattern"
-msgstr ""
+msgstr "路径匹配此模式的笔记"
 
 #: src/settingsTab.ts
 msgid "Nothing in these folders syncs to or from this device."
-msgstr ""
+msgstr "这些文件夹中的所有内容都不会与此设备同步。"
 
 #: src/workspace/syncPane.ts
 msgid "Nothing of this kind yet."
-msgstr ""
+msgstr "尚无此类项目。"
 
 #: src/settingsTab.ts
 msgid "Notify when saving a note with issues."
-msgstr ""
+msgstr "保存存在问题的笔记时通知。"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "number"
-msgstr ""
+msgstr "数字"
 
 #: src/fieldSummary.ts
 #: src/typeContracts.ts
 msgid "Number"
-msgstr ""
+msgstr "数字"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "object"
-msgstr ""
+msgstr "对象"
 
 #: src/fieldSummary.ts
 #: src/typeContracts.ts
 msgid "Object"
-msgstr ""
+msgstr "对象"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Object fields"
-msgstr ""
+msgstr "对象字段"
 
 #: src/settingsTab.ts
 msgid "Obsidian can't find the mdbase app. If it's installed, enter the full path of its mdbase tool."
-msgstr ""
+msgstr "Obsidian 找不到 mdbase 应用。如果已安装，请输入其 mdbase 工具的完整路径。"
 
 #: src/sync/words.ts
 msgid "Obsidian couldn't reach the mdbase app. Restart it, then try again."
-msgstr ""
+msgstr "Obsidian 无法连接 mdbase 应用。请重启该应用后重试。"
 
 #: src/sync/words.ts
 msgid "Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection."
-msgstr ""
+msgstr "Obsidian 已停止同步此仓库。要继续同步，请在 mdbase 应用中添加此文件夹并选择相同的集合。"
 
 #: src/sync/native/failures.ts
 msgid "Obsidian hasn't indexed the file to rename yet. Local files are unchanged; sync will retry when the vault updates."
-msgstr ""
+msgstr "Obsidian 尚未索引要重命名的文件。本地文件未更改；仓库更新后将重试同步。"
 
 #: src/workspace/syncPane.ts
 msgid "Obsidian isn't allowed to use this vault's sync yet. Sync still runs, but open notes can't update while you type."
-msgstr ""
+msgstr "Obsidian 尚未获准使用此仓库的同步功能。同步仍会运行，但打开的笔记无法在输入时更新。"
 
 #: src/sync/controller.ts
 msgid "Obsidian isn't linked to mdbase right now."
-msgstr ""
+msgstr "Obsidian 目前未连接到 mdbase。"
 
 #: src/settingsTab.ts
 msgid "Obsidian sends any remaining changes and stops syncing this vault. Then add this folder in the mdbase app and pick the same collection. If anything can't be sent, Obsidian carries on syncing."
-msgstr ""
+msgstr "Obsidian 会发送所有剩余更改并停止同步此仓库。然后请在 mdbase 应用中添加此文件夹并选择相同的集合。如果有内容无法发送，Obsidian 将继续同步。"
 
 #: src/sync/words.ts
 msgid "Obsidian wasn't allowed to use mdbase. Choose Allow when mdbase asks."
-msgstr ""
+msgstr "Obsidian 未获准使用 mdbase。当 mdbase 询问时，请选择“允许”。"
 
 #: src/fieldSummary.ts
 msgid "of {itemType}"
-msgstr ""
+msgstr "{itemType} 类型"
 
 #: src/sync/words.ts
 msgid "Offline"
-msgstr ""
+msgstr "离线"
 
 #: src/sync/words.ts
 msgid "Offline. Changes are saved here and sync when the connection returns."
-msgstr ""
+msgstr "离线。更改保存在此处，连接恢复后将同步。"
 
 #: src/sync/words.ts
 msgid "Offline. Changes are saved here and sync when the connection returns. {pending, plural, one {# change} other {# changes}} waiting to send."
-msgstr ""
+msgstr "离线。更改保存在此处，连接恢复后将同步。{pending, plural, other {# 项更改}}等待发送。"
 
 #: src/sync/words.ts
 msgid "Offline. Changes are saved here and sync when you're back online."
-msgstr ""
+msgstr "离线。更改保存在此处，重新联网后将同步。"
 
 #: src/workspace/syncPane.ts
 msgid "OK"
-msgstr ""
+msgstr "确定"
 
 #: src/workspace/types/drafts.ts
 msgid "Older unsaved changes from {updatedAt}. The file has changed since, so they weren't applied."
-msgstr ""
+msgstr "来自 {updatedAt} 的较早未保存更改。文件此后已更改，因此未应用这些更改。"
 
 #: src/workspace/syncPane.ts
 msgid "On a device that already syncs it, choose Copy link in mdbase's Sync tab, then paste the link here. Only Cloud copy collections can be added for now."
-msgstr ""
+msgstr "在已同步此集合的设备上，在 mdbase 的“同步”选项卡中选择“复制链接”，然后将链接粘贴到此处。目前只能添加云端副本集合。"
 
 #: src/workspace/syncPane.ts
 msgid "On this computer"
-msgstr ""
+msgstr "在此电脑上"
 
 #: src/settingsTab.ts
 msgid "On this device"
-msgstr ""
+msgstr "在此设备上"
 
 #: src/modals.ts
 msgid "Only the '{field}' frontmatter field changes in each note. Notes that changed since validation are skipped."
-msgstr ""
+msgstr "每篇笔记中只有 '{field}' frontmatter 字段会更改。验证后发生更改的笔记将被跳过。"
 
 #: src/modals.ts
 msgid "Only the affected frontmatter field changes in each note. Notes that changed since validation are skipped."
-msgstr ""
+msgstr "每篇笔记中只有受影响的 frontmatter 字段会更改。验证后发生更改的笔记将被跳过。"
 
 #: src/workspace/issuesPane.ts
 #: src/workspace/types/impact.ts
 msgid "Open {path}"
-msgstr ""
+msgstr "打开 {path}"
 
 #: src/workspace/issuesPane.ts
 msgid "Open {path} at {field}"
-msgstr ""
+msgstr "打开 {path} 中的 {field}"
 
 #: src/workspace/syncPane.ts
 msgid "Open approval page"
-msgstr ""
+msgstr "打开批准页面"
 
 #: src/workspace/syncPane.ts
 msgid "Open conflict copy"
-msgstr ""
+msgstr "打开冲突副本"
 
 #: src/workspace/syncPane.ts
 msgid "Open current file"
-msgstr ""
+msgstr "打开当前文件"
 
 #: main.ts
 msgid "Open mdbase"
-msgstr ""
+msgstr "打开 mdbase"
 
 #: src/workspace/typesPane.ts
 msgid "Open source"
-msgstr ""
+msgstr "打开源文件"
 
 #: src/commands.ts
 #: src/settingsTab.ts
 msgid "Open sync"
-msgstr ""
+msgstr "打开同步"
 
 #: src/workspace/syncPane.ts
 msgid "Open the sign-in page again"
-msgstr ""
+msgstr "重新打开登录页面"
 
 #: src/sync/words.ts
 msgid "Open with unsaved changes"
-msgstr ""
+msgstr "打开并保留未保存的更改"
 
 #: src/commands.ts
 msgid "Open workspace"
-msgstr ""
+msgstr "打开工作区"
 
 #: src/sync/controller.ts
 msgid "Opening sign-in"
-msgstr ""
+msgstr "正在打开登录页面"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Optional"
-msgstr ""
+msgstr "可选"
 
 #: src/workspace/types/designForm.ts
 msgid "Options"
-msgstr ""
+msgstr "选项"
 
 #: src/settingsTab.ts
 msgid "Other files"
-msgstr ""
+msgstr "其他文件"
 
 #: src/workspace/syncPane.ts
 msgid "Overview"
-msgstr ""
+msgstr "概览"
 
 #: src/contractCatalog.ts
 msgid "Pack artifacts must come from the first-party contract catalog."
-msgstr ""
+msgstr "包文件必须来自官方契约目录。"
 
 #: src/contractCatalog.ts
 msgid "Pack lock changed during installation."
-msgstr ""
+msgstr "安装期间包锁定文件发生了更改。"
 
 #: src/contractCatalog.ts
 msgid "Pack lock changed. Review again."
-msgstr ""
+msgstr "包锁定文件已更改。请重新检查。"
 
 #: src/contractCatalog.ts
 msgid "Pack recovery stopped: {path} changed. Your edits and the journal were preserved."
-msgstr ""
+msgstr "包恢复已停止：{path} 已更改。你的编辑和日志均已保留。"
 
 #: src/contractCatalog.ts
 msgid "Pack resource is too large."
-msgstr ""
+msgstr "包资源过大。"
 
 #: src/workspace/syncPane.ts
 msgid "Paste the collection link"
-msgstr ""
+msgstr "粘贴集合链接"
 
 #: src/workspace/types/designForm.ts
 msgid "Path"
-msgstr ""
+msgstr "路径"
 
 #: src/noteCreation.ts
 msgid "Path escapes the collection root: {input}"
-msgstr ""
+msgstr "路径超出集合根目录：{input}"
 
 #: src/sync/native/failures.ts
 msgid "Path not allowed"
-msgstr ""
+msgstr "不允许此路径"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Pattern"
-msgstr ""
+msgstr "模式"
 
 #: src/issuePresentation.ts
 msgid "pattern mismatch"
-msgstr ""
+msgstr "模式不匹配"
 
 #: src/workspace/syncPane.ts
 msgid "Paused"
-msgstr ""
+msgstr "已暂停"
 
 #: src/settingsTab.ts
 msgid "PDF documents"
-msgstr ""
+msgstr "PDF 文档"
 
 #: src/settingsTab.ts
 msgid "PDFs"
-msgstr ""
+msgstr "PDF 文件"
 
 #: src/settingsTab.ts
 msgid "png, jpg, gif, svg, webp and other pictures"
-msgstr ""
+msgstr "png、jpg、gif、svg、webp 和其他图片"
 
 #: src/workspace/syncPane.ts
 msgid "Private"
-msgstr ""
+msgstr "私有"
 
 #: src/sync/native/choosers.ts
 #: src/sync/words.ts
 msgctxt "collection mode"
 msgid "Private"
-msgstr ""
+msgstr "私有"
 
 #: src/sync/words.ts
 msgid "Private collections work on the first computer only for now, so this computer can't sync this one yet. Your notes here are untouched. Cloud copy collections have no such limit."
-msgstr ""
+msgstr "私有集合目前仅在第一台电脑上可用，因此此电脑暂时无法同步此集合。此处的笔记不受影响。云端副本集合没有此限制。"
 
 #: src/sync/words.ts
 msgid "Private: first computer only"
-msgstr ""
+msgstr "私有：仅限第一台电脑"
 
 #: src/workspaceView.ts
 msgctxt "sync status"
 msgid "Problem"
-msgstr ""
+msgstr "问题"
 
 #: src/workspace/syncPane.ts
 msgid "Problems"
-msgstr ""
+msgstr "问题"
 
 #: src/sync/native/failures.ts
 msgid "Properties can't be read"
-msgstr ""
+msgstr "无法读取属性"
 
 #: src/workspace/types/designForm.ts
 msgid "Property names, separated by commas."
-msgstr ""
+msgstr "属性名称，以逗号分隔。"
 
 #: src/workspace/types/setup.ts
 msgid "Read-only · v0.2 collection"
-msgstr ""
+msgstr "只读 · v0.2 集合"
 
 #: src/typeContracts.ts
 msgctxt "contract mapping status"
 msgid "Ready"
-msgstr ""
+msgstr "就绪"
 
 #: src/contractCatalog.ts
 msgid "Ready-made types"
-msgstr ""
+msgstr "预设类型"
 
 #: src/workspace/syncPane.ts
 msgid "Received"
-msgstr ""
+msgstr "已接收"
 
 #: src/workspace/types/setup.ts
 msgid "Record files rewritten"
-msgstr ""
+msgstr "已重写记录文件"
 
 #: src/workspace/types/setup.ts
 msgid "Record reads verified"
-msgstr ""
+msgstr "已验证记录读取"
 
 #: src/workspace/types/setup.ts
 msgid "Records skipped"
-msgstr ""
+msgstr "已跳过记录"
 
 #: src/contractCatalog.ts
 msgid "Recover the previous pack installation before trying again."
-msgstr ""
+msgstr "请先恢复上一次包安装，然后重试。"
 
 #: src/workspace/typesPane.ts
 msgid "Recovered an unsaved new type."
-msgstr ""
+msgstr "已恢复未保存的新类型。"
 
 #: src/workspace/types/drafts.ts
 msgid "Recovered draft (read-only)"
-msgstr ""
+msgstr "已恢复的草稿（只读）"
 
 #: src/workspace/typesPane.ts
 msgid "Recovered unsaved changes for {path}."
-msgstr ""
+msgstr "已恢复 {path} 未保存的更改。"
 
 #: src/workspace/types/setup.ts
 msgid "Recovery backup"
-msgstr ""
+msgstr "恢复备份"
 
 #: src/workspace/syncPane.ts
 msgid "Recovery key"
-msgstr ""
+msgstr "恢复密钥"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Regular expression"
-msgstr ""
+msgstr "正则表达式"
 
 #: src/typeDraft.ts
 msgid "Reject fields that are not declared by this type."
-msgstr ""
+msgstr "拒绝此类型未声明的字段。"
 
 #: src/workspace/types/designForm.ts
 msgid "Reject undeclared fields"
-msgstr ""
+msgstr "拒绝未声明的字段"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Remove"
-msgstr ""
+msgstr "移除"
 
 #. placeholder {0}: removed.length
 #: src/typeDraft.ts
 msgid "Remove {0, plural, one {field} other {fields}}: {fieldNames}."
-msgstr ""
+msgstr "移除{0, plural, other {字段}}：{fieldNames}。"
 
 #: src/quickFix.ts
 #: src/workspace/types/fieldEditor.ts
 msgid "Remove field"
-msgstr ""
+msgstr "移除字段"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Remove value {valueText}"
-msgstr ""
+msgstr "移除值 {valueText}"
 
 #: src/sync/native/failures.ts
 msgid "Rename is waiting"
-msgstr ""
+msgstr "重命名正在等待"
 
 #: src/typeDraft.ts
 msgid "Rename the type from '{oldName}' to '{newName}'. Existing type references may need review."
-msgstr ""
+msgstr "将类型从 '{oldName}' 重命名为 '{newName}'。现有类型引用可能需要检查。"
 
 #: src/typeDraft.ts
 msgid "Reorder fields."
-msgstr ""
+msgstr "调整字段顺序。"
 
 #: src/workspace/syncPane.ts
 msgid "Replaced"
-msgstr ""
+msgstr "已替换"
 
 #: src/workspace/syncPane.ts
 msgid "Request access again"
-msgstr ""
+msgstr "重新请求访问权限"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Required"
-msgstr ""
+msgstr "必需"
 
 #: src/typeContracts.ts
 msgctxt "contract mapping status"
 msgid "Required"
-msgstr ""
+msgstr "必填"
 
 #: src/workspace/types/fieldEditor.ts
 msgctxt "field constraint"
 msgid "Required"
-msgstr ""
+msgstr "必填"
 
 #: src/createTypedNoteModal.ts
 msgctxt "field indicator"
 msgid "Required"
-msgstr ""
+msgstr "必填"
 
 #: src/validation.ts
 msgid "Resolved types are not defined: {names}"
-msgstr ""
+msgstr "解析出的类型未定义：{names}"
 
 #: src/contractCatalog.ts
 msgid "Resource digest mismatch: {source}"
-msgstr ""
+msgstr "资源摘要不匹配：{source}"
 
 #: src/workspace/syncPane.ts
 msgid "Restart sync"
-msgstr ""
+msgstr "重新开始同步"
 
 #: src/sync/controller.ts
 msgid "Restarting sync"
-msgstr ""
+msgstr "正在重新开始同步"
 
 #: src/contractCatalog.ts
 #: src/workspace/typesPane.ts
 msgid "Review"
-msgstr ""
+msgstr "查看"
 
 #: src/typeContracts.ts
 msgctxt "contract mapping status"
 msgid "Review"
-msgstr ""
+msgstr "检查"
 
 #: src/workspace/types/setup.ts
 msgid "Review migration"
-msgstr ""
+msgstr "检查迁移"
 
 #: src/sync/native/failures.ts
 msgid "Run Validate in the Issues tab to see why. Fix the note and it will sync."
-msgstr ""
+msgstr "在“问题”选项卡中运行验证以查看原因。修复笔记后即可同步。"
 
 #: src/workspace/typesPane.ts
 msgid "Save"
-msgstr ""
+msgstr "保存"
 
 #: src/modals.ts
 msgid "Save high-impact changes"
-msgstr ""
+msgstr "保存高影响更改"
 
 #: src/workspace/types/impact.ts
 msgid "Save the type to preview matching notes."
-msgstr ""
+msgstr "保存类型以预览匹配的笔记。"
 
 #: src/workspace/typesPane.ts
 msgid "Saved {savedPath}."
-msgstr ""
+msgstr "已保存 {savedPath}。"
 
 #: main.ts
 msgid "Saving the type failed and automatic recovery also failed. Review '{originalPath}' and '{targetPath}'. {errorMessage}; recovery: {recoveryMessage}"
-msgstr ""
+msgstr "保存类型失败，自动恢复也失败。请检查 '{originalPath}' 和 '{targetPath}'。{errorMessage}；恢复：{recoveryMessage}"
 
 #: src/sync/controller.ts
 msgid "Saving your choice"
-msgstr ""
+msgstr "正在保存你的选择"
 
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
-msgstr ""
+msgstr "搜索类型"
 
 #: src/settingsTab.ts
 msgid "See which apps can use this collection, and remove their access, on the mdbase website."
-msgstr ""
+msgstr "在 mdbase 网站上查看哪些应用可以使用此集合，并可移除其访问权限。"
 
 #: src/modals.ts
 msgid "select"
-msgstr ""
+msgstr "选择"
 
 #: src/workspace/typesPane.ts
 msgid "Select a type"
-msgstr ""
+msgstr "选择类型"
 
 #: src/sync/words.ts
 msgid "Sending {pending, plural, one {# change} other {# changes}}."
-msgstr ""
+msgstr "正在发送 {pending, plural, other {# 项更改}}。"
 
 #: src/workspace/syncPane.ts
 msgid "Sent"
-msgstr ""
+msgstr "已发送"
 
 #: src/sync/native/session.ts
 msgid "Set an encryption password to sync this Private collection."
-msgstr ""
+msgstr "设置加密密码以同步此私有集合。"
 
 #: src/workspace/types/setup.ts
 msgid "Set up mdbase"
-msgstr ""
+msgstr "设置 mdbase"
 
 #: src/workspace/syncPane.ts
 msgid "Set up sync here"
-msgstr ""
+msgstr "在此设置同步"
 
 #: src/sync/words.ts
 msgid "Setting up sync"
-msgstr ""
+msgstr "正在设置同步"
 
 #: src/workspace/types/contractEditor.ts
 msgid "Settings"
-msgstr ""
+msgstr "设置"
 
 #: src/workspace/types/impact.ts
 msgid "Show 200 of {total}"
-msgstr ""
+msgstr "显示 {total} 项中的 200 项"
 
 #: src/workspace/syncPane.ts
 msgid "Show activity"
-msgstr ""
+msgstr "显示活动"
 
 #: src/workspace/types/impact.ts
 msgid "Show all {total}"
-msgstr ""
+msgstr "显示全部 {total} 项"
 
 #: src/workspace/syncPane.ts
 msgid "Show both versions"
-msgstr ""
+msgstr "显示两个版本"
 
 #: src/workspace/types/impact.ts
 msgid "Show fewer"
-msgstr ""
+msgstr "显示较少内容"
 
 #: src/workspace/syncPane.ts
 msgid "Show more ({remaining})"
-msgstr ""
+msgstr "显示更多（{remaining}）"
 
 #: src/settingsTab.ts
 msgid "Show validation notices"
-msgstr ""
+msgstr "显示验证通知"
 
 #: src/workspace/types/setup.ts
 msgid "Showing 250 of {count} diagnostics."
-msgstr ""
+msgstr "显示 {count} 条诊断信息中的 250 条。"
 
 #: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 msgid "Sign in"
-msgstr ""
+msgstr "登录"
 
 #: src/sync/words.ts
 #: src/workspace/syncPane.ts
 msgid "Sign in again"
-msgstr ""
+msgstr "重新登录"
 
 #: src/sync/words.ts
 msgid "Sign in to keep syncing. Changes are saved on this computer meanwhile."
-msgstr ""
+msgstr "登录以继续同步。期间更改保存在此电脑上。"
 
 #: src/sync/words.ts
 msgid "Sign in to mdbase first."
-msgstr ""
+msgstr "请先登录 mdbase。"
 
 #: src/workspace/syncPane.ts
 msgid "Sign in to mdbase to sync this vault with your other devices."
-msgstr ""
+msgstr "登录 mdbase 以将此仓库与其他设备同步。"
 
 #: src/sync/native/session.ts
 msgid "Sign in to sync this vault."
-msgstr ""
+msgstr "登录以同步此仓库。"
 
 #: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 msgid "Sign out"
-msgstr ""
+msgstr "退出登录"
 
 #: src/settingsTab.ts
 msgid "Sign out of mdbase in this vault?"
-msgstr ""
+msgstr "在此仓库中退出 mdbase？"
 
 #: src/settingsTab.ts
 msgid "Sign out…"
-msgstr ""
+msgstr "退出登录…"
 
 #: src/sync/words.ts
 msgid "Sign-in didn't finish: {message}"
-msgstr ""
+msgstr "登录未完成：{message}"
 
 #: src/sync/words.ts
 msgid "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again."
-msgstr ""
+msgstr "登录已停止。此处的笔记不受影响。请选择“重新开始”以再次登录。"
 
 #: src/settingsTab.ts
 msgid "Signed in."
-msgstr ""
+msgstr "已登录。"
 
 #: src/settingsTab.ts
 msgid "Signed in. This computer is \"{computerName}\"."
-msgstr ""
+msgstr "已登录。此电脑名为“{computerName}”。"
 
 #: src/sync/words.ts
 msgid "Signed out"
-msgstr ""
+msgstr "已退出登录"
 
 #: src/sync/words.ts
 msgid "Signed out on this device. mdbase couldn't be reached, so this device is still listed under your account with access to the collection. Remove it under Apps on the mdbase website."
-msgstr ""
+msgstr "已在此设备上退出登录。由于无法连接 mdbase，此设备仍列在你的账户下并可访问该集合。请在 mdbase 网站的“应用”中将其移除。"
 
 #: src/sync/words.ts
 msgid "Signed out on this device. mdbase couldn't be reached, so this device is still listed under your account with access to the collection. Remove it under Apps on the mdbase website. Some sign-in data on this device couldn't be removed."
-msgstr ""
+msgstr "已在此设备上退出登录。由于无法连接 mdbase，此设备仍列在你的账户下并可访问该集合。请在 mdbase 网站的“应用”中将其移除。此设备上的部分登录数据无法移除。"
 
 #: src/sync/words.ts
 msgid "Signed out on this device. Some sign-in data on this device couldn't be removed."
-msgstr ""
+msgstr "已在此设备上退出登录。此设备上的部分登录数据无法移除。"
 
 #: src/sync/controller.ts
 msgid "Signing out"
-msgstr ""
+msgstr "正在退出登录"
 
 #: src/sync/words.ts
 msgid "Some changes haven't reached mdbase yet, so you're still signed in. Wait until Sync says Synced, then sign out."
-msgstr ""
+msgstr "部分更改尚未发送到 mdbase，因此你仍处于登录状态。请等待“同步”显示“已同步”后再退出。"
 
 #: src/sync/words.ts
 msgid "Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue."
-msgstr ""
+msgstr "同步过程中发生错误。此处的笔记不受影响。请选择“重新开始同步”以继续。"
 
 #: src/sync/native/plugin.ts
 msgid "Something went wrong ({code}). Your files here are untouched."
-msgstr ""
+msgstr "出现错误（{code}）。此处的文件不受影响。"
 
 #: src/sync/words.ts
 msgid "Something went wrong in mdbase."
-msgstr ""
+msgstr "mdbase 出现错误。"
 
 #: src/sync/native/plugin.ts
 msgid "Something went wrong. Your files here are untouched."
-msgstr ""
+msgstr "出现错误。此处的文件不受影响。"
 
 #: src/workspace/types/setup.ts
 msgid "Start a collection"
-msgstr ""
+msgstr "创建集合"
 
 #: src/workspace/typesPane.ts
 msgid "Start from a ready-made type, such as tasks, people or daily notes, or design your own."
-msgstr ""
+msgstr "从预设类型（如任务、人员或日记）开始，或自行设计。"
 
 #: src/workspace/syncPane.ts
 msgid "Start mdbase"
-msgstr ""
+msgstr "启动 mdbase"
 
 #: src/workspace/syncPane.ts
 msgid "Start over"
-msgstr ""
+msgstr "重新开始"
 
 #: src/sync/native/session.ts
 msgid "Start over didn't finish. Choose Restart sync, then Start over again."
-msgstr ""
+msgstr "重新开始未完成。请先选择“重新开始同步”，然后再次选择“重新开始”。"
 
 #: src/workspace/syncPane.ts
 msgid "Start over signs this vault out of mdbase, so you can sign in again with any account. Nothing has synced yet, so your notes aren't affected."
-msgstr ""
+msgstr "重新开始会让此仓库退出 mdbase，以便你使用任意账户重新登录。尚未同步任何内容，因此笔记不受影响。"
 
 #: src/sync/controller.ts
 msgid "Starting mdbase"
-msgstr ""
+msgstr "正在启动 mdbase"
 
 #: src/sync/controller.ts
 #: src/sync/native/plugin.ts
 #: src/sync/native/session.ts
 #: src/sync/words.ts
 msgid "Starting sync"
-msgstr ""
+msgstr "正在开始同步"
 
 #: src/settingsTab.ts
 msgctxt "settings"
 msgid "Status"
-msgstr ""
+msgstr "状态"
 
 #: src/settingsTab.ts
 msgid "Stop syncing"
-msgstr ""
+msgstr "停止同步"
 
 #: src/settingsTab.ts
 msgid "Stop syncing the folder \"{prefix}\"?"
-msgstr ""
+msgstr "停止同步文件夹“{prefix}”？"
 
 #: src/sync/words.ts
 msgid "Stop syncing this vault and sign this device out of mdbase. Your notes stay in this vault. To sync again, sign in and choose a collection."
-msgstr ""
+msgstr "停止同步此仓库并让此设备退出 mdbase。你的笔记仍保留在此仓库中。要再次同步，请登录并选择集合。"
 
 #: src/settingsTab.ts
 msgid "Stop syncing this vault?"
-msgstr ""
+msgstr "停止同步此仓库？"
 
 #: src/workspace/issuesPane.ts
 msgid "Stop validation"
-msgstr ""
+msgstr "停止验证"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "string"
-msgstr ""
+msgstr "字符串"
 
 #: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
-msgstr ""
+msgstr "同步"
 
 #: src/workspaceView.ts
 msgid "Sync · {detail}"
-msgstr ""
+msgstr "同步 · {detail}"
 
 #: src/workspaceView.ts
 msgid "Sync · {label}"
-msgstr ""
+msgstr "同步 · {label}"
 
 #: src/settingsTab.ts
 msgid "Sync {folder} again"
-msgstr ""
+msgstr "再次同步 {folder}"
 
 #: src/sync/controller.ts
 #: src/sync/native/marker.ts
 msgid "Sync can't tell whether another app is already syncing this vault, so it's waiting. Your notes here are untouched."
-msgstr ""
+msgstr "同步无法确定是否已有其他应用正在同步此仓库，因此正在等待。此处的笔记不受影响。"
 
 #: src/sync/controller.ts
 msgid "Sync didn't restart in time, so Start over didn't run. Choose Restart sync, then Start over."
-msgstr ""
+msgstr "同步未能及时重启，因此未执行重新开始。请选择“重新开始同步”，然后选择“重新开始”。"
 
 #: src/workspace/types/setup.ts
 msgid "Sync from another device"
-msgstr ""
+msgstr "从其他设备同步"
 
 #: src/sync/words.ts
 msgid "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again."
-msgstr ""
+msgstr "同步尚未开始。此处的笔记不受影响。请选择“重新开始同步”重试。"
 
 #: src/workspace/syncPane.ts
 msgid "Sync is on for this vault."
-msgstr ""
+msgstr "此仓库已开启同步。"
 
 #: src/sync/words.ts
 msgid "Sync is paused. Changes are saved on this computer."
-msgstr ""
+msgstr "同步已暂停。更改保存在此电脑上。"
 
 #: src/sync/native/plugin.ts
 msgid "Sync isn't set up in this vault."
-msgstr ""
+msgstr "此仓库尚未设置同步。"
 
 #: src/sync/words.ts
 msgid "Sync needs attention"
-msgstr ""
+msgstr "同步需要处理"
 
 #: src/sync/native/session.ts
 msgid "Sync needs attention. Your files are kept on this device."
-msgstr ""
+msgstr "同步需要处理。文件保留在此设备上。"
 
 #: src/sync/controller.ts
 #: src/sync/daemon.ts
 msgid "Sync needs Obsidian for desktop."
-msgstr ""
+msgstr "同步需要桌面版 Obsidian。"
 
 #: src/sync/words.ts
 msgid "Sync not starting"
-msgstr ""
+msgstr "同步未启动"
 
 #: src/workspace/syncPane.ts
 msgid "Sync now"
-msgstr ""
+msgstr "立即同步"
 
 #: src/sync/words.ts
 msgid "Sync off"
-msgstr ""
+msgstr "同步已关闭"
 
 #: src/sync/words.ts
 msgid "Sync paused"
-msgstr ""
+msgstr "同步已暂停"
 
 #: src/sync/words.ts
 msgid "Sync problem"
-msgstr ""
+msgstr "同步问题"
 
 #: src/sync/controller.ts
 msgid "Sync restarted, but Start over couldn't run yet. Try Start over again."
-msgstr ""
+msgstr "同步已重启，但暂时无法执行重新开始。请再次尝试重新开始。"
 
 #: src/workspace/syncPane.ts
 msgid "Sync settings"
-msgstr ""
+msgstr "同步设置"
 
 #: src/sync/words.ts
 msgid "Sync stopped"
-msgstr ""
+msgstr "同步已停止"
 
 #: src/sync/words.ts
 msgid "Sync stopped. {detail}"
-msgstr ""
+msgstr "同步已停止。{detail}"
 
 #: src/sync/words.ts
 msgid "Sync stopped. {words}"
-msgstr ""
+msgstr "同步已停止。{words}"
 
 #: src/workspace/syncPane.ts
 msgid "Sync stopped. See above"
-msgstr ""
+msgstr "同步已停止。请参阅上方信息"
 
 #: src/sync/words.ts
 msgid "Sync stopped. Your files are kept on this device."
-msgstr ""
+msgstr "同步已停止。文件保留在此设备上。"
 
 #: src/sync/native/session.ts
 msgid "Sync stopped. Your files stay here."
-msgstr ""
+msgstr "同步已停止。文件仍保留在此处。"
 
 #: src/settingsTab.ts
 msgid "Sync stops here and this device is signed out. Your notes stay in this vault, and your other devices keep syncing."
-msgstr ""
+msgstr "此处的同步将停止，此设备将退出登录。笔记仍保留在此仓库中，其他设备继续同步。"
 
 #: src/workspace/syncPane.ts
 msgid "Sync this vault"
-msgstr ""
+msgstr "同步此仓库"
 
 #: src/sync/words.ts
 msgid "Sync waiting"
-msgstr ""
+msgstr "同步正在等待"
 
 #: src/sync/native/pass.ts
 #: src/sync/words.ts
 msgid "Synced"
-msgstr ""
+msgstr "已同步"
 
 #: src/sync/words.ts
 msgid "Synced by another app"
-msgstr ""
+msgstr "由其他应用同步"
 
 #: src/workspace/syncPane.ts
 msgid "Synced here"
-msgstr ""
+msgstr "已在此处同步"
 
 #: src/sync/words.ts
 msgid "Synced. Changes save here and reach your other devices."
-msgstr ""
+msgstr "已同步。更改保存在此处并同步到其他设备。"
 
 #: src/sync/words.ts
 msgid "Syncing"
-msgstr ""
+msgstr "正在同步"
 
 #: src/workspace/syncPane.ts
 msgid "Syncing…"
-msgstr ""
+msgstr "正在同步…"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Target type"
-msgstr ""
+msgstr "目标类型"
 
 #: src/migration.ts
 msgid "TaskNotes filename behavior is recorded as TaskNotes runtime metadata."
-msgstr ""
+msgstr "TaskNotes 文件名行为已记录为 TaskNotes 运行时元数据。"
 
 #: src/validation.ts
 msgid "text"
-msgstr ""
+msgstr "文本"
 
 #: src/fieldSummary.ts
 #: src/typeContracts.ts
 msgid "Text"
-msgstr ""
+msgstr "文本"
 
 #: src/sync/controller.ts
 #: src/sync/words.ts
 msgid "That doesn't look like a collection link or ID."
-msgstr ""
+msgstr "这看起来不像集合链接或 ID。"
 
 #: src/sync/words.ts
 msgid "That doesn't look like a recovery key. Check for missing or mistyped characters."
-msgstr ""
+msgstr "这看起来不像恢复密钥。请检查是否有遗漏或输入错误的字符。"
 
 #: src/sync/words.ts
 msgid "That folder already has files. Choose a new folder name."
-msgstr ""
+msgstr "该文件夹已有文件。请选择新的文件夹名称。"
 
 #: src/sync/words.ts
 msgid "That password or recovery key doesn't match. Check it and try again."
-msgstr ""
+msgstr "密码或恢复密钥不匹配。请检查后重试。"
 
 #: src/sync/words.ts
 msgid "That was right, but this collection didn't hand over its key. Try again. If it keeps happening, open the mdbase app on a computer that has this collection."
-msgstr ""
+msgstr "输入正确，但此集合未交出密钥。请重试。如果问题持续发生，请在拥有此集合的电脑上打开 mdbase 应用。"
 
 #: src/sync/native/failures.ts
 msgid "The collection's file settings don't sync this file."
-msgstr ""
+msgstr "集合的文件设置不会同步此文件。"
 
 #: src/sync/native/failures.ts
 msgid "The collection's settings don't allow a note or file at this path."
-msgstr ""
+msgstr "集合设置不允许在此路径放置笔记或文件。"
 
 #: src/typeDraft.ts
 msgid "The default is not one of the allowed values."
-msgstr ""
+msgstr "默认值不在允许值中。"
 
 #: src/migration.ts
 msgid "The display field '{displayField}' is not declared, so collection.display was omitted."
-msgstr ""
+msgstr "显示字段 '{displayField}' 未声明，因此已省略 collection.display。"
 
 #: src/typeDraft.ts
 msgid "The display field '{displayField}' is not declared."
-msgstr ""
+msgstr "显示字段 '{displayField}' 未声明。"
 
 #: src/typeDraft.ts
 msgid "The field '{name}' is declared more than once."
-msgstr ""
+msgstr "字段 '{name}' 被多次声明。"
 
 #: main.ts
 msgid "The field changed or no safe quick fix is available. Revalidate the note."
-msgstr ""
+msgstr "字段已更改，或没有可用的安全快速修复。请重新验证笔记。"
 
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
-msgstr ""
+msgstr "文件夹“{name}”已有文件。请选择其他名称。"
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts
 msgid "The mdbase app isn't installed on this computer."
-msgstr ""
+msgstr "此电脑未安装 mdbase 应用。"
 
 #: src/sync/words.ts
 msgid "The mdbase app isn't running."
-msgstr ""
+msgstr "mdbase 应用未运行。"
 
 #: src/sync/words.ts
 msgid "The mdbase app isn't running. Changes are saved here and sync when it starts."
-msgstr ""
+msgstr "mdbase 应用未运行。更改保存在此处，应用启动后将同步。"
 
 #: src/migration.ts
 msgid "The migrated schema allows additional properties because the source type was not strict."
-msgstr ""
+msgstr "由于源类型并非严格类型，迁移后的架构允许额外属性。"
 
 #: src/sync/native/failures.ts
 msgid "The moved item's identity or kind doesn't match. Local files are unchanged; check the paths before trying again."
-msgstr ""
+msgstr "移动项目的身份或种类不匹配。本地文件未更改；请检查路径后重试。"
 
 #: src/typeDraft.ts
 msgid "The nested field '{name}' is declared more than once."
-msgstr ""
+msgstr "嵌套字段 '{name}' 被多次声明。"
 
 #: src/typeDraft.ts
 msgid "The pattern is not a valid regular expression: {reason}"
-msgstr ""
+msgstr "模式不是有效的正则表达式：{reason}"
 
 #: src/workspace/syncPane.ts
 msgid "The properties were changed on two devices. mdbase kept one version."
-msgstr ""
+msgstr "属性在两台设备上均有更改。mdbase 保留了一个版本。"
 
 #: src/migration.ts
 msgid "The proposed v0.3 types would change this record's resolved types or effective default values."
-msgstr ""
+msgstr "建议的 v0.3 类型将更改此记录解析出的类型或生效的默认值。"
 
 #: main.ts
 msgid "The source changed after this draft was opened: {originalPath}. Reopen the type and review both versions before saving."
-msgstr ""
+msgstr "打开此草稿后源文件已更改：{originalPath}。请重新打开类型，保存前检查两个版本。"
 
 #: src/sync/words.ts
 msgid "The synced history went backwards. mdbase stopped to keep your notes safe."
-msgstr ""
+msgstr "同步历史发生倒退。mdbase 已停止同步以保护笔记。"
 
 #: src/typeDraft.ts
 msgid "The target type '{target}' is not installed in this collection."
-msgstr ""
+msgstr "此集合中未安装目标类型 '{target}'。"
 
 #: src/workspace/syncPane.ts
 msgid "The text was changed on two devices. mdbase kept one version."
-msgstr ""
+msgstr "文本在两台设备上均有更改。mdbase 保留了一个版本。"
 
 #: src/contractCatalog.ts
 msgid "The type pack does not match its catalog digest."
-msgstr ""
+msgstr "类型包与其目录摘要不匹配。"
 
 #: src/contractCatalog.ts
 msgid "The type-pack identity or resources do not match the catalog."
-msgstr ""
+msgstr "类型包的身份或资源与目录不匹配。"
 
 #: src/sync/words.ts
 msgid "The vault folder moved or was renamed. Re-add it from Sync."
-msgstr ""
+msgstr "仓库文件夹已移动或重命名。请从“同步”重新添加。"
 
 #: src/sync/native/failures.ts
 msgid "The YAML at the top of this note has a syntax error. Fix it and the note syncs."
-msgstr ""
+msgstr "此笔记顶部的 YAML 存在语法错误。修复后笔记即可同步。"
 
 #: src/workspace/syncPane.ts
 msgid "Then come back and check again. Your notes here are untouched."
-msgstr ""
+msgstr "然后返回此处再次检查。此处的笔记不受影响。"
 
 #: src/modals.ts
 msgid "These changes may invalidate existing notes. Only the type definition will be saved."
-msgstr ""
+msgstr "这些更改可能导致现有笔记无效。只会保存类型定义。"
 
 #: src/workspace/syncPane.ts
 msgid "These stay as they are on this device until they're fixed. Sync tries them again when they change."
-msgstr ""
+msgstr "在修复之前，这些内容将保持在此设备上的原样。内容更改后同步会再次尝试。"
 
 #: src/modals.ts
 msgid "These unsaved changes will be lost:"
-msgstr ""
+msgstr "这些未保存的更改将丢失："
 
 #: src/workspace/syncPane.ts
 msgid "These were edited on two devices at once. mdbase kept one side so sync could carry on; check that it kept what you want."
-msgstr ""
+msgstr "这些内容在两台设备上同时被编辑。mdbase 保留了一侧的版本以便继续同步；请检查保留的是否为所需内容。"
 
 #: src/workspace/types/contractEditor.ts
 msgid "This app format isn't installed in the collection. Install it again or remove it before saving."
-msgstr ""
+msgstr "此集合中未安装此应用格式。保存前请重新安装或移除。"
 
 #: src/workspace/syncPane.ts
 msgid "This collection"
-msgstr ""
+msgstr "此集合"
 
 #: src/migration.ts
 msgid "This collection is already mdbase v0.3."
-msgstr ""
+msgstr "此集合已是 mdbase v0.3。"
 
 #: src/sync/words.ts
 msgid "This collection is already on this computer."
-msgstr ""
+msgstr "此集合已在此电脑上。"
 
 #: src/sync/words.ts
 msgid "This collection was deleted from your account."
-msgstr ""
+msgstr "此集合已从你的账户中删除。"
 
 #: src/workspace/syncPane.ts
 msgid "This computer"
-msgstr ""
+msgstr "此电脑"
 
 #: src/sync/words.ts
 msgid "This computer no longer has access to the collection."
-msgstr ""
+msgstr "此电脑不再有权访问此集合。"
 
 #: src/sync/words.ts
 msgid "This computer only"
-msgstr ""
+msgstr "仅此电脑"
 
 #: src/settingsTab.ts
 msgid "This computer stops syncing it. Your notes stay here, and your other devices keep syncing as before."
-msgstr ""
+msgstr "此电脑将停止同步。笔记仍保留在此处，其他设备将照常继续同步。"
 
 #: src/sync/words.ts
 msgid "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched."
-msgstr ""
+msgstr "此电脑的 mdbase 登录已失效，因此此处的同步已停止。此处的笔记不受影响。"
 
 #: src/sync/native/failures.ts
 msgid "This definition is different in this vault and in the collection. Choose which version to keep."
-msgstr ""
+msgstr "此定义在此仓库和集合中不同。请选择要保留的版本。"
 
 #: src/typeDraft.ts
 msgid "This exact application contract is not installed."
-msgstr ""
+msgstr "未安装此精确版本的应用契约。"
 
 #: src/typeContracts.ts
 msgid "This field satisfies the contract shape."
-msgstr ""
+msgstr "此字段符合契约结构。"
 
 #: src/sync/native/failures.ts
 msgid "This file is over the collection's size limit."
-msgstr ""
+msgstr "此文件超过集合的大小限制。"
 
 #: src/sync/words.ts
 msgid "This folder can't be synced."
-msgstr ""
+msgstr "无法同步此文件夹。"
 
 #: src/sync/native/plugin.ts
 msgid "This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing."
-msgstr ""
+msgstr "此文件夹已绑定到一个集合。请为其他集合使用单独的仓库；同步期间无法重新绑定此仓库。"
 
 #: src/workspace/types/contractEditor.ts
 msgid "This format's fields can only be mapped in YAML."
-msgstr ""
+msgstr "此格式的字段只能在 YAML 中映射。"
 
 #: src/migration.ts
 msgid "This migration has lossy diagnostics. Review them and explicitly allow lossy migration."
-msgstr ""
+msgstr "此迁移存在有损转换诊断。请检查并明确允许有损迁移。"
 
 #: src/validation.ts
 msgid "This note"
-msgstr ""
+msgstr "此笔记"
 
 #: src/sync/native/failures.ts
 msgid "This note is over mdbase's size limit for a note. Split it, or move large content into an attachment."
-msgstr ""
+msgstr "此笔记超过 mdbase 的笔记大小限制。请拆分笔记，或将较大的内容移到附件中。"
 
 #: src/sync/native/failures.ts
 msgid "This note isn't valid UTF-8, so it can't sync as a note. Your file is unchanged."
-msgstr ""
+msgstr "此笔记不是有效的 UTF-8，因此无法作为笔记同步。文件未更改。"
 
 #: src/typeContracts.ts
 msgid "This optional contract field is not exposed."
-msgstr ""
+msgstr "此可选契约字段未公开。"
 
 #: src/contractCatalog.ts
 msgid "This pack is already installed at another revision. Upgrade it with mdbase editor; Obsidian currently supports fresh installs and same-version repair only."
-msgstr ""
+msgstr "此包已安装了其他修订版本。请使用 mdbase 编辑器升级；Obsidian 目前仅支持全新安装和相同版本的修复。"
 
 #: src/sync/native/session.ts
 msgid "This Private collection can't be unlocked in Obsidian."
-msgstr ""
+msgstr "无法在 Obsidian 中解锁此私有集合。"
 
 #: src/workspace/types/drafts.ts
 msgid "This removes the saved recovery copy, not the current source or your current edits. Export it first if you might need it."
-msgstr ""
+msgstr "此操作会移除保存的恢复副本，不会移除当前源文件或当前编辑。如果以后可能需要，请先导出。"
 
 #: src/typeModel.ts
 msgid "This type uses schema.ref ({schemaReference}). Edit the referenced JSON Schema file directly."
-msgstr ""
+msgstr "此类型使用 schema.ref（{schemaReference}）。请直接编辑引用的 JSON Schema 文件。"
 
 #: src/workspace/syncPane.ts
 msgid "This vault already has notes, so the collection goes into a new folder."
-msgstr ""
+msgstr "此仓库已有笔记，因此集合将放入新文件夹。"
 
 #: src/sync/words.ts
 msgid "This vault and “{name}” both have notes. Open Sync to choose what happens."
-msgstr ""
+msgstr "此仓库和“{name}”均有笔记。请打开“同步”选择处理方式。"
 
 #: src/workspace/syncPane.ts
 msgid "This vault has {local, plural, one {# file} other {# files}} and “{name}” has {remote, plural, one {# file} other {# files}}. Nothing has synced yet."
-msgstr ""
+msgstr "此仓库有 {local, plural, other {# 个文件}}，“{name}”有 {remote, plural, other {# 个文件}}。尚未同步任何内容。"
 
 #: src/sync/words.ts
 msgid "This vault is an mdbase collection on this computer only."
-msgstr ""
+msgstr "此仓库仅是此电脑上的 mdbase 集合。"
 
 #: src/sync/words.ts
 msgid "This vault isn't synced."
-msgstr ""
+msgstr "此仓库未同步。"
 
 #: src/workspace/syncPane.ts
 msgid "This vault used the earlier mdbase Connect sync for \"{name}\", which has been replaced. Your notes here are untouched."
-msgstr ""
+msgstr "此仓库此前使用较早的 mdbase Connect 同步“{name}”，该方式现已被替换。此处的笔记不受影响。"
 
 #: src/sync/native/marker.ts
 msgid "This vault was set up for sync before, maybe by an earlier install of this plugin. Your notes here are untouched."
-msgstr ""
+msgstr "此仓库之前已设置过同步，可能是由此插件的早期安装设置的。此处的笔记不受影响。"
 
 #: src/sync/words.ts
 msgid "This vault's collection needs approving in mdbase before it can sync. Your notes here are untouched. Choose Request access again and approve it in your browser."
-msgstr ""
+msgstr "此仓库的集合需要先在 mdbase 中批准才能同步。此处的笔记不受影响。请选择“重新请求访问权限”并在浏览器中批准。"
 
 #: src/sync/native/marker.ts
 msgid "This vault's sync settings came from another vault or device, so sync is off here. Set up sync here to start fresh. Your notes here are untouched."
-msgstr ""
+msgstr "此仓库的同步设置来自其他仓库或设备，因此此处的同步已关闭。请在此设置同步以重新开始。此处的笔记不受影响。"
 
 #: src/sync/words.ts
 msgid "This version of the plugin can't unlock Private collections. Update it, then try again."
-msgstr ""
+msgstr "此版本的插件无法解锁私有集合。请更新后重试。"
 
 #: src/fieldSummary.ts
 msgid "Time"
-msgstr ""
+msgstr "时间"
 
 #: src/workspace/syncPane.ts
 msgid "To keep working on \"{name}\", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it."
-msgstr ""
+msgstr "要继续使用“{name}”，请在下方添加：其最新版本将出现在新文件夹中，检查后可删除旧副本。"
 
 #: src/workspace/syncPane.ts
 msgid "To sync this vault, add its folder in the mdbase app on this computer. Your notes here are untouched."
-msgstr ""
+msgstr "要同步此仓库，请在此电脑上的 mdbase 应用中添加其文件夹。此处的笔记不受影响。"
 
 #: src/workspace/syncPane.ts
 msgid "Today at {time}"
-msgstr ""
+msgstr "今天 {time}"
 
 #: src/issuePresentation.ts
 msgid "too few items"
-msgstr ""
+msgstr "项目过少"
 
 #: src/sync/native/failures.ts
 msgid "Too large to sync"
-msgstr ""
+msgstr "文件过大，无法同步"
 
 #: src/issuePresentation.ts
 msgid "too long"
-msgstr ""
+msgstr "过长"
 
 #: src/sync/words.ts
 msgid "Too many attempts. Wait a few minutes, then try again."
-msgstr ""
+msgstr "尝试次数过多。请等待几分钟后重试。"
 
 #: src/issuePresentation.ts
 msgid "too many items"
-msgstr ""
+msgstr "项目过多"
 
 #: src/sync/words.ts
 msgid "Too many tries. Wait a few minutes, then try again."
-msgstr ""
+msgstr "尝试次数过多。请等待几分钟后重试。"
 
 #: src/issuePresentation.ts
 msgid "too short"
-msgstr ""
+msgstr "过短"
 
 #: src/sync/native/session.ts
 msgid "Tried again, but sync still can't continue."
-msgstr ""
+msgstr "已重试，但同步仍无法继续。"
 
 #: src/validation.ts
 msgid "true or false"
-msgstr ""
+msgstr "true 或 false"
 
 #: src/contractCatalog.ts
 #: src/workspace/syncPane.ts
 msgid "Try again"
-msgstr ""
+msgstr "重试"
 
 #: src/sync/native/failures.ts
 msgid "Try again later ({code})."
-msgstr ""
+msgstr "请稍后重试（{code}）。"
 
 #: src/sync/native/failures.ts
 msgid "Try again later."
-msgstr ""
+msgstr "请稍后重试。"
 
 #: src/sync/native/failures.ts
 msgid "Try again to keep both versions as separate files."
-msgstr ""
+msgstr "请重试以将两个版本保留为单独的文件。"
 
 #: src/workspace/syncPane.ts
 msgid "Turn on sync"
-msgstr ""
+msgstr "开启同步"
 
 #: src/sync/controller.ts
 msgid "Turning on sync"
-msgstr ""
+msgstr "正在开启同步"
 
 #: src/workspace/types/fieldEditor.ts
 msgctxt "field property label"
 msgid "Type"
-msgstr ""
+msgstr "类型"
 
 #: src/workspace/types/yamlSource.ts
 msgctxt "YAML problem location"
 msgid "Type"
-msgstr ""
+msgstr "类型"
 
 #: main.ts
 msgid "Type already exists: {defaultTargetPath}"
-msgstr ""
+msgstr "类型已存在：{defaultTargetPath}"
 
 #: src/collectionConfig.ts
 msgid "Type already exists: {typePath}"
-msgstr ""
+msgstr "类型已存在：{typePath}"
 
 #: src/workspace/types/yamlSource.ts
 msgid "Type definition YAML"
-msgstr ""
+msgstr "类型定义 YAML"
 
 #: src/workspace/types/setup.ts
 msgid "Type definitions"
-msgstr ""
+msgstr "类型定义"
 
 #: src/workspace/syncPane.ts
 msgid "Type definitions and mdbase.yaml"
-msgstr ""
+msgstr "类型定义和 mdbase.yaml"
 
 #: main.ts
 msgid "Type file not found: {path}"
-msgstr ""
+msgstr "找不到类型文件：{path}"
 
 #: src/typeModel.ts
 msgid "Type name '{name}' is reserved."
-msgstr ""
+msgstr "类型名称 '{name}' 为保留名称。"
 
 #: main.ts
 #: src/typeModel.ts
 msgid "Type name is required."
-msgstr ""
+msgstr "类型名称为必填项。"
 
 #: src/typeModel.ts
 msgid "Type name may contain only letters, numbers, hyphens, and underscores."
-msgstr ""
+msgstr "类型名称只能包含字母、数字、连字符和下划线。"
 
 #: src/typeModel.ts
 msgid "Type name must be shorter than 64 characters."
-msgstr ""
+msgstr "类型名称必须少于 64 个字符。"
 
 #: src/typeModel.ts
 msgid "Type name must start with a letter."
-msgstr ""
+msgstr "类型名称必须以字母开头。"
 
 #: src/contractCatalog.ts
 msgid "Type pack unavailable ({status})."
-msgstr ""
+msgstr "类型包不可用（{status}）。"
 
 #: src/workspace/types/yamlSource.ts
 msgid "Type YAML must start with a --- frontmatter block."
-msgstr ""
+msgstr "类型 YAML 必须以 --- frontmatter 块开头。"
 
 #: src/workspace/types/typeList.ts
 #: src/workspaceView.ts
 msgid "Types"
-msgstr ""
+msgstr "类型"
 
 #: src/workspace/syncPane.ts
 msgid "Types and settings"
-msgstr ""
+msgstr "类型和设置"
 
 #: main.ts
 msgid "Unable to access updated type file: {targetPath}"
-msgstr ""
+msgstr "无法访问更新后的类型文件：{targetPath}"
 
 #: src/fieldSummary.ts
 msgid "unique"
-msgstr ""
+msgstr "唯一"
 
 #: src/validation.ts
 msgid "unknown"
-msgstr ""
+msgstr "未知"
 
 #: src/validation.ts
 msgid "Unknown field ''{fieldName}'' in strict mode"
-msgstr ""
+msgstr "严格模式下存在未知字段“{fieldName}”"
 
 #: src/issuePresentation.ts
 msgid "unknown type"
-msgstr ""
+msgstr "未知类型"
 
 #: src/workspace/syncPane.ts
 msgid "Unlock"
-msgstr ""
+msgstr "解锁"
 
 #: src/workspace/syncPane.ts
 msgid "Unlock “{collectionName}”"
-msgstr ""
+msgstr "解锁“{collectionName}”"
 
 #: src/workspace/syncPane.ts
 msgid "Unlock this collection"
-msgstr ""
+msgstr "解锁此集合"
 
 #: src/sync/words.ts
 msgid "Unlocking"
-msgstr ""
+msgstr "正在解锁"
 
 #: src/sync/native/session.ts
 msgid "Unlocking your collection."
-msgstr ""
+msgstr "正在解锁集合。"
 
 #: src/workspace/syncPane.ts
 msgid "Unlocking…"
-msgstr ""
+msgstr "正在解锁…"
 
 #: src/workspace/types/designForm.ts
 #: src/workspace/types/fieldEditor.ts
 msgid "Unnamed field"
-msgstr ""
+msgstr "未命名字段"
 
 #: src/contractCatalog.ts
 msgid "Unsafe pack path: {path}"
-msgstr ""
+msgstr "不安全的包路径：{path}"
 
 #: src/workspace/types/typeList.ts
 #: src/workspace/typesPane.ts
 msgid "Unsaved changes"
-msgstr ""
+msgstr "未保存的更改"
 
 #: src/workspace/typesPane.ts
 msgid "Unsaved changes discarded."
-msgstr ""
+msgstr "已放弃未保存的更改。"
 
 #: src/contractCatalog.ts
 msgid "Unsupported contract catalog."
-msgstr ""
+msgstr "不支持的契约目录。"
 
 #: src/validation.ts
 msgid "Unsupported JSON Schema reference ''{unsupportedRef}'' for type ''{typeName}''"
-msgstr ""
+msgstr "类型“{typeName}”使用了不支持的 JSON Schema 引用“{unsupportedRef}”"
 
 #: src/migration.ts
 msgid "Unsupported migration plan."
-msgstr ""
+msgstr "不支持的迁移计划。"
 
 #: src/contractCatalog.ts
 msgid "Unsupported pack target {target}. Default definition folders are required."
-msgstr ""
+msgstr "不支持的包目标 {target}。必须使用默认定义文件夹。"
 
 #: src/typeDraft.ts
 #: src/workspace/typesPane.ts
 msgid "Untitled type"
-msgstr ""
+msgstr "未命名类型"
 
 #: src/modals.ts
 msgid "Update {noteCount, plural, one {# note} other {# notes}}"
-msgstr ""
+msgstr "更新 {noteCount, plural, other {# 篇笔记}}"
 
 #: src/typeDraft.ts
 msgid "Update advanced type metadata or documentation."
-msgstr ""
+msgstr "更新高级类型元数据或文档。"
 
 #: src/typeDraft.ts
 msgid "Update application contract mappings or settings."
-msgstr ""
+msgstr "更新应用契约映射或设置。"
 
 #: src/sync/words.ts
 msgid "Update the mdbase app to keep syncing."
-msgstr ""
+msgstr "更新 mdbase 应用以继续同步。"
 
 #: src/sync/words.ts
 msgid "Update the mdbase app, then try again."
-msgstr ""
+msgstr "请更新 mdbase 应用后重试。"
 
 #: src/typeDraft.ts
 msgid "Update the type's identity and display metadata."
-msgstr ""
+msgstr "更新类型的身份和显示元数据。"
 
 #: src/typeDraft.ts
 msgid "Update validation or documentation for '{name}'."
-msgstr ""
+msgstr "更新 '{name}' 的验证规则或文档。"
 
 #: main.ts
 msgid "Updated '{field}' in {fileName}"
-msgstr ""
+msgstr "已更新 {fileName} 中的 '{field}'"
 
 #: src/sync/words.ts
 msgid "Updating"
-msgstr ""
+msgstr "正在更新"
 
 #: src/sync/native/pass.ts
 msgid "Uploading {completed} of {total} notes"
-msgstr ""
+msgstr "正在上传笔记：{completed}/{total}"
 
 #: src/sync/native/plugin.ts
 msgid "uploading {percent}% ({size} MiB)"
-msgstr ""
+msgstr "正在上传 {percent}%（{size} MiB）"
 
 #: src/workspace/syncPane.ts
 msgid "Use {otherValue}"
-msgstr ""
+msgstr "使用 {otherValue}"
 
 #: src/workspace/syncPane.ts
 msgid "Use a different collection"
-msgstr ""
+msgstr "使用其他集合"
 
 #: src/createTypedNoteModal.ts
 msgid "Use suggested location"
-msgstr ""
+msgstr "使用建议的位置"
 
 #: src/workspace/types/designForm.ts
 msgid "Use the file name"
-msgstr ""
+msgstr "使用文件名"
 
 #: src/workspace/syncPane.ts
 msgid "Use the other version"
-msgstr ""
+msgstr "使用另一个版本"
 
 #: src/workspace/syncPane.ts
 msgid "Use your encryption password instead"
-msgstr ""
+msgstr "改用加密密码"
 
 #: src/workspace/syncPane.ts
 msgid "Use your recovery key instead"
-msgstr ""
+msgstr "改用恢复密钥"
 
 #: src/createTypedNoteModal.ts
 msgid "Used for the file name."
-msgstr ""
+msgstr "用于文件名。"
 
 #: src/workspace/issuesPane.ts
 msgid "Validate"
-msgstr ""
+msgstr "验证"
 
 #: src/commands.ts
 msgid "Validate collection"
-msgstr ""
+msgstr "验证集合"
 
 #: src/commands.ts
 msgid "Validate current note"
-msgstr ""
+msgstr "验证当前笔记"
 
 #: src/settingsTab.ts
 msgid "Validate notes automatically"
-msgstr ""
+msgstr "自动验证笔记"
 
 #: src/workspace/types/fieldEditor.ts
 msgid "Validate target exists"
-msgstr ""
+msgstr "验证目标是否存在"
 
 #: src/workspace/issuesPane.ts
 msgid "Validation"
-msgstr ""
+msgstr "验证"
 
 #: main.ts
 msgid "Validation could not finish: {errorMessage}. Results are incomplete."
-msgstr ""
+msgstr "验证未能完成：{errorMessage}。结果不完整。"
 
 #: src/validationState.ts
 msgid "Validation stopped · {checked} of {total, plural, one {# note} other {# notes}} checked · results incomplete"
-msgstr ""
+msgstr "验证已停止 · {total, plural, other {# 篇笔记}}中已检查 {checked} 篇 · 结果不完整"
 
 #: main.ts
 msgid "Validation stopped. Results are incomplete."
-msgstr ""
+msgstr "验证已停止。结果不完整。"
 
 #: src/createTypedNoteModal.ts
 msgctxt "field placeholder"
 msgid "Value"
-msgstr ""
+msgstr "值"
 
 #: src/contractCatalog.ts
 msgid "Version {installed} is installed. Update it in mdbase editor; Obsidian can only add new types."
-msgstr ""
+msgstr "已安装版本 {installed}。请在 mdbase 编辑器中更新；Obsidian 只能添加新类型。"
 
 #: src/contractCatalog.ts
 msgid "Version {version}"
-msgstr ""
+msgstr "版本 {version}"
 
 #: src/settingsTab.ts
 msgid "Videos"
-msgstr ""
+msgstr "视频"
 
 #: src/sync/words.ts
 msgid "Waiting for approval"
-msgstr ""
+msgstr "等待批准"
 
 #: src/sync/native/failures.ts
 msgid "Waiting for Obsidian"
-msgstr ""
+msgstr "等待 Obsidian"
 
 #: src/sync/words.ts
 msgid "Waiting for you"
-msgstr ""
+msgstr "等待您的决定"
 
 #: src/sync/words.ts
 msgid "Waiting for you to approve access in your browser. Your notes here are untouched."
-msgstr ""
+msgstr "正在等待你在浏览器中批准访问。此处的笔记不受影响。"
 
 #: src/sync/native/session.ts
 msgid "Waiting for you: this vault and “{name}” both have notes."
-msgstr ""
+msgstr "等待你处理：此仓库和“{name}”均有笔记。"
 
 #: src/sync/words.ts
 msgid "Waiting for your choice"
-msgstr ""
+msgstr "等待你选择"
 
 #: src/sync/native/failures.ts
 msgid "Waiting to confirm"
-msgstr ""
+msgstr "等待确认"
 
 #: src/workspace/syncPane.ts
 msgid "Waiting to send"
-msgstr ""
+msgstr "等待发送"
 
 #: src/workspace/issuesPane.ts
 msgid "Warning"
-msgstr ""
+msgstr "警告"
 
 #: src/workspace/issuesPane.ts
 msgid "Warnings"
-msgstr ""
+msgstr "警告"
 
 #: src/issuePresentation.ts
 msgid "wrong type"
-msgstr ""
+msgstr "类型错误"
 
 #: src/createTypedNoteModal.ts
 msgid "YAML list or comma-separated values"
-msgstr ""
+msgstr "YAML 列表或逗号分隔的值"
 
 #: src/createTypedNoteModal.ts
 msgid "YAML object"
-msgstr ""
+msgstr "YAML 对象"
 
 #: src/workspace/syncPane.ts
 msgid "Yesterday at {time}"
-msgstr ""
+msgstr "昨天 {time}"
 
 #: src/sync/words.ts
 msgid "You can read this collection but not change it."
-msgstr ""
+msgstr "你可以读取此集合，但不能更改。"
 
 #: src/sync/words.ts
 msgid "You can't change this collection"
-msgstr ""
+msgstr "你无法更改此集合"
 
 #: src/sync/words.ts
 msgid "You signed in to a different account. Try again."
-msgstr ""
+msgstr "你登录了其他账户。请重试。"
 
 #: src/sync/native/failures.ts
 msgid "Your access to this collection doesn't allow this change."
-msgstr ""
+msgstr "你对该集合的访问权限不允许此更改。"
 
 #: src/sync/words.ts
 msgid "Your account doesn't allow that."
-msgstr ""
+msgstr "你的账户不允许此操作。"
 
 #: src/workspace/typesPane.ts
 msgid "Your edits in YAML"
-msgstr ""
+msgstr "你在 YAML 中的编辑"
 
 #: src/sync/words.ts
 msgid "Your mdbase storage is full."
-msgstr ""
+msgstr "你的 mdbase 存储空间已满。"
 
 #: src/sync/words.ts
 msgid "Your mdbase storage is full. Changes stay on this computer until there's room."
-msgstr ""
+msgstr "你的 mdbase 存储空间已满。更改将保留在此电脑上，直到有可用空间。"
 
 #: src/sync/words.ts
 msgid "Your notes stay in this vault. If the collection you choose already has notes, you're asked before they're combined."
-msgstr ""
+msgstr "你的笔记仍保留在此仓库中。如果所选集合已有笔记，合并前会征求你的同意。"

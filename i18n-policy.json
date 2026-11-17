@@ -1,3 +1,146 @@
 {
-  "source": { "include": ["src"] }
+  "source": {
+    "include": [
+      "src"
+    ]
+  },
+  "allowIdentical": {
+    "fr": [
+      "0zpgxV",
+      "1DBGsz",
+      "5JiksH",
+      "8BZs3C",
+      "CW11B-",
+      "EWPtMO",
+      "F6J1Ia",
+      "G4yH3d",
+      "HLTBt8",
+      "K8MHgR",
+      "LcLBP8",
+      "Nu4oKW",
+      "VZ9-tT",
+      "WtTYSX",
+      "_rTz0M",
+      "an5hVd",
+      "dXumIb",
+      "fL7WXr",
+      "lGWE4b",
+      "mOFgdC",
+      "mYGY3B",
+      "o1dLv2",
+      "pvl9w1",
+      "q-hNag",
+      "xmsVuq",
+      "zga9sT"
+    ],
+    "de": [
+      "-kSXOT",
+      "0vy_wY",
+      "1eslAW",
+      "6Aih4U",
+      "8BZs3C",
+      "CW11B-",
+      "EWPtMO",
+      "F0lHkW",
+      "F6J1Ia",
+      "HLTBt8",
+      "KbYBHx",
+      "LLAa_9",
+      "LcLBP8",
+      "RKuImK",
+      "URmyfc",
+      "VAy7R3",
+      "VZ9-tT",
+      "_Ac0jq",
+      "_rTz0M",
+      "dLtrx9",
+      "he8RNR",
+      "iT3cam",
+      "io4Pax",
+      "mGJHnH",
+      "mOFgdC",
+      "shJqcN",
+      "xeiujy",
+      "yzF66j",
+      "zga9sT"
+    ],
+    "es": [
+      "-kSXOT",
+      "8BZs3C",
+      "F6J1Ia",
+      "HLTBt8",
+      "SlfejT",
+      "VZ9-tT",
+      "_Ac0jq",
+      "_rTz0M",
+      "dLtrx9",
+      "shJqcN",
+      "xmsVuq"
+    ],
+    "it": [
+      "-kSXOT",
+      "8BZs3C",
+      "AeXO77",
+      "F6J1Ia",
+      "HLTBt8",
+      "VZ9-tT",
+      "_Ac0jq",
+      "_rTz0M",
+      "dLtrx9",
+      "shJqcN",
+      "zga9sT"
+    ],
+    "pt": [
+      "-kSXOT",
+      "0vy_wY",
+      "1eslAW",
+      "8BZs3C",
+      "F6J1Ia",
+      "HLTBt8",
+      "HX5SVx",
+      "VZ9-tT",
+      "_Ac0jq",
+      "dLtrx9",
+      "shJqcN",
+      "yzF66j",
+      "zga9sT"
+    ],
+    "ru": [
+      "-kSXOT",
+      "8BZs3C",
+      "F6J1Ia",
+      "HLTBt8",
+      "VZ9-tT",
+      "_Ac0jq",
+      "dLtrx9",
+      "shJqcN"
+    ],
+    "ja": [
+      "-kSXOT",
+      "8BZs3C",
+      "F6J1Ia",
+      "HLTBt8",
+      "VZ9-tT",
+      "_Ac0jq",
+      "dLtrx9",
+      "shJqcN",
+      "zga9sT"
+    ],
+    "ko": [
+      "-kSXOT",
+      "8BZs3C",
+      "F6J1Ia",
+      "HLTBt8",
+      "VZ9-tT",
+      "_Ac0jq",
+      "dLtrx9",
+      "shJqcN"
+    ],
+    "zh": [
+      "8BZs3C",
+      "F6J1Ia",
+      "HLTBt8",
+      "VZ9-tT"
+    ]
+  }
 }

@@ -841,7 +841,9 @@ export default class MdbasePlugin extends Plugin {
     const loaded = await this.getConfigAndTypes(options.forceReload ?? false);
     if (!loaded) {
       if (!background) {
-        new Notice(t`No mdbase.yaml found. Run 'mdbase: Initialize collection' first.`);
+        // The command palette shows the translated command name.
+        const command = t`Initialize collection`;
+        new Notice(t`No mdbase.yaml found. Run 'mdbase: ${command}' first.`);
       }
       return null;
     }

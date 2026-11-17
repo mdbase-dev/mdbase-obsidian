@@ -1783,6 +1783,7 @@ msgstr "In the collection, but left out here by your choices below or the collec
 msgid "Incompatible"
 msgstr "Incompatible"
 
+#: main.ts
 #: src/commands.ts
 msgid "Initialize collection"
 msgstr "Initialize collection"
@@ -2532,8 +2533,8 @@ msgid "No mdbase.yaml found."
 msgstr "No mdbase.yaml found."
 
 #: main.ts
-msgid "No mdbase.yaml found. Run 'mdbase: Initialize collection' first."
-msgstr "No mdbase.yaml found. Run 'mdbase: Initialize collection' first."
+msgid "No mdbase.yaml found. Run 'mdbase: {command}' first."
+msgstr "No mdbase.yaml found. Run 'mdbase: {command}' first."
 
 #: src/workspace/types/setup.ts
 msgid "No migration diagnostics."
