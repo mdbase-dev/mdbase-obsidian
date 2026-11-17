@@ -1,3 +1,4 @@
+import { plural, t } from "@lingui/core/macro";
 import { Notice, TFile } from "obsidian";
 import { CreateTypedNoteModal } from "./createTypedNoteModal";
 import type MdbasePlugin from "../main";
@@ -14,13 +15,13 @@ export function registerCommands(plugin: MdbasePlugin): void {
 
   plugin.addCommand({
     id: "mdbase-open",
-    name: "Open workspace",
+    name: t`Open workspace`,
     callback: () => void plugin.openWorkspace(),
   });
 
   plugin.addCommand({
     id: "mdbase-initialize-collection",
-    name: "Initialize collection",
+    name: t`Initialize collection`,
     checkCallback: (checking) => {
       if (app.vault.getAbstractFileByPath("mdbase.yaml")) return false;
       if (!checking) void plugin.initializeCollection();
@@ -30,25 +31,25 @@ export function registerCommands(plugin: MdbasePlugin): void {
 
   plugin.addCommand({
     id: "mdbase-create-type",
-    name: "Create type definition",
+    name: t`Create type definition`,
     callback: () => void plugin.openWorkspace("types").then((view) => view.createNewType()),
   });
 
   plugin.addCommand({
     id: "mdbase-edit-type",
-    name: "Edit type definition",
+    name: t`Edit type definition`,
     callback: () => void editTypeDefinition(plugin),
   });
 
   plugin.addCommand({
     id: "mdbase-create-note-from-type",
-    name: "Create note from type",
+    name: t`Create note from type`,
     callback: () => void createNoteFromTypeCommand(plugin),
   });
 
   plugin.addCommand({
     id: "mdbase-validate-current-note",
-    name: "Validate current note",
+    name: t`Validate current note`,
     checkCallback: (checking) => {
       const file = app.workspace.getActiveFile();
       if (!(file instanceof TFile) || file.extension !== "md") return false;
@@ -59,13 +60,13 @@ export function registerCommands(plugin: MdbasePlugin): void {
 
   plugin.addCommand({
     id: "mdbase-validate-collection",
-    name: "Validate collection",
+    name: t`Validate collection`,
     callback: () => void plugin.runCollectionValidation(true),
   });
 
   plugin.addCommand({
     id: "mdbase-open-sync",
-    name: "Open sync",
+    name: t`Open sync`,
     callback: () => void plugin.openWorkspace("sync"),
   });
 }
@@ -75,7 +76,7 @@ async function editTypeDefinition(plugin: MdbasePlugin): Promise<void> {
   const loaded = await plugin.requireConfigAndTypes();
   if (!loaded) return;
   if (loaded.types.size === 0) {
-    new Notice("No type definitions found.");
+    new Notice(t`No type definitions found.`);
     return;
   }
   const file = plugin.app.workspace.getActiveFile();
@@ -102,10 +103,11 @@ async function editTypeDefinition(plugin: MdbasePlugin): Promise<void> {
 async function validateCurrentNote(plugin: MdbasePlugin, file: TFile): Promise<void> {
   const issues = await plugin.validateFileAndStore(file, "manual");
   if (issues.length === 0) {
-    new Notice("No issues in current note.");
+    new Notice(t`No issues in current note.`);
     return;
   }
-  new Notice(`Found ${issues.length} issue${issues.length === 1 ? "" : "s"} in current note.`);
+  const issueCount = issues.length;
+  new Notice(t`Found ${plural(issueCount, { one: "# issue", other: "# issues" })} in current note.`);
   const view = await plugin.openWorkspace("issues");
   view.showIssuesForPath(file.path);
 }
@@ -115,7 +117,7 @@ export async function createNoteFromTypeCommand(plugin: MdbasePlugin, typeName?:
     if (!loaded) return;
 
     if (loaded.types.size === 0) {
-      new Notice("No type definitions found.");
+      new Notice(t`No type definitions found.`);
       return;
     }
 

@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 // Creating notes from a type: initial frontmatter, prompted field input,
 // safe collection-relative paths, and the file itself.
 import { normalizePath, parseYaml, TFile, Vault } from "obsidian";
@@ -36,11 +37,11 @@ function applyPathTemplate(template: string, frontmatter: Record<string, unknown
 export function normalizeSafeRelativePath(input: string): string {
   const path = input.replace(/\\/g, "/");
   if (!path || path.startsWith("/") || /^[A-Za-z]:\//.test(path) || path.includes("\0")) {
-    throw new MdbasePathError("invalid_path", `Invalid collection-relative path: ${input}`);
+    throw new MdbasePathError("invalid_path", t`Invalid collection-relative path: ${input}`);
   }
   const segments = path.split("/");
   if (segments.includes("..")) {
-    throw new MdbasePathError("path_traversal", `Path escapes the collection root: ${input}`);
+    throw new MdbasePathError("path_traversal", t`Path escapes the collection root: ${input}`);
   }
   return normalizePath(segments.filter((segment) => segment && segment !== ".").join("/"));
 }
@@ -141,24 +142,24 @@ export function coerceFieldInput(rawInput: string, fieldDef: MdbaseFieldDef): un
       return trimmed;
     case "integer": {
       const parsed = Number(trimmed);
-      if (!/^[+-]?\d+$/.test(trimmed) || !Number.isSafeInteger(parsed)) throw new Error("Expected a whole integer");
+      if (!/^[+-]?\d+$/.test(trimmed) || !Number.isSafeInteger(parsed)) throw new Error(t`Expected a whole integer`);
       return parsed;
     }
     case "number": {
       const parsed = Number(trimmed);
-      if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(trimmed) || !Number.isFinite(parsed)) throw new Error("Expected a finite number");
+      if (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(trimmed) || !Number.isFinite(parsed)) throw new Error(t`Expected a finite number`);
       return parsed;
     }
     case "boolean": {
       const lowered = trimmed.toLowerCase();
       if (["true", "1", "yes", "y"].includes(lowered)) return true;
       if (["false", "0", "no", "n"].includes(lowered)) return false;
-      throw new Error("Expected boolean input: true/false");
+      throw new Error(t`Expected boolean input: true/false`);
     }
     case "list": {
       if (trimmed.startsWith("[") || /^-\s/.test(trimmed)) {
         const parsed: unknown = parseYaml(trimmed);
-        if (!Array.isArray(parsed)) throw new Error("Expected a YAML or JSON list");
+        if (!Array.isArray(parsed)) throw new Error(t`Expected a YAML or JSON list`);
         return parsed;
       }
       const values = trimmed
@@ -171,7 +172,7 @@ export function coerceFieldInput(rawInput: string, fieldDef: MdbaseFieldDef): un
     case "object": {
       const parsed: unknown = parseYaml(trimmed);
       if (!isRecord(parsed)) {
-        throw new Error("Expected YAML object value");
+        throw new Error(t`Expected YAML object value`);
       }
       return parsed;
     }
@@ -254,7 +255,7 @@ export async function createNoteFromType(
   }
 
   if (await vault.adapter.exists(normalized)) {
-    throw new Error(`File already exists: ${normalized}`);
+    throw new Error(t`File already exists: ${normalized}`);
   }
 
   const content = `${formatMarkdown(frontmatter, body)}\n`;

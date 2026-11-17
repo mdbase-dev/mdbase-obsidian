@@ -1,3 +1,4 @@
+import { plural, t } from "@lingui/core/macro";
 import { type App, Modal, SuggestModal } from "obsidian";
 import type { MdbaseIssue, MdbaseTypeDef } from "./mdbaseCore";
 import type { TypeDraftChange } from "./typeDraft";
@@ -43,7 +44,7 @@ export class TextPromptModal extends Modal {
     if (options.description) field.createDiv({ cls: "setting-item-description", text: options.description });
 
     const actions = contentEl.createDiv({ cls: "modal-button-container" });
-    const cancelButton = actions.createEl("button", { text: "Cancel" });
+    const cancelButton = actions.createEl("button", { text: t`Cancel` });
     const submitButton = actions.createEl("button", { text: options.submitLabel, cls: "mod-cta" });
     // A required value keeps the prompt open instead of failing after it closes.
     const sync = () => { submitButton.disabled = options.required === true && !input.value.trim(); };
@@ -99,14 +100,14 @@ class TypeSuggestModal extends SuggestModal<MdbaseTypeDef> {
     super(app);
     this.typeDefs = [...typeDefs].sort((a, b) => a.name.localeCompare(b.name));
     this.onResult = onResult;
-    this.setPlaceholder("Search types");
+    this.setPlaceholder(t`Search types`);
     this.setInstructions([
-      { command: "↑↓", purpose: "navigate" },
-      { command: "↵", purpose: "select" },
-      { command: "esc", purpose: "cancel" },
+      { command: "↑↓", purpose: t`navigate` },
+      { command: "↵", purpose: t`select` },
+      { command: "esc", purpose: t`cancel` },
     ]);
     this.containerEl.addClass("mdbase-type-picker-modal");
-    this.titleEl.setText("Choose a type");
+    this.titleEl.setText(t`Choose a type`);
   }
 
   getSuggestions(query: string): MdbaseTypeDef[] {
@@ -138,15 +139,18 @@ class TypeSuggestModal extends SuggestModal<MdbaseTypeDef> {
     });
     meta.createSpan({
       cls: "mdbase-type-picker-count",
-      text: `${fieldCount} ${fieldCount === 1 ? "field" : "fields"}`,
+      text: plural(fieldCount, { one: "# field", other: "# fields" }),
     });
 
     if (typeDef.match?.path_glob) {
       const match = wrap.createDiv({ cls: "mdbase-type-picker-match" });
-      const plain = describePathGlob(typeDef.match.path_glob);
-      match.createSpan({ text: plain ?? "Notes matching " });
-      if (plain) match.appendText(" · ");
-      match.createEl("code", { text: typeDef.match.path_glob });
+      const pathGlob = typeDef.match.path_glob;
+      const plain = describePathGlob(pathGlob);
+      if (plain) {
+        match.createSpan({ text: plain });
+        match.appendText(" · ");
+        match.createEl("code", { text: pathGlob });
+      } else match.createSpan({ text: t`Notes matching ${pathGlob}` });
     }
   }
 
@@ -185,23 +189,25 @@ export class TypeChangeConfirmationModal extends Modal {
   confirm(changes: readonly TypeDraftChange[], failingNotes: readonly string[] = []): Promise<boolean> {
     return new Promise((resolve) => {
       this.resolve = resolve;
-      this.titleEl.setText("Confirm high-impact type changes");
+      const failingCount = failingNotes.length;
+      this.titleEl.setText(t`Confirm high-impact type changes`);
       this.contentEl.createEl("p", {
         text: failingNotes.length
-          ? `${failingNotes.length} existing ${failingNotes.length === 1 ? "note" : "notes"} would fail validation. Only the type definition will be saved; notes are not changed.`
-          : "These changes may invalidate existing notes. Only the type definition will be saved.",
+          ? t`${plural(failingCount, { one: "# existing note", other: "# existing notes" })} would fail validation. Only the type definition will be saved; notes are not changed.`
+          : t`These changes may invalidate existing notes. Only the type definition will be saved.`,
       });
       const list = this.contentEl.createEl("ul", { cls: "mdbase-confirm-change-list" });
       for (const change of changes) list.createEl("li", { text: change.summary });
       if (failingNotes.length) {
         const notes = this.contentEl.createEl("ul", { cls: "mdbase-confirm-change-list mdbase-confirm-notes" });
         for (const path of failingNotes.slice(0, 5)) notes.createEl("li", { text: path });
-        if (failingNotes.length > 5) notes.createEl("li", { text: `${failingNotes.length - 5} more` });
+        const moreCount = failingNotes.length - 5;
+        if (failingNotes.length > 5) notes.createEl("li", { text: t`${moreCount} more` });
       }
       const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
-      const cancel = actions.createEl("button", { text: "Keep reviewing" });
+      const cancel = actions.createEl("button", { text: t`Keep reviewing` });
       cancel.onclick = () => this.finish(false);
-      const save = actions.createEl("button", { text: "Save high-impact changes" });
+      const save = actions.createEl("button", { text: t`Save high-impact changes` });
       save.addClass("mod-warning");
       save.onclick = () => this.finish(true);
       this.open();
@@ -230,18 +236,20 @@ export class BulkFixConfirmationModal extends Modal {
     return new Promise((resolve) => {
       this.resolve = resolve;
       const paths = [...new Set(issues.map((issue) => issue.path))];
-      const notes = `${paths.length} ${paths.length === 1 ? "note" : "notes"}`;
-      this.titleEl.setText(`${label} in ${notes}?`);
+      const noteCount = paths.length;
+      const field = issues[0]?.field ?? t`affected`;
+      this.titleEl.setText(t`${label} in ${plural(noteCount, { one: "# note", other: "# notes" })}?`);
       this.contentEl.createEl("p", {
-        text: `Only the '${issues[0]?.field ?? "affected"}' frontmatter field changes in each note. Notes that changed since validation are skipped.`,
+        text: t`Only the '${field}' frontmatter field changes in each note. Notes that changed since validation are skipped.`,
       });
       const list = this.contentEl.createEl("ul", { cls: "mdbase-confirm-change-list" });
       for (const path of paths.slice(0, 8)) list.createEl("li", { text: path });
-      if (paths.length > 8) list.createEl("li", { text: `${paths.length - 8} more` });
+      const moreCount = paths.length - 8;
+      if (paths.length > 8) list.createEl("li", { text: t`${moreCount} more` });
       const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
-      const cancel = actions.createEl("button", { text: "Cancel" });
+      const cancel = actions.createEl("button", { text: t`Cancel` });
       cancel.onclick = () => this.finish(false);
-      const apply = actions.createEl("button", { text: `Update ${notes}` });
+      const apply = actions.createEl("button", { text: t`Update ${plural(noteCount, { one: "# note", other: "# notes" })}` });
       apply.addClass("mod-cta");
       apply.onclick = () => this.finish(true);
       this.open();
@@ -272,16 +280,17 @@ export class DiscardChangesModal extends Modal {
       this.resolve = resolve;
       this.titleEl.setText(title);
       if (lost.length) {
-        this.contentEl.createEl("p", { text: "These unsaved changes will be lost:" });
+        this.contentEl.createEl("p", { text: t`These unsaved changes will be lost:` });
         const list = this.contentEl.createEl("ul", { cls: "mdbase-confirm-change-list" });
         for (const item of lost.slice(0, 8)) list.createEl("li", { text: item });
-        if (lost.length > 8) list.createEl("li", { text: `${lost.length - 8} more` });
+        const moreCount = lost.length - 8;
+        if (lost.length > 8) list.createEl("li", { text: t`${moreCount} more` });
       }
       this.contentEl.createEl("p", { text: note });
       const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
-      const cancel = actions.createEl("button", { text: "Keep editing" });
+      const cancel = actions.createEl("button", { text: t`Keep editing` });
       cancel.onclick = () => this.finish(false);
-      const discard = actions.createEl("button", { text: "Discard changes" });
+      const discard = actions.createEl("button", { text: t`Discard changes` });
       discard.addClass("mod-warning");
       discard.onclick = () => this.finish(true);
       this.open();

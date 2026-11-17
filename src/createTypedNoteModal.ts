@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { App, Modal } from "obsidian";
 import type { MdbaseConfig, MdbaseFieldDef, MdbaseTypeDef } from "./mdbaseCore";
 import { buildInitialFrontmatter, buildUniqueNotePath, coerceFieldInput, getPromptFields } from "./noteCreation";
@@ -8,7 +9,7 @@ export function safeNotePath(value: string): string {
   const path = value.trim();
   if (!path || path.startsWith("/") || path.includes("\\") || Array.from(path).some(char => char.charCodeAt(0) < 32)
     || path.split("/").some(segment => !segment || segment === "." || segment === ".." || segment.startsWith("."))) {
-    throw new Error("Choose a visible, vault-relative note path without .. or empty folders.");
+    throw new Error(t`Choose a visible, vault-relative note path without .. or empty folders.`);
   }
   return path.endsWith(".md") ? path : `${path}.md`;
 }
@@ -34,28 +35,29 @@ export class CreateTypedNoteModal extends Modal {
   }
 
   onOpen(): void {
-    this.titleEl.setText(`New ${this.type.name}`);
+    const typeName = this.type.name;
+    this.titleEl.setText(t`New ${typeName}`);
     this.contentEl.addClass("mdbase-create-note");
     const fields = getPromptFields(this.type, this.frontmatter);
     const displayKey = this.type.display_name_key ?? "title";
     if (!fields.some(([name]) => name === displayKey) && this.frontmatter[displayKey] == null) {
-      fields.unshift([displayKey, this.type.fields[displayKey] ?? { type: "string", description: "Used for the file name." }]);
+      fields.unshift([displayKey, this.type.fields[displayKey] ?? { type: "string", description: t`Used for the file name.` }]);
     }
     for (const [name, definition] of fields) {
       const row = this.contentEl.createDiv({ cls: "mdbase-form-row" });
       const label = row.createEl("label", { cls: "mdbase-create-note-label", text: name });
-      if (definition.required) label.createSpan({ cls: "mdbase-required-tag", text: "Required" });
+      if (definition.required) label.createSpan({ cls: "mdbase-required-tag", text: t({ message: "Required", context: "field indicator" }) });
       if (definition.description) row.createDiv({ cls: "mdbase-form-description", text: definition.description });
       let input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
       if (definition.type === "boolean" || definition.type === "enum") {
         const select = row.createEl("select");
         input = select;
-        select.createEl("option", { value: "", text: "Choose…" });
+        select.createEl("option", { value: "", text: t`Choose…` });
         const values = definition.type === "boolean" ? [true, false] : definition.values ?? [];
         values.forEach((value, index) => select.createEl("option", { value: String(index), text: String(value) }));
       } else if (["object", "list", "any"].includes(definition.type ?? "")) {
         input = row.createEl("textarea");
-        input.placeholder = definition.type === "object" ? "YAML object" : definition.type === "list" ? "YAML list or comma-separated values" : "Value";
+        input.placeholder = definition.type === "object" ? t`YAML object` : definition.type === "list" ? t`YAML list or comma-separated values` : t({ message: "Value", context: "field placeholder" });
       } else {
         const inputType = definition.type === "date" ? "date" : definition.type === "datetime" ? "datetime-local" : definition.type === "time" ? "time" : "text";
         input = row.createEl("input", { type: inputType });
@@ -75,7 +77,7 @@ export class CreateTypedNoteModal extends Modal {
       this.inputs.set(name, { input, definition, error });
     }
     const location = this.contentEl.createDiv({ cls: "mdbase-form-row" });
-    const label = location.createEl("label", { text: "Location" });
+    const label = location.createEl("label", { text: t`Location` });
     this.pathInput = location.createEl("input", { type: "text" });
     label.htmlFor = this.pathInput.id = "mdbase-note-location";
     this.pathInput.addEventListener("input", () => {
@@ -84,13 +86,13 @@ export class CreateTypedNoteModal extends Modal {
       this.syncReset();
     });
     // Offered only once the location differs from the suggestion.
-    this.reset = location.createEl("button", { cls: "mdbase-location-reset", text: "Use suggested location" });
+    this.reset = location.createEl("button", { cls: "mdbase-location-reset", text: t`Use suggested location` });
     this.reset.onclick = () => { this.customPath = false; void this.suggestPath(); };
     this.syncReset();
     this.problem = this.contentEl.createDiv({ cls: "mdbase-inline-error", attr: { role: "alert" } });
     const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
-    actions.createEl("button", { text: "Cancel" }).onclick = () => { if (!this.creating) this.close(); };
-    this.submit = actions.createEl("button", { text: "Create note", cls: "mod-cta" });
+    actions.createEl("button", { text: t`Cancel` }).onclick = () => { if (!this.creating) this.close(); };
+    this.submit = actions.createEl("button", { text: t`Create note`, cls: "mod-cta" });
     this.submit.onclick = () => void this.save();
     void this.suggestPath();
     const firstInput = this.inputs.values().next();
@@ -104,7 +106,7 @@ export class CreateTypedNoteModal extends Modal {
       try {
         if (!input.value.trim()) {
           delete this.frontmatter[name];
-          if (definition.required) throw new Error("Required");
+          if (definition.required) throw new Error(t({ message: "Required", context: "field indicator" }));
           continue;
         }
         const values = definition.type === "boolean" ? [true, false] : definition.values ?? [];
@@ -139,8 +141,8 @@ export class CreateTypedNoteModal extends Modal {
     if (this.creating || !this.readInputs()) return;
     try {
       const path = safeNotePath(this.pathInput.value);
-      if (isExcluded(path, this.config)) throw new Error("Choose a location included in this collection, not a definition or excluded folder.");
-      if (this.app.vault.getAbstractFileByPath(path)) throw new Error("A file already exists at this location. Choose another path.");
+      if (isExcluded(path, this.config)) throw new Error(t`Choose a location included in this collection, not a definition or excluded folder.`);
+      if (this.app.vault.getAbstractFileByPath(path)) throw new Error(t`A file already exists at this location. Choose another path.`);
       const issues = [...this.types.values()].flatMap(type => type.name === this.type.name || this.type.extends === type.name
         ? validateRecordAgainstType(path, this.frontmatter, type) : []);
       if (issues.some(issue => issue.severity === "error")) {
