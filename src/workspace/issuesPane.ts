@@ -39,11 +39,12 @@ export class IssuesPane {
     const document = container.createDiv({ cls: "mdbase-issues-document" });
     const allIssues = this.ctx.host.getIssues();
     const allFiles = new Set(allIssues.map((issue) => issue.path)).size;
+    const issueCount = allIssues.length;
     const header = document.createDiv({ cls: "mdbase-document-header" });
     const heading = header.createDiv();
     const validationSummary = this.ctx.host.getValidationSummary();
     heading.createEl("h2", { text: allIssues.length
-      ? t`${plural(allIssues.length, { one: "# issue", other: "# issues" })} · ${plural(allFiles, { one: "# file", other: "# files" })}`
+      ? t`${plural(issueCount, { one: "# issue", other: "# issues" })} · ${plural(allFiles, { one: "# file", other: "# files" })}`
       : this.ctx.host.isValidationUntouched() ? t`Validation` : t`No known issues`,
     });
     const freshness = heading.createDiv({ cls: "mdbase-muted", text: validationSummary });
@@ -110,8 +111,10 @@ export class IssuesPane {
     });
     const filteredFiles = new Set(filtered.map((issue) => issue.path)).size;
     if (filtered.length !== allIssues.length || filtered.length > this.issueLimit) {
+      const shown = formatNumber(Math.min(filtered.length, this.issueLimit));
+      const filteredCount = filtered.length;
       document.createDiv({ cls: "search-results-info mdbase-issues-summary", text:
-        t`${formatNumber(Math.min(filtered.length, this.issueLimit))} of ${plural(filtered.length, { one: "# issue", other: "# issues" })} · ${plural(filteredFiles, { one: "# file", other: "# files" })}`,
+        t`${shown} of ${plural(filteredCount, { one: "# issue", other: "# issues" })} · ${plural(filteredFiles, { one: "# file", other: "# files" })}`,
       });
     }
     if (!filtered.length) {
@@ -122,9 +125,10 @@ export class IssuesPane {
     if (this.issueGroupBy === "rule") this.renderIssuesByRule(document, issues);
     else this.renderIssuesByFile(document, issues);
     if (filtered.length > issues.length) {
+      const remaining = Math.min(250, filtered.length - issues.length);
       const load = document.createEl("button", {
         cls: "mdbase-load-more",
-        text: t`Load ${Math.min(250, filtered.length - issues.length)} more`,
+        text: t`Load ${remaining} more`,
       });
       load.onclick = () => {
         this.issueLimit += 250;
@@ -147,13 +151,15 @@ export class IssuesPane {
       const open = () => void this.ctx.host.openFileByPath(path);
       header.onclick = open;
       header.onkeydown = (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } };
-      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: formatNumber(fileIssues.length) })
-        .setAttr("aria-label", plural(fileIssues.length, { one: "# issue", other: "# issues" }));
+      const issueCount = fileIssues.length;
+      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: formatNumber(issueCount) })
+        .setAttr("aria-label", plural(issueCount, { one: "# issue", other: "# issues" }));
       const matches = group.createDiv({ cls: "search-result-file-matches" });
       for (const issue of fileIssues) {
         const row = matches.createDiv({ cls: "search-result-file-match mdbase-issue-row" });
         const severityLabel = issue.severity === "warn" ? t`Warning` : t`Error`;
-        this.fillIssueRow(row, issue, issue.field ? t`${severityLabel} · ${issue.field}` : severityLabel);
+        const field = issue.field;
+        this.fillIssueRow(row, issue, field ? t`${severityLabel} · ${field}` : severityLabel);
       }
     }
   }
@@ -172,7 +178,7 @@ export class IssuesPane {
         .setAttr("aria-label", plural(files, { one: "# note", other: "# notes" }));
       this.renderEditRuleButton(actions, first);
       const fixLabel = this.ctx.host.getQuickFixLabel(first);
-      const fixable = fixLabel ? rule.issues.filter((issue) => this.ctx.host.getQuickFixLabel(issue) === fixLabel) : [];
+      const fixable = fixLabel ? rule.issues.filter((issue) => issue.code === first.code && this.ctx.host.getQuickFixLabel(issue) !== null) : [];
       const fixableNotes = new Set(fixable.map((issue) => issue.path)).size;
       if (fixLabel && fixableNotes > 1) {
         const bulk = actions.createEl("button", { text: t`${fixLabel} · ${plural(fixableNotes, { one: "# note", other: "# notes" })}` });
@@ -199,12 +205,13 @@ export class IssuesPane {
   private fillIssueRow(row: HTMLElement, issue: MdbaseIssue, context: string, contextOpensFile = false): void {
     row.setAttr("data-severity", issue.severity);
     row.createSpan({ cls: "mdbase-issue-indicator" }).setAttr("aria-hidden", "true");
+    const { path, field } = issue;
     const technical = typeof issue.details?.technical_message === "string" ? issue.details.technical_message : "";
     row.setAttr("title", technical ? `${issue.code}: ${technical}` : issue.code);
     const metadata = row.createDiv({ cls: "mdbase-issue-metadata" });
     if (contextOpensFile) {
       const open = metadata.createEl("button", { cls: "mdbase-link-button mdbase-issue-context", text: context });
-      open.setAttr("title", issue.field ? t`Open ${issue.path} at ${issue.field}` : t`Open ${issue.path}`);
+      open.setAttr("title", field ? t`Open ${path} at ${field}` : t`Open ${path}`);
       open.onclick = () => void this.ctx.host.openFileByPath(issue.path, issue.field);
     } else {
       metadata.createDiv({ cls: "mdbase-issue-context", text: context });
@@ -212,8 +219,8 @@ export class IssuesPane {
     row.createDiv({ cls: "mdbase-issue-row-message", text: issue.message });
     const actions = row.createDiv({ cls: "mdbase-issue-row-actions" });
     // The file header already opens the note; a row action is only useful when it lands on the field.
-    if (!contextOpensFile && issue.field) {
-      const open = this.ctx.iconButton(actions, "arrow-up-right", t`Open ${issue.path} at ${issue.field}`);
+    if (!contextOpensFile && field) {
+      const open = this.ctx.iconButton(actions, "arrow-up-right", t`Open ${path} at ${field}`);
       open.onclick = () => void this.ctx.host.openFileByPath(issue.path, issue.field);
     }
     if (!contextOpensFile) this.renderEditRuleButton(actions, issue);
@@ -232,10 +239,12 @@ export class IssuesPane {
     const typeName = issueTypeNames(issue, this.ctx.recordTypes())[0];
     const typeDef = typeName ? this.ctx.schema?.types.get(typeName) : undefined;
     if (!typeDef) return;
+    const { field } = issue;
+    const typeNameLabel = typeDef.name;
     const edit = this.ctx.iconButton(
       container,
       "pencil",
-      issue.field ? t`Edit ${issue.field} in ${typeDef.name}` : t`Edit type ${typeDef.name}`,
+      field ? t`Edit ${field} in ${typeNameLabel}` : t`Edit type ${typeNameLabel}`,
     );
     edit.onclick = () => void this.ctx.openTypeField(typeDef.filePath, issue.field);
   }
