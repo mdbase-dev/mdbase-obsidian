@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { stringifyYaml } from "obsidian";
 import { parseFrontmatter, type MdbaseIssue } from "./mdbaseCore";
 
@@ -26,7 +27,7 @@ function target(issue: MdbaseIssue): string[] | null {
 
 export function quickFixLabel(issue: MdbaseIssue): string | null {
   if (!target(issue)) return null;
-  return ["unknown_field", "schema_additional_properties"].includes(issue.code) ? "Remove field" : "Add placeholder";
+  return ["unknown_field", "schema_additional_properties"].includes(issue.code) ? t`Remove field` : t`Add placeholder`;
 }
 
 /** Mutate only an own property of the exact parent identified by validation. */

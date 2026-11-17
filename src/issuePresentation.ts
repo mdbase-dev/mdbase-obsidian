@@ -1,39 +1,42 @@
+import { t } from "@lingui/core/macro";
 import type { MdbaseIssue } from "./mdbaseCore";
 
-const RULE_LABELS: Record<string, string> = {
-  schema_required: "missing",
-  missing_required: "missing",
-  schema_additional_properties: "not declared",
-  unknown_field: "not declared",
-  schema_type: "wrong type",
-  invalid_type: "wrong type",
-  schema_enum: "not an allowed value",
-  invalid_enum: "not an allowed value",
-  schema_maximum: "above maximum",
-  above_max: "above maximum",
-  schema_minimum: "below minimum",
-  below_min: "below minimum",
-  schema_max_length: "too long",
-  above_max_length: "too long",
-  schema_min_length: "too short",
-  below_min_length: "too short",
-  schema_max_items: "too many items",
-  schema_min_items: "too few items",
-  schema_pattern: "pattern mismatch",
-  pattern_mismatch: "pattern mismatch",
-  format_invalid: "invalid format",
-  duplicate_value: "duplicate value",
-  duplicate_unique: "duplicate value",
-  link_not_found: "missing link target",
-  missing_link_target: "missing link target",
-  link_wrong_type: "link to wrong type",
-  no_matching_type: "no matching type",
-  unknown_type: "unknown type",
-  invalid_frontmatter: "invalid frontmatter",
-};
+function ruleLabels(): Record<string, string> {
+  return {
+  schema_required: t`missing`,
+  missing_required: t`missing`,
+  schema_additional_properties: t`not declared`,
+  unknown_field: t`not declared`,
+  schema_type: t`wrong type`,
+  invalid_type: t`wrong type`,
+  schema_enum: t`not an allowed value`,
+  invalid_enum: t`not an allowed value`,
+  schema_maximum: t`above maximum`,
+  above_max: t`above maximum`,
+  schema_minimum: t`below minimum`,
+  below_min: t`below minimum`,
+  schema_max_length: t`too long`,
+  above_max_length: t`too long`,
+  schema_min_length: t`too short`,
+  below_min_length: t`too short`,
+  schema_max_items: t`too many items`,
+  schema_min_items: t`too few items`,
+  schema_pattern: t`pattern mismatch`,
+  pattern_mismatch: t`pattern mismatch`,
+  format_invalid: t`invalid format`,
+  duplicate_value: t`duplicate value`,
+  duplicate_unique: t`duplicate value`,
+  link_not_found: t`missing link target`,
+  missing_link_target: t`missing link target`,
+  link_wrong_type: t`link to wrong type`,
+  no_matching_type: t`no matching type`,
+  unknown_type: t`unknown type`,
+  invalid_frontmatter: t`invalid frontmatter`,
+  };
+}
 
 export function ruleDescription(code: string): string {
-  return RULE_LABELS[code] ?? code.replace(/^schema_/, "").replace(/_/g, " ");
+  return ruleLabels()[code] ?? code.replace(/^schema_/, "").replace(/_/g, " ");
 }
 
 /** Issues from the same rule share a key: same type, field, and check. */

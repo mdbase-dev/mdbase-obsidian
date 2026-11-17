@@ -29,7 +29,7 @@ export function renderTypeList(container: HTMLElement, env: TypeListEnv): void {
   const createBlocked = (ctx.schema?.config.spec_version.startsWith("0.2.") ?? true)
     ? t`Migrate to v0.3 to create types`
     : "";
-  const add = ctx.iconButton(header, "plus", createBlocked ? t`Create type · ${createBlocked}` : t`Create type`);
+  const add = ctx.iconButton(header, "plus", createBlocked ? t`Create type · ${createBlocked}` : t`Create type`, "create-type");
   add.disabled = Boolean(createBlocked);
   add.onclick = () => void env.createType();
 

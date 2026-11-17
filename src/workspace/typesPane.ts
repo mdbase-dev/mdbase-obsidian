@@ -214,7 +214,7 @@ export class TypesPane {
     const readOnly = this.model.specProfile === "v0.2" || Boolean(this.model.readOnlyReason);
     const readOnlyReason = this.model.readOnlyReason ?? t`Migrate this v0.2 collection to edit types.`;
     const header = pane.createDiv({ cls: "mdbase-editor-header" });
-    const back = this.ctx.iconButton(header, "arrow-left", t`Back to type list`);
+    const back = this.ctx.iconButton(header, "arrow-left", t`Back to type list`, "back-to-type-list");
     back.addClass("mdbase-mobile-back");
     back.onclick = () => void this.leaveCurrentType().then(() => {
       this.selectedPath = null;
@@ -235,7 +235,7 @@ export class TypesPane {
     const headerActions = header.createDiv({ cls: "mdbase-editor-actions" });
     if (this.selectedPath) {
       const selectedPath = this.selectedPath;
-      const source = this.ctx.iconButton(headerActions, "file-code", t`Open source`);
+      const source = this.ctx.iconButton(headerActions, "file-code", t`Open source`, "open-source");
       source.onclick = () => void this.ctx.host.openFileByPath(selectedPath);
     }
 

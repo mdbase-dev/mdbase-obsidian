@@ -1343,3 +1343,17 @@ test("once synced, Sync is one status: Sync now, details folded away, and settin
   assert.deepEqual(choosing.calls, ["signOut"]);
   choosing.dom.window.close();
 });
+
+test("sync now uses structured stop status rather than status wording", async () => {
+  const f = directFixture({ kind: "ready" }, "Localized status");
+  Object.assign((f.sync.controller as unknown as { native: object }).native, {
+    enqueue: async (work: () => Promise<void>) => work(),
+    reconcileAll: async () => {},
+  });
+  f.sync.set({ direct: { text: "Localized status", phase: { kind: "ready" }, statusKind: "problem" } });
+  f.state.render();
+  button(f.root, "Sync now").click();
+  await tick();
+  assert.match(f.text(), /Sync stopped\. See above/);
+  f.dom.window.close();
+});

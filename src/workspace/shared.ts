@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { formatNumber } from "../i18n/runtime";
 import type { App, TFile } from "obsidian";
 import type { SyncController } from "../sync/controller";
 import type {
@@ -77,7 +79,7 @@ export interface WorkspaceContext {
   openTypeField(typePath: string, fieldPath: string | undefined): Promise<void>;
   /** Which types each record matches, keyed by path. */
   recordTypes(): Map<string, string[]>;
-  iconButton(container: HTMLElement, icon: string, label: string): HTMLButtonElement;
+  iconButton(container: HTMLElement, icon: string, label: string, focusKey: string): HTMLButtonElement;
   disclosure(container: HTMLElement, key: string, label: string, initiallyOpen?: boolean): HTMLDivElement;
 }
 
@@ -138,7 +140,7 @@ export function inputRow(
   label: string,
   value: string,
   onInput: (value: string) => void,
-  options: { description?: string; placeholder?: string; multiline?: boolean } = {},
+  options: { focusKey: string; description?: string; placeholder?: string; multiline?: boolean },
 ): HTMLInputElement | HTMLTextAreaElement {
   const row = container.createDiv({ cls: "mdbase-form-row" });
   const labelEl = row.createEl("label", { text: label });
@@ -149,7 +151,7 @@ export function inputRow(
     ? row.createEl("textarea")
     : row.createEl("input", { type: "text" });
   control.id = id;
-  control.setAttr("data-focus-key", `form-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
+  control.setAttr("data-focus-key", `form-${options.focusKey}`);
   control.value = value;
   control.placeholder = options.placeholder ?? "";
   control.addEventListener("input", () => onInput(control.value));
@@ -163,7 +165,8 @@ export function renderStatus(container: HTMLElement, label: string, value: strin
 }
 
 export function compactCount(value: number): string {
-  if (value < 1_000) return String(value);
+  if (value < 1_000) return formatNumber(value);
   const digits = value < 10_000 ? 1 : 0;
-  return `${(value / 1_000).toFixed(digits)}k`;
+  const count = formatNumber(value / 1_000, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return t`${count}k`;
 }

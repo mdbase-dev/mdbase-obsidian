@@ -1,3 +1,4 @@
+import { plural, t } from "@lingui/core/macro";
 // Validating notes against their types: v0.2 field rules, v0.3 JSON Schema,
 // link targets, strict mode and cross-record uniqueness.
 import { normalizePath, TFile, Vault } from "obsidian";
@@ -162,23 +163,25 @@ function validateConstraintBounds(
 ): void {
   if (typeof value === "number") {
     if (typeof fieldDef.min === "number" && value < fieldDef.min) {
+      const minimum = fieldDef.min;
       pushIssue(
         issues,
         filePath,
         "error",
         "below_min",
-        `'${fieldPath}' is ${value}; must be at least ${fieldDef.min}`,
+        t`''${fieldPath}'' is ${value}; must be at least ${minimum}`,
         fieldPath,
       );
     }
 
     if (typeof fieldDef.max === "number" && value > fieldDef.max) {
+      const maximum = fieldDef.max;
       pushIssue(
         issues,
         filePath,
         "error",
         "above_max",
-        `'${fieldPath}' is ${value}; must be at most ${fieldDef.max}`,
+        t`''${fieldPath}'' is ${value}; must be at most ${maximum}`,
         fieldPath,
       );
     }
@@ -187,23 +190,25 @@ function validateConstraintBounds(
   const length = resolveFieldLength(value);
   if (length != null) {
     if (typeof fieldDef.min_length === "number" && length < fieldDef.min_length) {
+      const minimum = fieldDef.min_length;
       pushIssue(
         issues,
         filePath,
         "error",
         "below_min_length",
-        `'${fieldPath}' has length ${length}; needs at least ${fieldDef.min_length}`,
+        t`''${fieldPath}'' has length ${length}; needs at least ${minimum}`,
         fieldPath,
       );
     }
 
     if (typeof fieldDef.max_length === "number" && length > fieldDef.max_length) {
+      const maximum = fieldDef.max_length;
       pushIssue(
         issues,
         filePath,
         "error",
         "above_max_length",
-        `'${fieldPath}' has length ${length}; limit is ${fieldDef.max_length}`,
+        t`''${fieldPath}'' has length ${length}; limit is ${maximum}`,
         fieldPath,
       );
     }
@@ -213,22 +218,25 @@ function validateConstraintBounds(
     try {
       const regex = new RegExp(fieldDef.pattern);
       if (!regex.test(value)) {
+        const actual = describeValue(value);
+        const pattern = fieldDef.pattern;
         pushIssue(
           issues,
           filePath,
           "error",
           "pattern_mismatch",
-          `'${fieldPath}' is ${describeValue(value)}; does not match /${fieldDef.pattern}/`,
+          t`''${fieldPath}'' is ${actual}; does not match /${pattern}/`,
           fieldPath,
         );
       }
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
       pushIssue(
         issues,
         filePath,
         "warn",
         "invalid_pattern",
-        `Field '${fieldPath}' has invalid regex pattern: ${error instanceof Error ? error.message : String(error)}`,
+        t`Field ''${fieldPath}'' has invalid regex pattern: ${reason}`,
         fieldPath,
       );
     }
@@ -253,13 +261,13 @@ function validateFieldValue(
       filePath,
       "warn",
       "deprecated_field",
-      `Field '${fieldPath}' is marked deprecated`,
+      t`Field ''${fieldPath}'' is marked deprecated`,
       fieldPath,
     );
   }
 
   const pushTypeIssue = (expected: string) => {
-    pushIssue(issues, filePath, "error", "invalid_type", `Field '${fieldPath}' expected ${expected}`, fieldPath);
+    pushIssue(issues, filePath, "error", "invalid_type", t`Field ''${fieldPath}'' expected ${expected}`, fieldPath);
   };
 
   switch (typeName) {
@@ -268,47 +276,47 @@ function validateFieldValue(
       return;
     case "string":
       if (typeof value !== "string") {
-        pushTypeIssue("a string");
+        pushTypeIssue(t`a string`);
         return;
       }
       validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
       return;
     case "integer":
       if (typeof value !== "number" || !Number.isInteger(value)) {
-        pushTypeIssue("an integer");
+        pushTypeIssue(t`an integer`);
         return;
       }
       validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
       return;
     case "number":
       if (typeof value !== "number" || Number.isNaN(value)) {
-        pushTypeIssue("a number");
+        pushTypeIssue(t`a number`);
         return;
       }
       validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
       return;
     case "boolean":
       if (typeof value !== "boolean") {
-        pushTypeIssue("a boolean");
+        pushTypeIssue(t`a boolean`);
       }
       return;
     case "date":
       if (typeof value !== "string" || !isDateString(value)) {
-        pushTypeIssue("a date (YYYY-MM-DD)");
+        pushTypeIssue(t`a date (YYYY-MM-DD)`);
         return;
       }
       validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
       return;
     case "datetime":
       if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
-        pushTypeIssue("a datetime string");
+        pushTypeIssue(t`a datetime string`);
         return;
       }
       validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
       return;
     case "time":
       if (typeof value !== "string" || !isTimeString(value)) {
-        pushTypeIssue("a time string (HH:MM)");
+        pushTypeIssue(t`a time string (HH:MM)`);
         return;
       }
       validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
@@ -316,12 +324,13 @@ function validateFieldValue(
     case "enum": {
       const values = Array.isArray(fieldDef.values) ? fieldDef.values : [];
       if (!values.includes(value)) {
+        const allowed = values.map((entry) => String(entry)).join(", ");
         pushIssue(
           issues,
           filePath,
           "error",
           "invalid_enum",
-          `Field '${fieldPath}' must be one of: ${values.map((entry) => String(entry)).join(", ")}`,
+          t`Field ''${fieldPath}'' must be one of: ${allowed}`,
           fieldPath,
         );
         return;
@@ -331,7 +340,7 @@ function validateFieldValue(
     }
     case "list": {
       if (!Array.isArray(value)) {
-        pushTypeIssue("a list");
+        pushTypeIssue(t`a list`);
         return;
       }
 
@@ -346,7 +355,7 @@ function validateFieldValue(
     }
     case "object": {
       if (!isRecord(value)) {
-        pushTypeIssue("an object");
+        pushTypeIssue(t`an object`);
         return;
       }
 
@@ -363,7 +372,7 @@ function validateFieldValue(
               filePath,
               "error",
               "missing_required",
-              `Missing required field '${nestedPath}'`,
+              t`Missing required field ''${nestedPath}''`,
               nestedPath,
             );
             continue;
@@ -376,7 +385,7 @@ function validateFieldValue(
     }
     case "link": {
       if (typeof value !== "string" && !isRecord(value)) {
-        pushTypeIssue("a link string");
+        pushTypeIssue(t`a link string`);
         return;
       }
 
@@ -396,7 +405,7 @@ function validateFieldValue(
             filePath,
             "error",
             "missing_link_target",
-            `Field '${fieldPath}' references a missing note`,
+            t`Field ''${fieldPath}'' references a missing note`,
             fieldPath,
           );
         }
@@ -412,7 +421,7 @@ function validateFieldValue(
         validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
         return;
       }
-      pushTypeIssue("a tag string or list of strings");
+      pushTypeIssue(t`a tag string or list of strings`);
       return;
     default:
       validateConstraintBounds(value, fieldDef, fieldPath, filePath, issues);
@@ -435,85 +444,104 @@ function snakeCaseKeyword(keyword: string): string {
 }
 
 function describeValue(value: unknown): string {
-  if (value === null) return "empty";
+  if (value === null) return t`empty`;
   if (typeof value === "string") {
-    if (!value.trim()) return "empty";
+    if (!value.trim()) return t`empty`;
     return `'${value.length > 40 ? `${value.slice(0, 39)}…` : value}'`;
   }
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return `a list of ${value.length}`;
-  if (isRecord(value)) return "an object";
-  return value === undefined ? "missing" : JSON.stringify(value) ?? "unknown";
+  if (Array.isArray(value)) {
+    const count = value.length;
+    return t`a list of ${count}`;
+  }
+  if (isRecord(value)) return t`an object`;
+  return value === undefined ? t`missing` : JSON.stringify(value) ?? t`unknown`;
 }
 
-const SCHEMA_TYPE_NAMES: Record<string, string> = {
-  string: "text",
-  integer: "a whole number",
-  number: "a number",
-  boolean: "true or false",
-  array: "a list",
-  object: "an object",
-  null: "empty",
-};
+function schemaTypeNames(): Record<string, string> {
+  return {
+  string: t`text`,
+  integer: t`a whole number`,
+  number: t`a number`,
+  boolean: t`true or false`,
+  array: t`a list`,
+  object: t`an object`,
+  null: t`empty`,
+  };
+}
 
-const FORMAT_NAMES: Record<string, string> = {
-  date: "a date (YYYY-MM-DD)",
-  "date-time": "a date and time",
-  time: "a time (HH:MM)",
-  email: "an email address",
-  uri: "a URI",
-};
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+function formatNames(): Record<string, string> {
+  return {
+  date: t`a date (YYYY-MM-DD)`,
+  "date-time": t`a date and time`,
+  time: t`a time (HH:MM)`,
+  email: t`an email address`,
+  uri: t`a URI`,
+  };
 }
 
 /** Plain-language issue text that names the field and, where useful, the actual value. */
 function humanSchemaMessage(error: ErrorObject, field: string | undefined, value: unknown, typeName: string): string {
   const params = error.params as Record<string, unknown>;
-  const subject = field ? `'${field}'` : "This note";
+  const subject = field ? `'${field}'` : t`This note`;
   const actual = describeValue(value);
+  const limit = String(params.limit);
+  const characterCount = typeof value === "string" ? value.length : 0;
+  const itemCount = Array.isArray(value) ? value.length : 0;
   switch (error.keyword) {
-    case "required":
-      return `Missing required field '${field ?? String(params.missingProperty)}'`;
-    case "additionalProperties":
-      return `Field '${field ?? String(params.additionalProperty)}' is not declared by type '${typeName}'`;
+    case "required": {
+      const fieldName = field ?? String(params.missingProperty);
+      return t`Missing required field ''${fieldName}''`;
+    }
+    case "additionalProperties": {
+      const fieldName = field ?? String(params.additionalProperty);
+      return t`Field ''${fieldName}'' is not declared by type ''${typeName}''`;
+    }
     case "type": {
       const typeParam = Array.isArray(params.type) ? params.type.join(",") : typeof params.type === "string" ? params.type : "";
-      const expected = typeParam.split(",").map((name) => SCHEMA_TYPE_NAMES[name] ?? name).join(" or ");
-      return `${subject} is ${actual}; expected ${expected}`;
+      const expected = typeParam.split(",").map((name) => schemaTypeNames()[name] ?? name).reduce((previous, next) => t`${previous} or ${next}`);
+      return t`${subject} is ${actual}; expected ${expected}`;
     }
     case "enum": {
       const allowed = Array.isArray(params.allowedValues) ? params.allowedValues.map((entry) => String(entry)) : [];
       const listed = allowed.length > 6 ? `${allowed.slice(0, 6).join(", ")}, …` : allowed.join(", ");
-      return `${subject} is ${actual}; expected one of ${listed}`;
+      return t`${subject} is ${actual}; expected one of ${listed}`;
     }
-    case "const":
-      return `${subject} is ${actual}; expected ${describeValue(params.allowedValue)}`;
+    case "const": {
+      const expected = describeValue(params.allowedValue);
+      return t`${subject} is ${actual}; expected ${expected}`;
+    }
     case "maximum":
-      return `${subject} is ${actual}; must be at most ${String(params.limit)}`;
+      return t`${subject} is ${actual}; must be at most ${limit}`;
     case "minimum":
-      return `${subject} is ${actual}; must be at least ${String(params.limit)}`;
+      return t`${subject} is ${actual}; must be at least ${limit}`;
     case "exclusiveMaximum":
-      return `${subject} is ${actual}; must be less than ${String(params.limit)}`;
+      return t`${subject} is ${actual}; must be less than ${limit}`;
     case "exclusiveMinimum":
-      return `${subject} is ${actual}; must be more than ${String(params.limit)}`;
+      return t`${subject} is ${actual}; must be more than ${limit}`;
     case "maxLength":
-      return `${subject} is ${plural(typeof value === "string" ? value.length : 0, "character")}; limit is ${String(params.limit)}`;
+      return t`${subject} is ${plural(characterCount, { one: "# character", other: "# characters" })}; limit is ${limit}`;
     case "minLength":
-      return `${subject} is ${plural(typeof value === "string" ? value.length : 0, "character")}; needs at least ${String(params.limit)}`;
+      return t`${subject} is ${plural(characterCount, { one: "# character", other: "# characters" })}; needs at least ${limit}`;
     case "maxItems":
-      return `${subject} has ${plural(Array.isArray(value) ? value.length : 0, "item")}; limit is ${String(params.limit)}`;
+      return t`${subject} has ${plural(itemCount, { one: "# item", other: "# items" })}; limit is ${limit}`;
     case "minItems":
-      return `${subject} has ${plural(Array.isArray(value) ? value.length : 0, "item")}; needs at least ${String(params.limit)}`;
+      return t`${subject} has ${plural(itemCount, { one: "# item", other: "# items" })}; needs at least ${limit}`;
     case "uniqueItems":
-      return `${subject} contains duplicate items`;
-    case "pattern":
-      return `${subject} is ${actual}; does not match ${String(params.pattern)}`;
-    case "format":
-      return `${subject} is ${actual}; expected ${FORMAT_NAMES[String(params.format)] ?? String(params.format)}`;
-    default:
-      return `${subject}: ${error.message ?? "invalid value"}`;
+      return t`${subject} contains duplicate items`;
+    case "pattern": {
+      const pattern = String(params.pattern);
+      return t`${subject} is ${actual}; does not match ${pattern}`;
+    }
+    case "format": {
+      const format = String(params.format);
+      const expected = formatNames()[format] ?? format;
+      return t`${subject} is ${actual}; expected ${expected}`;
+    }
+    default: {
+      const detail = error.message ?? t`invalid value`;
+      return t`${subject}: ${detail}`;
+    }
   }
 }
 
@@ -544,7 +572,7 @@ function ajvErrorToIssue(
     details: {
       instance_path: error.instancePath,
       schema_path: error.schemaPath,
-      technical_message: `JSON Schema ${error.keyword} failed for type '${typeName}': ${error.message ?? "invalid value"}`,
+      technical_message: `JSON Schema ${error.keyword} failed for type ''${typeName}'': ${error.message ?? "invalid value"}`,
       ...(child === undefined ? {} : { property: child }),
     },
   };
@@ -576,10 +604,11 @@ function validateV03Schema(
   if (!typeDef.schema) return;
   const unsupportedRef = findUnsupportedSchemaReference(typeDef.schema);
   if (unsupportedRef) {
+    const typeName = typeDef.name;
     issues.push({
       path: filePath,
       code: /^[a-z][a-z0-9+.-]*:/i.test(unsupportedRef) ? "schema_ref_forbidden" : "unsupported_profile",
-      message: `Unsupported JSON Schema reference '${unsupportedRef}' for type '${typeDef.name}'`,
+      message: t`Unsupported JSON Schema reference ''${unsupportedRef}'' for type ''${typeName}''`,
       severity: "error",
       type: typeDef.name,
     });
@@ -619,19 +648,20 @@ async function validateV03Links(
       if (typeof value !== "string") continue;
       const target = resolveLinkInVault(vault, filePath, value);
       if (!target && rule.validate_exists === true) {
-        pushIssue(issues, filePath, "error", "link_not_found", `Field '${field}' references a missing note`, field);
+        pushIssue(issues, filePath, "error", "link_not_found", t`Field ''${field}'' references a missing note`, field);
         continue;
       }
       if (target && rule.target_type && rule.target_type !== "any") {
         const parsed = parseFrontmatter(await vault.cachedRead(target));
         const targetTypes = getTypesForFile(target.path, parsed.frontmatter, config, typeMap);
         if (!targetTypes.includes(rule.target_type)) {
+          const targetType = rule.target_type;
           pushIssue(
             issues,
             filePath,
             "error",
             "link_wrong_type",
-            `Field '${field}' must reference type '${rule.target_type}'`,
+            t`Field ''${field}'' must reference type ''${targetType}''`,
             field,
           );
         }
@@ -657,12 +687,13 @@ function validateAgainstType(
     const value = frontmatter[fieldName];
 
     if (fieldDef.required && isMissingRequired(value)) {
+      const typeName = typeDef.name;
       pushIssue(
         issues,
         filePath,
         "error",
         "missing_required",
-        `Missing required field '${fieldName}' for type '${typeDef.name}'`,
+        t`Missing required field ''${fieldName}'' for type ''${typeName}''`,
         fieldName,
       );
       continue;
@@ -722,7 +753,7 @@ export async function validateFile(
     // suggests the note was meant to be a record, so a plain note or an app's
     // README such as TaskNotes' `_mdbase/README.md` raises no issue.
     if (parsed.hasFrontmatter) {
-      pushIssue(issues, file.path, "warn", "no_matching_type", "No type could be resolved for this file");
+      pushIssue(issues, file.path, "warn", "no_matching_type", t`No type could be resolved for this file`);
     }
     return issues;
   }
@@ -733,12 +764,13 @@ export async function validateFile(
   const unknownTypeNames = typeNames.filter((typeName) => !typeMap.has(typeName));
 
   if (unknownTypeNames.length > 0) {
+    const names = unknownTypeNames.join(", ");
     pushIssue(
       issues,
       file.path,
       "error",
       "unknown_type",
-      `Resolved types are not defined: ${unknownTypeNames.join(", ")}`,
+      t`Resolved types are not defined: ${names}`,
     );
   }
   if (typeDefs.length === 0) {
@@ -765,7 +797,7 @@ export async function validateFile(
         file.path,
         severity,
         "unknown_field",
-        `Unknown field '${fieldName}' in strict mode`,
+        t`Unknown field ''${fieldName}'' in strict mode`,
         fieldName,
       );
     }
@@ -843,14 +875,15 @@ async function collectUniqueFieldIssues(
         .map((item) => item.path)
         .join(", ");
 
+      const { fieldName, typeName } = entry;
       pushIssue(
         issues,
         entry.path,
         "error",
         entry.specProfile === "v0.3" ? "duplicate_value" : "duplicate_unique",
         entry.scope === "collection"
-          ? `Field '${entry.fieldName}' must be unique across the collection. Duplicate found in: ${otherPaths}`
-          : `Field '${entry.fieldName}' must be unique for type '${entry.typeName}'. Duplicate found in: ${otherPaths}`,
+          ? t`Field ''${fieldName}'' must be unique across the collection. Duplicate found in: ${otherPaths}`
+          : t`Field ''${fieldName}'' must be unique for type ''${typeName}''. Duplicate found in: ${otherPaths}`,
         entry.fieldName,
       );
     }
