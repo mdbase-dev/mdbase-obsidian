@@ -524,7 +524,7 @@ export default class NativeSync extends Component {
     // Between passes only: a pass in flight still holds the old choices.
     if (this.mirroring) await this.enqueue(async () => { await apply(); await this.reconcileAll(false, undefined, true); });
     else await apply();
-    this.setStatus(this.statusText);
+    this.refreshStatus();
   }
   /** Skipped paths keep no synced state, so turning one back on compares both sides afresh. */
   async forgetSkipped() {
@@ -804,11 +804,12 @@ export default class NativeSync extends Component {
   }
 
   setStatus(text: string, stopped = false) { this.statusText = text; this.statusStopped = stopped; this.changed(text, this.stalled && this.phase.kind === "starting" ? { ...this.phase, stalled: true } : this.phase, this.view()); }
+  refreshStatus() { this.setStatus(this.statusText, this.statusStopped); }
   /**
    * Progress from a pass. A pass still running when sync stops (access removed,
    * say) must not put "Synced" back over the words saying why; its counts still go out.
    */
-  passStatus(text: string) { this.setStatus(this.phase.kind === "ready" ? text : this.statusText); }
+  passStatus(text: string) { if (this.phase.kind === "ready") this.setStatus(text); else this.refreshStatus(); }
   view(): NativeView {
     const failures = Object.entries(this.data?.pathFailures ?? {}).map(([p, f]) => ({ path: p, ...describeFailure({ ...f, kind: this.data.paths[p]?.kind }) }));
     const conflicts = Object.values(this.data?.conflictCopies ?? {}).map(({ path, copy }) => ({ path, copy }));
