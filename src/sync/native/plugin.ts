@@ -37,6 +37,7 @@ export interface NativeView {
   inclusion: CollectionInclusion | null;
   /** Bound to a collection: waiting for approval is this vault's own collection. */
   bound: boolean;
+  statusStopped: boolean;
 }
 export type WireItem = NativeResult<"fileGet"> | NativeResult<"replace"> | NativeResult<"resourcePut">;
 export interface Remote { id: string; path: string; kind: ItemKind; revision: string; hash?: string; document?: string; digest?: string; size?: number; confirmed?: boolean }
@@ -91,6 +92,7 @@ export default class NativeSync extends Component {
   layout: CollectionLayout = DEFAULT_LAYOUT;
   merge: MergePrompt | null = null;
   statusText = "";
+  statusStopped = false;
   activity: ActivityEntry[] = [];
   lastSynced: number | null = null;
   totals: SyncTotals | null = null;
@@ -801,7 +803,7 @@ export default class NativeSync extends Component {
     await this.reconcileAll(true);
   }
 
-  setStatus(text: string) { this.statusText = text; this.changed(text, this.stalled && this.phase.kind === "starting" ? { ...this.phase, stalled: true } : this.phase, this.view()); }
+  setStatus(text: string, stopped = false) { this.statusText = text; this.statusStopped = stopped; this.changed(text, this.stalled && this.phase.kind === "starting" ? { ...this.phase, stalled: true } : this.phase, this.view()); }
   /**
    * Progress from a pass. A pass still running when sync stops (access removed,
    * say) must not put "Synced" back over the words saying why; its counts still go out.
@@ -810,7 +812,7 @@ export default class NativeSync extends Component {
   view(): NativeView {
     const failures = Object.entries(this.data?.pathFailures ?? {}).map(([p, f]) => ({ path: p, ...describeFailure({ ...f, kind: this.data.paths[p]?.kind }) }));
     const conflicts = Object.values(this.data?.conflictCopies ?? {}).map(({ path, copy }) => ({ path, copy }));
-    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), conflicts, merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
+    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), conflicts, merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId, statusStopped: this.statusStopped };
   }
   safeText(text: string) { return String(text).replace(/https?:\/\/[^\s"<>]+/g, value => { try { const u = new URL(value); return u.origin + u.pathname; } catch { return "[url]"; } }); }
   log(text: string) {
@@ -828,7 +830,7 @@ export default class NativeSync extends Component {
     // Plain words for the status; the code stays for support, and the log keeps the detail.
     const code = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ");
     const reason = userMessage ?? (what === "startup" || what === "start" ? detail : `Something went wrong${code ? ` (${code})` : ""}. Your files here are untouched`);
-    this.setStatus(whole && userMessage ? userMessage : failedText(reason));
+    this.setStatus(whole && userMessage ? userMessage : failedText(reason), !whole);
     this.log(`FAILED ${what}: ${detail}`); new Notice(`mdbase: ${userMessage ?? `${what}: ${detail}`}`, 10000);
   }
 }
