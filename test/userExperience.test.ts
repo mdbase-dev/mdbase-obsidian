@@ -5,7 +5,7 @@ import type { MdbaseConfig } from "../src/mdbaseCore";
 import { coerceFieldInput } from "../src/noteCreation";
 import { validateCollection } from "../src/validation";
 import { safeNotePath } from "../src/createTypedNoteModal";
-import { safePackPath, planPack, applyPack, recoverPackInstall, sha256, plainCaution, type CatalogPack } from "../src/contractCatalog";
+import { safePackPath, planPack, applyPack, recoverPackInstall, sha256, plainCaution, installedPackVersions, installedStatus, type CatalogPack } from "../src/contractCatalog";
 import { TFile } from "obsidian";
 
 test("validation starts unchecked, records coverage, and invalidates schema and changed notes", () => {
@@ -58,18 +58,20 @@ test("collection validation reports progress and cancellation prevents a complet
 
 function packFixture() {
   const contents = new Map<string, string>(); const files = new Map<string, TFile>();
+  // Folders on disk. Like Obsidian, the index (getAbstractFileByPath) never sees hidden ones.
+  const folders = new Set<string>();
   let failPath = "";
   const app = { vault: {
     getAbstractFileByPath: (path: string) => files.get(path) ?? null,
     read: async (file: TFile) => contents.get(file.path)!,
-    createFolder: async () => undefined,
+    createFolder: async (path: string) => { if (folders.has(path)) throw new Error("Folder already exists."); folders.add(path); },
     create: async (path: string, value: string) => {
       if (path === failPath) throw new Error("injected write failure");
       if (files.has(path)) throw new Error("exists");
       const file = Object.assign(new TFile(), { path }); files.set(path, file); contents.set(path, value); return file;
     },
     process: async (file: TFile, fn: (value: string) => string) => contents.set(file.path, fn(contents.get(file.path)!)),
-    adapter: { exists: async (path: string) => contents.has(path), read: async (path: string) => contents.get(path)!,
+    adapter: { exists: async (path: string) => contents.has(path) || folders.has(path), read: async (path: string) => contents.get(path)!,
       write: async (path: string, value: string) => { contents.set(path, value); }, remove: async (path: string) => { contents.delete(path); } },
   }, fileManager: { trashFile: async (file: TFile) => { files.delete(file.path); contents.delete(file.path); } } };
   const pack: CatalogPack = { id: "example", version: "1.0.0", digest: `sha256:${"0".repeat(64)}`, provision: "https://mdbase.dev/contracts/example.json", resource_count: 2,
@@ -78,8 +80,29 @@ function packFixture() {
     { kind: "contract", mode: "managed", source: "contract.md", target: "_contracts/example.md", digest: await sha256("contract") },
     { kind: "type", mode: "seed", source: "type.md", target: "_types/example.md", digest: await sha256("type") },
   ] }, resources: [{ source: "contract.md", document: "contract" }, { source: "type.md", document: "type" }] });
-  return { app, contents, files, pack, provision, fail: (path: string) => { failPath = path; } };
+  return { app, contents, files, folders, pack, provision, fail: (path: string) => { failPath = path; } };
 }
+
+test("pack installs work when hidden and existing folders are already on disk", async () => {
+  const f = packFixture();
+  // Another mdbase app made .mdbase; Obsidian does not index hidden folders.
+  f.folders.add(".mdbase"); f.folders.add("_types");
+  await applyPack(f.app as never, await planPack(f.app as never, f.pack, await f.provision()), () => undefined);
+  assert.equal(f.contents.get("_types/example.md"), "type");
+  assert.equal(f.contents.has(".mdbase/obsidian-pack-install.json"), false);
+});
+
+test("the catalog says when a pack is installed and only offers same-version repair", async () => {
+  const f = packFixture();
+  assert.equal((await installedPackVersions(f.app as never)).size, 0);
+  await applyPack(f.app as never, await planPack(f.app as never, f.pack, await f.provision()), () => undefined);
+  const installed = await installedPackVersions(f.app as never);
+  assert.equal(installed.get("example"), "1.0.0");
+  assert.equal(installedStatus(f.pack, undefined), null);
+  assert.deepEqual(installedStatus(f.pack, installed.get("example")), { text: "Installed.", reviewable: true });
+  const newer = installedStatus({ ...f.pack, version: "1.1.0" }, installed.get("example"));
+  assert.equal(newer?.reviewable, false); assert.match(newer!.text, /Version 1\.0\.0 is installed/);
+});
 
 test("catalog pack installation records a portable lock and preserves edited seeded types on reinstall", async () => {
   const f = packFixture();
