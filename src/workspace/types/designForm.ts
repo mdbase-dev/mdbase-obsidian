@@ -36,7 +36,7 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
   const name = inputRow(identity, "Name", model.name, (value) => {
     model.name = value;
     env.markDirty();
-  });
+  }, { focusKey: "name" });
   name.disabled = readOnly;
   const nameError = name.parentElement?.createDiv({ cls: "mdbase-constraint-error mdbase-name-error" });
   nameError?.setAttr("aria-live", "polite");
@@ -54,7 +54,7 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
   const description = inputRow(identity, "Description", model.description, (value) => {
     model.description = value;
     env.markDirty();
-  }, { multiline: true });
+  }, { focusKey: "description", multiline: true });
   description.disabled = readOnly;
   const options = typesDisclosure(ctx, container, "type-options", "Options");
   const displayRow = options.createDiv({ cls: "mdbase-form-row" });
@@ -95,18 +95,19 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
     model.matchPathGlob = value;
     globHint.textContent = globMeaning(value);
     env.markDirty();
-  }, { description: globMeaning(model.matchPathGlob), placeholder: "Projects/**/*.md" });
+  }, { focusKey: "path", description: globMeaning(model.matchPathGlob), placeholder: "Projects/**/*.md" });
   const globHint = glob.parentElement?.querySelector<HTMLElement>(".mdbase-form-description") ?? glob;
   glob.disabled = readOnly;
   const present = inputRow(membership, "Has fields", model.matchFieldsPresent, (value) => {
     model.matchFieldsPresent = value;
     env.markDirty();
-  }, { description: "Property names, separated by commas." });
+  }, { focusKey: "has-fields", description: "Property names, separated by commas." });
   present.disabled = readOnly;
   const where = inputRow(membership, "Field values", model.matchWhere, (value) => {
     model.matchWhere = value;
     env.markDirty();
   }, {
+    focusKey: "field-values",
     multiline: true,
     description: "Conditions written in YAML.",
     placeholder: "tags:\n  contains: task",
@@ -122,7 +123,7 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
   const path = inputRow(placement, "New note location", model.pathPattern, (value) => {
     model.pathPattern = value;
     env.markDirty();
-  }, { placeholder: "Notes/{title}.md" });
+  }, { focusKey: "new-note-location", placeholder: "Notes/{title}.md" });
   path.disabled = readOnly;
 
   renderContractEditor(ctx, container, model, readOnly, (render) => env.markDirty(render));
