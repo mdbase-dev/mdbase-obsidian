@@ -65,7 +65,24 @@ async function read(app: App, path: string): Promise<string | null> {
 async function folder(app: App, path: string): Promise<void> {
   const segments = path.split("/"); segments.pop();
   let current = "";
-  for (const segment of segments) { current = current ? `${current}/${segment}` : segment; if (!app.vault.getAbstractFileByPath(current)) await app.vault.createFolder(current); }
+  // Ask the disk, not Obsidian's index: hidden folders such as .mdbase are never
+  // indexed, and createFolder throws when the folder already exists on disk.
+  for (const segment of segments) { current = current ? `${current}/${segment}` : segment; if (!await app.vault.adapter.exists(current)) await app.vault.createFolder(current); }
+}
+/** Installed pack versions by id, from the collection's lock. Empty when there is no readable lock. */
+export async function installedPackVersions(app: App): Promise<Map<string, string>> {
+  try {
+    const source = await read(app, LOCK);
+    const lock = source ? parseYaml(source) as Partial<PackLock> | null : null;
+    if (!lock || !Array.isArray(lock.packs)) return new Map();
+    return new Map(lock.packs.filter(receipt => typeof receipt?.id === "string" && typeof receipt.version === "string").map(receipt => [receipt.id, receipt.version]));
+  } catch { return new Map(); }
+}
+/** What the catalog row says about a pack this collection already has, or null when it has none. */
+export function installedStatus(pack: CatalogPack, installed: string | undefined): { text: string; reviewable: boolean } | null {
+  if (installed === undefined) return null;
+  if (installed === pack.version) return { text: "Installed.", reviewable: true };
+  return { text: `Version ${installed} is installed. Update it in mdbase editor; Obsidian can only add new types.`, reviewable: false };
 }
 export async function preparePack(app: App, pack: CatalogPack): Promise<PackPlan> {
   const response = await requestUrl({ url: pack.provision, throw: false });
@@ -192,7 +209,7 @@ export class ContractCatalogModal extends Modal {
     this.contentEl.empty();
     this.contentEl.createEl("p", { text: "Loading ready-made types…" });
     try {
-      const packs = await loadCatalog();
+      const [packs, installed] = await Promise.all([loadCatalog(), installedPackVersions(this.app)]);
       if (this.dismissed) return;
       this.contentEl.empty();
       this.contentEl.createEl("p", { text: "Each one adds a type you can edit and a format other apps can read. Installing doesn't give any app access to your vault, and types you already have are kept." });
@@ -201,7 +218,10 @@ export class ContractCatalogModal extends Modal {
         const row = (pack.installation.visibility === "default" ? this.contentEl : advanced).createDiv({ cls: "mdbase-editor-section" });
         row.createEl("h3", { text: pack.display.name }); row.createDiv({ cls: "mdbase-muted", text: `Version ${pack.version}` }); row.createEl("p", { text: pack.display.summary });
         if (pack.installation.caution) row.createEl("p", { text: plainCaution(pack.installation.caution) });
-        const review = row.createEl("button", { text: "Review" });
+        const status = installedStatus(pack, installed.get(pack.id));
+        if (status) row.createEl("p", { cls: "mdbase-muted", text: status.text });
+        if (status && !status.reviewable) continue;
+        const review = row.createEl("button", { text: status ? "Check files" : "Review" });
         const detail = row.createDiv();
         review.onclick = () => {
           review.disabled = true;
