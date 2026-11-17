@@ -1,3 +1,4 @@
+import { plural, t } from "@lingui/core/macro";
 import { activateLanguage } from "./src/i18n/runtime";
 import { ContractCatalogModal, recoverPackInstall } from "./src/contractCatalog";
 import { ValidationState } from "./src/validationState";
@@ -223,7 +224,7 @@ export default class MdbasePlugin extends Plugin {
 
     this.registerView(MDBASE_WORKSPACE_VIEW, (leaf) => new MdbaseWorkspaceView(leaf, this));
     this.addSettingTab(new MdbaseSettingTab(this.app, this));
-    this.ribbonEl = this.addRibbonIcon(MDBASE_ICON_ID, "Open mdbase", () => void this.onRibbonClick());
+    this.ribbonEl = this.addRibbonIcon(MDBASE_ICON_ID, t`Open mdbase`, () => void this.onRibbonClick());
     this.ribbonEl.addClass("mdbase-ribbon");
     this.updateStatusBar();
 
@@ -268,7 +269,7 @@ export default class MdbasePlugin extends Plugin {
       }),
     );
 
-    try { await recoverPackInstall(this.app); } catch (error) { new Notice(`Contract pack recovery needs attention: ${String(error)}`, 0); }
+    try { await recoverPackInstall(this.app); } catch (error) { const errorMessage = String(error); new Notice(t`Contract pack recovery needs attention: ${errorMessage}`, 0); }
     const active = this.app.workspace.getActiveFile();
     if (active && this.settings.validateOnOpen) {
       void this.validateFileAndStore(active, "open");
@@ -331,11 +332,12 @@ export default class MdbasePlugin extends Plugin {
 
   async loadTypeModel(path: string): Promise<TypeEditorModel> {
     const file = this.app.vault.getAbstractFileByPath(normalizePath(path));
-    if (!(file instanceof TFile)) throw new Error(`Type file not found: ${path}`);
+    if (!(file instanceof TFile)) throw new Error(t`Type file not found: ${path}`);
     const source = await this.app.vault.cachedRead(file);
     const parsed = parseFrontmatter(source);
     if (!parsed.hasFrontmatter || parsed.error) {
-      throw new Error(`Invalid type frontmatter: ${parsed.error ?? "frontmatter is missing"}`);
+      const reason = parsed.error ?? t`frontmatter is missing`;
+      throw new Error(t`Invalid type frontmatter: ${reason}`);
     }
     const model = typeModelFromDocument(parsed.frontmatter, parsed.body, file.basename);
     model.sourceRevision = sourceRevision(source);
@@ -377,15 +379,16 @@ export default class MdbasePlugin extends Plugin {
     expectedSourceRevision?: string,
   ): Promise<TFile> {
     const config = await loadMdbaseConfig(this.app.vault);
-    if (!config) throw new Error("No mdbase.yaml found.");
+    if (!config) throw new Error(t`No mdbase.yaml found.`);
     if (!config.spec_version.startsWith("0.3.")) {
-      throw new Error("mdbase v0.2 type definitions are read-only. Migrate the collection first.");
+      throw new Error(t`mdbase v0.2 type definitions are read-only. Migrate the collection first.`);
     }
     const existing = existingPath
       ? this.app.vault.getAbstractFileByPath(normalizePath(existingPath))
       : null;
     if (existing != null && !(existing instanceof TFile)) {
-      throw new Error(`Type file not found: ${existingPath}`);
+      const path = existingPath ?? "";
+      throw new Error(t`Type file not found: ${path}`);
     }
     const saved = await this.writeTypeDefinition(
       config,
@@ -411,8 +414,8 @@ export default class MdbasePlugin extends Plugin {
 
   async openContractCatalog(): Promise<void> {
     const loaded = await this.getConfigAndTypes();
-    if (!loaded || !loaded.config.spec_version.startsWith("0.3.")) throw new Error("Initialize or migrate this collection first.");
-    if (loaded.config.settings.types_folder !== "_types" || (loaded.config.settings.contracts_folder ?? "_contracts") !== "_contracts") throw new Error("Catalog packs require the standard _types and _contracts folders. Use mdbase editor for custom target mappings.");
+    if (!loaded || !loaded.config.spec_version.startsWith("0.3.")) throw new Error(t`Initialize or migrate this collection first.`);
+    if (loaded.config.settings.types_folder !== "_types" || (loaded.config.settings.contracts_folder ?? "_contracts") !== "_contracts") throw new Error(t`Catalog packs require the standard _types and _contracts folders. Use mdbase editor for custom target mappings.`);
     new ContractCatalogModal(this.app, () => undefined, async primary => {
       this.invalidateSchemaCache();
       const view = await this.openWorkspace("types");
@@ -420,7 +423,7 @@ export default class MdbasePlugin extends Plugin {
       const schema = await this.getConfigAndTypes();
       const type = primary ? schema?.types.get(primary) : null;
       if (type) await view.editType(type.filePath);
-      new Notice("Installed contract pack. Edit its type or create a note to try it.");
+      new Notice(t`Installed contract pack. Edit its type or create a note to try it.`);
     }).open();
   }
 
@@ -431,7 +434,8 @@ export default class MdbasePlugin extends Plugin {
   async initializeCollection(): Promise<void> {
     const { created } = await ensureCollectionInitialized(this.app.vault, { seedNoteType: false });
     this.invalidateSchemaCache();
-    new Notice(created.length ? `Initialized mdbase collection: ${created.join(", ")}` : "mdbase collection already initialized.");
+    const createdPaths = created.join(", ");
+    new Notice(created.length ? t`Initialized mdbase collection: ${createdPaths}` : t`mdbase collection already initialized.`);
     this.refreshWorkspaceViews(true);
   }
 
@@ -446,14 +450,17 @@ export default class MdbasePlugin extends Plugin {
   async applyMigration(plan: V02MigrationPlan, allowLossy: boolean): Promise<void> {
     const result = await applyV02Migration(this.app.vault, plan, { allowLossy });
     if (!result.applied) {
+      const errorMessage = result.error ?? "";
+      const manifestPath = result.manifestPath;
       throw new Error(
         result.restored
-          ? `Migration failed and all writes were rolled back. ${result.error ?? ""}`.trim()
-          : `Migration needs manual recovery. See ${result.manifestPath}. ${result.error ?? ""}`.trim(),
+          ? t`Migration failed and all writes were rolled back. ${errorMessage}`.trim()
+          : t`Migration needs manual recovery. See ${manifestPath}. ${errorMessage}`.trim(),
       );
     }
     this.invalidateSchemaCache();
-    new Notice(`Migrated to mdbase v0.3. Recovery manifest: ${result.manifestPath}`);
+    const manifestPath = result.manifestPath;
+    new Notice(t`Migrated to mdbase v0.3. Recovery manifest: ${manifestPath}`);
     this.refreshWorkspaceViews(true);
   }
 
@@ -468,7 +475,8 @@ export default class MdbasePlugin extends Plugin {
   async applyQuickFix(issue: MdbaseIssue): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(issue.path);
     if (!(file instanceof TFile)) {
-      new Notice(`File not found: ${issue.path}`);
+      const path = issue.path;
+      new Notice(t`File not found: ${path}`);
       return;
     }
 
@@ -478,7 +486,9 @@ export default class MdbasePlugin extends Plugin {
       changed = result.changed;
       return result.content;
     });
-    new Notice(changed ? `Updated '${issue.field ?? "field"}' in ${file.basename}` : "The field changed or no safe quick fix is available. Revalidate the note.");
+    const field = issue.field ?? t`field`;
+    const fileName = file.basename;
+    new Notice(changed ? t`Updated '${field}' in ${fileName}` : t`The field changed or no safe quick fix is available. Revalidate the note.`);
     await this.validateFileAndStore(file, "manual");
   }
 
@@ -510,7 +520,7 @@ export default class MdbasePlugin extends Plugin {
   async openFileByPath(path: string, field?: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
-      new Notice(`File not found: ${path}`);
+      new Notice(t`File not found: ${path}`);
       return;
     }
 
@@ -571,7 +581,8 @@ export default class MdbasePlugin extends Plugin {
         this.statusBarEl.createSpan({ cls: "mdbase-status-bar-label" });
       }
       this.statusBarEl.querySelector(".mdbase-status-bar-label")?.setText(summary.label);
-      this.statusBarEl.setAttr("aria-label", `${summary.detail} Open mdbase sync.`);
+      const detail = summary.detail;
+      this.statusBarEl.setAttr("aria-label", t`${detail} Open mdbase sync.`);
       this.statusBarEl.setAttr("title", summary.detail);
       this.statusBarEl.setAttr("data-tone", summary.tone);
     }
@@ -595,13 +606,16 @@ export default class MdbasePlugin extends Plugin {
     const issues = this.issueMap.get(file.path) ?? [];
     const errors = issues.filter((issue) => issue.severity === "error").length;
     const checked = this.validation.isChecked(file.path);
-    const issueText = !checked ? " · not checked" : issues.length ? ` · ${issues.length} ${issues.length === 1 ? "issue" : "issues"}` : " · checked";
-    this.noteStatusEl.setText(`${types.join(", ")}${issueText}`);
+    const issueCount = issues.length;
+    const fileName = file.basename;
+    const typeNames = types.join(", ");
+    this.noteStatusEl.setText(!checked ? t`${typeNames} · not checked` : issues.length
+      ? t`${typeNames} · ${plural(issueCount, { one: "# issue", other: "# issues" })}` : t`${typeNames} · checked`);
     this.noteStatusEl.setAttr("data-state", !checked ? "unchecked" : errors ? "error" : issues.length ? "warning" : "valid");
     this.noteStatusEl.setAttr("data-path", file.path);
     const detail = issues.length
-      ? `${file.basename}: ${issues.length} ${issues.length === 1 ? "issue" : "issues"}. Open issues for this note.`
-      : `${file.basename} is a ${types.join(", ")} note. Edit the type.`;
+      ? t`${fileName}: ${plural(issueCount, { one: "# issue", other: "# issues" })}. Open issues for this note.`
+      : t`${fileName} is a ${typeNames} note. Edit the type.`;
     this.noteStatusEl.setAttr("aria-label", detail);
     this.noteStatusEl.setAttr("title", detail);
     this.noteStatusEl.show();
@@ -827,13 +841,14 @@ export default class MdbasePlugin extends Plugin {
     const loaded = await this.getConfigAndTypes(options.forceReload ?? false);
     if (!loaded) {
       if (!background) {
-        new Notice("No mdbase.yaml found. Run 'mdbase: Initialize collection' first.");
+        new Notice(t`No mdbase.yaml found. Run 'mdbase: Initialize collection' first.`);
       }
       return null;
     }
 
     if (loaded.types.size === 0 && !background) {
-      new Notice(`No types found in ${loaded.config.settings.types_folder}`);
+      const typesFolder = loaded.config.settings.types_folder;
+      new Notice(t`No types found in ${typesFolder}`);
     }
 
     return loaded;
@@ -934,7 +949,9 @@ export default class MdbasePlugin extends Plugin {
     this.setFileIssues(file.path, issues);
 
     if (reason === "save" && this.settings.showNoticeOnSave && issues.length > 0) {
-      new Notice(`mdbase: ${issues.length} issue${issues.length === 1 ? "" : "s"} in ${file.basename}`);
+      const issueCount = issues.length;
+      const fileName = file.basename;
+      new Notice(t`mdbase: ${plural(issueCount, { one: "# issue", other: "# issues" })} in ${fileName}`);
     }
 
     return issues;
@@ -972,7 +989,7 @@ export default class MdbasePlugin extends Plugin {
         },
       });
       if (revision !== this.validation.revision) {
-        new Notice("Files changed during validation. Validate again for a complete result.");
+        new Notice(t`Files changed during validation. Validate again for a complete result.`);
         return;
       }
       nextMap.clear();
@@ -981,7 +998,8 @@ export default class MdbasePlugin extends Plugin {
       this.validation.lastCompletedAt = new Date().toISOString();
       this.validation.completedRevision = revision;
       if (showSummary) {
-        new Notice(issues.length ? `Collection validation: ${issues.length} issues` : "Collection validation passed with no issues.");
+        const issueCount = issues.length;
+        new Notice(issues.length ? t`Collection validation: ${plural(issueCount, { one: "# issue", other: "# issues" })}` : t`Collection validation passed with no issues.`);
         if (issues.length) await this.openIssuesView();
       }
     } catch (error) {
@@ -991,7 +1009,8 @@ export default class MdbasePlugin extends Plugin {
         if (issues.length) this.issueMap.set(path, issues);
         else this.issueMap.delete(path);
       }
-      new Notice(abort.signal.aborted ? "Validation stopped. Results are incomplete." : `Validation could not finish: ${String(error)}. Results are incomplete.`);
+      const errorMessage = String(error);
+      new Notice(abort.signal.aborted ? t`Validation stopped. Results are incomplete.` : t`Validation could not finish: ${errorMessage}. Results are incomplete.`);
     } finally {
       this.validation.progress = null;
       this.validationAbort = null;
@@ -1023,11 +1042,11 @@ export default class MdbasePlugin extends Plugin {
   ): Promise<TFile> {
     const typeName = model.name.trim();
     if (!typeName) {
-      throw new Error("Type name is required.");
+      throw new Error(t`Type name is required.`);
     }
 
     if (!config.spec_version.startsWith("0.3.") || model.specProfile !== "v0.3") {
-      throw new Error("mdbase v0.2 type definitions are read-only. Migrate the collection first.");
+      throw new Error(t`mdbase v0.2 type definitions are read-only. Migrate the collection first.`);
     }
     const frontmatter = frontmatterFromTypeModel(model);
     const body = model.body.trim() || `# ${typeName}\n\nType definition for ${typeName}.`;
@@ -1040,7 +1059,7 @@ export default class MdbasePlugin extends Plugin {
       await this.ensureFolderExists(typesFolder);
 
       if (await this.app.vault.adapter.exists(defaultTargetPath)) {
-        throw new Error(`Type already exists: ${defaultTargetPath}`);
+        throw new Error(t`Type already exists: ${defaultTargetPath}`);
       }
 
       const created = await this.app.vault.create(defaultTargetPath, content);
@@ -1052,7 +1071,7 @@ export default class MdbasePlugin extends Plugin {
     const originalContent = await this.app.vault.cachedRead(existingFile);
     if (expectedSourceRevision && sourceRevision(originalContent) !== expectedSourceRevision) {
       throw new Error(
-        `The source changed after this draft was opened: ${originalPath}. Reopen the type and review both versions before saving.`,
+        t`The source changed after this draft was opened: ${originalPath}. Reopen the type and review both versions before saving.`,
       );
     }
     const slashIndex = existingFile.path.lastIndexOf("/");
@@ -1061,7 +1080,7 @@ export default class MdbasePlugin extends Plugin {
     const targetPath = renamedPath || defaultTargetPath;
 
     if (targetPath !== existingFile.path && (await this.app.vault.adapter.exists(targetPath))) {
-      throw new Error(`Cannot rename type file to ${targetPath}; file already exists.`);
+      throw new Error(t`Cannot rename type file to ${targetPath}; file already exists.`);
     }
 
     let renamed = false;
@@ -1073,7 +1092,7 @@ export default class MdbasePlugin extends Plugin {
 
       const updatedFile = this.app.vault.getAbstractFileByPath(targetPath);
       if (!(updatedFile instanceof TFile)) {
-        throw new Error(`Unable to access updated type file: ${targetPath}`);
+        throw new Error(t`Unable to access updated type file: ${targetPath}`);
       }
 
       await this.app.vault.modify(updatedFile, content);
@@ -1087,9 +1106,10 @@ export default class MdbasePlugin extends Plugin {
           if (renamed) await this.app.fileManager.renameFile(current, originalPath);
         }
       } catch (rollbackError) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const recoveryMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
         throw new Error(
-          `Saving the type failed and automatic recovery also failed. Review '${originalPath}' and '${targetPath}'. `
-          + `${error instanceof Error ? error.message : String(error)}; recovery: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+          t`Saving the type failed and automatic recovery also failed. Review '${originalPath}' and '${targetPath}'. ${errorMessage}; recovery: ${recoveryMessage}`,
         );
       }
       throw error;

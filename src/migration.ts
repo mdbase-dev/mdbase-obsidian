@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import legacyConfig from "./legacyConfig.json" with { type: "json" };
 import {
   normalizePath,
@@ -26,6 +27,10 @@ export interface TypeMigrationDiagnostic {
   code: string;
   message: string;
   severity: "warning" | "lossy";
+}
+
+interface DisplayMigrationDiagnostic extends TypeMigrationDiagnostic {
+  displayMessage: string;
 }
 
 export interface TypeMigrationSummary {
@@ -323,13 +328,13 @@ function taskNotesPathPolicy(pattern: string): Dict {
 function migrateType(path: string, sourceVersion: string, frontmatter: Dict): {
   target: Dict;
   summary: TypeMigrationSummary;
-  diagnostics: TypeMigrationDiagnostic[];
+  diagnostics: DisplayMigrationDiagnostic[];
 } {
   if (frontmatter.kind === "mdbase.type" || frontmatter.schema !== undefined) {
-    throw new Error(`${path} already looks like a v0.3 type.`);
+    throw new Error(t`${path} already looks like a v0.3 type.`);
   }
   if (typeof frontmatter.name !== "string" || !isRecord(frontmatter.fields)) {
-    throw new Error(`${path} is not a v0.2 type with a name and fields.`);
+    throw new Error(t`${path} is not a v0.2 type with a name and fields.`);
   }
 
   const taskNotes = detectTaskNotes(frontmatter);
@@ -425,13 +430,14 @@ function migrateType(path: string, sourceVersion: string, frontmatter: Dict): {
     ...(Object.keys(legacyTop).length ? { "x-legacy-v0.2": legacyTop } : {}),
   }) as Dict;
 
-  const diagnostics: TypeMigrationDiagnostic[] = [];
+  const diagnostics: DisplayMigrationDiagnostic[] = [];
   if (frontmatter.extends !== undefined) unsupported.push("extends");
   for (const feature of unique(unsupported).sort()) {
     diagnostics.push({
       path,
       code: "migration_lossy",
       message: `${feature} cannot be expressed as canonical v0.3 write behavior and was retained as legacy metadata where possible.`,
+      displayMessage: t`${feature} cannot be expressed as canonical v0.3 write behavior and was retained as legacy metadata where possible.`,
       severity: "lossy",
     });
   }
@@ -440,6 +446,7 @@ function migrateType(path: string, sourceVersion: string, frontmatter: Dict): {
       path,
       code: "path_policy_runtime_owned",
       message: "TaskNotes filename behavior is recorded as TaskNotes runtime metadata.",
+      displayMessage: t`TaskNotes filename behavior is recorded as TaskNotes runtime metadata.`,
       severity: "warning",
     });
   }
@@ -448,14 +455,17 @@ function migrateType(path: string, sourceVersion: string, frontmatter: Dict): {
       path,
       code: "additional_properties_true",
       message: "The migrated schema allows additional properties because the source type was not strict.",
+      displayMessage: t`The migrated schema allows additional properties because the source type was not strict.`,
       severity: "warning",
     });
   }
   if (typeof frontmatter.display_name_key === "string" && !displayKey) {
+    const displayField = frontmatter.display_name_key;
     diagnostics.push({
       path,
       code: "display_field_missing",
       message: `The display field '${frontmatter.display_name_key}' is not declared, so collection.display was omitted.`,
+      displayMessage: t`The display field '${displayField}' is not declared, so collection.display was omitted.`,
       severity: "warning",
     });
   }
@@ -489,7 +499,7 @@ const LEGACY_SETTINGS = [
 ];
 
 /** Migrate mdbase.yaml as described in spec Chapter 13, "Configuration". */
-function migrateConfig(source: Dict, diagnostics: TypeMigrationDiagnostic[]): Dict {
+function migrateConfig(source: Dict, diagnostics: DisplayMigrationDiagnostic[]): Dict {
   const target = clone(source);
   target.spec_version = TARGET_VERSION;
   const settings = isRecord(target.settings) ? target.settings : {};
@@ -525,6 +535,7 @@ function migrateConfig(source: Dict, diagnostics: TypeMigrationDiagnostic[]): Di
         path: "mdbase.yaml",
         code: "non_portable_exclude",
         message: `Exclude pattern "${pattern}" is not a portable v0.3 glob; review it.`,
+        displayMessage: t`Exclude pattern "${pattern}" is not a portable v0.3 glob; review it.`,
         severity: "warning",
       });
     }
@@ -686,13 +697,14 @@ async function readRequired(vault: Vault, path: string): Promise<string> {
 export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPlan> {
   const configSource = await readRequired(vault, "mdbase.yaml");
   const rawConfig: unknown = parseYaml(configSource);
-  if (!isRecord(rawConfig)) throw new Error("mdbase.yaml must contain a YAML mapping.");
+  if (!isRecord(rawConfig)) throw new Error(t`mdbase.yaml must contain a YAML mapping.`);
   const sourceVersion = typeof rawConfig.spec_version === "string" ? rawConfig.spec_version : "";
   if (!/^0\.2(?:\.\d+)?$/.test(sourceVersion)) {
+    const version = JSON.stringify(sourceVersion);
     throw new Error(
       sourceVersion === TARGET_VERSION
-        ? "This collection is already mdbase v0.3."
-        : `Expected an mdbase v0.2.x collection, found ${JSON.stringify(sourceVersion)}.`,
+        ? t`This collection is already mdbase v0.3.`
+        : t`Expected an mdbase v0.2.x collection, found ${version}.`,
     );
   }
   const settings = isRecord(rawConfig.settings) ? rawConfig.settings : {};
@@ -700,7 +712,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
   const prefix = `${typesFolder}/`;
   const operations: MigrationOperation[] = [];
   const summaries: TypeMigrationSummary[] = [];
-  const diagnostics: TypeMigrationDiagnostic[] = [];
+  const diagnostics: DisplayMigrationDiagnostic[] = [];
   const migratedConfig = migrateConfig(rawConfig, diagnostics);
   const configTarget = `${stringifyYaml(migratedConfig).trimEnd()}\n`;
   operations.push({
@@ -716,7 +728,9 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
     const source = await vault.cachedRead(file);
     const parsed = parseFrontmatter(source);
     if (!parsed.hasFrontmatter || parsed.error) {
-      throw new Error(`Cannot migrate ${file.path}: ${parsed.error ?? "frontmatter is missing"}.`);
+      const path = file.path;
+      const reason = parsed.error ?? t`frontmatter is missing`;
+      throw new Error(t`Cannot migrate ${path}: ${reason}.`);
     }
     const migrated = migrateType(file.path, sourceVersion, parsed.frontmatter);
     const sourceType = sourceTypeDefinition(file.path, parsed.frontmatter);
@@ -734,7 +748,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
     summaries.push(migrated.summary);
     diagnostics.push(...migrated.diagnostics);
   }
-  if (!summaries.length) throw new Error(`No v0.2 type files were found in ${typesFolder}.`);
+  if (!summaries.length) throw new Error(t`No v0.2 type files were found in ${typesFolder}.`);
 
   let recordsVerified = 0;
   let recordsSkipped = 0;
@@ -760,6 +774,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
         path: file.path,
         code: "effective_read_changed",
         message: "The proposed v0.3 types would change this record's resolved types or effective default values.",
+        displayMessage: t`The proposed v0.3 types would change this record's resolved types or effective default values.`,
         severity: "lossy",
       });
     }
@@ -772,7 +787,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
   const analysisId = digest(stableStringify({
     sourceVersion,
     operations: operations.map(({ path, sourceDigest, targetDigest }) => ({ path, sourceDigest, targetDigest })),
-    diagnostics,
+    diagnostics: diagnostics.map(({ displayMessage: _displayMessage, ...entry }) => entry),
   }));
   return {
     planVersion: 1,
@@ -783,7 +798,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
     backupLocation: `.mdbase/migrations/v02-to-v03-${analysisId.slice(0, 12)}`,
     operations,
     typeSummaries: summaries,
-    diagnostics,
+    diagnostics: diagnostics.map(({ displayMessage, ...entry }) => ({ ...entry, message: displayMessage })),
     applicable: !diagnostics.some((entry) => entry.severity === "lossy"),
     recordFilesRewritten: 0,
     recordsVerified,
@@ -801,15 +816,16 @@ export async function applyV02Migration(
   options: { allowLossy?: boolean } = {},
 ): Promise<MigrationApplyResult> {
   if (plan.planVersion !== 1 || plan.targetVersion !== TARGET_VERSION) {
-    throw new Error("Unsupported migration plan.");
+    throw new Error(t`Unsupported migration plan.`);
   }
   if (!plan.applicable && !options.allowLossy) {
-    throw new Error("This migration has lossy diagnostics. Review them and explicitly allow lossy migration.");
+    throw new Error(t`This migration has lossy diagnostics. Review them and explicitly allow lossy migration.`);
   }
   for (const operation of plan.operations) {
     const current = await readRequired(vault, operation.path);
     if (digest(current) !== operation.sourceDigest) {
-      throw new Error(`${operation.path} changed after migration analysis. Run the review again.`);
+      const path = operation.path;
+      throw new Error(t`${path} changed after migration analysis. Run the review again.`);
     }
   }
 
