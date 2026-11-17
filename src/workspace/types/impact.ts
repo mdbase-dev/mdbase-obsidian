@@ -1,3 +1,5 @@
+import { plural, t } from "@lingui/core/macro";
+import { formatNumber } from "../../i18n/runtime";
 import type { CollectionRecord, MdbaseIssue, MdbaseTypeDef } from "../../mdbaseCore";
 import type { TypeEditorModel } from "../../typeEditorTypes";
 import {
@@ -128,8 +130,8 @@ export class TypeImpact {
       ? this.result.impact.matched.length
       : this.savedTypeName() ? this.currentStats().stats.get(this.savedTypeName() ?? "")?.notes : undefined;
     return count === undefined || !this.ctx.records
-      ? "Matching"
-      : `Matching · ${count.toLocaleString()} ${count === 1 ? "note" : "notes"}`;
+      ? t`Matching`
+      : t`Matching · ${plural(count, { one: "# note", other: "# notes" })}`;
   }
 
   private savedTypeName(): string | null {
@@ -151,16 +153,16 @@ export class TypeImpact {
       if (!this.ctx.records || !name || (result && "error" in result && this.deps.dirty())) {
         container.createDiv({
           cls: "mdbase-muted",
-          text: !this.ctx.records ? "Counting notes…" : result && "error" in result ? `${fixFirst(result.nameRequired)} to preview matching notes.` : "Save the type to preview matching notes.",
+          text: !this.ctx.records ? t`Counting notes…` : result && "error" in result ? result.nameRequired ? t`Name the type to preview matching notes.` : t`Fix errors to preview matching notes.` : t`Save the type to preview matching notes.`,
         });
         return;
       }
       matched = [...this.currentStats().recordTypes].filter(([, names]) => names.includes(name)).map(([path]) => path);
     }
     const summary = container.createDiv({ cls: "mdbase-match-summary" });
-    summary.createSpan({ text: `${matched.length.toLocaleString()} ${matched.length === 1 ? "note matches" : "notes match"}` });
-    if (added.length) summary.createSpan({ cls: "mdbase-match-added", text: `${added.length} added` });
-    if (removed.length) summary.createSpan({ cls: "mdbase-match-removed", text: `${removed.length} no longer match` });
+    summary.createSpan({ text: plural(matched.length, { one: "# note matches", other: "# notes match" }) });
+    if (added.length) summary.createSpan({ cls: "mdbase-match-added", text: t`${added.length} added` });
+    if (removed.length) summary.createSpan({ cls: "mdbase-match-removed", text: t`${removed.length} no longer match` });
     const addedSet = new Set(added);
     const ordered: Array<{ path: string; change: "added" | "removed" | null }> = [
       ...added.map((path) => ({ path, change: "added" as const })),
@@ -177,21 +179,22 @@ export class TypeImpact {
         row.createSpan({
           cls: "mdbase-match-marker",
           text: entry.change === "added" ? "+" : "−",
-          attr: { "aria-label": entry.change === "added" ? "Added" : "No longer matches" },
+          attr: { "aria-label": entry.change === "added" ? t`Added` : t`No longer matches` },
         });
       }
       row.createSpan({ text: entry.path });
-      row.setAttr("title", `Open ${entry.path}`);
+      const path = entry.path;
+      row.setAttr("title", t`Open ${path}`);
       row.onclick = () => void this.ctx.host.openFileByPath(entry.path);
     }
     if (ordered.length > 5) {
       const more = container.createEl("button", {
         cls: "mdbase-link-button",
         text: this.showAllMatches
-          ? "Show fewer"
+          ? t`Show fewer`
           : ordered.length > 200
-            ? `Show 200 of ${ordered.length.toLocaleString()}`
-            : `Show all ${ordered.length.toLocaleString()}`,
+            ? t`Show 200 of ${formatNumber(ordered.length)}`
+            : t`Show all ${formatNumber(ordered.length)}`,
       });
       more.onclick = () => {
         this.showAllMatches = !this.showAllMatches;
@@ -205,11 +208,11 @@ export class TypeImpact {
   fillImpact(container: HTMLElement): void {
     const result = this.result;
     if (!result) {
-      container.createDiv({ cls: "mdbase-muted", text: this.ctx.records ? "Checking notes…" : "Counting notes…" });
+      container.createDiv({ cls: "mdbase-muted", text: this.ctx.records ? t`Checking notes…` : t`Counting notes…` });
       return;
     }
     if ("error" in result) {
-      container.createDiv({ cls: "mdbase-muted", text: `${fixFirst(result.nameRequired)} to check existing notes.` });
+      container.createDiv({ cls: "mdbase-muted", text: result.nameRequired ? t`Name the type to check existing notes.` : t`Fix errors to check existing notes.` });
       return;
     }
     const { impact } = result;
@@ -219,12 +222,12 @@ export class TypeImpact {
     heading.setAttr("data-tone", newlyFailing.length ? "warning" : "normal");
     heading.createEl("strong", {
       text: newlyFailing.length
-        ? `${newlyFailing.length} ${newlyFailing.length === 1 ? "note" : "notes"} would fail`
-        : "No notes newly fail",
+        ? plural(newlyFailing.length, { one: "# note would fail", other: "# notes would fail" })
+        : t`No notes newly fail`,
     });
-    const facts = [`${impact.matched.length.toLocaleString()} ${impact.matched.length === 1 ? "note" : "notes"} checked`];
-    if (impact.fixed) facts.push(`${impact.fixed} fixed`);
-    if (alreadyFailing) facts.push(`${alreadyFailing} already failing`);
+    const facts = [plural(impact.matched.length, { one: "# note checked", other: "# notes checked" })];
+    if (impact.fixed) facts.push(t`${impact.fixed} fixed`);
+    if (alreadyFailing) facts.push(t`${alreadyFailing} already failing`);
     heading.createSpan({ cls: "mdbase-muted", text: facts.join(" · ") });
     if (!newlyFailing.length) return;
     const list = container.createDiv({ cls: "mdbase-impact-list" });
@@ -234,16 +237,14 @@ export class TypeImpact {
       open.onclick = () => void this.ctx.host.openFileByPath(record.path, record.issues[0]?.field);
       row.createSpan({
         cls: "mdbase-muted",
-        text: `${record.issues[0]?.message ?? ""}${record.issues.length > 1 ? ` · +${record.issues.length - 1} more` : ""}`,
+        text: record.issues.length > 1
+          ? t`${record.issues[0]?.message ?? ""} · +${record.issues.length - 1} more`
+          : record.issues[0]?.message ?? "",
       });
     }
     if (newlyFailing.length > 10) {
-      list.createDiv({ cls: "mdbase-muted", text: `${newlyFailing.length - 10} more notes` });
+      list.createDiv({ cls: "mdbase-muted", text: plural(newlyFailing.length - 10, { one: "# more note", other: "# more notes" }) });
     }
   }
 }
 
-/** What to do before notes can be checked: name a nameless type, otherwise fix its errors. */
-function fixFirst(nameRequired?: boolean): string {
-  return nameRequired ? "Name the type" : "Fix errors";
-}
