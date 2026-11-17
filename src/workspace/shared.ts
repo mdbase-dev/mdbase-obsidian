@@ -138,7 +138,7 @@ export function inputRow(
   label: string,
   value: string,
   onInput: (value: string) => void,
-  options: { focusKey?: string; description?: string; placeholder?: string; multiline?: boolean } = {},
+  options: { focusKey: string; description?: string; placeholder?: string; multiline?: boolean },
 ): HTMLInputElement | HTMLTextAreaElement {
   const row = container.createDiv({ cls: "mdbase-form-row" });
   const labelEl = row.createEl("label", { text: label });
@@ -149,7 +149,7 @@ export function inputRow(
     ? row.createEl("textarea")
     : row.createEl("input", { type: "text" });
   control.id = id;
-  control.setAttr("data-focus-key", `form-${options.focusKey ?? label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
+  control.setAttr("data-focus-key", `form-${options.focusKey}`);
   control.value = value;
   control.placeholder = options.placeholder ?? "";
   control.addEventListener("input", () => onInput(control.value));
