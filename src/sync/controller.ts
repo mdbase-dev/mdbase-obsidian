@@ -58,6 +58,7 @@ export interface PendingApproval {
 export interface SyncSnapshot {
   direct?: {
     text: string;
+    statusStopped?: boolean;
     phase: {
       kind: string; sync?: Pick<MdbaseSync, "state" | "connection" | "pending" | "health" | "live" | "holds" | "conflicts"> & { installing?: boolean }; problem?: unknown;
       /** A Private collection waiting for its key: how the account unlocks it. */
@@ -305,7 +306,7 @@ export class SyncController {
             const native: NativeSync = await this.host.createNative((text, phase, view) => {
               // A host already replaced or stopped says nothing more.
               if (this.native !== native) return;
-              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], conflicts: view?.conflicts ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound } });
+              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], conflicts: view?.conflicts ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound, statusStopped: view?.statusStopped } });
             }, this.lastDesktopCollection);
             if (this.stopped || this.native) { native.unload(); return; }
             if (this.takeOverFrom) { native.takeOverFrom = this.takeOverFrom; this.takeOverFrom = null; }
