@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { formatNumber } from "../i18n/runtime";
 import type { App, TFile } from "obsidian";
 import type { SyncController } from "../sync/controller";
 import type {
@@ -163,7 +165,8 @@ export function renderStatus(container: HTMLElement, label: string, value: strin
 }
 
 export function compactCount(value: number): string {
-  if (value < 1_000) return String(value);
+  if (value < 1_000) return formatNumber(value);
   const digits = value < 10_000 ? 1 : 0;
-  return `${(value / 1_000).toFixed(digits)}k`;
+  const count = formatNumber(value / 1_000, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return t`${count}k`;
 }
