@@ -207,7 +207,7 @@ export class MdbaseSettingTab extends PluginSettingTab {
     });
     definitions.push({
       name: SIGN_OUT,
-      desc: SIGN_OUT_DESC,
+      desc: SIGN_OUT_DESC(),
       render: setting => { setting.addButton((button) => destructive(button).setButtonText(`${SIGN_OUT}…`).onClick(async () => {
         if (!await confirm(this.app, "Sign out of mdbase in this vault?", "Sync stops here and this device is signed out. Your notes stay in this vault, and your other devices keep syncing.", SIGN_OUT)) return;
         await this.attempt(() => native.signOut());

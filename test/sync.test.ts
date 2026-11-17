@@ -169,7 +169,7 @@ test("offline outranks upload progress in the sync status (QA-3)", () => {
   const summary = summarize(s);
   assert.equal(summary.label, "Offline");
   assert.match(summary.detail, /Offline\. Changes are saved here/);
-  const catching = { ...s, direct: { text: "Checking your files: catching up with changes from other devices", phase: { kind: "ready", sync: { state: "saved", connection: "online", health: null, pending: 0 } } } } as unknown as SyncSnapshot;
+  const catching = { ...s, direct: { text: "Checking your files: catching up with changes from other devices", statusKind: "busy", phase: { kind: "ready", sync: { state: "saved", connection: "online", health: null, pending: 0 } } } } as unknown as SyncSnapshot;
   assert.equal(summarize(catching).label, "Syncing", "a pending full-scan retry isn't 'Synced' (QA-2)");
   assert.doesNotMatch(summarize(catching).detail, /up to date/);
 });
@@ -218,15 +218,15 @@ test("an unfinished sign-in reads as a step to take, not a stopped sync (prod F1
 
 test("a collection waiting for approval shows in the status bar and says what to do (LAB F-1)", () => {
   const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
-  const summary = summarize({ ...base, direct: { text: NEEDS_APPROVAL, phase: { kind: "needs_approval" } } } as SyncSnapshot);
+  const summary = summarize({ ...base, direct: { text: NEEDS_APPROVAL(), phase: { kind: "needs_approval" } } } as SyncSnapshot);
   assert.deepEqual([summary.label, summary.tone, summary.syncing], ["Needs approval", "attention", true]);
   assert.match(summary.detail, /Request access again/);
 });
 
 test("waiting for a bound collection's approval keeps the status bar, saying so (prod O3)", () => {
   const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
-  const waiting = summarize({ ...base, direct: { text: AWAITING_APPROVAL, phase: { kind: "authorizing" }, bound: true } } as SyncSnapshot);
-  assert.deepEqual([waiting.label, waiting.tone, waiting.syncing, waiting.detail], ["Waiting for approval", "attention", true, AWAITING_APPROVAL]);
+  const waiting = summarize({ ...base, direct: { text: AWAITING_APPROVAL(), phase: { kind: "authorizing" }, bound: true } } as SyncSnapshot);
+  assert.deepEqual([waiting.label, waiting.tone, waiting.syncing, waiting.detail], ["Waiting for approval", "attention", true, AWAITING_APPROVAL()]);
   // A first sign-in waiting in the browser is the person's next step: shown too (issue 62).
   const first = summarize({ ...base, direct: { text: "Finish signing in in your browser.", phase: { kind: "authorizing" } } } as SyncSnapshot);
   assert.deepEqual([first.label, first.tone, first.syncing], ["Finish sign-in", "attention", true]);
@@ -236,7 +236,7 @@ test("starting that doesn't finish shows in the status bar; ordinary starting do
   const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
   const starting = summarize({ ...base, direct: { text: "Starting sync", phase: { kind: "starting" } } } as SyncSnapshot);
   assert.equal(starting.syncing, false);
-  const stalled = summarize({ ...base, direct: { text: STARTING_STALLED, phase: { kind: "starting", stalled: true } } } as SyncSnapshot);
+  const stalled = summarize({ ...base, direct: { text: STARTING_STALLED(), phase: { kind: "starting", stalled: true } } } as SyncSnapshot);
   assert.deepEqual([stalled.label, stalled.tone, stalled.syncing], ["Sync not starting", "attention", true]);
   assert.match(stalled.detail, /Restart sync/);
 });
@@ -252,7 +252,7 @@ test("a stop the engine says needs a reload names Restart sync instead (prod F1,
 
 test("after Move to mdbase app the status bar is neutral and says what's next (prod F5)", () => {
   const base = { daemon: "running", collection: null, status: null, error: null, busy: null, live: null } as unknown as SyncSnapshot;
-  const summary = summarize({ ...base, direct: { text: HANDED_OVER, phase: { kind: "handed_over" } } } as SyncSnapshot);
+  const summary = summarize({ ...base, direct: { text: HANDED_OVER(), phase: { kind: "handed_over" } } } as SyncSnapshot);
   assert.equal(summary.label, "Moved to mdbase app");
   assert.equal(summary.tone, "quiet");
   assert.match(summary.detail, /add this folder in the mdbase app/);

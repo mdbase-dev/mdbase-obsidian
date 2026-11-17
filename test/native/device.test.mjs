@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
+import { linguiMacros } from "../../scripts/lingui-macros.mjs";
 const result = await build({
   stdin: { contents: `export * from './src/sync/native/device.ts'; export { readyText } from './src/sync/words.ts';`, resolveDir: process.cwd() },
   bundle: true, format: "esm", write: false, platform: "node",
-  plugins: [{ name: "mocks", setup(b) {
+  plugins: [linguiMacros({ production: false }), { name: "mocks", setup(b) {
     b.onResolve({ filter: /^obsidian$/ }, args => ({ path: args.path, namespace: "mock" }));
     b.onLoad({ filter: /.*/, namespace: "mock" }, () => ({ contents: "export class Notice {}", loader: "js" }));
   } }],
