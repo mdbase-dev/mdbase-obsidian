@@ -1,0 +1,4254 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-11-17 22:34+1100\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: de\n"
+
+#: src/validation.ts
+msgid "''{fieldPath}'' has length {length}; limit is {maximum}"
+msgstr "''{fieldPath}'' hat die Länge {length}; der Höchstwert ist {maximum}"
+
+#: src/validation.ts
+msgid "''{fieldPath}'' has length {length}; needs at least {minimum}"
+msgstr "''{fieldPath}'' hat die Länge {length}; mindestens {minimum} erforderlich"
+
+#: src/validation.ts
+msgid "''{fieldPath}'' is {actual}; does not match /{pattern}/"
+msgstr "''{fieldPath}'' ist {actual}; entspricht nicht /{pattern}/"
+
+#: src/validation.ts
+msgid "''{fieldPath}'' is {value}; must be at least {minimum}"
+msgstr "''{fieldPath}'' ist {value}; muss mindestens {minimum} sein"
+
+#: src/validation.ts
+msgid "''{fieldPath}'' is {value}; must be at most {maximum}"
+msgstr "''{fieldPath}'' ist {value}; darf höchstens {maximum} sein"
+
+#: src/workspace/syncPane.ts
+msgid "\"{field}\" was set to {kept}. The other device set it to {lost}."
+msgstr "„{field}“ wurde auf {kept} gesetzt. Das andere Gerät hat den Wert auf {lost} gesetzt."
+
+#. placeholder {0}: errors.length
+#: src/workspace/typesPane.ts
+msgid "{0, plural, one {# error must be fixed before saving.} other {# errors must be fixed before saving.}}"
+msgstr "{0, plural, one {# Fehler muss vor dem Speichern behoben werden.} other {# Fehler müssen vor dem Speichern behoben werden.}}"
+
+#. placeholder {0}: newlyFailing.length - 10
+#: src/workspace/types/impact.ts
+msgid "{0, plural, one {# more note} other {# more notes}}"
+msgstr "{0, plural, one {# weitere Notiz} other {# weitere Notizen}}"
+
+#. placeholder {0}: impact.matched.length
+#: src/workspace/types/impact.ts
+msgid "{0, plural, one {# note checked} other {# notes checked}}"
+msgstr "{0, plural, one {# Notiz geprüft} other {# Notizen geprüft}}"
+
+#. placeholder {0}: matched.length
+#: src/workspace/types/impact.ts
+msgid "{0, plural, one {# note matches} other {# notes match}}"
+msgstr "{0, plural, one {# Notiz stimmt überein} other {# Notizen stimmen überein}}"
+
+#. placeholder {0}: newlyFailing.length
+#: src/workspace/types/impact.ts
+msgid "{0, plural, one {# note would fail} other {# notes would fail}}"
+msgstr "{0, plural, one {# Notiz wäre fehlerhaft} other {# Notizen wären fehlerhaft}}"
+
+#: src/workspace/types/impact.ts
+msgid "{addedCount} added"
+msgstr "{addedCount} hinzugefügt"
+
+#: src/workspace/types/impact.ts
+msgid "{alreadyFailing} already failing"
+msgstr "{alreadyFailing} bereits fehlerhaft"
+
+#: src/workspaceView.ts
+msgid "{approvalCount, plural, one {# device wants to join} other {# devices want to join}}"
+msgstr "{approvalCount, plural, one {# Gerät möchte beitreten} other {# Geräte möchten beitreten}}"
+
+#: src/workspace/syncPane.ts
+msgid "{attachmentSize} in total"
+msgstr "Insgesamt {attachmentSize}"
+
+#: src/workspace/syncPane.ts
+msgid "{busy}…"
+msgstr "{busy}…"
+
+#: src/workspace/syncPane.ts
+msgid "{conflicts, plural, one {# file kept as two versions} other {# files kept as two versions}}"
+msgstr "{conflicts, plural, one {# Datei in zwei Versionen behalten} other {# Dateien in zwei Versionen behalten}}"
+
+#: src/typeContracts.ts
+msgid "{contractId} {version} is already implemented."
+msgstr "{contractId} {version} ist bereits implementiert."
+
+#: src/workspace/types/contractEditor.ts
+msgid "{contractName} {fieldName} source field"
+msgstr "Quellfeld für {contractName} {fieldName}"
+
+#: src/fieldSummary.ts
+msgid "{count, plural, one {# character} other {# characters}}"
+msgstr "{count, plural, one {# Zeichen} other {# Zeichen}}"
+
+#: src/fieldSummary.ts
+msgid "{count, plural, one {# field} other {# fields}}"
+msgstr "{count, plural, one {# Feld} other {# Felder}}"
+
+#: src/fieldSummary.ts
+msgid "{count, plural, one {# item} other {# items}}"
+msgstr "{count, plural, one {# Element} other {# Elemente}}"
+
+#: src/sync/native/failures.ts
+msgid "{count, plural, one {One problem} other {# problems}}, such as {text}. Run Validate in the Issues tab to see which fields. Fix the note and it will sync."
+msgstr "{count, plural, one {Ein Problem} other {# Probleme}}, zum Beispiel {text}. Starten Sie „Validieren“ auf der Registerkarte „Probleme“, um die betroffenen Felder zu sehen. Korrigieren Sie die Notiz, damit sie synchronisiert wird."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{currentName} nested field name"
+msgstr "Name des verschachtelten Feldes {currentName}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{currentTarget} · missing"
+msgstr "{currentTarget} · fehlt"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{defaultValue} · not allowed"
+msgstr "{defaultValue} · nicht zulässig"
+
+#: src/workspace/syncPane.ts
+msgid "{deleted, plural, one {# file deleted} other {# files deleted}}"
+msgstr "{deleted, plural, one {# Datei gelöscht} other {# Dateien gelöscht}}"
+
+#: main.ts
+msgid "{detail} Open mdbase sync."
+msgstr "{detail} Öffnen Sie mdbase Sync."
+
+#: src/workspace/types/designForm.ts
+msgid "{displayField} · missing"
+msgstr "{displayField} · fehlt"
+
+#: src/workspace/types/typeList.ts
+msgid "{errors, plural, one {# error} other {# errors}}"
+msgstr "{errors, plural, one {# Fehler} other {# Fehler}}"
+
+#: src/workspace/types/designForm.ts
+msgid "{errors, plural, one {# error} other {# errors}} · {warnings, plural, one {# warning} other {# warnings}}"
+msgstr "{errors, plural, one {# Fehler} other {# Fehler}} · {warnings, plural, one {# Warnung} other {# Warnungen}}"
+
+#: src/workspace/syncPane.ts
+msgid "{failed, plural, one {# file couldn't sync} other {# files couldn't sync}}"
+msgstr "{failed, plural, one {# Datei konnte nicht synchronisiert werden} other {# Dateien konnten nicht synchronisiert werden}}"
+
+#: src/sync/words.ts
+msgid "{failed, plural, one {# file} other {# files}} not synced"
+msgstr "{failed, plural, one {# Datei} other {# Dateien}} nicht synchronisiert"
+
+#: src/workspace/typesPane.ts
+msgid "{failing, plural, one {# note would fail} other {# notes would fail}}"
+msgstr "{failing, plural, one {# Notiz wäre fehlerhaft} other {# Notizen wären fehlerhaft}}"
+
+#: src/modals.ts
+msgid "{failingCount, plural, one {# existing note} other {# existing notes}} would fail validation. Only the type definition will be saved; notes are not changed."
+msgstr "{failingCount, plural, one {# vorhandene Notiz würde die Validierung nicht bestehen.} other {# vorhandene Notizen würden die Validierung nicht bestehen.}} Nur die Typdefinition wird gespeichert; Notizen werden nicht geändert."
+
+#: src/migration.ts
+msgid "{feature} cannot be expressed as canonical v0.3 write behavior and was retained as legacy metadata where possible."
+msgstr "{feature} lässt sich nicht als kanonisches v0.3-Schreibverhalten ausdrücken und wurde nach Möglichkeit als veraltete Metadaten beibehalten."
+
+#: src/modals.ts
+msgid "{fieldCount, plural, one {# field} other {# fields}}"
+msgstr "{fieldCount, plural, one {# Feld} other {# Felder}}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{fieldLabel} {constraintLabel}"
+msgstr "{fieldLabel} {constraintLabel}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{fieldLabel} allowed value {valueNumber}"
+msgstr "Zulässiger Wert {valueNumber} für {fieldLabel}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{fieldLabel} default"
+msgstr "Standardwert für {fieldLabel}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{fieldLabel} description"
+msgstr "Beschreibung von {fieldLabel}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{fieldLabel} pattern"
+msgstr "Muster für {fieldLabel}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{fieldLabel} target type"
+msgstr "Zieltyp für {fieldLabel}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{fieldLabel} type"
+msgstr "Typ von {fieldLabel}"
+
+#: src/typeContracts.ts
+msgid "{fieldReference} is {fieldType}, but the contract expects {contractType}."
+msgstr "{fieldReference} ist {fieldType}, aber der Vertrag erwartet {contractType}."
+
+#: src/typeContracts.ts
+msgid "{fieldReference} is optional in this type, so the contract value may be absent."
+msgstr "{fieldReference} ist in diesem Typ optional, daher kann der Vertragswert fehlen."
+
+#: main.ts
+msgid "{fileName} is a {typeNames} note. Edit the type."
+msgstr "{fileName} ist eine Notiz vom Typ {typeNames}. Bearbeiten Sie den Typ."
+
+#: main.ts
+msgid "{fileName}: {issueCount, plural, one {# issue} other {# issues}}. Open issues for this note."
+msgstr "{fileName}: {issueCount, plural, one {# Problem} other {# Probleme}}. Öffnen Sie die Probleme für diese Notiz."
+
+#: src/workspace/issuesPane.ts
+msgid "{files, plural, one {# note} other {# notes}}"
+msgstr "{files, plural, one {# Notiz} other {# Notizen}}"
+
+#: src/workspace/types/impact.ts
+msgid "{fixed} fixed"
+msgstr "{fixed} behoben"
+
+#: src/workspace/issuesPane.ts
+msgid "{fixLabel} · {fixableNotes, plural, one {# note} other {# notes}}"
+msgstr "{fixLabel} · {fixableNotes, plural, one {# Notiz} other {# Notizen}}"
+
+#: src/workspace/syncPane.ts
+msgid "{h, plural, one {# hour ago} other {# hours ago}}"
+msgstr "{h, plural, one {vor # Stunde} other {vor # Stunden}}"
+
+#: src/workspace/typesPane.ts
+msgid "{highRiskCount, plural, one {# high-impact change} other {# high-impact changes}}"
+msgstr "{highRiskCount, plural, one {# Änderung mit großen Auswirkungen} other {# Änderungen mit großen Auswirkungen}}"
+
+#: src/workspaceView.ts
+msgid "{holdCount, plural, one {# file needs your choice} other {# files need your choice}}"
+msgstr "{holdCount, plural, one {# Datei erfordert Ihre Entscheidung} other {# Dateien erfordern Ihre Entscheidung}}"
+
+#: src/sync/words.ts
+msgid "{holds, plural, one {# file needs you} other {# files need you}}"
+msgstr "{holds, plural, one {# Datei benötigt Ihre Hilfe} other {# Dateien benötigen Ihre Hilfe}}"
+
+#: src/sync/words.ts
+msgid "{holds, plural, one {# file was changed in two places. Choose which version to keep.} other {# files were changed in two places. Choose which version to keep.}}"
+msgstr "{holds, plural, one {# Datei wurde an zwei Orten geändert. Wählen Sie die Version, die behalten werden soll.} other {# Dateien wurden an zwei Orten geändert. Wählen Sie die Versionen, die behalten werden sollen.}}"
+
+#: src/sync/native/failures.ts
+msgid "{issue}. Another local item still occupies the rename destination. Move it aside or resolve its sync problem, then try again. Both files are unchanged."
+msgstr "{issue}. Am Ziel des Umbenennens befindet sich bereits ein anderes lokales Element. Verschieben Sie es oder beheben Sie dessen Synchronisierungsproblem und versuchen Sie es erneut. Beide Dateien bleiben unverändert."
+
+#: src/sync/native/failures.ts
+msgid "{issue}. The moved item's identity or kind doesn't match. Local files are unchanged; check the paths before trying again."
+msgstr "{issue}. Identität oder Art des verschobenen Elements stimmt nicht überein. Lokale Dateien bleiben unverändert; prüfen Sie die Pfade vor einem erneuten Versuch."
+
+#: src/workspace/issuesPane.ts
+msgid "{issueCount, plural, one {# issue} other {# issues}}"
+msgstr "{issueCount, plural, one {# Problem} other {# Probleme}}"
+
+#: src/workspace/issuesPane.ts
+msgid "{issueCount, plural, one {# issue} other {# issues}} · {allFiles, plural, one {# file} other {# files}}"
+msgstr "{issueCount, plural, one {# Problem} other {# Probleme}} · {allFiles, plural, one {# Datei} other {# Dateien}}"
+
+#: src/workspaceView.ts
+msgid "{issueCount} issues"
+msgstr "{issueCount} Probleme"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{label} actions"
+msgstr "Aktionen für {label}"
+
+#: src/modals.ts
+msgid "{label} in {noteCount, plural, one {# note} other {# notes}}?"
+msgstr "{label} in {noteCount, plural, one {# Notiz} other {# Notizen}}?"
+
+#: src/workspace/types/contractEditor.ts
+msgid "{label} item {itemNumber}"
+msgstr "{label}: Element {itemNumber}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "{label}: {valueText}"
+msgstr "{label}: {valueText}"
+
+#: src/workspace/issuesPane.ts
+msgid "{label}: updated {changed, plural, one {# note} other {# notes}}."
+msgstr "{label}: {changed, plural, one {# Notiz aktualisiert} other {# Notizen aktualisiert}}."
+
+#: src/workspace/issuesPane.ts
+msgid "{label}: updated {changed} of {notes, plural, one {# note} other {# notes}}. {skipped, plural, one {# note changed since validation and was left as it is.} other {# notes changed since validation and were left as they are.}}"
+msgstr "{label}: {changed} von {notes, plural, one {# Notiz} other {# Notizen}} aktualisiert. {skipped, plural, one {# Notiz wurde seit der Validierung geändert und unverändert gelassen.} other {# Notizen wurden seit der Validierung geändert und unverändert gelassen.}}"
+
+#: src/settingsTab.ts
+msgid "{limits} Set for every device in the mdbase app."
+msgstr "{limits} In der mdbase-App für jedes Gerät festlegen."
+
+#: src/workspace/syncPane.ts
+msgid "{m, plural, one {# minute ago} other {# minutes ago}}"
+msgstr "{m, plural, one {vor # Minute} other {vor # Minuten}}"
+
+#: src/workspace/syncPane.ts
+#: src/workspaceView.ts
+msgid "{mergedCount, plural, one {# change to check} other {# changes to check}}"
+msgstr "{mergedCount, plural, one {# Änderung zu prüfen} other {# Änderungen zu prüfen}}"
+
+#: src/workspace/types/impact.ts
+msgid "{message} · +{moreCount} more"
+msgstr "{message} · +{moreCount} weitere"
+
+#: src/fieldSummary.ts
+msgid "{min}–{max, plural, one {# character} other {# characters}}"
+msgstr "{min}–{max, plural, one {# Zeichen} other {# Zeichen}}"
+
+#: src/fieldSummary.ts
+msgid "{min}–{max, plural, one {# item} other {# items}}"
+msgstr "{min}–{max, plural, one {# Element} other {# Elemente}}"
+
+#: src/settingsTab.ts
+msgid "{mode} · in the folder \"{prefix}\""
+msgstr "{mode} · im Ordner „{prefix}“"
+
+#: src/modals.ts
+msgid "{moreCount} more"
+msgstr "{moreCount} weitere"
+
+#: src/workspace/syncPane.ts
+msgid "{moved, plural, one {# file moved} other {# files moved}}"
+msgstr "{moved, plural, one {# Datei verschoben} other {# Dateien verschoben}}"
+
+#: src/workspace/types/contractEditor.ts
+msgid "{name} (required)"
+msgstr "{name} (erforderlich)"
+
+#: src/workspace/syncPane.ts
+msgid "{name} is Private, and your account approves each new device from one you already use instead of with an encryption password. Obsidian can't be approved that way yet."
+msgstr "{name} ist privat, und Ihr Konto genehmigt jedes neue Gerät über ein bereits verwendetes Gerät statt mit einem Verschlüsselungspasswort. Obsidian kann auf diese Weise noch nicht genehmigt werden."
+
+#: src/workspace/syncPane.ts
+msgid "{name} is Private, and your account has no encryption password yet. Set one in the mdbase app on a computer that already has this collection."
+msgstr "{name} ist privat, und Ihr Konto hat noch kein Verschlüsselungspasswort. Legen Sie eines in der mdbase-App auf einem Computer fest, der diese Sammlung bereits enthält."
+
+#: src/workspace/syncPane.ts
+msgid "{name} is Private: only your own devices can read it. To open it in this vault, enter your encryption password."
+msgstr "{name} ist privat: Nur Ihre eigenen Geräte können darauf zugreifen. Geben Sie Ihr Verschlüsselungspasswort ein, um sie in diesem Vault zu öffnen."
+
+#: src/workspace/syncPane.ts
+msgid "{name} is Private: only your own devices can read it. To open it in this vault, enter your recovery key."
+msgstr "{name} ist privat: Nur Ihre eigenen Geräte können darauf zugreifen. Geben Sie Ihren Wiederherstellungsschlüssel ein, um sie in diesem Vault zu öffnen."
+
+#: src/workspace/syncPane.ts
+msgid "{name} wants to join"
+msgstr "{name} möchte beitreten"
+
+#: src/sync/native/failures.ts
+msgid "{name}: {message}, and {more, plural, one {# more problem} other {# more problems}}. Fix the note and it will sync."
+msgstr "{name}: {message} und {more, plural, one {# weiteres Problem} other {# weitere Probleme}}. Korrigieren Sie die Notiz, damit sie synchronisiert wird."
+
+#: src/sync/native/failures.ts
+msgid "{name}: {message}. Fix the note and it will sync."
+msgstr "{name}: {message}. Korrigieren Sie die Notiz, damit sie synchronisiert wird."
+
+#: src/workspace/types/typeList.ts
+msgid "{notes, plural, one {# note} other {# notes}}"
+msgstr "{notes, plural, one {# Notiz} other {# Notizen}}"
+
+#: src/workspace/syncPane.ts
+msgid "{notHere, plural, one {# file} other {# files}}"
+msgstr "{notHere, plural, one {# Datei} other {# Dateien}}"
+
+#: src/migration.ts
+msgid "{path} already looks like a v0.3 type."
+msgstr "{path} sieht bereits wie ein v0.3-Typ aus."
+
+#: src/contractCatalog.ts
+msgid "{path} appeared during installation."
+msgstr "{path} ist während der Installation erschienen."
+
+#: src/migration.ts
+msgid "{path} changed after migration analysis. Run the review again."
+msgstr "{path} wurde nach der Migrationsanalyse geändert. Führen Sie die Prüfung erneut aus."
+
+#: src/contractCatalog.ts
+msgid "{path} changed during installation. Recovery will preserve competing edits."
+msgstr "{path} wurde während der Installation geändert. Bei der Wiederherstellung bleiben konkurrierende Änderungen erhalten."
+
+#: src/contractCatalog.ts
+msgid "{path} changed. Review again."
+msgstr "{path} wurde geändert. Prüfen Sie erneut."
+
+#: src/migration.ts
+msgid "{path} is not a v0.2 type with a name and fields."
+msgstr "{path} ist kein v0.2-Typ mit einem Namen und Feldern."
+
+#: src/workspace/syncPane.ts
+msgid "{pending, plural, one {# change} other {# changes}}"
+msgstr "{pending, plural, one {# Änderung} other {# Änderungen}}"
+
+#: src/sync/words.ts
+msgid "{pending, plural, one {# change} other {# changes}} waiting to send."
+msgstr "{pending, plural, one {# Änderung} other {# Änderungen}} wartet auf den Versand."
+
+#: src/sync/words.ts
+msgid "{pending, plural, one {Connecting to mdbase. # change is saved here meanwhile.} other {Connecting to mdbase. # changes are saved here meanwhile.}}"
+msgstr "{pending, plural, one {Verbindung zu mdbase wird hergestellt. # Änderung wird unterdessen hier gespeichert.} other {Verbindung zu mdbase wird hergestellt. # Änderungen werden unterdessen hier gespeichert.}}"
+
+#: src/sync/words.ts
+msgid "{pending, plural, one {Offline. # change is saved here and will sync when you're back online.} other {Offline. # changes are saved here and will sync when you're back online.}}"
+msgstr "{pending, plural, one {Offline. # Änderung wird hier gespeichert und synchronisiert, sobald Sie wieder online sind.} other {Offline. # Änderungen werden hier gespeichert und synchronisiert, sobald Sie wieder online sind.}}"
+
+#: src/validation.ts
+msgid "{previous} or {next}"
+msgstr "{previous} oder {next}"
+
+#: src/workspace/syncPane.ts
+msgid "{received, plural, one {# file received} other {# files received}}"
+msgstr "{received, plural, one {# Datei empfangen} other {# Dateien empfangen}}"
+
+#: src/workspace/types/contractEditor.ts
+msgid "{reference} · {candidateType} · review"
+msgstr "{reference} · {candidateType} · prüfen"
+
+#: src/workspace/types/impact.ts
+msgid "{removedCount} no longer match"
+msgstr "{removedCount} stimmen nicht mehr überein"
+
+#: src/workspace/types/contractEditor.ts
+msgid "{requiredMapped} of {requiredCount} required · {mappedCount} of {fieldCount} mapped"
+msgstr "{requiredMapped} von {requiredCount} erforderlichen · {mappedCount} von {fieldCount} zugeordnet"
+
+#: src/workspace/typesPane.ts
+msgid "{selectedPath} goes back to how it was last saved. This can't be undone."
+msgstr "{selectedPath} wird auf den zuletzt gespeicherten Stand zurückgesetzt. Dies kann nicht rückgängig gemacht werden."
+
+#: src/workspace/syncPane.ts
+msgid "{sent, plural, one {# file sent} other {# files sent}}"
+msgstr "{sent, plural, one {# Datei gesendet} other {# Dateien gesendet}}"
+
+#: src/workspace/issuesPane.ts
+msgid "{severityLabel} · {field}"
+msgstr "{severityLabel} · {field}"
+
+#: src/workspace/issuesPane.ts
+msgid "{shown} of {filteredCount, plural, one {# issue} other {# issues}} · {filteredFiles, plural, one {# file} other {# files}}"
+msgstr "{shown} von {filteredCount, plural, one {# Problem} other {# Problemen}} · {filteredFiles, plural, one {# Datei} other {# Dateien}}"
+
+#: src/workspace/typesPane.ts
+msgid "{shownErrors, plural, one {# error} other {# errors}}"
+msgstr "{shownErrors, plural, one {# Fehler} other {# Fehler}}"
+
+#: src/validation.ts
+msgid "{subject} contains duplicate items"
+msgstr "{subject} enthält doppelte Elemente"
+
+#: src/validation.ts
+msgid "{subject} has {itemCount, plural, one {# item} other {# items}}; limit is {limit}"
+msgstr "{subject} enthält {itemCount, plural, one {# Element} other {# Elemente}}; der Höchstwert ist {limit}"
+
+#: src/validation.ts
+msgid "{subject} has {itemCount, plural, one {# item} other {# items}}; needs at least {limit}"
+msgstr "{subject} enthält {itemCount, plural, one {# Element} other {# Elemente}}; mindestens {limit} erforderlich"
+
+#: src/validation.ts
+msgid "{subject} is {actual}; does not match {pattern}"
+msgstr "{subject} ist {actual}; entspricht nicht {pattern}"
+
+#: src/validation.ts
+msgid "{subject} is {actual}; expected {expected}"
+msgstr "{subject} ist {actual}; erwartet wurde {expected}"
+
+#: src/validation.ts
+msgid "{subject} is {actual}; expected one of {listed}"
+msgstr "{subject} ist {actual}; erwartet wurde einer der folgenden Werte: {listed}"
+
+#: src/validation.ts
+msgid "{subject} is {actual}; must be at least {limit}"
+msgstr "{subject} ist {actual}; muss mindestens {limit} sein"
+
+#: src/validation.ts
+msgid "{subject} is {actual}; must be at most {limit}"
+msgstr "{subject} ist {actual}; darf höchstens {limit} sein"
+
+#: src/validation.ts
+msgid "{subject} is {actual}; must be less than {limit}"
+msgstr "{subject} ist {actual}; muss kleiner als {limit} sein"
+
+#: src/validation.ts
+msgid "{subject} is {actual}; must be more than {limit}"
+msgstr "{subject} ist {actual}; muss größer als {limit} sein"
+
+#: src/validation.ts
+msgid "{subject} is {characterCount, plural, one {# character} other {# characters}}; limit is {limit}"
+msgstr "{subject} hat {characterCount, plural, one {# Zeichen} other {# Zeichen}}; der Höchstwert ist {limit}"
+
+#: src/validation.ts
+msgid "{subject} is {characterCount, plural, one {# character} other {# characters}}; needs at least {limit}"
+msgstr "{subject} hat {characterCount, plural, one {# Zeichen} other {# Zeichen}}; mindestens {limit} erforderlich"
+
+#: src/validation.ts
+msgid "{subject}: {detail}"
+msgstr "{subject}: {detail}"
+
+#: src/workspace/syncPane.ts
+msgid "{summary} · {time}"
+msgstr "{summary} · {time}"
+
+#: src/contractCatalog.ts
+msgid "{target} already exists with different contents. Nothing was overwritten."
+msgstr "{target} existiert bereits mit anderem Inhalt. Es wurde nichts überschrieben."
+
+#: src/contractCatalog.ts
+msgid "{target} belongs to another installed pack."
+msgstr "{target} gehört zu einem anderen installierten Paket."
+
+#: src/sync/native/failures.ts
+msgid "{text}, and {more, plural, one {# more problem} other {# more problems}}. Run Validate in the Issues tab to see them all. Fix the note and it will sync."
+msgstr "{text} und {more, plural, one {# weiteres Problem} other {# weitere Probleme}}. Starten Sie „Validieren“ auf der Registerkarte „Probleme“, um alle anzuzeigen. Korrigieren Sie die Notiz, damit sie synchronisiert wird."
+
+#: src/sync/native/failures.ts
+msgid "{text}. Fix the note and it will sync."
+msgstr "{text}. Korrigieren Sie die Notiz, damit sie synchronisiert wird."
+
+#: main.ts
+msgid "{typeNames} · {issueCount, plural, one {# issue} other {# issues}}"
+msgstr "{typeNames} · {issueCount, plural, one {# Problem} other {# Probleme}}"
+
+#: main.ts
+msgid "{typeNames} · checked"
+msgstr "{typeNames} · geprüft"
+
+#: main.ts
+msgid "{typeNames} · not checked"
+msgstr "{typeNames} · nicht geprüft"
+
+#: src/sync/words.ts
+msgid "{unresolved, plural, one {Synced. # edit made on two devices at once is worth a look.} other {Synced. # edits made on two devices at once are worth a look.}}"
+msgstr "{unresolved, plural, one {Synchronisiert. # gleichzeitig auf zwei Geräten vorgenommene Änderung sollte geprüft werden.} other {Synchronisiert. # gleichzeitig auf zwei Geräten vorgenommene Änderungen sollten geprüft werden.}}"
+
+#: src/workspace/types/typeList.ts
+msgid "{warnings, plural, one {# warning} other {# warnings}}"
+msgstr "{warnings, plural, one {# Warnung} other {# Warnungen}}"
+
+#: src/sync/words.ts
+msgid "{words} Choose Restart sync to continue."
+msgstr "{words} Wählen Sie „Synchronisierung neu starten“, um fortzufahren."
+
+#: src/validation.ts
+msgid "a boolean"
+msgstr "ein boolescher Wert"
+
+#: src/validation.ts
+msgid "a date (YYYY-MM-DD)"
+msgstr "ein Datum (YYYY-MM-DD)"
+
+#: src/validation.ts
+msgid "a date and time"
+msgstr "Datum und Uhrzeit"
+
+#: src/validation.ts
+msgid "a datetime string"
+msgstr "eine Datums- und Uhrzeitzeichenfolge"
+
+#: src/createTypedNoteModal.ts
+msgid "A file already exists at this location. Choose another path."
+msgstr "An diesem Ort existiert bereits eine Datei. Wählen Sie einen anderen Pfad."
+
+#: src/contractCatalog.ts
+msgid "A folder occupies {path}."
+msgstr "Unter {path} befindet sich ein Ordner."
+
+#: src/validation.ts
+msgid "a link string"
+msgstr "eine Link-Zeichenfolge"
+
+#: src/validation.ts
+msgid "a list"
+msgstr "eine Liste"
+
+#: src/validation.ts
+msgid "a list of {count}"
+msgstr "eine Liste mit {count}"
+
+#: src/sync/controller.ts
+msgid "A new device"
+msgstr "Ein neues Gerät"
+
+#: src/workspace/syncPane.ts
+msgid "A note that was since removed"
+msgstr "Eine inzwischen entfernte Notiz"
+
+#: src/validation.ts
+msgid "a number"
+msgstr "eine Zahl"
+
+#: src/validation.ts
+msgid "a string"
+msgstr "eine Zeichenfolge"
+
+#: src/validation.ts
+msgid "a tag string or list of strings"
+msgstr "eine Tag-Zeichenfolge oder eine Liste von Zeichenfolgen"
+
+#: src/validation.ts
+msgid "a time (HH:MM)"
+msgstr "eine Uhrzeit (HH:MM)"
+
+#: src/validation.ts
+msgid "a time string (HH:MM)"
+msgstr "eine Uhrzeitzeichenfolge (HH:MM)"
+
+#: src/validation.ts
+msgid "a URI"
+msgstr "eine URI"
+
+#: src/validation.ts
+msgid "a whole number"
+msgstr "eine ganze Zahl"
+
+#: src/issuePresentation.ts
+msgid "above maximum"
+msgstr "über dem Höchstwert"
+
+#: src/sync/words.ts
+msgid "Access to this collection was removed in mdbase. Your notes here are untouched. To sync again, choose Request access again and approve it in your browser."
+msgstr "Der Zugriff auf diese Sammlung wurde in mdbase entfernt. Ihre Notizen hier bleiben unverändert. Um erneut zu synchronisieren, wählen Sie „Zugriff erneut anfordern“ und genehmigen Sie ihn im Browser."
+
+#: src/settingsTab.ts
+msgid "Account"
+msgstr "Konto"
+
+#: src/workspace/syncPane.ts
+msgid "Activity"
+msgstr "Aktivitäten"
+
+#. placeholder {0}: added.length
+#: src/typeDraft.ts
+msgid "Add {0, plural, one {field} other {fields}}: {fieldNames}."
+msgstr "{0, plural, one {Feld} other {Felder}} hinzufügen: {fieldNames}."
+
+#: src/workspace/types/contractEditor.ts
+msgid "Add {itemLabel} item"
+msgstr "Element zu {itemLabel} hinzufügen"
+
+#: src/contractCatalog.ts
+msgid "Add {path}"
+msgstr "{path} hinzufügen"
+
+#: src/workspace/syncPane.ts
+msgid "Add a collection"
+msgstr "Sammlung hinzufügen"
+
+#: src/workspace/syncPane.ts
+msgid "Add a collection you already sync"
+msgstr "Bereits synchronisierte Sammlung hinzufügen"
+
+#: src/typeDraft.ts
+msgid "Add an object field or change this field's type."
+msgstr "Fügen Sie ein Objektfeld hinzu oder ändern Sie den Typ dieses Feldes."
+
+#: src/typeDraft.ts
+msgid "Add at least one allowed value, or use String for an unrestricted value."
+msgstr "Fügen Sie mindestens einen zulässigen Wert hinzu oder verwenden Sie „String“ für einen uneingeschränkten Wert."
+
+#: src/workspace/syncPane.ts
+msgid "Add collection"
+msgstr "Sammlung hinzufügen"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Add field"
+msgstr "Feld hinzufügen"
+
+#: src/settingsTab.ts
+msgid "Add folder"
+msgstr "Ordner hinzufügen"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Add format"
+msgstr "Format hinzufügen"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Add nested field"
+msgstr "Verschachteltes Feld hinzufügen"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Add optional setting"
+msgstr "Optionale Einstellung hinzufügen"
+
+#: src/quickFix.ts
+msgid "Add placeholder"
+msgstr "Platzhalter hinzufügen"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Add value"
+msgstr "Wert hinzufügen"
+
+#: src/workspace/typesPane.ts
+msgid "Add your first type"
+msgstr "Ersten Typ hinzufügen"
+
+#: src/workspace/types/impact.ts
+msgid "Added"
+msgstr "Hinzugefügt"
+
+#: src/workspace/syncPane.ts
+msgid "Added. Notes arrive in \"{folder}\"."
+msgstr "Hinzugefügt. Notizen werden in „{folder}“ abgelegt."
+
+#: src/workspace/syncPane.ts
+msgid "Added. Notes arrive in this vault."
+msgstr "Hinzugefügt. Notizen werden in diesem Vault abgelegt."
+
+#: src/sync/controller.ts
+msgid "Adding the collection"
+msgstr "Sammlung wird hinzugefügt"
+
+#: src/workspace/syncPane.ts
+msgid "All"
+msgstr "Alle"
+
+#: src/fieldSummary.ts
+msgid "All notes"
+msgstr "Alle Notizen"
+
+#: src/workspace/issuesPane.ts
+msgid "All severities"
+msgstr "Alle Schweregrade"
+
+#: src/typeDraft.ts
+msgid "Allow fields that are not declared by this type."
+msgstr "Felder zulassen, die nicht von diesem Typ deklariert werden."
+
+#: src/workspace/syncPane.ts
+msgid "Allow Obsidian"
+msgstr "Obsidian erlauben"
+
+#: src/settingsTab.ts
+msgid "Allow plugin integrations"
+msgstr "Plugin-Integrationen zulassen"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Allowed values"
+msgstr "Zulässige Werte"
+
+#: src/typeDraft.ts
+msgid "Allowed values must be unique."
+msgstr "Zulässige Werte müssen eindeutig sein."
+
+#: src/workspace/syncPane.ts
+msgid "Already up to date"
+msgstr "Bereits aktuell"
+
+#: src/contractCatalog.ts
+msgid "Already up to date: {path}"
+msgstr "Bereits aktuell: {path}"
+
+#: src/fieldSummary.ts
+msgid "Always {value}"
+msgstr "Immer {value}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Always {value}. Change the fixed value in YAML."
+msgstr "Immer {value}. Ändern Sie den festen Wert in YAML."
+
+#: src/settingsTab.ts
+msgid "Always synced, apart from folders you leave out. These choices apply to this device only, and turning something off never deletes it."
+msgstr "Wird immer synchronisiert, mit Ausnahme ausgeschlossener Ordner. Diese Auswahl gilt nur für dieses Gerät. Durch das Deaktivieren wird nichts gelöscht."
+
+#: src/validation.ts
+msgid "an email address"
+msgstr "eine E-Mail-Adresse"
+
+#: src/validation.ts
+msgid "an integer"
+msgstr "eine ganze Zahl"
+
+#: src/validation.ts
+msgid "an object"
+msgstr "ein Objekt"
+
+#: src/workspace/typesPane.ts
+msgid "An older draft for {path} was kept, but the source changed. The current file is shown."
+msgstr "Ein älterer Entwurf für {path} wurde behalten, aber die Quelle hat sich geändert. Die aktuelle Datei wird angezeigt."
+
+#: src/workspace/syncPane.ts
+msgid "And {remaining} more."
+msgstr "Und {remaining} weitere."
+
+#: src/sync/native/marker.ts
+msgid "Another app is already syncing this vault: the mdbase desktop app. Turn sync off there first. Your notes here are untouched."
+msgstr "Eine andere App synchronisiert diesen Vault bereits: die mdbase-Desktop-App. Deaktivieren Sie dort zuerst die Synchronisierung. Ihre Notizen hier bleiben unverändert."
+
+#: src/sync/controller.ts
+#: src/sync/native/marker.ts
+msgid "Another app is already syncing this vault. Turn sync off there first. Your notes here are untouched."
+msgstr "Eine andere App synchronisiert diesen Vault bereits. Deaktivieren Sie dort zuerst die Synchronisierung. Ihre Notizen hier bleiben unverändert."
+
+#: src/sync/native/plugin.ts
+msgid "Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched."
+msgstr "Möglicherweise synchronisiert eine andere App diesen Ordner, daher wartet Obsidian. Ihre Dateien hier bleiben unverändert."
+
+#: src/contractCatalog.ts
+msgid "Another contract pack is installing. Wait for it to finish."
+msgstr "Ein anderes Vertragspaket wird installiert. Warten Sie, bis es abgeschlossen ist."
+
+#: src/sync/native/marker.ts
+msgid "Another copy of Obsidian is already syncing this vault, on this device or another one. Turn sync off there first. If you just reinstalled this plugin, you can set up sync here in a few minutes."
+msgstr "Eine andere Instanz von Obsidian synchronisiert diesen Vault bereits auf diesem oder einem anderen Gerät. Deaktivieren Sie dort zuerst die Synchronisierung. Wenn Sie dieses Plugin gerade neu installiert haben, können Sie die Synchronisierung hier in wenigen Minuten einrichten."
+
+#: src/sync/native/failures.ts
+msgid "Another local item still occupies the rename destination. Move it aside or resolve its sync problem, then try again. Both files are unchanged."
+msgstr "Am Ziel des Umbenennens befindet sich bereits ein anderes lokales Element. Verschieben Sie es oder beheben Sie dessen Synchronisierungsproblem und versuchen Sie es erneut. Beide Dateien bleiben unverändert."
+
+#: src/sync/words.ts
+msgid "Another sync tool is also changing these files. Use one sync tool per vault."
+msgstr "Ein anderes Synchronisierungsprogramm ändert diese Dateien ebenfalls. Verwenden Sie nur ein Synchronisierungsprogramm pro Vault."
+
+#: src/workspace/types/designForm.ts
+msgid "Any folder"
+msgstr "Beliebiger Ordner"
+
+#: src/settingsTab.ts
+msgid "Any other attachment, such as canvas, zip or csv files"
+msgstr "Alle anderen Anhänge, etwa Canvas-, ZIP- oder CSV-Dateien"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Any type"
+msgstr "Beliebiger Typ"
+
+#: src/fieldSummary.ts
+#: src/typeContracts.ts
+msgid "Any value"
+msgstr "Beliebiger Wert"
+
+#: src/workspace/types/contractEditor.ts
+msgid "App format"
+msgstr "App-Format"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Applications"
+msgstr "Anwendungen"
+
+#: src/workspace/types/setup.ts
+msgid "Apply migration"
+msgstr "Migration anwenden"
+
+#: src/workspace/syncPane.ts
+msgid "Approve"
+msgstr "Genehmigen"
+
+#: src/workspace/syncPane.ts
+msgid "Approved. The new device is syncing."
+msgstr "Genehmigt. Das neue Gerät wird synchronisiert."
+
+#: src/sync/controller.ts
+msgid "Approving the device"
+msgstr "Gerät wird genehmigt"
+
+#: src/settingsTab.ts
+msgid "Apps"
+msgstr "Anwendungen"
+
+#: src/fieldSummary.ts
+msgid "At least {count, plural, one {# character} other {# characters}}"
+msgstr "Mindestens {count, plural, one {# Zeichen} other {# Zeichen}}"
+
+#: src/fieldSummary.ts
+msgid "At least {count, plural, one {# item} other {# items}}"
+msgstr "Mindestens {count, plural, one {# Element} other {# Elemente}}"
+
+#: src/fieldSummary.ts
+msgid "At least {count}"
+msgstr "Mindestens {count}"
+
+#: src/fieldSummary.ts
+msgid "At most {count, plural, one {# character} other {# characters}}"
+msgstr "Höchstens {count, plural, one {# Zeichen} other {# Zeichen}}"
+
+#: src/fieldSummary.ts
+msgid "At most {count, plural, one {# item} other {# items}}"
+msgstr "Höchstens {count, plural, one {# Element} other {# Elemente}}"
+
+#: src/fieldSummary.ts
+msgid "At most {count}"
+msgstr "Höchstens {count}"
+
+#: src/workspace/syncPane.ts
+msgid "Attachments"
+msgstr "Anhänge"
+
+#: src/workspace/syncPane.ts
+msgid "Attachments in {paths} don't sync."
+msgstr "Anhänge in {paths} werden nicht synchronisiert."
+
+#: src/workspace/syncPane.ts
+msgid "Attachments over {maximum} don't sync."
+msgstr "Anhänge über {maximum} werden nicht synchronisiert."
+
+#: src/settingsTab.ts
+msgid "Audio"
+msgstr "Audio"
+
+#: src/settingsTab.ts
+msgid "Automatic"
+msgstr "Automatisch"
+
+#: src/workspace/typesPane.ts
+msgid "Back to type list"
+msgstr "Zurück zur Typliste"
+
+#: src/issuePresentation.ts
+msgid "below minimum"
+msgstr "unter dem Mindestwert"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "boolean"
+msgstr "boolesch"
+
+#: src/fieldSummary.ts
+#: src/typeContracts.ts
+msgid "Boolean"
+msgstr "Boolesch"
+
+#: src/workspace/syncPane.ts
+msgid "Both versions are kept. Review the current file and its conflict copy before choosing to keep both."
+msgstr "Beide Versionen bleiben erhalten. Prüfen Sie die aktuelle Datei und ihre Konfliktkopie, bevor Sie beide behalten."
+
+#: src/workspace/syncPane.ts
+msgid "Both versions kept"
+msgstr "Beide Versionen behalten"
+
+#: src/workspace/types/setup.ts
+msgid "Bring a collection you already use elsewhere into this vault."
+msgstr "Fügen Sie diesem Vault eine Sammlung hinzu, die Sie bereits anderswo verwenden."
+
+#: src/workspace/types/typeList.ts
+#: src/workspace/typesPane.ts
+msgid "Browse ready-made types"
+msgstr "Vorgefertigte Typen durchsuchen"
+
+#: src/workspace/issuesPane.ts
+msgid "By file"
+msgstr "Nach Datei"
+
+#: src/workspace/issuesPane.ts
+msgid "By rule"
+msgstr "Nach Regel"
+
+#: src/modals.ts
+msgid "cancel"
+msgstr "abbrechen"
+
+#: src/createTypedNoteModal.ts
+#: src/modals.ts
+#: src/settingsTab.ts
+#: src/workspace/syncPane.ts
+#: src/workspace/types/drafts.ts
+msgid "Cancel"
+msgstr "Abbrechen"
+
+#: src/workspace/syncPane.ts
+msgid "Cancel sign-in"
+msgstr "Anmeldung abbrechen"
+
+#: src/migration.ts
+msgid "Cannot migrate {path}: {reason}."
+msgstr "{path} kann nicht migriert werden: {reason}."
+
+#: main.ts
+msgid "Cannot rename type file to {targetPath}; file already exists."
+msgstr "Typdatei kann nicht in {targetPath} umbenannt werden; die Datei existiert bereits."
+
+#: src/workspace/types/yamlSource.ts
+msgid "Canonical v0.3 type YAML requires kind: mdbase.type."
+msgstr "Kanonisches v0.3-Typ-YAML erfordert kind: mdbase.type."
+
+#: main.ts
+msgid "Catalog packs require the standard _types and _contracts folders. Use mdbase editor for custom target mappings."
+msgstr "Katalogpakete erfordern die Standardordner _types und _contracts. Verwenden Sie mdbase editor für benutzerdefinierte Zielzuordnungen."
+
+#: src/contractCatalog.ts
+msgid "Catalog unavailable ({status}). Your vault is unchanged. Try again when online."
+msgstr "Katalog nicht verfügbar ({status}). Ihr Vault bleibt unverändert. Versuchen Sie es erneut, sobald Sie online sind."
+
+#: src/typeDraft.ts
+msgid "Change '{name}' from {previousType} to {nextType}."
+msgstr "Ändern Sie '{name}' von {previousType} zu {nextType}."
+
+#: src/typeDraft.ts
+msgid "Change the suggested path for new records."
+msgstr "Ändern Sie den vorgeschlagenen Pfad für neue Datensätze."
+
+#: src/typeDraft.ts
+msgid "Change which records belong to this type."
+msgstr "Ändern Sie, welche Datensätze zu diesem Typ gehören."
+
+#: src/sync/words.ts
+msgid "Changed by another program"
+msgstr "Von einem anderen Programm geändert"
+
+#: src/sync/native/failures.ts
+msgid "Changed here and in the collection"
+msgstr "Hier und in der Sammlung geändert"
+
+#: src/sync/words.ts
+msgid "Changed here and on another device"
+msgstr "Hier und auf einem anderen Gerät geändert"
+
+#: src/sync/native/failures.ts
+msgid "Changed in two places"
+msgstr "An zwei Orten geändert"
+
+#: src/validationState.ts
+msgid "Changed since last collection validation · {checked} of {total, plural, one {# note} other {# notes}} checked"
+msgstr "Seit der letzten Sammlungsvalidierung geändert · {checked} von {total, plural, one {# Notiz} other {# Notizen}} geprüft"
+
+#: src/sync/words.ts
+msgid "Changed while mdbase wasn't watching"
+msgstr "Geändert, während mdbase nicht überwacht hat"
+
+#: src/workspace/types/designForm.ts
+msgid "Changes"
+msgstr "Änderungen"
+
+#: src/workspace/syncPane.ts
+msgid "Changes from other devices arrive when Obsidian is in front, or when you choose Sync now."
+msgstr "Änderungen von anderen Geräten kommen an, wenn Obsidian im Vordergrund ist oder Sie „Jetzt synchronisieren“ wählen."
+
+#: src/workspaceView.ts
+msgctxt "sync status"
+msgid "Check"
+msgstr "Prüfen"
+
+#: src/settingsTab.ts
+#: src/workspace/syncPane.ts
+msgid "Check again"
+msgstr "Erneut prüfen"
+
+#: src/contractCatalog.ts
+msgid "Check files"
+msgstr "Dateien prüfen"
+
+#: src/settingsTab.ts
+msgid "Check notes against their types when they are opened or saved."
+msgstr "Notizen beim Öffnen oder Speichern anhand ihrer Typen prüfen."
+
+#: src/sync/native/failures.ts
+msgid "Check that the file isn't locked or restricted, then try again."
+msgstr "Prüfen Sie, ob die Datei gesperrt oder eingeschränkt ist, und versuchen Sie es erneut."
+
+#: src/validationState.ts
+msgid "Checked {checked} of {total, plural, one {# note} other {# notes}} · duplicate values not checked yet"
+msgstr "{checked} von {total, plural, one {# Notiz} other {# Notizen}} geprüft · doppelte Werte noch nicht geprüft"
+
+#: src/validationState.ts
+msgid "Checked {completed} of {total, plural, one {# note} other {# notes}} · checking for duplicate values…"
+msgstr "{completed} von {total, plural, one {# Notiz} other {# Notizen}} geprüft · doppelte Werte werden geprüft…"
+
+#: src/validationState.ts
+msgid "Checked {total, plural, one {# note} other {# notes}} at {time}"
+msgstr "{total, plural, one {# Notiz} other {# Notizen}} um {time} geprüft"
+
+#: src/validationState.ts
+msgid "Checking {completed} of {total, plural, one {# note} other {# notes}}…"
+msgstr "{completed} von {total, plural, one {# Notiz} other {# Notizen}} werden geprüft…"
+
+#: src/workspace/syncPane.ts
+msgid "Checking every file against the collection…"
+msgstr "Alle Dateien werden anhand der Sammlung geprüft…"
+
+#: src/sync/words.ts
+msgid "Checking mdbase on this computer."
+msgstr "mdbase auf diesem Computer wird geprüft."
+
+#: src/workspace/types/impact.ts
+msgid "Checking notes…"
+msgstr "Notizen werden geprüft…"
+
+#: src/sync/words.ts
+msgid "Checking sync"
+msgstr "Synchronisierung wird geprüft"
+
+#: src/sync/native/plugin.ts
+#: src/sync/native/session.ts
+msgid "Checking your files"
+msgstr "Ihre Dateien werden geprüft"
+
+#: src/sync/native/plugin.ts
+msgid "Checking your files: catching up with changes from other devices"
+msgstr "Ihre Dateien werden geprüft: Änderungen von anderen Geräten werden abgeglichen"
+
+#: src/fieldSummary.ts
+#: src/workspace/types/fieldEditor.ts
+msgid "Choice"
+msgstr "Auswahl"
+
+#: src/createTypedNoteModal.ts
+msgid "Choose a location included in this collection, not a definition or excluded folder."
+msgstr "Wählen Sie einen in dieser Sammlung enthaltenen Speicherort, keinen Definitionsordner oder ausgeschlossenen Ordner."
+
+#: src/workspace/types/contractEditor.ts
+msgid "Choose a source field"
+msgstr "Quellfeld auswählen"
+
+#: src/modals.ts
+msgid "Choose a type"
+msgstr "Typ auswählen"
+
+#: src/createTypedNoteModal.ts
+msgid "Choose a visible, vault-relative note path without .. or empty folders."
+msgstr "Wählen Sie einen sichtbaren, Vault-relativen Notizpfad ohne .. oder leere Ordner."
+
+#: src/workspace/syncPane.ts
+msgid "Choose another collection"
+msgstr "Andere Sammlung auswählen"
+
+#: src/sync/words.ts
+#: src/workspace/syncPane.ts
+msgid "Choose collection"
+msgstr "Sammlung auswählen"
+
+#: src/settingsTab.ts
+msgid "Choose folders whose notes and files stay off this device."
+msgstr "Wählen Sie Ordner, deren Notizen und Dateien nicht auf diesem Gerät gespeichert werden sollen."
+
+#: src/sync/words.ts
+msgid "Choose Restart sync to continue."
+msgstr "Wählen Sie „Synchronisierung neu starten“, um fortzufahren."
+
+#: src/sync/native/session.ts
+msgid "Choose the collection to sync with this vault."
+msgstr "Wählen Sie die Sammlung, die mit diesem Vault synchronisiert werden soll."
+
+#: src/typeDraft.ts
+msgid "Choose the shape of each list item."
+msgstr "Wählen Sie die Struktur jedes Listenelements."
+
+#: src/createTypedNoteModal.ts
+msgid "Choose…"
+msgstr "Auswählen…"
+
+#: src/workspace/issuesPane.ts
+msgid "Clear filter"
+msgstr "Filter löschen"
+
+#: src/workspace/types/typeList.ts
+msgid "Clear search"
+msgstr "Suche löschen"
+
+#: src/workspace/types/setup.ts
+msgid "Close review"
+msgstr "Prüfung schließen"
+
+#: src/sync/words.ts
+msgid "Cloud copy"
+msgstr "Cloud-Kopie"
+
+#: src/workspace/syncPane.ts
+msgid "Cloud copy (recommended)"
+msgstr "Cloud-Kopie (empfohlen)"
+
+#: src/workspace/syncPane.ts
+msgid "Code"
+msgstr "Code"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Collapse all fields"
+msgstr "Alle Felder einklappen"
+
+#: src/workspace/syncPane.ts
+msgid "Collection"
+msgstr "Sammlung"
+
+#: src/sync/native/failures.ts
+msgid "Collection is full"
+msgstr "Sammlung ist voll"
+
+#: src/settingsTab.ts
+msgid "Collection limits"
+msgstr "Sammlungsgrenzen"
+
+#: main.ts
+msgid "Collection validation passed with no issues."
+msgstr "Die Sammlungsvalidierung wurde ohne Probleme abgeschlossen."
+
+#: main.ts
+msgid "Collection validation: {issueCount, plural, one {# issue} other {# issues}}"
+msgstr "Sammlungsvalidierung: {issueCount, plural, one {# Problem} other {# Probleme}}"
+
+#: src/workspace/syncPane.ts
+msgid "Combine and sync"
+msgstr "Zusammenführen und synchronisieren"
+
+#: src/workspace/syncPane.ts
+msgid "Combine this vault with “{name}”?"
+msgstr "Diesen Vault mit „{name}“ zusammenführen?"
+
+#: src/workspace/syncPane.ts
+msgid "Combining copies the collection's notes into this vault and this vault's notes into the collection. Nothing is deleted. If the same file differs on each side, both versions are kept."
+msgstr "Beim Zusammenführen werden die Notizen der Sammlung in diesen Vault und die Notizen dieses Vaults in die Sammlung kopiert. Es wird nichts gelöscht. Unterscheiden sich Dateien auf beiden Seiten, bleiben beide Versionen erhalten."
+
+#: src/workspace/types/drafts.ts
+msgid "Compare draft"
+msgstr "Entwurf vergleichen"
+
+#: src/workspace/syncPane.ts
+msgid "Compare versions"
+msgstr "Versionen vergleichen"
+
+#: src/workspace/types/designForm.ts
+msgid "Conditions written in YAML."
+msgstr "In YAML geschriebene Bedingungen."
+
+#: src/workspace/types/contractEditor.ts
+msgid "Configure settings"
+msgstr "Einstellungen konfigurieren"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Configured"
+msgstr "Eingerichtet"
+
+#: src/modals.ts
+msgid "Confirm high-impact type changes"
+msgstr "Typänderungen mit großen Auswirkungen bestätigen"
+
+#: src/workspace/syncPane.ts
+msgid "Conflicts"
+msgstr "Konflikte"
+
+#: src/sync/words.ts
+msgid "Connecting"
+msgstr "Verbindung wird hergestellt"
+
+#: src/sync/words.ts
+msgid "Connecting to mdbase."
+msgstr "Verbindung zu mdbase wird hergestellt."
+
+#: src/contractCatalog.ts
+msgid "Contract catalog is too large."
+msgstr "Vertragskatalog ist zu groß."
+
+#: main.ts
+msgid "Contract pack recovery needs attention: {errorMessage}"
+msgstr "Die Wiederherstellung des Vertragspakets erfordert Ihre Aufmerksamkeit: {errorMessage}"
+
+#: src/workspace/syncPane.ts
+msgid "Copied. Open the link on your other device, or paste it into the sync tab there."
+msgstr "Kopiert. Öffnen Sie den Link auf Ihrem anderen Gerät oder fügen Sie ihn dort auf der Registerkarte „Synchronisierung“ ein."
+
+#: src/workspace/syncPane.ts
+msgid "Copied. Paste it into your browser."
+msgstr "Kopiert. Fügen Sie den Link in Ihren Browser ein."
+
+#: src/workspace/syncPane.ts
+msgid "Copy link"
+msgstr "Link kopieren"
+
+#: src/workspace/syncPane.ts
+msgid "Copy sign-in link"
+msgstr "Anmeldelink kopieren"
+
+#: src/workspace/types/drafts.ts
+msgid "Copy the parts you want into the current definition, then review before saving."
+msgstr "Kopieren Sie die gewünschten Teile in die aktuelle Definition und prüfen Sie sie vor dem Speichern."
+
+#: src/sync/words.ts
+msgid "Couldn't reach mdbase. Check your connection and try again."
+msgstr "mdbase konnte nicht erreicht werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+
+#: src/sync/native/failures.ts
+msgid "Couldn't read this file"
+msgstr "Diese Datei konnte nicht gelesen werden"
+
+#: src/sync/native/failures.ts
+#: src/workspace/syncPane.ts
+msgid "Couldn't sync"
+msgstr "Synchronisierung fehlgeschlagen"
+
+#: src/sync/words.ts
+msgid "Couldn't unlock this collection. Try again."
+msgstr "Diese Sammlung konnte nicht entsperrt werden. Versuchen Sie es erneut."
+
+#: src/workspace/types/impact.ts
+msgid "Counting notes…"
+msgstr "Notizen werden gezählt…"
+
+#: src/workspace/syncPane.ts
+msgid "Counting…"
+msgstr "Wird gezählt…"
+
+#: src/createTypedNoteModal.ts
+msgid "Create note"
+msgstr "Notiz erstellen"
+
+#: src/commands.ts
+msgid "Create note from type"
+msgstr "Notiz aus Typ erstellen"
+
+#: src/typeDraft.ts
+msgid "Create the type '{typeName}'."
+msgstr "Typ '{typeName}' erstellen."
+
+#: src/workspace/types/typeList.ts
+msgid "Create type"
+msgstr "Typ erstellen"
+
+#: src/workspace/types/typeList.ts
+msgid "Create type · {createBlocked}"
+msgstr "Typ erstellen · {createBlocked}"
+
+#: src/commands.ts
+msgid "Create type definition"
+msgstr "Typdefinition erstellen"
+
+#: src/workspace/types/drafts.ts
+msgid "Current source"
+msgstr "Aktuelle Quelle"
+
+#: src/workspace/types/drafts.ts
+msgid "Current source and recovered draft"
+msgstr "Aktuelle Quelle und wiederhergestellter Entwurf"
+
+#: src/fieldSummary.ts
+msgid "Date"
+msgstr "Datum"
+
+#: src/fieldSummary.ts
+msgid "Date and time"
+msgstr "Datum und Uhrzeit"
+
+#: src/workspace/syncPane.ts
+msgid "Decline"
+msgstr "Ablehnen"
+
+#: src/sync/controller.ts
+msgid "Declining the device"
+msgstr "Gerät wird abgelehnt"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Default"
+msgstr "Standardwert"
+
+#: src/fieldSummary.ts
+msgid "default {value}"
+msgstr "Standardwert {value}"
+
+#: src/fieldSummary.ts
+msgid "Default must be a number."
+msgstr "Der Standardwert muss eine Zahl sein."
+
+#: src/fieldSummary.ts
+msgid "Default must be a whole number."
+msgstr "Der Standardwert muss eine ganze Zahl sein."
+
+#: src/fieldSummary.ts
+msgid "Default must be true or false."
+msgstr "Der Standardwert muss true oder false sein."
+
+#: src/workspace/syncPane.ts
+msgid "Delete it"
+msgstr "Löschen"
+
+#: src/workspace/syncPane.ts
+msgid "Deleted and moved"
+msgstr "Gelöscht und verschoben"
+
+#: src/workspace/syncPane.ts
+msgid "Deleted everywhere"
+msgstr "Überall gelöscht"
+
+#: src/workspace/syncPane.ts
+msgid "Deleted here (removed on another device)"
+msgstr "Hier gelöscht (auf einem anderen Gerät entfernt)"
+
+#: src/sync/words.ts
+msgid "Deleted on another device, changed here"
+msgstr "Auf einem anderen Gerät gelöscht, hier geändert"
+
+#: src/fieldSummary.ts
+msgid "deprecated"
+msgstr "veraltet"
+
+#: src/workspace/types/setup.ts
+msgid "Describe your notes with types in this vault. You can sync it later."
+msgstr "Beschreiben Sie Ihre Notizen in diesem Vault mit Typen. Sie können ihn später synchronisieren."
+
+#: src/workspace/types/designForm.ts
+#: src/workspace/types/fieldEditor.ts
+msgid "Description"
+msgstr "Beschreibung"
+
+#: src/workspace/typesPane.ts
+msgid "Design"
+msgstr "Entwurf"
+
+#: src/workspace/typesPane.ts
+msgid "Design a custom type"
+msgstr "Benutzerdefinierten Typ entwerfen"
+
+#: src/workspace/syncPane.ts
+msgid "Details"
+msgstr "Details"
+
+#: src/workspace/typesPane.ts
+msgid "Discard"
+msgstr "Verwerfen"
+
+#: src/modals.ts
+msgid "Discard changes"
+msgstr "Änderungen verwerfen"
+
+#: src/workspace/typesPane.ts
+msgid "Discard changes to {name}?"
+msgstr "Änderungen an {name} verwerfen?"
+
+#: src/workspace/typesPane.ts
+msgid "Discard changes to this type?"
+msgstr "Änderungen an diesem Typ verwerfen?"
+
+#: src/workspace/types/drafts.ts
+msgid "Discard old draft"
+msgstr "Alten Entwurf verwerfen"
+
+#: src/workspace/typesPane.ts
+msgid "Discard the new type {name}?"
+msgstr "Den neuen Typ {name} verwerfen?"
+
+#: src/workspace/typesPane.ts
+msgid "Discard this new type?"
+msgstr "Diesen neuen Typ verwerfen?"
+
+#: src/workspace/types/drafts.ts
+msgid "Discard this recovered draft?"
+msgstr "Diesen wiederhergestellten Entwurf verwerfen?"
+
+#: src/sync/native/choosers.ts
+msgid "Discard: {name}"
+msgstr "Verwerfen: {name}"
+
+#: src/settingsTab.ts
+msgid "Disconnect…"
+msgstr "Verbindung trennen…"
+
+#: src/sync/controller.ts
+msgid "Disconnecting"
+msgstr "Verbindung wird getrennt"
+
+#: src/workspaceView.ts
+msgid "Dismiss message"
+msgstr "Nachricht ausblenden"
+
+#: src/workspace/types/designForm.ts
+msgid "Display field"
+msgstr "Anzeigefeld"
+
+#: src/sync/native/failures.ts
+msgid "Doesn't match its type"
+msgstr "Entspricht nicht dem Typ"
+
+#: src/workspace/syncPane.ts
+msgid "Download mdbase"
+msgstr "mdbase herunterladen"
+
+#: src/sync/native/plugin.ts
+msgid "downloading {percent}% ({size} MiB)"
+msgstr "Wird heruntergeladen: {percent} % ({size} MiB)"
+
+#: src/sync/words.ts
+msgid "Downloading the collection."
+msgstr "Sammlung wird heruntergeladen."
+
+#: src/typeModel.ts
+msgid "Duplicate field name: {name}"
+msgstr "Doppelter Feldname: {name}"
+
+#: src/contractCatalog.ts
+msgid "Duplicate pack source."
+msgstr "Doppelte Paketquelle."
+
+#: src/issuePresentation.ts
+msgid "duplicate value"
+msgstr "doppelter Wert"
+
+#: src/contractCatalog.ts
+msgid "Each one adds a type you can edit and a format other apps can read. Installing doesn't give any app access to your vault, and types you already have are kept."
+msgstr "Jedes Paket fügt einen bearbeitbaren Typ und ein von anderen Apps lesbares Format hinzu. Die Installation gewährt keiner App Zugriff auf Ihren Vault; vorhandene Typen bleiben erhalten."
+
+#: src/workspace/issuesPane.ts
+msgid "Edit {field} in {typeNameLabel}"
+msgstr "{field} in {typeNameLabel} bearbeiten"
+
+#: src/workspace/issuesPane.ts
+msgid "Edit type {typeNameLabel}"
+msgstr "Typ {typeNameLabel} bearbeiten"
+
+#: src/commands.ts
+msgid "Edit type definition"
+msgstr "Typdefinition bearbeiten"
+
+#: src/validation.ts
+msgid "empty"
+msgstr "leer"
+
+#: src/workspace/syncPane.ts
+msgid "Encrypted so only your devices can read it. For now it works on this computer only, and web apps work only while it's on."
+msgstr "Verschlüsselt, sodass nur Ihre Geräte darauf zugreifen können. Derzeit funktioniert dies nur auf diesem Computer; Web-Apps funktionieren nur, solange er eingeschaltet ist."
+
+#: src/workspace/syncPane.ts
+msgid "Encryption password"
+msgstr "Verschlüsselungspasswort"
+
+#: src/sync/native/session.ts
+msgid "Enter your encryption password to sync this Private collection."
+msgstr "Geben Sie Ihr Verschlüsselungspasswort ein, um diese private Sammlung zu synchronisieren."
+
+#: src/workspace/issuesPane.ts
+msgid "Error"
+msgstr "Fehler"
+
+#: src/workspace/issuesPane.ts
+msgid "Errors"
+msgstr "Fehler"
+
+#: src/typeDraft.ts
+#: src/typeModel.ts
+msgid "Every field needs a name."
+msgstr "Jedes Feld benötigt einen Namen."
+
+#: src/typeDraft.ts
+msgid "Every nested field needs a name."
+msgstr "Jedes verschachtelte Feld benötigt einen Namen."
+
+#: src/sync/words.ts
+msgid "Everything else is in sync."
+msgstr "Alles andere ist synchronisiert."
+
+#: src/sync/words.ts
+msgid "Everything is up to date."
+msgstr "Alles ist aktuell."
+
+#: src/migration.ts
+msgid "Exclude pattern \"{pattern}\" is not a portable v0.3 glob; review it."
+msgstr "Das Ausschlussmuster „{pattern}“ ist kein portables v0.3-Glob; prüfen Sie es."
+
+#: src/contractCatalog.ts
+msgid "Existing pack lock cannot be read safely."
+msgstr "Die vorhandene Paketsperre kann nicht sicher gelesen werden."
+
+#: src/noteCreation.ts
+msgid "Expected a finite number"
+msgstr "Eine endliche Zahl erwartet"
+
+#: src/noteCreation.ts
+msgid "Expected a whole integer"
+msgstr "Eine ganze Zahl erwartet"
+
+#: src/noteCreation.ts
+msgid "Expected a YAML or JSON list"
+msgstr "Eine YAML- oder JSON-Liste erwartet"
+
+#: src/migration.ts
+msgid "Expected an mdbase v0.2.x collection, found {version}."
+msgstr "Eine mdbase v0.2.x-Sammlung erwartet, {version} gefunden."
+
+#: src/noteCreation.ts
+msgid "Expected boolean input: true/false"
+msgstr "Boolesche Eingabe erwartet: true/false"
+
+#: src/noteCreation.ts
+msgid "Expected YAML object value"
+msgstr "YAML-Objektwert erwartet"
+
+#: src/workspace/types/drafts.ts
+msgid "Export draft"
+msgstr "Entwurf exportieren"
+
+#: src/workspace/types/drafts.ts
+msgid "Exported recovery draft to {path}. The original draft is still retained."
+msgstr "Wiederherstellungsentwurf nach {path} exportiert. Der ursprüngliche Entwurf bleibt erhalten."
+
+#: main.ts
+msgid "field"
+msgstr "Feld"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Field"
+msgstr "Feld"
+
+#: src/validation.ts
+msgid "Field ''{field}'' must reference type ''{targetType}''"
+msgstr "Feld ''{field}'' muss auf den Typ ''{targetType}'' verweisen"
+
+#: src/validation.ts
+msgid "Field ''{field}'' references a missing note"
+msgstr "Feld ''{field}'' verweist auf eine fehlende Notiz"
+
+#: src/validation.ts
+msgid "Field ''{fieldName}'' is not declared by type ''{typeName}''"
+msgstr "Feld ''{fieldName}'' wird nicht vom Typ ''{typeName}'' deklariert"
+
+#: src/validation.ts
+msgid "Field ''{fieldName}'' must be unique across the collection. Duplicate found in: {otherPaths}"
+msgstr "Feld ''{fieldName}'' muss innerhalb der Sammlung eindeutig sein. Duplikat gefunden in: {otherPaths}"
+
+#: src/validation.ts
+msgid "Field ''{fieldName}'' must be unique for type ''{typeName}''. Duplicate found in: {otherPaths}"
+msgstr "Feld ''{fieldName}'' muss für den Typ ''{typeName}'' eindeutig sein. Duplikat gefunden in: {otherPaths}"
+
+#: src/validation.ts
+msgid "Field ''{fieldPath}'' expected {expected}"
+msgstr "Für Feld ''{fieldPath}'' wurde {expected} erwartet"
+
+#: src/validation.ts
+msgid "Field ''{fieldPath}'' has invalid regex pattern: {reason}"
+msgstr "Feld ''{fieldPath}'' enthält ein ungültiges reguläres Ausdrucksmuster: {reason}"
+
+#: src/validation.ts
+msgid "Field ''{fieldPath}'' is marked deprecated"
+msgstr "Feld ''{fieldPath}'' ist als veraltet markiert"
+
+#: src/validation.ts
+msgid "Field ''{fieldPath}'' must be one of: {allowed}"
+msgstr "Feld ''{fieldPath}'' muss einen dieser Werte enthalten: {allowed}"
+
+#: src/validation.ts
+msgid "Field ''{fieldPath}'' references a missing note"
+msgstr "Feld ''{fieldPath}'' verweist auf eine fehlende Notiz"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Field {fieldNumber} name"
+msgstr "Name von Feld {fieldNumber}"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Field mappings"
+msgstr "Feldzuordnungen"
+
+#: src/workspace/types/designForm.ts
+msgid "Field values"
+msgstr "Feldwerte"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Fields"
+msgstr "Felder"
+
+#: src/noteCreation.ts
+msgid "File already exists: {normalized}"
+msgstr "Datei existiert bereits: {normalized}"
+
+#: main.ts
+msgid "File not found: {path}"
+msgstr "Datei nicht gefunden: {path}"
+
+#: main.ts
+msgid "Files changed during validation. Validate again for a complete result."
+msgstr "Dateien wurden während der Validierung geändert. Validieren Sie erneut, um ein vollständiges Ergebnis zu erhalten."
+
+#: src/workspace/types/setup.ts
+msgid "Files replaced"
+msgstr "Dateien ersetzt"
+
+#: src/workspace/syncPane.ts
+msgid "Files sent and received appear here."
+msgstr "Gesendete und empfangene Dateien erscheinen hier."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Filter fields"
+msgstr "Felder filtern"
+
+#: src/workspace/issuesPane.ts
+msgid "Filter issues"
+msgstr "Probleme filtern"
+
+#: src/sync/words.ts
+msgid "Finish sign-in"
+msgstr "Anmeldung abschließen"
+
+#: src/workspace/syncPane.ts
+msgid "Finish signing in in your browser, then come back here. If no page opened, copy the sign-in link into your browser."
+msgstr "Schließen Sie die Anmeldung im Browser ab und kehren Sie dann hierher zurück. Falls keine Seite geöffnet wurde, kopieren Sie den Anmeldelink in Ihren Browser."
+
+#: src/sync/native/session.ts
+msgid "Finish signing in in your browser."
+msgstr "Schließen Sie die Anmeldung im Browser ab."
+
+#: src/workspace/types/impact.ts
+msgid "Fix errors to check existing notes."
+msgstr "Beheben Sie Fehler, um vorhandene Notizen zu prüfen."
+
+#: src/workspace/types/impact.ts
+msgid "Fix errors to preview matching notes."
+msgstr "Beheben Sie Fehler, um passende Notizen in der Vorschau anzuzeigen."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Fixed value"
+msgstr "Fester Wert"
+
+#: src/workspace/syncPane.ts
+msgid "Folder"
+msgstr "Ordner"
+
+#: src/workspace/syncPane.ts
+msgid "Folder name"
+msgstr "Ordnername"
+
+#: src/settingsTab.ts
+msgid "Folder to leave off this device"
+msgstr "Auf diesem Gerät auszulassender Ordner"
+
+#: src/settingsTab.ts
+msgid "Folders left out"
+msgstr "Ausgelassene Ordner"
+
+#: src/contractCatalog.ts
+msgid "For integrations"
+msgstr "Für Integrationen"
+
+#: src/commands.ts
+msgid "Found {issueCount, plural, one {# issue} other {# issues}} in current note."
+msgstr "{issueCount, plural, one {# Problem} other {# Probleme}} in der aktuellen Notiz gefunden."
+
+#: src/sync/native/failures.ts
+msgid "Free up space in the collection, then try again."
+msgstr "Geben Sie Speicherplatz in der Sammlung frei und versuchen Sie es erneut."
+
+#: src/workspace/syncPane.ts
+msgid "From your other device"
+msgstr "Von Ihrem anderen Gerät"
+
+#: main.ts
+#: src/migration.ts
+msgid "frontmatter is missing"
+msgstr "Frontmatter fehlt"
+
+#: src/workspace/syncPane.ts
+msgid "Get the mdbase app"
+msgstr "mdbase-App herunterladen"
+
+#: src/sync/words.ts
+msgid "Getting changes from your other devices."
+msgstr "Änderungen von Ihren anderen Geräten werden abgerufen."
+
+#: src/sync/words.ts
+msgid "Getting the latest changes from your other devices."
+msgstr "Die neuesten Änderungen von Ihren anderen Geräten werden abgerufen."
+
+#: src/sync/native/session.ts
+msgid "Getting your collection ready."
+msgstr "Ihre Sammlung wird vorbereitet."
+
+#: src/workspace/types/designForm.ts
+msgid "Give the type a name."
+msgstr "Geben Sie dem Typ einen Namen."
+
+#: src/workspace/issuesPane.ts
+msgid "Group issues"
+msgstr "Probleme gruppieren"
+
+#: src/workspace/types/designForm.ts
+msgid "Has fields"
+msgstr "Hat Felder"
+
+#: src/workspace/types/contractEditor.ts
+msgid "How apps that read this format treat this type."
+msgstr "Wie Apps, die dieses Format lesen, diesen Typ behandeln."
+
+#: src/workspace/syncPane.ts
+msgid "How this vault appears on your other devices."
+msgstr "Wie dieser Vault auf Ihren anderen Geräten erscheint."
+
+#: src/workspace/types/setup.ts
+msgid "I reviewed the lossy diagnostics and want to apply this migration."
+msgstr "Ich habe die Diagnosen zu Informationsverlusten geprüft und möchte diese Migration anwenden."
+
+#: src/workspace/syncPane.ts
+msgid "If mdbase asks whether Obsidian may use this vault, allow it. Obsidian then shows live status and keeps open notes in step."
+msgstr "Wenn mdbase fragt, ob Obsidian diesen Vault verwenden darf, erlauben Sie es. Obsidian zeigt dann den aktuellen Status und hält offene Notizen synchron."
+
+#: src/workspace/syncPane.ts
+msgid "If you're setting up a new device, type the six-digit code it shows. Only approve devices you own."
+msgstr "Wenn Sie ein neues Gerät einrichten, geben Sie den angezeigten sechsstelligen Code ein. Genehmigen Sie nur Ihre eigenen Geräte."
+
+#: src/settingsTab.ts
+msgid "Images"
+msgstr "Bilder"
+
+#: src/workspace/syncPane.ts
+msgid "In the collection, but its own file settings leave them out."
+msgstr "In der Sammlung enthalten, aber durch deren eigene Dateieinstellungen ausgeschlossen."
+
+#: src/workspace/syncPane.ts
+msgid "In the collection, but left out here by your choices below or the collection's file settings."
+msgstr "In der Sammlung enthalten, aber hier durch Ihre Auswahl unten oder die Dateieinstellungen der Sammlung ausgeschlossen."
+
+#: src/typeContracts.ts
+msgid "Incompatible"
+msgstr "Inkompatibel"
+
+#: main.ts
+#: src/commands.ts
+msgid "Initialize collection"
+msgstr "Sammlung initialisieren"
+
+#: main.ts
+msgid "Initialize or migrate this collection first."
+msgstr "Initialisieren oder migrieren Sie diese Sammlung zuerst."
+
+#: main.ts
+msgid "Initialized mdbase collection: {createdPaths}"
+msgstr "mdbase-Sammlung initialisiert: {createdPaths}"
+
+#: src/contractCatalog.ts
+msgid "Install"
+msgstr "Installieren"
+
+#: src/sync/words.ts
+msgid "Install the mdbase app to sync this vault."
+msgstr "Installieren Sie die mdbase-App, um diesen Vault zu synchronisieren."
+
+#: main.ts
+msgid "Installed contract pack. Edit its type or create a note to try it."
+msgstr "Vertragspaket installiert. Bearbeiten Sie dessen Typ oder erstellen Sie eine Notiz, um es auszuprobieren."
+
+#: src/workspace/syncPane.ts
+msgid "Installed it somewhere unusual? Set its location in settings."
+msgstr "An einem ungewöhnlichen Ort installiert? Legen Sie den Speicherort in den Einstellungen fest."
+
+#: src/contractCatalog.ts
+msgid "Installed."
+msgstr "Installiert."
+
+#: src/contractCatalog.ts
+msgid "Installing {completed} of {total} files…"
+msgstr "{completed} von {total} Dateien werden installiert…"
+
+#: src/fieldSummary.ts
+#: src/typeContracts.ts
+msgid "Integer"
+msgstr "Ganzzahl"
+
+#: src/noteCreation.ts
+msgid "Invalid collection-relative path: {input}"
+msgstr "Ungültiger sammlungsrelativer Pfad: {input}"
+
+#: src/contractCatalog.ts
+msgid "Invalid contract catalog or type pack."
+msgstr "Ungültiger Vertragskatalog oder ungültiges Typpaket."
+
+#: src/issuePresentation.ts
+msgid "invalid format"
+msgstr "ungültiges Format"
+
+#: src/issuePresentation.ts
+msgid "invalid frontmatter"
+msgstr "ungültiges Frontmatter"
+
+#: src/contractCatalog.ts
+msgid "Invalid pack digest."
+msgstr "Ungültiger Paket-Hash."
+
+#: src/contractCatalog.ts
+msgid "Invalid pack recovery journal."
+msgstr "Ungültiges Paketwiederherstellungsjournal."
+
+#: src/contractCatalog.ts
+msgid "Invalid pack resource count."
+msgstr "Ungültige Anzahl von Paketressourcen."
+
+#: src/contractCatalog.ts
+msgid "Invalid pack resource or duplicate target."
+msgstr "Ungültige Paketressource oder doppeltes Ziel."
+
+#: main.ts
+msgid "Invalid type frontmatter: {reason}"
+msgstr "Ungültiges Typ-Frontmatter: {reason}"
+
+#: src/validation.ts
+msgid "invalid value"
+msgstr "ungültiger Wert"
+
+#: src/workspace/types/yamlSource.ts
+msgid "Invalid YAML: {message}"
+msgstr "Ungültiges YAML: {message}"
+
+#: src/sync/native/failures.ts
+msgid "is empty"
+msgstr "ist leer"
+
+#: src/workspace/issuesPane.ts
+msgid "Issue severity"
+msgstr "Schweregrad des Problems"
+
+#: src/workspaceView.ts
+msgid "Issues"
+msgstr "Probleme"
+
+#: src/workspaceView.ts
+msgid "Issues · {issueCount, plural, one {# validation issue} other {# validation issues}}"
+msgstr "Probleme · {issueCount, plural, one {# Validierungsproblem} other {# Validierungsprobleme}}"
+
+#: src/workspace/typesPane.ts
+msgid "It hasn't been saved, so it will be gone. This can't be undone."
+msgstr "Es wurde nicht gespeichert und geht daher verloren. Dies kann nicht rückgängig gemacht werden."
+
+#: src/sync/words.ts
+msgid "It stopped to keep your data safe. Your notes here are untouched. Choose Restart sync to continue."
+msgstr "Zum Schutz Ihrer Daten wurde angehalten. Ihre Notizen hier bleiben unverändert. Wählen Sie „Synchronisierung neu starten“, um fortzufahren."
+
+#: src/workspace/syncPane.ts
+msgid "It was changed on two devices. mdbase kept one version."
+msgstr "Auf zwei Geräten geändert. mdbase hat eine Version behalten."
+
+#: src/workspace/syncPane.ts
+msgid "It was deleted on one device and changed on another."
+msgstr "Auf einem Gerät gelöscht und auf einem anderen geändert."
+
+#: src/workspace/syncPane.ts
+msgid "It was renamed or moved on two devices. mdbase kept one name."
+msgstr "Auf zwei Geräten umbenannt oder verschoben. mdbase hat einen Namen behalten."
+
+#: src/workspace/syncPane.ts
+msgid "It's used once and isn't saved."
+msgstr "Wird einmal verwendet und nicht gespeichert."
+
+#: src/workspace/syncPane.ts
+msgid "It's used once and isn't saved. The recovery key is the one mdbase showed when you set your encryption password."
+msgstr "Wird einmal verwendet und nicht gespeichert. Der Wiederherstellungsschlüssel wurde von mdbase beim Festlegen Ihres Verschlüsselungspassworts angezeigt."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Item"
+msgstr "Element"
+
+#: src/workspace/syncPane.ts
+msgid "Just now"
+msgstr "Gerade eben"
+
+#: src/workspace/syncPane.ts
+msgid "Keep both"
+msgstr "Beide behalten"
+
+#: src/modals.ts
+msgid "Keep editing"
+msgstr "Weiter bearbeiten"
+
+#: src/workspace/syncPane.ts
+msgid "Keep it"
+msgstr "Behalten"
+
+#: src/modals.ts
+msgid "Keep reviewing"
+msgstr "Weiter prüfen"
+
+#: src/workspace/syncPane.ts
+msgid "Keep the collection's"
+msgstr "Version der Sammlung behalten"
+
+#: src/workspace/syncPane.ts
+msgid "Keep this computer's"
+msgstr "Version dieses Computers behalten"
+
+#: src/workspace/syncPane.ts
+msgid "Keep this vault's"
+msgstr "Version dieses Vaults behalten"
+
+#: src/contractCatalog.ts
+msgid "Keep your {path}"
+msgstr "Ihr {path} behalten"
+
+#: src/workspace/syncPane.ts
+msgid "Kept"
+msgstr "Behalten"
+
+#: src/workspace/syncPane.ts
+msgid "Kind"
+msgstr "Art"
+
+#: src/workspace/syncPane.ts
+msgid "Last synced"
+msgstr "Zuletzt synchronisiert"
+
+#: src/settingsTab.ts
+msgid "Leave empty to find the mdbase app automatically."
+msgstr "Leer lassen, um die mdbase-App automatisch zu finden."
+
+#: src/sync/native/failures.ts
+msgid "Left out by the collection"
+msgstr "Von der Sammlung ausgelassen"
+
+#: src/settingsTab.ts
+msgid "Let other installed plugins exchange mdbase events and actions in this vault."
+msgstr "Anderen installierten Plugins den Austausch von mdbase-Ereignissen und -Aktionen in diesem Vault erlauben."
+
+#: src/settingsTab.ts
+msgid "Let the mdbase desktop app sync this vault instead of Obsidian."
+msgstr "Diesen Vault statt von Obsidian von der mdbase-Desktop-App synchronisieren lassen."
+
+#: src/workspace/types/yamlSource.ts
+msgid "Line {line}"
+msgstr "Zeile {line}"
+
+#: src/fieldSummary.ts
+#: src/workspace/types/fieldEditor.ts
+msgid "Link"
+msgstr "Link"
+
+#: src/workspace/syncPane.ts
+msgid "Link or ID"
+msgstr "Link oder ID"
+
+#: src/issuePresentation.ts
+msgid "link to wrong type"
+msgstr "Link auf falschen Typ"
+
+#: src/fieldSummary.ts
+#: src/typeContracts.ts
+msgid "List"
+msgstr "Liste"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "List item"
+msgstr "Listenelement"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "List items"
+msgstr "Listenelemente"
+
+#: src/workspace/syncPane.ts
+msgid "Live updates"
+msgstr "Live-Aktualisierungen"
+
+#: src/workspace/issuesPane.ts
+msgid "Load {remaining} more"
+msgstr "{remaining} weitere laden"
+
+#: src/contractCatalog.ts
+msgid "Loading ready-made types…"
+msgstr "Vorgefertigte Typen werden geladen…"
+
+#: src/createTypedNoteModal.ts
+msgid "Location"
+msgstr "Speicherort"
+
+#: src/sync/words.ts
+msgid "Locked"
+msgstr "Gesperrt"
+
+#: src/typeDraft.ts
+msgid "Make '{name}' required. Existing records may become invalid."
+msgstr "'{name}' als erforderlich festlegen. Vorhandene Datensätze können ungültig werden."
+
+#: src/settingsTab.ts
+#: src/workspace/syncPane.ts
+msgid "Manage apps"
+msgstr "Apps verwalten"
+
+#: src/typeContracts.ts
+msgid "Map required contract field {fieldReference}."
+msgstr "Erforderliches Vertragsfeld {fieldReference} zuordnen."
+
+#: src/typeModel.ts
+msgid "Match where must be a YAML mapping."
+msgstr "Match where muss eine YAML-Zuordnung sein."
+
+#: src/workspace/types/impact.ts
+msgid "Matching"
+msgstr "Übereinstimmung"
+
+#: src/workspace/types/impact.ts
+msgid "Matching · {count, plural, one {# note} other {# notes}}"
+msgstr "Übereinstimmung · {count, plural, one {# Notiz} other {# Notizen}}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Max items"
+msgstr "Max. Elemente"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Max length"
+msgstr "Max. Länge"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Maximum"
+msgstr "Maximum"
+
+#: src/settingsTab.ts
+msgid "mdbase app location"
+msgstr "Speicherort der mdbase-App"
+
+#: src/sync/words.ts
+msgid "mdbase can't reach the server right now. Check your connection and try again."
+msgstr "mdbase kann den Server derzeit nicht erreichen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+
+#: src/sync/words.ts
+msgid "mdbase can't reach this computer's password store. Unlock it, or sign in to your desktop session again."
+msgstr "mdbase kann nicht auf den Passwortspeicher dieses Computers zugreifen. Entsperren Sie ihn oder melden Sie sich erneut an Ihrer Desktop-Sitzung an."
+
+#: main.ts
+msgid "mdbase collection already initialized."
+msgstr "mdbase-Sammlung bereits initialisiert."
+
+#: src/sync/words.ts
+msgid "mdbase couldn't find that collection in your account."
+msgstr "mdbase konnte diese Sammlung in Ihrem Konto nicht finden."
+
+#: src/sync/words.ts
+msgid "mdbase couldn't find that collection in your account. Check the link and the account you're signed in to."
+msgstr "mdbase konnte diese Sammlung in Ihrem Konto nicht finden. Prüfen Sie den Link und das Konto, bei dem Sie angemeldet sind."
+
+#: src/workspaceView.ts
+msgid "mdbase destinations"
+msgstr "mdbase-Ziele"
+
+#: src/sync/words.ts
+msgid "mdbase didn't answer."
+msgstr "mdbase hat nicht geantwortet."
+
+#: src/sync/native/failures.ts
+msgid "mdbase didn't confirm whether this change arrived. It will check again before resending."
+msgstr "mdbase hat nicht bestätigt, ob diese Änderung angekommen ist. Vor dem erneuten Senden wird dies erneut geprüft."
+
+#: src/workspace/syncPane.ts
+msgid "mdbase didn't overwrite anything. Until you choose, the version on this computer stays as it is."
+msgstr "mdbase hat nichts überschrieben. Bis zu Ihrer Entscheidung bleibt die Version auf diesem Computer unverändert."
+
+#: src/sync/controller.ts
+msgid "mdbase didn't return a sign-in page."
+msgstr "mdbase hat keine Anmeldeseite zurückgegeben."
+
+#: src/sync/words.ts
+msgid "mdbase found a problem with the synced data and stopped to keep your notes safe."
+msgstr "mdbase hat ein Problem mit den synchronisierten Daten gefunden und zum Schutz Ihrer Notizen angehalten."
+
+#: src/sync/words.ts
+msgid "mdbase found a problem with this collection's keys and stopped to keep your notes safe."
+msgstr "mdbase hat ein Problem mit den Schlüsseln dieser Sammlung gefunden und zum Schutz Ihrer Notizen angehalten."
+
+#: src/sync/words.ts
+msgid "mdbase is busy. Sync carries on shortly."
+msgstr "mdbase ist beschäftigt. Die Synchronisierung wird in Kürze fortgesetzt."
+
+#: src/sync/words.ts
+msgid "mdbase is getting this vault ready."
+msgstr "mdbase bereitet diesen Vault vor."
+
+#: src/sync/words.ts
+msgid "mdbase is still preparing this collection."
+msgstr "mdbase bereitet diese Sammlung noch vor."
+
+#: src/sync/words.ts
+msgid "mdbase is uploading this vault for the first time."
+msgstr "mdbase lädt diesen Vault zum ersten Mal hoch."
+
+#: src/sync/daemon.ts
+msgid "mdbase isn't running on this computer."
+msgstr "mdbase läuft nicht auf diesem Computer."
+
+#: src/workspace/syncPane.ts
+msgid "mdbase keeps a copy online, so your notes open in mdbase apps on the web and arrive on a new device straight away."
+msgstr "mdbase hält eine Kopie online bereit, damit Ihre Notizen in mdbase-Web-Apps geöffnet werden können und sofort auf einem neuen Gerät verfügbar sind."
+
+#: src/sync/words.ts
+msgid "mdbase needs attention for this collection."
+msgstr "mdbase benötigt Ihre Aufmerksamkeit für diese Sammlung."
+
+#: src/sync/native/failures.ts
+msgid "mdbase refused this change."
+msgstr "mdbase hat diese Änderung abgelehnt."
+
+#: src/sync/daemon.ts
+msgid "mdbase reported a problem."
+msgstr "mdbase hat ein Problem gemeldet."
+
+#: src/sync/words.ts
+msgid "mdbase stopped"
+msgstr "mdbase angehalten"
+
+#: src/sync/words.ts
+msgid "mdbase stopped syncing this vault. Your files are untouched."
+msgstr "mdbase hat die Synchronisierung dieses Vaults angehalten. Ihre Dateien bleiben unverändert."
+
+#: src/workspace/syncPane.ts
+msgid "mdbase syncs this vault through the mdbase app. It runs in the background and keeps your notes on this computer in step with your other devices."
+msgstr "mdbase synchronisiert diesen Vault über die mdbase-App. Sie läuft im Hintergrund und hält Ihre Notizen auf diesem Computer mit Ihren anderen Geräten synchron."
+
+#: src/sync/daemon.ts
+msgid "mdbase took too long to answer."
+msgstr "mdbase hat zu lange für eine Antwort benötigt."
+
+#: src/sync/words.ts
+msgid "mdbase took too long to answer. Try again."
+msgstr "mdbase hat zu lange für eine Antwort benötigt. Versuchen Sie es erneut."
+
+#: src/typeModel.ts
+msgid "mdbase v0.2 type definitions are read-only. Migrate the collection before editing."
+msgstr "mdbase v0.2-Typdefinitionen sind schreibgeschützt. Migrieren Sie die Sammlung vor der Bearbeitung."
+
+#: main.ts
+msgid "mdbase v0.2 type definitions are read-only. Migrate the collection first."
+msgstr "mdbase v0.2-Typdefinitionen sind schreibgeschützt. Migrieren Sie zuerst die Sammlung."
+
+#: src/sync/native/pass.ts
+msgid "mdbase: {fresh, plural, one {# file} other {# files}} couldn't sync. Open Sync to see why."
+msgstr "mdbase: {fresh, plural, one {# Datei konnte nicht synchronisiert werden.} other {# Dateien konnten nicht synchronisiert werden.}} Öffnen Sie „Synchronisierung“, um den Grund zu sehen."
+
+#: main.ts
+msgid "mdbase: {issueCount, plural, one {# issue} other {# issues}} in {fileName}"
+msgstr "mdbase: {issueCount, plural, one {# Problem} other {# Probleme}} in {fileName}"
+
+#: src/sync/native/session.ts
+msgid "mdbase: {text}"
+msgstr "mdbase: {text}"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: {userMessage}"
+msgstr "mdbase: {userMessage}"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: a non-nfc filename cannot sync. Rename it to unicode nfc; existing files were not changed."
+msgstr "mdbase: Ein Dateiname, der nicht NFC-normalisiert ist, kann nicht synchronisiert werden. Benennen Sie ihn in Unicode NFC um; vorhandene Dateien wurden nicht geändert."
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: a symlink in the mirror was skipped. Its target will not be read or changed."
+msgstr "mdbase: Ein symbolischer Link im Spiegel wurde übersprungen. Sein Ziel wird weder gelesen noch geändert."
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: add collection: {detail}"
+msgstr "mdbase: Sammlung hinzufügen: {detail}"
+
+#: src/sync/native/conflicts.ts
+msgid "mdbase: both files must finish syncing before keeping them."
+msgstr "mdbase: Beide Dateien müssen vollständig synchronisiert sein, bevor sie behalten werden können."
+
+#: src/sync/native/conflicts.ts
+msgid "mdbase: conflict preserved in a separate file; remote version kept at original path."
+msgstr "mdbase: Konflikt in einer separaten Datei erhalten; entfernte Version am ursprünglichen Pfad behalten."
+
+#: src/sync/native/conflicts.ts
+msgid "mdbase: discard failed"
+msgstr "mdbase: Verwerfen fehlgeschlagen"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: discard rejected: {detail}"
+msgstr "mdbase: Verwerfen abgelehnt: {detail}"
+
+#: src/sync/native/session.ts
+msgid "mdbase: everything is sent. Add this folder in the mdbase app to keep syncing it."
+msgstr "mdbase: Alles wurde gesendet. Fügen Sie diesen Ordner in der mdbase-App hinzu, um ihn weiter zu synchronisieren."
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: handover (marker retained): {detail}"
+msgstr "mdbase: Übergabe (Markierung beibehalten): {detail}"
+
+#: src/sync/native/conflicts.ts
+msgid "mdbase: no rejected writes"
+msgstr "mdbase: keine abgelehnten Schreibvorgänge"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: open sign-in: {detail}"
+msgstr "mdbase: Anmeldung öffnen: {detail}"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: ownership: {detail}"
+msgstr "mdbase: Besitz: {detail}"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: phase: {detail}"
+msgstr "mdbase: Phase: {detail}"
+
+#: src/sync/native/conflicts.ts
+msgid "mdbase: rejected write discarded"
+msgstr "mdbase: Abgelehnter Schreibvorgang verworfen"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: saving state: {detail}"
+msgstr "mdbase: Status wird gespeichert: {detail}"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: select: {detail}"
+msgstr "mdbase: Auswahl: {detail}"
+
+#: src/sync/native/session.ts
+msgid "mdbase: sign-in is still pending. Reopened the existing approval link; finish or cancel it in your browser."
+msgstr "mdbase: Die Anmeldung steht noch aus. Der vorhandene Genehmigungslink wurde erneut geöffnet; schließen Sie den Vorgang im Browser ab oder brechen Sie ihn dort ab."
+
+#: src/sync/native/session.ts
+msgid "mdbase: signed out. Your notes stay in this vault."
+msgstr "mdbase: Abgemeldet. Ihre Notizen bleiben in diesem Vault."
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: start: {detail}"
+msgstr "mdbase: Start: {detail}"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: startup: {detail}"
+msgstr "mdbase: Initialisierung: {detail}"
+
+#: src/sync/native/session.ts
+msgid "mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns."
+msgstr "mdbase: Synchronisierungsdienst nicht erreichbar. Änderungen werden auf diesem Gerät gespeichert und synchronisiert, sobald die Verbindung wiederhergestellt ist."
+
+#: src/sync/native/plugin.ts
+msgid "mdbase: sync: {detail}"
+msgstr "mdbase: Synchronisierung: {detail}"
+
+#: src/migration.ts
+msgid "mdbase.yaml must contain a YAML mapping."
+msgstr "mdbase.yaml muss eine YAML-Zuordnung enthalten."
+
+#: src/sync/daemon.ts
+msgid "mdbase's connection files on this computer are incomplete. Restart the mdbase app."
+msgstr "Die Verbindungsdateien von mdbase auf diesem Computer sind unvollständig. Starten Sie die mdbase-App neu."
+
+#: src/sync/words.ts
+msgid "mdbase's server didn't allow that. Try again later."
+msgstr "Der mdbase-Server hat dies nicht zugelassen. Versuchen Sie es später erneut."
+
+#: src/workspace/typesPane.ts
+msgid "Migrate this v0.2 collection to edit types."
+msgstr "Migrieren Sie diese v0.2-Sammlung, um Typen zu bearbeiten."
+
+#: src/workspace/types/setup.ts
+msgid "Migrate to edit types."
+msgstr "Migrieren, um Typen zu bearbeiten."
+
+#: src/workspace/types/typeList.ts
+msgid "Migrate to v0.3 to create types"
+msgstr "Auf v0.3 migrieren, um Typen zu erstellen"
+
+#: main.ts
+msgid "Migrated to mdbase v0.3. Recovery manifest: {manifestPath}"
+msgstr "Auf mdbase v0.3 migriert. Wiederherstellungsmanifest: {manifestPath}"
+
+#: main.ts
+msgid "Migration failed and all writes were rolled back. {errorMessage}"
+msgstr "Migration fehlgeschlagen und alle Schreibvorgänge wurden zurückgesetzt. {errorMessage}"
+
+#: main.ts
+msgid "Migration needs manual recovery. See {manifestPath}. {errorMessage}"
+msgstr "Die Migration erfordert eine manuelle Wiederherstellung. Siehe {manifestPath}. {errorMessage}"
+
+#: src/workspace/types/setup.ts
+msgid "Migration review"
+msgstr "Migrationsprüfung"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Min items"
+msgstr "Min. Elemente"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Min length"
+msgstr "Min. Länge"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Minimum"
+msgstr "Minimum"
+
+#: src/typeDraft.ts
+msgid "Minimum is greater than the maximum."
+msgstr "Der Mindestwert ist größer als der Höchstwert."
+
+#: src/typeDraft.ts
+msgid "Minimum length is greater than the maximum."
+msgstr "Die Mindestlänge ist größer als die Höchstlänge."
+
+#: src/issuePresentation.ts
+#: src/validation.ts
+msgid "missing"
+msgstr "fehlt"
+
+#: src/contractCatalog.ts
+msgid "Missing catalog field."
+msgstr "Katalogfeld fehlt."
+
+#: src/issuePresentation.ts
+msgid "missing link target"
+msgstr "Linkziel fehlt"
+
+#: src/validation.ts
+msgid "Missing required field ''{fieldName}''"
+msgstr "Erforderliches Feld ''{fieldName}'' fehlt"
+
+#: src/validation.ts
+msgid "Missing required field ''{fieldName}'' for type ''{typeName}''"
+msgstr "Erforderliches Feld ''{fieldName}'' für Typ ''{typeName}'' fehlt"
+
+#: src/validation.ts
+msgid "Missing required field ''{nestedPath}''"
+msgstr "Erforderliches Feld ''{nestedPath}'' fehlt"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Move down"
+msgstr "Nach unten verschieben"
+
+#: src/settingsTab.ts
+msgid "Move sync to the mdbase app"
+msgstr "Synchronisierung zur mdbase-App verschieben"
+
+#: src/settingsTab.ts
+msgid "Move sync to the mdbase app?"
+msgstr "Synchronisierung zur mdbase-App verschieben?"
+
+#: src/settingsTab.ts
+msgid "Move to mdbase app"
+msgstr "Zur mdbase-App verschieben"
+
+#: src/settingsTab.ts
+msgid "Move to mdbase app…"
+msgstr "Zur mdbase-App verschieben…"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Move up"
+msgstr "Nach oben verschieben"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Move value down"
+msgstr "Wert nach unten verschieben"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Move value up"
+msgstr "Wert nach oben verschieben"
+
+#: src/workspace/syncPane.ts
+msgid "Moved"
+msgstr "Verschoben"
+
+#: src/workspace/syncPane.ts
+msgid "Moved from {path}"
+msgstr "Von {path} verschoben"
+
+#: src/workspace/syncPane.ts
+msgid "Moved from {path} on another device"
+msgstr "Auf einem anderen Gerät von {path} verschoben"
+
+#: src/sync/words.ts
+msgid "Moved to mdbase app"
+msgstr "Zur mdbase-App verschoben"
+
+#: src/settingsTab.ts
+msgid "mp3, m4a, wav, ogg and other recordings"
+msgstr "mp3, m4a, wav, ogg und andere Aufnahmen"
+
+#: src/settingsTab.ts
+msgid "mp4, mov, webm and other video"
+msgstr "mp4, mov, webm und andere Videos"
+
+#: src/workspace/syncPane.ts
+msgctxt "collection"
+msgid "Name"
+msgstr "Name"
+
+#: src/workspace/types/fieldEditor.ts
+msgctxt "field property label"
+msgid "Name"
+msgstr "Name"
+
+#: src/workspace/types/designForm.ts
+msgctxt "type property label"
+msgid "Name"
+msgstr "Name"
+
+#: src/workspace/types/impact.ts
+msgid "Name the type to check existing notes."
+msgstr "Benennen Sie den Typ, um vorhandene Notizen zu prüfen."
+
+#: src/workspace/types/impact.ts
+msgid "Name the type to preview matching notes."
+msgstr "Benennen Sie den Typ, um passende Notizen in der Vorschau anzuzeigen."
+
+#: src/modals.ts
+msgid "navigate"
+msgstr "navigieren"
+
+#: src/contractCatalog.ts
+msgid "Needs a recent version of mdbase on every device that uses this collection. Older versions can't read this type."
+msgstr "Erfordert eine aktuelle Version von mdbase auf jedem Gerät, das diese Sammlung verwendet. Ältere Versionen können diesen Typ nicht lesen."
+
+#: src/sync/words.ts
+msgid "Needs approval"
+msgstr "Genehmigung erforderlich"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Nested field already exists: {nextName}"
+msgstr "Verschachteltes Feld existiert bereits: {nextName}"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Nested field name is required."
+msgstr "Ein Name für das verschachtelte Feld ist erforderlich."
+
+#: src/createTypedNoteModal.ts
+msgid "New {typeName}"
+msgstr "Neuer Typ: {typeName}"
+
+#: src/sync/native/session.ts
+msgid "New collection…"
+msgstr "Neue Sammlung…"
+
+#: src/workspace/typesPane.ts
+msgid "New note"
+msgstr "Neue Notiz"
+
+#: src/workspace/types/designForm.ts
+msgid "New note location"
+msgstr "Speicherort für neue Notizen"
+
+#: src/workspace/typesPane.ts
+msgid "New type"
+msgstr "Neuer Typ"
+
+#: src/workspace/types/contractEditor.ts
+msgid "No app formats installed. Ready-made types add them."
+msgstr "Keine App-Formate installiert. Vorgefertigte Typen fügen sie hinzu."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "No fields declared."
+msgstr "Keine Felder deklariert."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "No fields match this filter."
+msgstr "Keine Felder entsprechen diesem Filter."
+
+#: src/commands.ts
+msgid "No issues in current note."
+msgstr "Keine Probleme in der aktuellen Notiz."
+
+#: src/workspace/issuesPane.ts
+msgid "No issues match these filters."
+msgstr "Keine Probleme entsprechen diesen Filtern."
+
+#: src/workspace/issuesPane.ts
+msgid "No known issues"
+msgstr "Keine bekannten Probleme"
+
+#: src/workspace/types/impact.ts
+msgid "No longer matches"
+msgstr "Stimmt nicht mehr überein"
+
+#: src/issuePresentation.ts
+msgid "no matching type"
+msgstr "kein passender Typ"
+
+#: src/workspace/types/typeList.ts
+msgid "No matching types."
+msgstr "Keine passenden Typen."
+
+#: main.ts
+msgid "No mdbase.yaml found."
+msgstr "Keine mdbase.yaml gefunden."
+
+#: main.ts
+msgid "No mdbase.yaml found. Run 'mdbase: {command}' first."
+msgstr "Keine mdbase.yaml gefunden. Führen Sie zuerst 'mdbase: {command}' aus."
+
+#: src/workspace/types/setup.ts
+msgid "No migration diagnostics."
+msgstr "Keine Migrationsdiagnosen."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "No nested fields."
+msgstr "Keine verschachtelten Felder."
+
+#: src/workspace/types/impact.ts
+msgid "No notes newly fail"
+msgstr "Keine Notizen werden zusätzlich fehlerhaft"
+
+#: src/workspace/types/contractEditor.ts
+msgid "No settings declared."
+msgstr "Keine Einstellungen deklariert."
+
+#: src/validation.ts
+msgid "No type could be resolved for this file"
+msgstr "Für diese Datei konnte kein Typ ermittelt werden"
+
+#: src/commands.ts
+msgid "No type definitions found."
+msgstr "Keine Typdefinitionen gefunden."
+
+#: src/workspace/types/typeList.ts
+msgid "No type definitions."
+msgstr "Keine Typdefinitionen."
+
+#: main.ts
+msgid "No types found in {typesFolder}"
+msgstr "Keine Typen in {typesFolder} gefunden"
+
+#: src/migration.ts
+msgid "No v0.2 type files were found in {typesFolder}."
+msgstr "Keine v0.2-Typdateien in {typesFolder} gefunden."
+
+#: src/fieldSummary.ts
+msgid "no values"
+msgstr "keine Werte"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "None"
+msgstr "Keine"
+
+#: src/sync/native/failures.ts
+msgid "Not allowed"
+msgstr "Nicht erlaubt"
+
+#: src/issuePresentation.ts
+msgid "not an allowed value"
+msgstr "kein zulässiger Wert"
+
+#: src/validationState.ts
+msgid "Not checked yet"
+msgstr "Noch nicht geprüft"
+
+#: src/issuePresentation.ts
+msgid "not declared"
+msgstr "nicht deklariert"
+
+#: src/typeContracts.ts
+#: src/workspace/types/contractEditor.ts
+msgid "Not exposed"
+msgstr "Nicht bereitgestellt"
+
+#: src/workspace/syncPane.ts
+msgid "Not on this device"
+msgstr "Nicht auf diesem Gerät"
+
+#: src/sync/native/failures.ts
+msgid "Not plain text"
+msgstr "Kein Klartext"
+
+#: src/workspace/typesPane.ts
+msgid "Not saved yet"
+msgstr "Noch nicht gespeichert"
+
+#: src/settingsTab.ts
+msgid "Not signed in."
+msgstr "Nicht angemeldet."
+
+#: src/workspace/syncPane.ts
+msgid "Not synced"
+msgstr "Nicht synchronisiert"
+
+#: src/settingsTab.ts
+msgid "Not synced in this collection. Change this in the mdbase app."
+msgstr "Wird in dieser Sammlung nicht synchronisiert. Ändern Sie dies in der mdbase-App."
+
+#: src/workspace/syncPane.ts
+msgid "Not yet"
+msgstr "Noch nicht"
+
+#: src/workspace/syncPane.ts
+msgid "Notes"
+msgstr "Notizen"
+
+#: src/settingsTab.ts
+msgid "Notes and types"
+msgstr "Notizen und Typen"
+
+#: src/fieldSummary.ts
+msgid "Notes at the top of the vault"
+msgstr "Notizen im Stammverzeichnis des Vaults"
+
+#: src/fieldSummary.ts
+msgid "Notes in {folderName}"
+msgstr "Notizen in {folderName}"
+
+#: src/fieldSummary.ts
+msgid "Notes in {folderName} and its subfolders"
+msgstr "Notizen in {folderName} und seinen Unterordnern"
+
+#: src/modals.ts
+msgid "Notes matching {pathGlob}"
+msgstr "Notizen passend zu {pathGlob}"
+
+#: src/workspace/types/designForm.ts
+msgid "Notes whose path matches this pattern"
+msgstr "Notizen, deren Pfad diesem Muster entspricht"
+
+#: src/settingsTab.ts
+msgid "Nothing in these folders syncs to or from this device."
+msgstr "In diesen Ordnern wird nichts von oder zu diesem Gerät synchronisiert."
+
+#: src/workspace/syncPane.ts
+msgid "Nothing of this kind yet."
+msgstr "Noch nichts dieser Art vorhanden."
+
+#: src/settingsTab.ts
+msgid "Notify when saving a note with issues."
+msgstr "Beim Speichern einer Notiz mit Problemen benachrichtigen."
+
+#: src/workspace/types/fieldEditor.ts
+msgid "number"
+msgstr "Zahl"
+
+#: src/fieldSummary.ts
+#: src/typeContracts.ts
+msgid "Number"
+msgstr "Zahl"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "object"
+msgstr "Objekt"
+
+#: src/fieldSummary.ts
+#: src/typeContracts.ts
+msgid "Object"
+msgstr "Objekt"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Object fields"
+msgstr "Objektfelder"
+
+#: src/settingsTab.ts
+msgid "Obsidian can't find the mdbase app. If it's installed, enter the full path of its mdbase tool."
+msgstr "Obsidian kann die mdbase-App nicht finden. Falls sie installiert ist, geben Sie den vollständigen Pfad ihres mdbase-Werkzeugs ein."
+
+#: src/sync/words.ts
+msgid "Obsidian couldn't reach the mdbase app. Restart it, then try again."
+msgstr "Obsidian konnte die mdbase-App nicht erreichen. Starten Sie sie neu und versuchen Sie es erneut."
+
+#: src/sync/words.ts
+msgid "Obsidian has stopped syncing this vault. To keep it syncing, add this folder in the mdbase app and pick the same collection."
+msgstr "Obsidian hat die Synchronisierung dieses Vaults beendet. Um weiter zu synchronisieren, fügen Sie diesen Ordner in der mdbase-App hinzu und wählen Sie dieselbe Sammlung."
+
+#: src/sync/native/failures.ts
+msgid "Obsidian hasn't indexed the file to rename yet. Local files are unchanged; sync will retry when the vault updates."
+msgstr "Obsidian hat die umzubenennende Datei noch nicht indiziert. Lokale Dateien bleiben unverändert; die Synchronisierung versucht es erneut, sobald der Vault aktualisiert wird."
+
+#: src/workspace/syncPane.ts
+msgid "Obsidian isn't allowed to use this vault's sync yet. Sync still runs, but open notes can't update while you type."
+msgstr "Obsidian darf die Synchronisierung dieses Vaults noch nicht verwenden. Sie läuft weiter, aber offene Notizen können während der Eingabe nicht aktualisiert werden."
+
+#: src/sync/controller.ts
+msgid "Obsidian isn't linked to mdbase right now."
+msgstr "Obsidian ist derzeit nicht mit mdbase verbunden."
+
+#: src/settingsTab.ts
+msgid "Obsidian sends any remaining changes and stops syncing this vault. Then add this folder in the mdbase app and pick the same collection. If anything can't be sent, Obsidian carries on syncing."
+msgstr "Obsidian sendet alle verbleibenden Änderungen und beendet die Synchronisierung dieses Vaults. Fügen Sie dann diesen Ordner in der mdbase-App hinzu und wählen Sie dieselbe Sammlung. Falls etwas nicht gesendet werden kann, synchronisiert Obsidian weiter."
+
+#: src/sync/words.ts
+msgid "Obsidian wasn't allowed to use mdbase. Choose Allow when mdbase asks."
+msgstr "Obsidian durfte mdbase nicht verwenden. Wählen Sie „Erlauben“, wenn mdbase danach fragt."
+
+#: src/fieldSummary.ts
+msgid "of {itemType}"
+msgstr "vom Typ {itemType}"
+
+#: src/sync/words.ts
+msgid "Offline"
+msgstr "Offline"
+
+#: src/sync/words.ts
+msgid "Offline. Changes are saved here and sync when the connection returns."
+msgstr "Offline. Änderungen werden hier gespeichert und synchronisiert, sobald die Verbindung wiederhergestellt ist."
+
+#: src/sync/words.ts
+msgid "Offline. Changes are saved here and sync when the connection returns. {pending, plural, one {# change} other {# changes}} waiting to send."
+msgstr "Offline. Änderungen werden hier gespeichert und synchronisiert, sobald die Verbindung wiederhergestellt ist. {pending, plural, one {# Änderung} other {# Änderungen}} wartet auf den Versand."
+
+#: src/sync/words.ts
+msgid "Offline. Changes are saved here and sync when you're back online."
+msgstr "Offline. Änderungen werden hier gespeichert und synchronisiert, sobald Sie wieder online sind."
+
+#: src/workspace/syncPane.ts
+msgid "OK"
+msgstr "OK"
+
+#: src/workspace/types/drafts.ts
+msgid "Older unsaved changes from {updatedAt}. The file has changed since, so they weren't applied."
+msgstr "Ältere ungespeicherte Änderungen vom {updatedAt}. Die Datei wurde seither geändert, daher wurden sie nicht angewendet."
+
+#: src/workspace/syncPane.ts
+msgid "On a device that already syncs it, choose Copy link in mdbase's Sync tab, then paste the link here. Only Cloud copy collections can be added for now."
+msgstr "Wählen Sie auf einem Gerät, das die Sammlung bereits synchronisiert, auf der mdbase-Registerkarte „Synchronisierung“ die Option „Link kopieren“ und fügen Sie ihn hier ein. Derzeit können nur Cloud-Kopie-Sammlungen hinzugefügt werden."
+
+#: src/workspace/syncPane.ts
+msgid "On this computer"
+msgstr "Auf diesem Computer"
+
+#: src/settingsTab.ts
+msgid "On this device"
+msgstr "Auf diesem Gerät"
+
+#: src/modals.ts
+msgid "Only the '{field}' frontmatter field changes in each note. Notes that changed since validation are skipped."
+msgstr "Nur das Frontmatter-Feld '{field}' wird in jeder Notiz geändert. Notizen, die seit der Validierung geändert wurden, werden übersprungen."
+
+#: src/modals.ts
+msgid "Only the affected frontmatter field changes in each note. Notes that changed since validation are skipped."
+msgstr "Nur das betroffene Frontmatter-Feld wird in jeder Notiz geändert. Notizen, die seit der Validierung geändert wurden, werden übersprungen."
+
+#: src/workspace/issuesPane.ts
+#: src/workspace/types/impact.ts
+msgid "Open {path}"
+msgstr "{path} öffnen"
+
+#: src/workspace/issuesPane.ts
+msgid "Open {path} at {field}"
+msgstr "{path} bei {field} öffnen"
+
+#: src/workspace/syncPane.ts
+msgid "Open approval page"
+msgstr "Genehmigungsseite öffnen"
+
+#: src/workspace/syncPane.ts
+msgid "Open conflict copy"
+msgstr "Konfliktkopie öffnen"
+
+#: src/workspace/syncPane.ts
+msgid "Open current file"
+msgstr "Aktuelle Datei öffnen"
+
+#: main.ts
+msgid "Open mdbase"
+msgstr "mdbase öffnen"
+
+#: src/workspace/typesPane.ts
+msgid "Open source"
+msgstr "Quelle öffnen"
+
+#: src/commands.ts
+#: src/settingsTab.ts
+msgid "Open sync"
+msgstr "Synchronisierung öffnen"
+
+#: src/workspace/syncPane.ts
+msgid "Open the sign-in page again"
+msgstr "Anmeldeseite erneut öffnen"
+
+#: src/sync/words.ts
+msgid "Open with unsaved changes"
+msgstr "Mit ungespeicherten Änderungen öffnen"
+
+#: src/commands.ts
+msgid "Open workspace"
+msgstr "Arbeitsbereich öffnen"
+
+#: src/sync/controller.ts
+msgid "Opening sign-in"
+msgstr "Anmeldung wird geöffnet"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Optional"
+msgstr "Optional"
+
+#: src/workspace/types/designForm.ts
+msgid "Options"
+msgstr "Optionen"
+
+#: src/settingsTab.ts
+msgid "Other files"
+msgstr "Andere Dateien"
+
+#: src/workspace/syncPane.ts
+msgid "Overview"
+msgstr "Übersicht"
+
+#: src/contractCatalog.ts
+msgid "Pack artifacts must come from the first-party contract catalog."
+msgstr "Paketartefakte müssen aus dem offiziellen Vertragskatalog stammen."
+
+#: src/contractCatalog.ts
+msgid "Pack lock changed during installation."
+msgstr "Die Paketsperre wurde während der Installation geändert."
+
+#: src/contractCatalog.ts
+msgid "Pack lock changed. Review again."
+msgstr "Die Paketsperre wurde geändert. Prüfen Sie erneut."
+
+#: src/contractCatalog.ts
+msgid "Pack recovery stopped: {path} changed. Your edits and the journal were preserved."
+msgstr "Paketwiederherstellung angehalten: {path} wurde geändert. Ihre Änderungen und das Journal bleiben erhalten."
+
+#: src/contractCatalog.ts
+msgid "Pack resource is too large."
+msgstr "Paketressource ist zu groß."
+
+#: src/workspace/syncPane.ts
+msgid "Paste the collection link"
+msgstr "Sammlungslink einfügen"
+
+#: src/workspace/types/designForm.ts
+msgid "Path"
+msgstr "Pfad"
+
+#: src/noteCreation.ts
+msgid "Path escapes the collection root: {input}"
+msgstr "Pfad liegt außerhalb des Sammlungsstamms: {input}"
+
+#: src/sync/native/failures.ts
+msgid "Path not allowed"
+msgstr "Pfad nicht zulässig"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Pattern"
+msgstr "Muster"
+
+#: src/issuePresentation.ts
+msgid "pattern mismatch"
+msgstr "entspricht nicht dem Muster"
+
+#: src/workspace/syncPane.ts
+msgid "Paused"
+msgstr "Pausiert"
+
+#: src/settingsTab.ts
+msgid "PDF documents"
+msgstr "PDF-Dokumente"
+
+#: src/settingsTab.ts
+msgid "PDFs"
+msgstr "PDFs"
+
+#: src/settingsTab.ts
+msgid "png, jpg, gif, svg, webp and other pictures"
+msgstr "png, jpg, gif, svg, webp und andere Bilder"
+
+#: src/workspace/syncPane.ts
+msgid "Private"
+msgstr "Privat"
+
+#: src/sync/native/choosers.ts
+#: src/sync/words.ts
+msgctxt "collection mode"
+msgid "Private"
+msgstr "Privat"
+
+#: src/sync/words.ts
+msgid "Private collections work on the first computer only for now, so this computer can't sync this one yet. Your notes here are untouched. Cloud copy collections have no such limit."
+msgstr "Private Sammlungen funktionieren derzeit nur auf dem ersten Computer, daher kann dieser Computer sie noch nicht synchronisieren. Ihre Notizen hier bleiben unverändert. Cloud-Kopie-Sammlungen haben diese Einschränkung nicht."
+
+#: src/sync/words.ts
+msgid "Private: first computer only"
+msgstr "Privat: nur erster Computer"
+
+#: src/workspaceView.ts
+msgctxt "sync status"
+msgid "Problem"
+msgstr "Problem"
+
+#: src/workspace/syncPane.ts
+msgid "Problems"
+msgstr "Probleme"
+
+#: src/sync/native/failures.ts
+msgid "Properties can't be read"
+msgstr "Eigenschaften können nicht gelesen werden"
+
+#: src/workspace/types/designForm.ts
+msgid "Property names, separated by commas."
+msgstr "Eigenschaftsnamen, durch Kommas getrennt."
+
+#: src/workspace/types/setup.ts
+msgid "Read-only · v0.2 collection"
+msgstr "Schreibgeschützt · v0.2-Sammlung"
+
+#: src/typeContracts.ts
+msgctxt "contract mapping status"
+msgid "Ready"
+msgstr "Bereit"
+
+#: src/contractCatalog.ts
+msgid "Ready-made types"
+msgstr "Vorgefertigte Typen"
+
+#: src/workspace/syncPane.ts
+msgid "Received"
+msgstr "Empfangen"
+
+#: src/workspace/types/setup.ts
+msgid "Record files rewritten"
+msgstr "Datensatzdateien neu geschrieben"
+
+#: src/workspace/types/setup.ts
+msgid "Record reads verified"
+msgstr "Datensatz-Lesevorgänge überprüft"
+
+#: src/workspace/types/setup.ts
+msgid "Records skipped"
+msgstr "Datensätze übersprungen"
+
+#: src/contractCatalog.ts
+msgid "Recover the previous pack installation before trying again."
+msgstr "Stellen Sie die vorherige Paketinstallation wieder her, bevor Sie es erneut versuchen."
+
+#: src/workspace/typesPane.ts
+msgid "Recovered an unsaved new type."
+msgstr "Ein ungespeicherter neuer Typ wurde wiederhergestellt."
+
+#: src/workspace/types/drafts.ts
+msgid "Recovered draft (read-only)"
+msgstr "Wiederhergestellter Entwurf (schreibgeschützt)"
+
+#: src/workspace/typesPane.ts
+msgid "Recovered unsaved changes for {path}."
+msgstr "Ungespeicherte Änderungen für {path} wiederhergestellt."
+
+#: src/workspace/types/setup.ts
+msgid "Recovery backup"
+msgstr "Wiederherstellungssicherung"
+
+#: src/workspace/syncPane.ts
+msgid "Recovery key"
+msgstr "Wiederherstellungsschlüssel"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Regular expression"
+msgstr "Regulärer Ausdruck"
+
+#: src/typeDraft.ts
+msgid "Reject fields that are not declared by this type."
+msgstr "Felder ablehnen, die nicht von diesem Typ deklariert werden."
+
+#: src/workspace/types/designForm.ts
+msgid "Reject undeclared fields"
+msgstr "Nicht deklarierte Felder ablehnen"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Remove"
+msgstr "Entfernen"
+
+#. placeholder {0}: removed.length
+#: src/typeDraft.ts
+msgid "Remove {0, plural, one {field} other {fields}}: {fieldNames}."
+msgstr "{0, plural, one {Feld} other {Felder}} entfernen: {fieldNames}."
+
+#: src/quickFix.ts
+#: src/workspace/types/fieldEditor.ts
+msgid "Remove field"
+msgstr "Feld entfernen"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Remove value {valueText}"
+msgstr "Wert {valueText} entfernen"
+
+#: src/sync/native/failures.ts
+msgid "Rename is waiting"
+msgstr "Umbenennung wartet"
+
+#: src/typeDraft.ts
+msgid "Rename the type from '{oldName}' to '{newName}'. Existing type references may need review."
+msgstr "Den Typ von '{oldName}' in '{newName}' umbenennen. Vorhandene Typreferenzen müssen möglicherweise geprüft werden."
+
+#: src/typeDraft.ts
+msgid "Reorder fields."
+msgstr "Felder neu anordnen."
+
+#: src/workspace/syncPane.ts
+msgid "Replaced"
+msgstr "Ersetzt"
+
+#: src/workspace/syncPane.ts
+msgid "Request access again"
+msgstr "Zugriff erneut anfordern"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Required"
+msgstr "Erforderlich"
+
+#: src/typeContracts.ts
+msgctxt "contract mapping status"
+msgid "Required"
+msgstr "Erforderlich"
+
+#: src/workspace/types/fieldEditor.ts
+msgctxt "field constraint"
+msgid "Required"
+msgstr "Erforderlich"
+
+#: src/createTypedNoteModal.ts
+msgctxt "field indicator"
+msgid "Required"
+msgstr "Erforderlich"
+
+#: src/validation.ts
+msgid "Resolved types are not defined: {names}"
+msgstr "Ermittelte Typen sind nicht definiert: {names}"
+
+#: src/contractCatalog.ts
+msgid "Resource digest mismatch: {source}"
+msgstr "Hash der Ressource stimmt nicht überein: {source}"
+
+#: src/workspace/syncPane.ts
+msgid "Restart sync"
+msgstr "Synchronisierung neu starten"
+
+#: src/sync/controller.ts
+msgid "Restarting sync"
+msgstr "Synchronisierung wird neu gestartet"
+
+#: src/contractCatalog.ts
+#: src/workspace/typesPane.ts
+msgid "Review"
+msgstr "Prüfen"
+
+#: src/typeContracts.ts
+msgctxt "contract mapping status"
+msgid "Review"
+msgstr "Prüfen"
+
+#: src/workspace/types/setup.ts
+msgid "Review migration"
+msgstr "Migration prüfen"
+
+#: src/sync/native/failures.ts
+msgid "Run Validate in the Issues tab to see why. Fix the note and it will sync."
+msgstr "Starten Sie „Validieren“ auf der Registerkarte „Probleme“, um den Grund zu sehen. Korrigieren Sie die Notiz, damit sie synchronisiert wird."
+
+#: src/workspace/typesPane.ts
+msgid "Save"
+msgstr "Speichern"
+
+#: src/modals.ts
+msgid "Save high-impact changes"
+msgstr "Änderungen mit großen Auswirkungen speichern"
+
+#: src/workspace/types/impact.ts
+msgid "Save the type to preview matching notes."
+msgstr "Speichern Sie den Typ, um passende Notizen in der Vorschau anzuzeigen."
+
+#: src/workspace/typesPane.ts
+msgid "Saved {savedPath}."
+msgstr "{savedPath} gespeichert."
+
+#: main.ts
+msgid "Saving the type failed and automatic recovery also failed. Review '{originalPath}' and '{targetPath}'. {errorMessage}; recovery: {recoveryMessage}"
+msgstr "Das Speichern des Typs und die automatische Wiederherstellung sind fehlgeschlagen. Prüfen Sie '{originalPath}' und '{targetPath}'. {errorMessage}; Wiederherstellung: {recoveryMessage}"
+
+#: src/sync/controller.ts
+msgid "Saving your choice"
+msgstr "Ihre Auswahl wird gespeichert"
+
+#: src/modals.ts
+#: src/workspace/types/typeList.ts
+msgid "Search types"
+msgstr "Typen suchen"
+
+#: src/settingsTab.ts
+msgid "See which apps can use this collection, and remove their access, on the mdbase website."
+msgstr "Auf der mdbase-Website können Sie sehen, welche Apps diese Sammlung verwenden dürfen, und deren Zugriff entfernen."
+
+#: src/modals.ts
+msgid "select"
+msgstr "auswählen"
+
+#: src/workspace/typesPane.ts
+msgid "Select a type"
+msgstr "Typ auswählen"
+
+#: src/sync/words.ts
+msgid "Sending {pending, plural, one {# change} other {# changes}}."
+msgstr "{pending, plural, one {# Änderung wird gesendet.} other {# Änderungen werden gesendet.}}"
+
+#: src/workspace/syncPane.ts
+msgid "Sent"
+msgstr "Gesendet"
+
+#: src/sync/native/session.ts
+msgid "Set an encryption password to sync this Private collection."
+msgstr "Legen Sie ein Verschlüsselungspasswort fest, um diese private Sammlung zu synchronisieren."
+
+#: src/workspace/types/setup.ts
+msgid "Set up mdbase"
+msgstr "mdbase einrichten"
+
+#: src/workspace/syncPane.ts
+msgid "Set up sync here"
+msgstr "Synchronisierung hier einrichten"
+
+#: src/sync/words.ts
+msgid "Setting up sync"
+msgstr "Synchronisierung wird eingerichtet"
+
+#: src/workspace/types/contractEditor.ts
+msgid "Settings"
+msgstr "Einstellungen"
+
+#: src/workspace/types/impact.ts
+msgid "Show 200 of {total}"
+msgstr "200 von {total} anzeigen"
+
+#: src/workspace/syncPane.ts
+msgid "Show activity"
+msgstr "Aktivitäten anzeigen"
+
+#: src/workspace/types/impact.ts
+msgid "Show all {total}"
+msgstr "Alle {total} anzeigen"
+
+#: src/workspace/syncPane.ts
+msgid "Show both versions"
+msgstr "Beide Versionen anzeigen"
+
+#: src/workspace/types/impact.ts
+msgid "Show fewer"
+msgstr "Weniger anzeigen"
+
+#: src/workspace/syncPane.ts
+msgid "Show more ({remaining})"
+msgstr "Mehr anzeigen ({remaining})"
+
+#: src/settingsTab.ts
+msgid "Show validation notices"
+msgstr "Validierungshinweise anzeigen"
+
+#: src/workspace/types/setup.ts
+msgid "Showing 250 of {count} diagnostics."
+msgstr "250 von {count} Diagnosen werden angezeigt."
+
+#: src/settingsTab.ts
+#: src/workspace/syncPane.ts
+msgid "Sign in"
+msgstr "Anmelden"
+
+#: src/sync/words.ts
+#: src/workspace/syncPane.ts
+msgid "Sign in again"
+msgstr "Erneut anmelden"
+
+#: src/sync/words.ts
+msgid "Sign in to keep syncing. Changes are saved on this computer meanwhile."
+msgstr "Melden Sie sich an, um weiter zu synchronisieren. Änderungen werden unterdessen auf diesem Computer gespeichert."
+
+#: src/sync/words.ts
+msgid "Sign in to mdbase first."
+msgstr "Melden Sie sich zuerst bei mdbase an."
+
+#: src/workspace/syncPane.ts
+msgid "Sign in to mdbase to sync this vault with your other devices."
+msgstr "Melden Sie sich bei mdbase an, um diesen Vault mit Ihren anderen Geräten zu synchronisieren."
+
+#: src/sync/native/session.ts
+msgid "Sign in to sync this vault."
+msgstr "Melden Sie sich an, um diesen Vault zu synchronisieren."
+
+#: src/settingsTab.ts
+#: src/workspace/syncPane.ts
+msgid "Sign out"
+msgstr "Abmelden"
+
+#: src/settingsTab.ts
+msgid "Sign out of mdbase in this vault?"
+msgstr "In diesem Vault von mdbase abmelden?"
+
+#: src/settingsTab.ts
+msgid "Sign out…"
+msgstr "Abmelden…"
+
+#: src/sync/words.ts
+msgid "Sign-in didn't finish: {message}"
+msgstr "Anmeldung nicht abgeschlossen: {message}"
+
+#: src/sync/words.ts
+msgid "Sign-in stopped working. Your notes here are untouched. Choose Start over to sign in again."
+msgstr "Die Anmeldung funktioniert nicht mehr. Ihre Notizen hier bleiben unverändert. Wählen Sie „Neu beginnen“, um sich erneut anzumelden."
+
+#: src/settingsTab.ts
+msgid "Signed in."
+msgstr "Angemeldet."
+
+#: src/settingsTab.ts
+msgid "Signed in. This computer is \"{computerName}\"."
+msgstr "Angemeldet. Dieser Computer heißt „{computerName}“."
+
+#: src/sync/words.ts
+msgid "Signed out"
+msgstr "Abgemeldet"
+
+#: src/sync/words.ts
+msgid "Signed out on this device. mdbase couldn't be reached, so this device is still listed under your account with access to the collection. Remove it under Apps on the mdbase website."
+msgstr "Auf diesem Gerät abgemeldet. mdbase war nicht erreichbar, daher ist dieses Gerät in Ihrem Konto weiterhin mit Zugriff auf die Sammlung aufgeführt. Entfernen Sie es unter „Apps“ auf der mdbase-Website."
+
+#: src/sync/words.ts
+msgid "Signed out on this device. mdbase couldn't be reached, so this device is still listed under your account with access to the collection. Remove it under Apps on the mdbase website. Some sign-in data on this device couldn't be removed."
+msgstr "Auf diesem Gerät abgemeldet. mdbase war nicht erreichbar, daher ist dieses Gerät in Ihrem Konto weiterhin mit Zugriff auf die Sammlung aufgeführt. Entfernen Sie es unter „Apps“ auf der mdbase-Website. Einige Anmeldedaten auf diesem Gerät konnten nicht entfernt werden."
+
+#: src/sync/words.ts
+msgid "Signed out on this device. Some sign-in data on this device couldn't be removed."
+msgstr "Auf diesem Gerät abgemeldet. Einige Anmeldedaten auf diesem Gerät konnten nicht entfernt werden."
+
+#: src/sync/controller.ts
+msgid "Signing out"
+msgstr "Abmeldung läuft"
+
+#: src/sync/words.ts
+msgid "Some changes haven't reached mdbase yet, so you're still signed in. Wait until Sync says Synced, then sign out."
+msgstr "Einige Änderungen haben mdbase noch nicht erreicht, daher sind Sie weiterhin angemeldet. Warten Sie, bis unter „Synchronisierung“ der Status „Synchronisiert“ erscheint, und melden Sie sich dann ab."
+
+#: src/sync/words.ts
+msgid "Something inside sync stopped working. Your notes here are untouched. Choose Restart sync to continue."
+msgstr "Bei der Synchronisierung ist ein Fehler aufgetreten. Ihre Notizen hier bleiben unverändert. Wählen Sie „Synchronisierung neu starten“, um fortzufahren."
+
+#: src/sync/native/plugin.ts
+msgid "Something went wrong ({code}). Your files here are untouched."
+msgstr "Ein Fehler ist aufgetreten ({code}). Ihre Dateien hier bleiben unverändert."
+
+#: src/sync/words.ts
+msgid "Something went wrong in mdbase."
+msgstr "In mdbase ist ein Fehler aufgetreten."
+
+#: src/sync/native/plugin.ts
+msgid "Something went wrong. Your files here are untouched."
+msgstr "Ein Fehler ist aufgetreten. Ihre Dateien hier bleiben unverändert."
+
+#: src/workspace/types/setup.ts
+msgid "Start a collection"
+msgstr "Sammlung beginnen"
+
+#: src/workspace/typesPane.ts
+msgid "Start from a ready-made type, such as tasks, people or daily notes, or design your own."
+msgstr "Beginnen Sie mit einem vorgefertigten Typ, etwa für Aufgaben, Personen oder tägliche Notizen, oder entwerfen Sie einen eigenen."
+
+#: src/workspace/syncPane.ts
+msgid "Start mdbase"
+msgstr "mdbase starten"
+
+#: src/workspace/syncPane.ts
+msgid "Start over"
+msgstr "Neu beginnen"
+
+#: src/sync/native/session.ts
+msgid "Start over didn't finish. Choose Restart sync, then Start over again."
+msgstr "„Neu beginnen“ wurde nicht abgeschlossen. Wählen Sie „Synchronisierung neu starten“ und anschließend erneut „Neu beginnen“."
+
+#: src/workspace/syncPane.ts
+msgid "Start over signs this vault out of mdbase, so you can sign in again with any account. Nothing has synced yet, so your notes aren't affected."
+msgstr "„Neu beginnen“ meldet diesen Vault von mdbase ab, sodass Sie sich erneut mit einem beliebigen Konto anmelden können. Es wurde noch nichts synchronisiert, daher sind Ihre Notizen nicht betroffen."
+
+#: src/sync/controller.ts
+msgid "Starting mdbase"
+msgstr "mdbase wird gestartet"
+
+#: src/sync/controller.ts
+#: src/sync/native/plugin.ts
+#: src/sync/native/session.ts
+#: src/sync/words.ts
+msgid "Starting sync"
+msgstr "Synchronisierung wird gestartet"
+
+#: src/settingsTab.ts
+msgctxt "settings"
+msgid "Status"
+msgstr "Status"
+
+#: src/settingsTab.ts
+msgid "Stop syncing"
+msgstr "Synchronisierung beenden"
+
+#: src/settingsTab.ts
+msgid "Stop syncing the folder \"{prefix}\"?"
+msgstr "Synchronisierung des Ordners „{prefix}“ beenden?"
+
+#: src/sync/words.ts
+msgid "Stop syncing this vault and sign this device out of mdbase. Your notes stay in this vault. To sync again, sign in and choose a collection."
+msgstr "Synchronisierung dieses Vaults beenden und dieses Gerät von mdbase abmelden. Ihre Notizen bleiben in diesem Vault. Um erneut zu synchronisieren, melden Sie sich an und wählen Sie eine Sammlung."
+
+#: src/settingsTab.ts
+msgid "Stop syncing this vault?"
+msgstr "Synchronisierung dieses Vaults beenden?"
+
+#: src/workspace/issuesPane.ts
+msgid "Stop validation"
+msgstr "Validierung anhalten"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "string"
+msgstr "Zeichenfolge"
+
+#: src/settingsTab.ts
+#: src/workspace/syncPane.ts
+#: src/workspaceView.ts
+msgid "Sync"
+msgstr "Synchronisierung"
+
+#: src/workspaceView.ts
+msgid "Sync · {detail}"
+msgstr "Synchronisierung · {detail}"
+
+#: src/workspaceView.ts
+msgid "Sync · {label}"
+msgstr "Synchronisierung · {label}"
+
+#: src/settingsTab.ts
+msgid "Sync {folder} again"
+msgstr "{folder} erneut synchronisieren"
+
+#: src/sync/controller.ts
+#: src/sync/native/marker.ts
+msgid "Sync can't tell whether another app is already syncing this vault, so it's waiting. Your notes here are untouched."
+msgstr "Die Synchronisierung kann nicht feststellen, ob eine andere App diesen Vault bereits synchronisiert, und wartet deshalb. Ihre Notizen hier bleiben unverändert."
+
+#: src/sync/controller.ts
+msgid "Sync didn't restart in time, so Start over didn't run. Choose Restart sync, then Start over."
+msgstr "Die Synchronisierung wurde nicht rechtzeitig neu gestartet, daher wurde „Neu beginnen“ nicht ausgeführt. Wählen Sie „Synchronisierung neu starten“ und dann „Neu beginnen“."
+
+#: src/workspace/types/setup.ts
+msgid "Sync from another device"
+msgstr "Von einem anderen Gerät synchronisieren"
+
+#: src/sync/words.ts
+msgid "Sync hasn't started. Your notes here are untouched. Choose Restart sync to try again."
+msgstr "Die Synchronisierung wurde nicht gestartet. Ihre Notizen hier bleiben unverändert. Wählen Sie „Synchronisierung neu starten“, um es erneut zu versuchen."
+
+#: src/workspace/syncPane.ts
+msgid "Sync is on for this vault."
+msgstr "Die Synchronisierung ist für diesen Vault aktiviert."
+
+#: src/sync/words.ts
+msgid "Sync is paused. Changes are saved on this computer."
+msgstr "Die Synchronisierung ist pausiert. Änderungen werden auf diesem Computer gespeichert."
+
+#: src/sync/native/plugin.ts
+msgid "Sync isn't set up in this vault."
+msgstr "Die Synchronisierung ist in diesem Vault nicht eingerichtet."
+
+#: src/sync/words.ts
+msgid "Sync needs attention"
+msgstr "Synchronisierung erfordert Aufmerksamkeit"
+
+#: src/sync/native/session.ts
+msgid "Sync needs attention. Your files are kept on this device."
+msgstr "Die Synchronisierung erfordert Aufmerksamkeit. Ihre Dateien bleiben auf diesem Gerät erhalten."
+
+#: src/sync/controller.ts
+#: src/sync/daemon.ts
+msgid "Sync needs Obsidian for desktop."
+msgstr "Die Synchronisierung benötigt Obsidian für den Desktop."
+
+#: src/sync/words.ts
+msgid "Sync not starting"
+msgstr "Synchronisierung startet nicht"
+
+#: src/workspace/syncPane.ts
+msgid "Sync now"
+msgstr "Jetzt synchronisieren"
+
+#: src/sync/words.ts
+msgid "Sync off"
+msgstr "Synchronisierung aus"
+
+#: src/sync/words.ts
+msgid "Sync paused"
+msgstr "Synchronisierung pausiert"
+
+#: src/sync/words.ts
+msgid "Sync problem"
+msgstr "Synchronisierungsproblem"
+
+#: src/sync/controller.ts
+msgid "Sync restarted, but Start over couldn't run yet. Try Start over again."
+msgstr "Die Synchronisierung wurde neu gestartet, aber „Neu beginnen“ konnte noch nicht ausgeführt werden. Versuchen Sie „Neu beginnen“ erneut."
+
+#: src/workspace/syncPane.ts
+msgid "Sync settings"
+msgstr "Synchronisierungseinstellungen"
+
+#: src/sync/words.ts
+msgid "Sync stopped"
+msgstr "Synchronisierung beendet"
+
+#: src/sync/words.ts
+msgid "Sync stopped. {detail}"
+msgstr "Synchronisierung angehalten. {detail}"
+
+#: src/sync/words.ts
+msgid "Sync stopped. {words}"
+msgstr "Synchronisierung angehalten. {words}"
+
+#: src/workspace/syncPane.ts
+msgid "Sync stopped. See above"
+msgstr "Synchronisierung angehalten. Siehe oben"
+
+#: src/sync/words.ts
+msgid "Sync stopped. Your files are kept on this device."
+msgstr "Synchronisierung angehalten. Ihre Dateien bleiben auf diesem Gerät erhalten."
+
+#: src/sync/native/session.ts
+msgid "Sync stopped. Your files stay here."
+msgstr "Synchronisierung angehalten. Ihre Dateien bleiben hier."
+
+#: src/settingsTab.ts
+msgid "Sync stops here and this device is signed out. Your notes stay in this vault, and your other devices keep syncing."
+msgstr "Die Synchronisierung wird hier beendet und dieses Gerät abgemeldet. Ihre Notizen bleiben in diesem Vault und Ihre anderen Geräte synchronisieren weiter."
+
+#: src/workspace/syncPane.ts
+msgid "Sync this vault"
+msgstr "Diesen Vault synchronisieren"
+
+#: src/sync/words.ts
+msgid "Sync waiting"
+msgstr "Synchronisierung wartet"
+
+#: src/sync/native/pass.ts
+#: src/sync/words.ts
+msgid "Synced"
+msgstr "Synchronisiert"
+
+#: src/sync/words.ts
+msgid "Synced by another app"
+msgstr "Von einer anderen App synchronisiert"
+
+#: src/workspace/syncPane.ts
+msgid "Synced here"
+msgstr "Hier synchronisiert"
+
+#: src/sync/words.ts
+msgid "Synced. Changes save here and reach your other devices."
+msgstr "Synchronisiert. Änderungen werden hier gespeichert und erreichen Ihre anderen Geräte."
+
+#: src/sync/words.ts
+msgid "Syncing"
+msgstr "Wird synchronisiert"
+
+#: src/workspace/syncPane.ts
+msgid "Syncing…"
+msgstr "Wird synchronisiert…"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Target type"
+msgstr "Zieltyp"
+
+#: src/migration.ts
+msgid "TaskNotes filename behavior is recorded as TaskNotes runtime metadata."
+msgstr "Das TaskNotes-Dateinamenverhalten wird als TaskNotes-Laufzeitmetadaten erfasst."
+
+#: src/validation.ts
+msgid "text"
+msgstr "Text"
+
+#: src/fieldSummary.ts
+#: src/typeContracts.ts
+msgid "Text"
+msgstr "Text"
+
+#: src/sync/controller.ts
+#: src/sync/words.ts
+msgid "That doesn't look like a collection link or ID."
+msgstr "Das sieht nicht wie ein Sammlungslink oder eine Sammlungs-ID aus."
+
+#: src/sync/words.ts
+msgid "That doesn't look like a recovery key. Check for missing or mistyped characters."
+msgstr "Das sieht nicht wie ein Wiederherstellungsschlüssel aus. Prüfen Sie, ob Zeichen fehlen oder falsch eingegeben wurden."
+
+#: src/sync/words.ts
+msgid "That folder already has files. Choose a new folder name."
+msgstr "Dieser Ordner enthält bereits Dateien. Wählen Sie einen neuen Ordnernamen."
+
+#: src/sync/words.ts
+msgid "That password or recovery key doesn't match. Check it and try again."
+msgstr "Dieses Passwort oder dieser Wiederherstellungsschlüssel stimmt nicht überein. Prüfen Sie die Eingabe und versuchen Sie es erneut."
+
+#: src/sync/words.ts
+msgid "That was right, but this collection didn't hand over its key. Try again. If it keeps happening, open the mdbase app on a computer that has this collection."
+msgstr "Die Eingabe war richtig, aber diese Sammlung hat ihren Schlüssel nicht übergeben. Versuchen Sie es erneut. Falls dies weiterhin auftritt, öffnen Sie die mdbase-App auf einem Computer, der diese Sammlung enthält."
+
+#: src/sync/native/failures.ts
+msgid "The collection's file settings don't sync this file."
+msgstr "Die Dateieinstellungen der Sammlung synchronisieren diese Datei nicht."
+
+#: src/sync/native/failures.ts
+msgid "The collection's settings don't allow a note or file at this path."
+msgstr "Die Einstellungen der Sammlung lassen an diesem Pfad keine Notiz oder Datei zu."
+
+#: src/typeDraft.ts
+msgid "The default is not one of the allowed values."
+msgstr "Der Standardwert gehört nicht zu den zulässigen Werten."
+
+#: src/migration.ts
+msgid "The display field '{displayField}' is not declared, so collection.display was omitted."
+msgstr "Das Anzeigefeld '{displayField}' ist nicht deklariert, daher wurde collection.display ausgelassen."
+
+#: src/typeDraft.ts
+msgid "The display field '{displayField}' is not declared."
+msgstr "Das Anzeigefeld '{displayField}' ist nicht deklariert."
+
+#: src/typeDraft.ts
+msgid "The field '{name}' is declared more than once."
+msgstr "Das Feld '{name}' ist mehrfach deklariert."
+
+#: main.ts
+msgid "The field changed or no safe quick fix is available. Revalidate the note."
+msgstr "Das Feld wurde geändert oder es ist keine sichere Schnellkorrektur verfügbar. Validieren Sie die Notiz erneut."
+
+#: src/sync/controller.ts
+msgid "The folder \"{name}\" already has files. Choose another name."
+msgstr "Der Ordner „{name}“ enthält bereits Dateien. Wählen Sie einen anderen Namen."
+
+#: src/sync/daemon.ts
+#: src/sync/words.ts
+msgid "The mdbase app isn't installed on this computer."
+msgstr "Die mdbase-App ist auf diesem Computer nicht installiert."
+
+#: src/sync/words.ts
+msgid "The mdbase app isn't running."
+msgstr "Die mdbase-App läuft nicht."
+
+#: src/sync/words.ts
+msgid "The mdbase app isn't running. Changes are saved here and sync when it starts."
+msgstr "Die mdbase-App läuft nicht. Änderungen werden hier gespeichert und synchronisiert, sobald sie startet."
+
+#: src/migration.ts
+msgid "The migrated schema allows additional properties because the source type was not strict."
+msgstr "Das migrierte Schema erlaubt zusätzliche Eigenschaften, da der Quelltyp nicht strikt war."
+
+#: src/sync/native/failures.ts
+msgid "The moved item's identity or kind doesn't match. Local files are unchanged; check the paths before trying again."
+msgstr "Identität oder Art des verschobenen Elements stimmt nicht überein. Lokale Dateien bleiben unverändert; prüfen Sie die Pfade vor einem erneuten Versuch."
+
+#: src/typeDraft.ts
+msgid "The nested field '{name}' is declared more than once."
+msgstr "Das verschachtelte Feld '{name}' ist mehrfach deklariert."
+
+#: src/typeDraft.ts
+msgid "The pattern is not a valid regular expression: {reason}"
+msgstr "Das Muster ist kein gültiger regulärer Ausdruck: {reason}"
+
+#: src/workspace/syncPane.ts
+msgid "The properties were changed on two devices. mdbase kept one version."
+msgstr "Die Eigenschaften wurden auf zwei Geräten geändert. mdbase hat eine Version behalten."
+
+#: src/migration.ts
+msgid "The proposed v0.3 types would change this record's resolved types or effective default values."
+msgstr "Die vorgeschlagenen v0.3-Typen würden die ermittelten Typen oder wirksamen Standardwerte dieses Datensatzes ändern."
+
+#: main.ts
+msgid "The source changed after this draft was opened: {originalPath}. Reopen the type and review both versions before saving."
+msgstr "Die Quelle wurde nach dem Öffnen dieses Entwurfs geändert: {originalPath}. Öffnen Sie den Typ erneut und prüfen Sie vor dem Speichern beide Versionen."
+
+#: src/sync/words.ts
+msgid "The synced history went backwards. mdbase stopped to keep your notes safe."
+msgstr "Der synchronisierte Verlauf wurde zurückgesetzt. mdbase hat zum Schutz Ihrer Notizen angehalten."
+
+#: src/typeDraft.ts
+msgid "The target type '{target}' is not installed in this collection."
+msgstr "Der Zieltyp '{target}' ist in dieser Sammlung nicht installiert."
+
+#: src/workspace/syncPane.ts
+msgid "The text was changed on two devices. mdbase kept one version."
+msgstr "Der Text wurde auf zwei Geräten geändert. mdbase hat eine Version behalten."
+
+#: src/contractCatalog.ts
+msgid "The type pack does not match its catalog digest."
+msgstr "Das Typpaket stimmt nicht mit seinem Katalog-Hash überein."
+
+#: src/contractCatalog.ts
+msgid "The type-pack identity or resources do not match the catalog."
+msgstr "Die Identität oder Ressourcen des Typpakets stimmen nicht mit dem Katalog überein."
+
+#: src/sync/words.ts
+msgid "The vault folder moved or was renamed. Re-add it from Sync."
+msgstr "Der Vault-Ordner wurde verschoben oder umbenannt. Fügen Sie ihn über „Synchronisierung“ erneut hinzu."
+
+#: src/sync/native/failures.ts
+msgid "The YAML at the top of this note has a syntax error. Fix it and the note syncs."
+msgstr "Das YAML am Anfang dieser Notiz enthält einen Syntaxfehler. Beheben Sie ihn, damit die Notiz synchronisiert wird."
+
+#: src/workspace/syncPane.ts
+msgid "Then come back and check again. Your notes here are untouched."
+msgstr "Kehren Sie dann hierher zurück und prüfen Sie erneut. Ihre Notizen hier bleiben unverändert."
+
+#: src/modals.ts
+msgid "These changes may invalidate existing notes. Only the type definition will be saved."
+msgstr "Diese Änderungen können vorhandene Notizen ungültig machen. Nur die Typdefinition wird gespeichert."
+
+#: src/workspace/syncPane.ts
+msgid "These stay as they are on this device until they're fixed. Sync tries them again when they change."
+msgstr "Diese bleiben auf diesem Gerät unverändert, bis sie korrigiert werden. Die Synchronisierung versucht es erneut, wenn sie geändert werden."
+
+#: src/modals.ts
+msgid "These unsaved changes will be lost:"
+msgstr "Diese ungespeicherten Änderungen gehen verloren:"
+
+#: src/workspace/syncPane.ts
+msgid "These were edited on two devices at once. mdbase kept one side so sync could carry on; check that it kept what you want."
+msgstr "Diese wurden gleichzeitig auf zwei Geräten bearbeitet. mdbase hat eine Seite behalten, damit die Synchronisierung fortgesetzt werden kann; prüfen Sie, ob die gewünschte Version erhalten blieb."
+
+#: src/workspace/types/contractEditor.ts
+msgid "This app format isn't installed in the collection. Install it again or remove it before saving."
+msgstr "Dieses App-Format ist in der Sammlung nicht installiert. Installieren Sie es erneut oder entfernen Sie es vor dem Speichern."
+
+#: src/workspace/syncPane.ts
+msgid "This collection"
+msgstr "Diese Sammlung"
+
+#: src/migration.ts
+msgid "This collection is already mdbase v0.3."
+msgstr "Diese Sammlung verwendet bereits mdbase v0.3."
+
+#: src/sync/words.ts
+msgid "This collection is already on this computer."
+msgstr "Diese Sammlung befindet sich bereits auf diesem Computer."
+
+#: src/sync/words.ts
+msgid "This collection was deleted from your account."
+msgstr "Diese Sammlung wurde aus Ihrem Konto gelöscht."
+
+#: src/workspace/syncPane.ts
+msgid "This computer"
+msgstr "Dieser Computer"
+
+#: src/sync/words.ts
+msgid "This computer no longer has access to the collection."
+msgstr "Dieser Computer hat keinen Zugriff mehr auf die Sammlung."
+
+#: src/sync/words.ts
+msgid "This computer only"
+msgstr "Nur dieser Computer"
+
+#: src/settingsTab.ts
+msgid "This computer stops syncing it. Your notes stay here, and your other devices keep syncing as before."
+msgstr "Dieser Computer beendet die Synchronisierung. Ihre Notizen bleiben hier und Ihre anderen Geräte synchronisieren wie bisher weiter."
+
+#: src/sync/words.ts
+msgid "This computer's mdbase sign-in stopped working, so sync is stopped here. Your notes here are untouched."
+msgstr "Die mdbase-Anmeldung dieses Computers funktioniert nicht mehr, daher ist die Synchronisierung hier angehalten. Ihre Notizen hier bleiben unverändert."
+
+#: src/sync/native/failures.ts
+msgid "This definition is different in this vault and in the collection. Choose which version to keep."
+msgstr "Diese Definition unterscheidet sich in diesem Vault und in der Sammlung. Wählen Sie die Version, die behalten werden soll."
+
+#: src/typeDraft.ts
+msgid "This exact application contract is not installed."
+msgstr "Dieser genaue Anwendungsvertrag ist nicht installiert."
+
+#: src/typeContracts.ts
+msgid "This field satisfies the contract shape."
+msgstr "Dieses Feld entspricht der Vertragsstruktur."
+
+#: src/sync/native/failures.ts
+msgid "This file is over the collection's size limit."
+msgstr "Diese Datei überschreitet die Größenbegrenzung der Sammlung."
+
+#: src/sync/words.ts
+msgid "This folder can't be synced."
+msgstr "Dieser Ordner kann nicht synchronisiert werden."
+
+#: src/sync/native/plugin.ts
+msgid "This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing."
+msgstr "Dieser Ordner ist bereits an eine Sammlung gebunden. Verwenden Sie für eine andere Sammlung einen separaten Vault; dieser Vault kann während der Synchronisierung nicht neu gebunden werden."
+
+#: src/workspace/types/contractEditor.ts
+msgid "This format's fields can only be mapped in YAML."
+msgstr "Die Felder dieses Formats können nur in YAML zugeordnet werden."
+
+#: src/migration.ts
+msgid "This migration has lossy diagnostics. Review them and explicitly allow lossy migration."
+msgstr "Diese Migration enthält Diagnosen zu Informationsverlusten. Prüfen Sie diese und erlauben Sie die verlustbehaftete Migration ausdrücklich."
+
+#: src/validation.ts
+msgid "This note"
+msgstr "Diese Notiz"
+
+#: src/sync/native/failures.ts
+msgid "This note is over mdbase's size limit for a note. Split it, or move large content into an attachment."
+msgstr "Diese Notiz überschreitet die mdbase-Größenbegrenzung für Notizen. Teilen Sie sie auf oder verschieben Sie große Inhalte in einen Anhang."
+
+#: src/sync/native/failures.ts
+msgid "This note isn't valid UTF-8, so it can't sync as a note. Your file is unchanged."
+msgstr "Diese Notiz ist kein gültiges UTF-8 und kann daher nicht als Notiz synchronisiert werden. Ihre Datei bleibt unverändert."
+
+#: src/typeContracts.ts
+msgid "This optional contract field is not exposed."
+msgstr "Dieses optionale Vertragsfeld wird nicht bereitgestellt."
+
+#: src/contractCatalog.ts
+msgid "This pack is already installed at another revision. Upgrade it with mdbase editor; Obsidian currently supports fresh installs and same-version repair only."
+msgstr "Dieses Paket ist bereits in einer anderen Revision installiert. Aktualisieren Sie es mit mdbase editor; Obsidian unterstützt derzeit nur Neuinstallationen und Reparaturen derselben Version."
+
+#: src/sync/native/session.ts
+msgid "This Private collection can't be unlocked in Obsidian."
+msgstr "Diese private Sammlung kann in Obsidian nicht entsperrt werden."
+
+#: src/workspace/types/drafts.ts
+msgid "This removes the saved recovery copy, not the current source or your current edits. Export it first if you might need it."
+msgstr "Dadurch wird die gespeicherte Wiederherstellungskopie entfernt, nicht die aktuelle Quelle oder Ihre aktuellen Änderungen. Exportieren Sie sie zuerst, falls Sie sie benötigen könnten."
+
+#: src/typeModel.ts
+msgid "This type uses schema.ref ({schemaReference}). Edit the referenced JSON Schema file directly."
+msgstr "Dieser Typ verwendet schema.ref ({schemaReference}). Bearbeiten Sie die referenzierte JSON Schema-Datei direkt."
+
+#: src/workspace/syncPane.ts
+msgid "This vault already has notes, so the collection goes into a new folder."
+msgstr "Dieser Vault enthält bereits Notizen, daher wird die Sammlung in einem neuen Ordner abgelegt."
+
+#: src/sync/words.ts
+msgid "This vault and “{name}” both have notes. Open Sync to choose what happens."
+msgstr "Dieser Vault und „{name}“ enthalten beide Notizen. Öffnen Sie „Synchronisierung“, um das weitere Vorgehen zu wählen."
+
+#: src/workspace/syncPane.ts
+msgid "This vault has {local, plural, one {# file} other {# files}} and “{name}” has {remote, plural, one {# file} other {# files}}. Nothing has synced yet."
+msgstr "Dieser Vault enthält {local, plural, one {# Datei} other {# Dateien}} und „{name}“ enthält {remote, plural, one {# Datei} other {# Dateien}}. Es wurde noch nichts synchronisiert."
+
+#: src/sync/words.ts
+msgid "This vault is an mdbase collection on this computer only."
+msgstr "Dieser Vault ist nur auf diesem Computer eine mdbase-Sammlung."
+
+#: src/sync/words.ts
+msgid "This vault isn't synced."
+msgstr "Dieser Vault wird nicht synchronisiert."
+
+#: src/workspace/syncPane.ts
+msgid "This vault used the earlier mdbase Connect sync for \"{name}\", which has been replaced. Your notes here are untouched."
+msgstr "Dieser Vault verwendete die frühere mdbase Connect-Synchronisierung für „{name}“, die ersetzt wurde. Ihre Notizen hier bleiben unverändert."
+
+#: src/sync/native/marker.ts
+msgid "This vault was set up for sync before, maybe by an earlier install of this plugin. Your notes here are untouched."
+msgstr "Dieser Vault wurde zuvor für die Synchronisierung eingerichtet, möglicherweise durch eine frühere Installation dieses Plugins. Ihre Notizen hier bleiben unverändert."
+
+#: src/sync/words.ts
+msgid "This vault's collection needs approving in mdbase before it can sync. Your notes here are untouched. Choose Request access again and approve it in your browser."
+msgstr "Die Sammlung dieses Vaults muss in mdbase genehmigt werden, bevor sie synchronisiert werden kann. Ihre Notizen hier bleiben unverändert. Wählen Sie „Zugriff erneut anfordern“ und genehmigen Sie ihn im Browser."
+
+#: src/sync/native/marker.ts
+msgid "This vault's sync settings came from another vault or device, so sync is off here. Set up sync here to start fresh. Your notes here are untouched."
+msgstr "Die Synchronisierungseinstellungen dieses Vaults stammen aus einem anderen Vault oder von einem anderen Gerät, daher ist die Synchronisierung hier deaktiviert. Richten Sie sie hier neu ein. Ihre Notizen bleiben unverändert."
+
+#: src/sync/words.ts
+msgid "This version of the plugin can't unlock Private collections. Update it, then try again."
+msgstr "Diese Plugin-Version kann private Sammlungen nicht entsperren. Aktualisieren Sie sie und versuchen Sie es erneut."
+
+#: src/fieldSummary.ts
+msgid "Time"
+msgstr "Uhrzeit"
+
+#: src/workspace/syncPane.ts
+msgid "To keep working on \"{name}\", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it."
+msgstr "Um weiter an „{name}“ zu arbeiten, fügen Sie es unten hinzu: Die neueste Version wird in einem neuen Ordner abgelegt und Sie können die alte Kopie nach der Prüfung löschen."
+
+#: src/workspace/syncPane.ts
+msgid "To sync this vault, add its folder in the mdbase app on this computer. Your notes here are untouched."
+msgstr "Um diesen Vault zu synchronisieren, fügen Sie seinen Ordner in der mdbase-App auf diesem Computer hinzu. Ihre Notizen hier bleiben unverändert."
+
+#: src/workspace/syncPane.ts
+msgid "Today at {time}"
+msgstr "Heute um {time}"
+
+#: src/issuePresentation.ts
+msgid "too few items"
+msgstr "zu wenige Elemente"
+
+#: src/sync/native/failures.ts
+msgid "Too large to sync"
+msgstr "Zu groß zum Synchronisieren"
+
+#: src/issuePresentation.ts
+msgid "too long"
+msgstr "zu lang"
+
+#: src/sync/words.ts
+msgid "Too many attempts. Wait a few minutes, then try again."
+msgstr "Zu viele Versuche. Warten Sie einige Minuten und versuchen Sie es erneut."
+
+#: src/issuePresentation.ts
+msgid "too many items"
+msgstr "zu viele Elemente"
+
+#: src/sync/words.ts
+msgid "Too many tries. Wait a few minutes, then try again."
+msgstr "Zu viele Versuche. Warten Sie einige Minuten und versuchen Sie es erneut."
+
+#: src/issuePresentation.ts
+msgid "too short"
+msgstr "zu kurz"
+
+#: src/sync/native/session.ts
+msgid "Tried again, but sync still can't continue."
+msgstr "Erneut versucht, aber die Synchronisierung kann weiterhin nicht fortgesetzt werden."
+
+#: src/validation.ts
+msgid "true or false"
+msgstr "true oder false"
+
+#: src/contractCatalog.ts
+#: src/workspace/syncPane.ts
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+#: src/sync/native/failures.ts
+msgid "Try again later ({code})."
+msgstr "Versuchen Sie es später erneut ({code})."
+
+#: src/sync/native/failures.ts
+msgid "Try again later."
+msgstr "Versuchen Sie es später erneut."
+
+#: src/sync/native/failures.ts
+msgid "Try again to keep both versions as separate files."
+msgstr "Versuchen Sie es erneut, um beide Versionen als separate Dateien zu behalten."
+
+#: src/workspace/syncPane.ts
+msgid "Turn on sync"
+msgstr "Synchronisierung aktivieren"
+
+#: src/sync/controller.ts
+msgid "Turning on sync"
+msgstr "Synchronisierung wird aktiviert"
+
+#: src/workspace/types/fieldEditor.ts
+msgctxt "field property label"
+msgid "Type"
+msgstr "Typ"
+
+#: src/workspace/types/yamlSource.ts
+msgctxt "YAML problem location"
+msgid "Type"
+msgstr "Typ"
+
+#: main.ts
+msgid "Type already exists: {defaultTargetPath}"
+msgstr "Typ existiert bereits: {defaultTargetPath}"
+
+#: src/collectionConfig.ts
+msgid "Type already exists: {typePath}"
+msgstr "Typ existiert bereits: {typePath}"
+
+#: src/workspace/types/yamlSource.ts
+msgid "Type definition YAML"
+msgstr "Typdefinitions-YAML"
+
+#: src/workspace/types/setup.ts
+msgid "Type definitions"
+msgstr "Typdefinitionen"
+
+#: src/workspace/syncPane.ts
+msgid "Type definitions and mdbase.yaml"
+msgstr "Typdefinitionen und mdbase.yaml"
+
+#: main.ts
+msgid "Type file not found: {path}"
+msgstr "Typdatei nicht gefunden: {path}"
+
+#: src/typeModel.ts
+msgid "Type name '{name}' is reserved."
+msgstr "Typname '{name}' ist reserviert."
+
+#: main.ts
+#: src/typeModel.ts
+msgid "Type name is required."
+msgstr "Typname ist erforderlich."
+
+#: src/typeModel.ts
+msgid "Type name may contain only letters, numbers, hyphens, and underscores."
+msgstr "Der Typname darf nur Buchstaben, Zahlen, Bindestriche und Unterstriche enthalten."
+
+#: src/typeModel.ts
+msgid "Type name must be shorter than 64 characters."
+msgstr "Der Typname muss kürzer als 64 Zeichen sein."
+
+#: src/typeModel.ts
+msgid "Type name must start with a letter."
+msgstr "Der Typname muss mit einem Buchstaben beginnen."
+
+#: src/contractCatalog.ts
+msgid "Type pack unavailable ({status})."
+msgstr "Typpaket nicht verfügbar ({status})."
+
+#: src/workspace/types/yamlSource.ts
+msgid "Type YAML must start with a --- frontmatter block."
+msgstr "Typ-YAML muss mit einem --- Frontmatter-Block beginnen."
+
+#: src/workspace/types/typeList.ts
+#: src/workspaceView.ts
+msgid "Types"
+msgstr "Typen"
+
+#: src/workspace/syncPane.ts
+msgid "Types and settings"
+msgstr "Typen und Einstellungen"
+
+#: main.ts
+msgid "Unable to access updated type file: {targetPath}"
+msgstr "Auf aktualisierte Typdatei kann nicht zugegriffen werden: {targetPath}"
+
+#: src/fieldSummary.ts
+msgid "unique"
+msgstr "eindeutig"
+
+#: src/validation.ts
+msgid "unknown"
+msgstr "unbekannt"
+
+#: src/validation.ts
+msgid "Unknown field ''{fieldName}'' in strict mode"
+msgstr "Unbekanntes Feld ''{fieldName}'' im strikten Modus"
+
+#: src/issuePresentation.ts
+msgid "unknown type"
+msgstr "unbekannter Typ"
+
+#: src/workspace/syncPane.ts
+msgid "Unlock"
+msgstr "Entsperren"
+
+#: src/workspace/syncPane.ts
+msgid "Unlock “{collectionName}”"
+msgstr "„{collectionName}“ entsperren"
+
+#: src/workspace/syncPane.ts
+msgid "Unlock this collection"
+msgstr "Diese Sammlung entsperren"
+
+#: src/sync/words.ts
+msgid "Unlocking"
+msgstr "Wird entsperrt"
+
+#: src/sync/native/session.ts
+msgid "Unlocking your collection."
+msgstr "Ihre Sammlung wird entsperrt."
+
+#: src/workspace/syncPane.ts
+msgid "Unlocking…"
+msgstr "Wird entsperrt…"
+
+#: src/workspace/types/designForm.ts
+#: src/workspace/types/fieldEditor.ts
+msgid "Unnamed field"
+msgstr "Unbenanntes Feld"
+
+#: src/contractCatalog.ts
+msgid "Unsafe pack path: {path}"
+msgstr "Unsicherer Paketpfad: {path}"
+
+#: src/workspace/types/typeList.ts
+#: src/workspace/typesPane.ts
+msgid "Unsaved changes"
+msgstr "Ungespeicherte Änderungen"
+
+#: src/workspace/typesPane.ts
+msgid "Unsaved changes discarded."
+msgstr "Ungespeicherte Änderungen verworfen."
+
+#: src/contractCatalog.ts
+msgid "Unsupported contract catalog."
+msgstr "Nicht unterstützter Vertragskatalog."
+
+#: src/validation.ts
+msgid "Unsupported JSON Schema reference ''{unsupportedRef}'' for type ''{typeName}''"
+msgstr "Nicht unterstützte JSON Schema-Referenz ''{unsupportedRef}'' für Typ ''{typeName}''"
+
+#: src/migration.ts
+msgid "Unsupported migration plan."
+msgstr "Nicht unterstützter Migrationsplan."
+
+#: src/contractCatalog.ts
+msgid "Unsupported pack target {target}. Default definition folders are required."
+msgstr "Nicht unterstütztes Paketziel {target}. Standard-Definitionsordner sind erforderlich."
+
+#: src/typeDraft.ts
+#: src/workspace/typesPane.ts
+msgid "Untitled type"
+msgstr "Unbenannter Typ"
+
+#: src/modals.ts
+msgid "Update {noteCount, plural, one {# note} other {# notes}}"
+msgstr "{noteCount, plural, one {# Notiz} other {# Notizen}} aktualisieren"
+
+#: src/typeDraft.ts
+msgid "Update advanced type metadata or documentation."
+msgstr "Erweiterte Typmetadaten oder Dokumentation aktualisieren."
+
+#: src/typeDraft.ts
+msgid "Update application contract mappings or settings."
+msgstr "Anwendungsvertragszuordnungen oder Einstellungen aktualisieren."
+
+#: src/sync/words.ts
+msgid "Update the mdbase app to keep syncing."
+msgstr "Aktualisieren Sie die mdbase-App, um weiter zu synchronisieren."
+
+#: src/sync/words.ts
+msgid "Update the mdbase app, then try again."
+msgstr "Aktualisieren Sie die mdbase-App und versuchen Sie es erneut."
+
+#: src/typeDraft.ts
+msgid "Update the type's identity and display metadata."
+msgstr "Identität und Anzeigemetadaten des Typs aktualisieren."
+
+#: src/typeDraft.ts
+msgid "Update validation or documentation for '{name}'."
+msgstr "Validierung oder Dokumentation für '{name}' aktualisieren."
+
+#: main.ts
+msgid "Updated '{field}' in {fileName}"
+msgstr "'{field}' in {fileName} aktualisiert"
+
+#: src/sync/words.ts
+msgid "Updating"
+msgstr "Wird aktualisiert"
+
+#: src/sync/native/pass.ts
+msgid "Uploading {completed} of {total} notes"
+msgstr "{completed} von {total} Notizen werden hochgeladen"
+
+#: src/sync/native/plugin.ts
+msgid "uploading {percent}% ({size} MiB)"
+msgstr "Wird hochgeladen: {percent} % ({size} MiB)"
+
+#: src/workspace/syncPane.ts
+msgid "Use {otherValue}"
+msgstr "{otherValue} verwenden"
+
+#: src/workspace/syncPane.ts
+msgid "Use a different collection"
+msgstr "Andere Sammlung verwenden"
+
+#: src/createTypedNoteModal.ts
+msgid "Use suggested location"
+msgstr "Vorgeschlagenen Speicherort verwenden"
+
+#: src/workspace/types/designForm.ts
+msgid "Use the file name"
+msgstr "Dateinamen verwenden"
+
+#: src/workspace/syncPane.ts
+msgid "Use the other version"
+msgstr "Andere Version verwenden"
+
+#: src/workspace/syncPane.ts
+msgid "Use your encryption password instead"
+msgstr "Stattdessen Verschlüsselungspasswort verwenden"
+
+#: src/workspace/syncPane.ts
+msgid "Use your recovery key instead"
+msgstr "Stattdessen Wiederherstellungsschlüssel verwenden"
+
+#: src/createTypedNoteModal.ts
+msgid "Used for the file name."
+msgstr "Wird für den Dateinamen verwendet."
+
+#: src/workspace/issuesPane.ts
+msgid "Validate"
+msgstr "Validieren"
+
+#: src/commands.ts
+msgid "Validate collection"
+msgstr "Sammlung validieren"
+
+#: src/commands.ts
+msgid "Validate current note"
+msgstr "Aktuelle Notiz validieren"
+
+#: src/settingsTab.ts
+msgid "Validate notes automatically"
+msgstr "Notizen automatisch validieren"
+
+#: src/workspace/types/fieldEditor.ts
+msgid "Validate target exists"
+msgstr "Vorhandensein des Ziels validieren"
+
+#: src/workspace/issuesPane.ts
+msgid "Validation"
+msgstr "Validierung"
+
+#: main.ts
+msgid "Validation could not finish: {errorMessage}. Results are incomplete."
+msgstr "Validierung konnte nicht abgeschlossen werden: {errorMessage}. Die Ergebnisse sind unvollständig."
+
+#: src/validationState.ts
+msgid "Validation stopped · {checked} of {total, plural, one {# note} other {# notes}} checked · results incomplete"
+msgstr "Validierung angehalten · {checked} von {total, plural, one {# Notiz} other {# Notizen}} geprüft · Ergebnisse unvollständig"
+
+#: main.ts
+msgid "Validation stopped. Results are incomplete."
+msgstr "Validierung angehalten. Die Ergebnisse sind unvollständig."
+
+#: src/createTypedNoteModal.ts
+msgctxt "field placeholder"
+msgid "Value"
+msgstr "Wert"
+
+#: src/contractCatalog.ts
+msgid "Version {installed} is installed. Update it in mdbase editor; Obsidian can only add new types."
+msgstr "Version {installed} ist installiert. Aktualisieren Sie sie in mdbase editor; Obsidian kann nur neue Typen hinzufügen."
+
+#: src/contractCatalog.ts
+msgid "Version {version}"
+msgstr "Version {version}"
+
+#: src/settingsTab.ts
+msgid "Videos"
+msgstr "Videos"
+
+#: src/sync/words.ts
+msgid "Waiting for approval"
+msgstr "Warten auf Genehmigung"
+
+#: src/sync/native/failures.ts
+msgid "Waiting for Obsidian"
+msgstr "Warten auf Obsidian"
+
+#: src/sync/words.ts
+msgid "Waiting for you"
+msgstr "Wartet auf Ihre Entscheidung"
+
+#: src/sync/words.ts
+msgid "Waiting for you to approve access in your browser. Your notes here are untouched."
+msgstr "Warten auf Ihre Genehmigung des Zugriffs im Browser. Ihre Notizen hier bleiben unverändert."
+
+#: src/sync/native/session.ts
+msgid "Waiting for you: this vault and “{name}” both have notes."
+msgstr "Ihre Entscheidung ist erforderlich: Dieser Vault und „{name}“ enthalten beide Notizen."
+
+#: src/sync/words.ts
+msgid "Waiting for your choice"
+msgstr "Warten auf Ihre Entscheidung"
+
+#: src/sync/native/failures.ts
+msgid "Waiting to confirm"
+msgstr "Warten auf Bestätigung"
+
+#: src/workspace/syncPane.ts
+msgid "Waiting to send"
+msgstr "Warten auf Versand"
+
+#: src/workspace/issuesPane.ts
+msgid "Warning"
+msgstr "Warnung"
+
+#: src/workspace/issuesPane.ts
+msgid "Warnings"
+msgstr "Warnungen"
+
+#: src/issuePresentation.ts
+msgid "wrong type"
+msgstr "falscher Typ"
+
+#: src/createTypedNoteModal.ts
+msgid "YAML list or comma-separated values"
+msgstr "YAML-Liste oder kommagetrennte Werte"
+
+#: src/createTypedNoteModal.ts
+msgid "YAML object"
+msgstr "YAML-Objekt"
+
+#: src/workspace/syncPane.ts
+msgid "Yesterday at {time}"
+msgstr "Gestern um {time}"
+
+#: src/sync/words.ts
+msgid "You can read this collection but not change it."
+msgstr "Sie können diese Sammlung lesen, aber nicht ändern."
+
+#: src/sync/words.ts
+msgid "You can't change this collection"
+msgstr "Sie können diese Sammlung nicht ändern"
+
+#: src/sync/words.ts
+msgid "You signed in to a different account. Try again."
+msgstr "Sie haben sich bei einem anderen Konto angemeldet. Versuchen Sie es erneut."
+
+#: src/sync/native/failures.ts
+msgid "Your access to this collection doesn't allow this change."
+msgstr "Ihr Zugriff auf diese Sammlung erlaubt diese Änderung nicht."
+
+#: src/sync/words.ts
+msgid "Your account doesn't allow that."
+msgstr "Ihr Konto erlaubt dies nicht."
+
+#: src/workspace/typesPane.ts
+msgid "Your edits in YAML"
+msgstr "Ihre Änderungen in YAML"
+
+#: src/sync/words.ts
+msgid "Your mdbase storage is full."
+msgstr "Ihr mdbase-Speicher ist voll."
+
+#: src/sync/words.ts
+msgid "Your mdbase storage is full. Changes stay on this computer until there's room."
+msgstr "Ihr mdbase-Speicher ist voll. Änderungen bleiben auf diesem Computer, bis wieder Platz vorhanden ist."
+
+#: src/sync/words.ts
+msgid "Your notes stay in this vault. If the collection you choose already has notes, you're asked before they're combined."
+msgstr "Ihre Notizen bleiben in diesem Vault. Falls die gewählte Sammlung bereits Notizen enthält, werden Sie vor dem Zusammenführen gefragt."

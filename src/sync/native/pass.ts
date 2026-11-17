@@ -1,3 +1,5 @@
+import { plural, t } from "@lingui/core/macro";
+import { formatNumber } from "../../i18n/runtime";
 // One reconciliation pass: compare the vault, the journal and the collection,
 // pair moves, then send, fetch, delete or preserve each path. Also what the
 // pass counts for the Overview, and definitions (which never get conflict copies).
@@ -268,13 +270,13 @@ export async function reconcilePass(sync: NativeSync, defer: boolean, affected: 
   // One notice for the pass, only when something newly failed. The Sync tab
   // lists every path and why; the status bar keeps the count.
   const fresh = failed.filter(p => !failedBefore.has(p)).length;
-  if (fresh) new Notice(`mdbase: ${fresh === 1 ? "1 file" : `${fresh} files`} couldn't sync. Open Sync to see why.`, 8000);
+  if (fresh) new Notice(t`mdbase: ${plural(fresh, { one: "# file", other: "# files" })} couldn't sync. Open Sync to see why.`, 8000);
   if (!affected) sync.totals = sync.countTotals(remotes);
   if (!blockedSources.size && !failed.length && !Object.keys(sync.data.pendingPaths ?? {}).length && !Object.keys(sync.data.uploads ?? {}).length) {
     sync.lastSynced = Date.now();
     if (sync.activityTimer === null) sync.activityTimer = window.setTimeout(() => { sync.activityTimer = null; void sync.writeActivity(); }, 2000);
   }
-  sync.passStatus(sync.phase.sync ? readyText(sync.phase.sync) : "Synced");
+  sync.passStatus(sync.phase.sync ? readyText(sync.phase.sync) : t`Synced`);
   // Notes refused under the old definitions get another chance now.
   if (retryMoves || (definitionsChanged && failed.length)) window.setTimeout(() => sync.requestReconcile(), 0);
   return failed.length === 0 && blockedSources.size === 0;
@@ -312,7 +314,7 @@ export async function sendNotes(sync: NativeSync, sends: { p: string; signature:
       try { await sendOne(sends[next++]); }
       catch (e) { stop ??= e instanceof Error ? e : new Error("Mirror stopped"); }
       done++;
-      if (sends.length > 10 && Date.now() - shown > 500) { shown = Date.now(); sync.setStatus(`Uploading ${done.toLocaleString()} of ${sends.length.toLocaleString()} notes`); }
+      if (sends.length > 10 && Date.now() - shown > 500) { shown = Date.now(); const completed = formatNumber(done), total = formatNumber(sends.length); sync.setStatus(t`Uploading ${completed} of ${total} notes`, "busy"); }
     }
   };
   await Promise.all(Array.from({ length: Math.min(SEND_CONCURRENCY, sends.length) }, worker));

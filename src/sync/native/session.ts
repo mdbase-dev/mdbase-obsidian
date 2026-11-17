@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 // The sync engine's phases, and what the person does about them: sign in, pick
 // a collection, unlock it, combine, sign out, start over, hand over.
 import { Notice } from "obsidian";
@@ -7,11 +8,11 @@ import { chooseCollection } from "./choosers";
 import type NativeSync from "./plugin";
 
 /** Status text while a Private collection waits for its key, by how the account unlocks. */
-const LOCKED_TEXT: Record<string, string> = {
-  password: "Enter your encryption password to sync this Private collection.",
-  strict: "This Private collection can't be unlocked in Obsidian.",
-  none: "Set an encryption password to sync this Private collection.",
-};
+const LOCKED_TEXT = (): Record<string, string> => ({
+  password: t`Enter your encryption password to sync this Private collection.`,
+  strict: t`This Private collection can't be unlocked in Obsidian.`,
+  none: t`Set an encryption password to sync this Private collection.`,
+});
 
 export async function onPhase(sync: NativeSync, phase: NativePhase) {
   // After a handover the SDK is stopped; its closing notices change nothing here.
@@ -25,30 +26,30 @@ export async function onPhase(sync: NativeSync, phase: NativePhase) {
   if (phase.kind !== "ready") sync.mirroring = false;
   if (["ready", "signed_out", "problem", "closed"].includes(phase.kind)) sync.signInUrl = null;
   const phaseText: Record<string, string> = {
-    starting: sync.stalled ? STARTING_STALLED : "Starting sync", signed_out: "Sign in to sync this vault.",
-    authorizing: sync.data?.collectionId ? AWAITING_APPROVAL : "Finish signing in in your browser.",
-    choosing: "Choose the collection to sync with this vault.", opening: "Getting your collection ready.",
-    needs_unlock: phase.unlock?.unlocking ? "Unlocking your collection." : LOCKED_TEXT[phase.unlock?.mode ?? "password"],
-    needs_approval: NEEDS_APPROVAL,
-    problem: "Sync needs attention. Your files are kept on this device.", closed: "Sync stopped. Your files stay here.",
+    starting: sync.stalled ? STARTING_STALLED() : t`Starting sync`, signed_out: t`Sign in to sync this vault.`,
+    authorizing: sync.data?.collectionId ? AWAITING_APPROVAL() : t`Finish signing in in your browser.`,
+    choosing: t`Choose the collection to sync with this vault.`, opening: t`Getting your collection ready.`,
+    needs_unlock: phase.unlock?.unlocking ? t`Unlocking your collection.` : LOCKED_TEXT()[phase.unlock?.mode ?? "password"],
+    needs_approval: NEEDS_APPROVAL(),
+    problem: t`Sync needs attention. Your files are kept on this device.`, closed: t`Sync stopped. Your files stay here.`,
   };
   // A later notice of the same stop (its sync counts or collection list
   // changed) keeps the words saying why, not the generic problem text.
   const sameStop = phase.kind !== "ready" && phase.kind !== "needs_unlock" && phase.kind === was.kind && phase.problem && JSON.stringify(phase.problem) === JSON.stringify(was.problem);
-  if (sync.admitting && sameStop) sync.setStatus(sync.statusText);
+  if (sync.admitting && sameStop) sync.setStatus(sync.statusText, sync.statusKind);
   else if (sync.admitting && !(phase.kind === "ready" && (sync.syncingFiles || sync.startingMirror || sync.reconcileRetryTimer !== null)))
-    sync.setStatus(phase.kind === "ready" ? phase.sync ? readyText(phase.sync) : "Checking your files" : phaseText[phase.kind] ?? "Starting sync");
+    sync.setStatus(phase.kind === "ready" ? phase.sync ? readyText(phase.sync) : t`Checking your files` : phaseText[phase.kind] ?? t`Starting sync`, phase.kind === "ready" && !phase.sync ? "busy" : undefined);
   // A pass in progress keeps its own progress text, but going offline or
   // coming back must still reach the UI; "Uploading 83 of 500" would
   // otherwise stay up for as long as the connection is down (QA2-1).
-  else if (sync.admitting && phase.sync?.state !== was.sync?.state) sync.setStatus(sync.statusText);
+  else if (sync.admitting && phase.sync?.state !== was.sync?.state) sync.setStatus(sync.statusText, sync.statusKind);
   // Names/documents never belong in this log.
   sync.log(`phase ${phase.kind}${phase.problem ? ` ${phase.problem.code ?? ""} ${phase.problem.reason ?? ""}` : ""}${phase.sync ? ` sync=${phase.sync.state} pending=${phase.sync.pending}` : ""}`);
   // A wrong password is shown beside the form; it doesn't stop sync.
   if (sync.admitting && phase.kind !== "needs_unlock" && phase.problem && JSON.stringify(phase.problem) !== JSON.stringify(was.problem))
-    sync.fail("sync", phase.problem, sync.needsRestart && sync.canStartOver ? SIGN_IN_STOPPED : stoppedText(phase.problem), true);
+    sync.fail("sync", phase.problem, sync.needsRestart && sync.canStartOver ? SIGN_IN_STOPPED() : stoppedText(phase.problem), true);
   if (syncOffline(phase.sync) && !syncOffline(was.sync))
-    new Notice("mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns.", 10000);
+    new Notice(t`mdbase: sync service unreachable. Changes are saved on this device and will sync when the connection returns.`, 10000);
   if (sync.admitting && (phase.kind === "opening" || phase.kind === "needs_unlock") && phase.collectionId) {
     try { await sync.claim(phase.collectionId ?? undefined); } catch (e) { sync.pauseForOwnership(e); return; }
   }
@@ -91,7 +92,7 @@ export async function needsMergeConfirmation(sync: NativeSync, phase: NativePhas
   if (!phase.collectionId) throw new Error("Missing collection identity");
   sync.merge = { collectionId: phase.collectionId, name, local, remote };
   sync.log(`waiting for merge confirmation: local=${local} remote=${remote}`);
-  sync.setStatus(`Waiting for you: this vault and “${name}” both have notes.`);
+  sync.setStatus(t`Waiting for you: this vault and “${name}” both have notes.`);
   return true;
 }
 /**
@@ -124,11 +125,11 @@ export async function chooseAnother(sync: NativeSync) {
   const current = sync.merge?.collectionId ?? sync.phase.collectionId;
   const select = (id: string) => sync.select(id);
   const addCollection = () => sync.call("addCollection");
-  const reset = async () => { sync.data.collectionId = undefined; sync.merge = null; await sync.persist(); await sync.writeMarker(); sync.setStatus("Getting your collection ready."); };
+  const reset = async () => { sync.data.collectionId = undefined; sync.merge = null; await sync.persist(); await sync.writeMarker(); sync.setStatus(t`Getting your collection ready.`); };
   const failed = (error: unknown) => sync.fail("select", error);
   const items: { id: string | null; name: string; private?: boolean }[] = [
     ...(sync.phase.collections ?? []).filter((c: { id: string }) => c.id !== current),
-    { id: null, name: "New collection…" },
+    { id: null, name: t`New collection…` },
   ];
   chooseCollection(sync.app, items, c => {
     void (async () => {
@@ -145,7 +146,7 @@ export function choose(sync: NativeSync) {
 export async function signIn(sync: NativeSync) {
   if (sync.phase.kind === "authorizing" && sync.signInUrl) {
     sync.openSignIn(sync.signInUrl);
-    new Notice("mdbase: sign-in is still pending. Reopened the existing approval link; finish or cancel it in your browser.");
+    new Notice(t`mdbase: sign-in is still pending. Reopened the existing approval link; finish or cancel it in your browser.`);
     return;
   }
   await sync.call("signIn");
@@ -174,7 +175,7 @@ export async function retry(sync: NativeSync) {
   await sync.call("start");
   // Phase notices arrive before the call's reply. The same stop means nothing changed: say so.
   if (sync.phase.kind === "problem" && JSON.stringify(sync.phase.problem) === before)
-    throw Object.assign(new Error("Tried again, but sync still can't continue."), { code: "still_stopped" });
+    throw Object.assign(new Error(t`Tried again, but sync still can't continue.`), { code: "still_stopped" });
 }
 /**
  * Whether signing this vault out of mdbase loses nothing: no collection is
@@ -201,7 +202,7 @@ export async function startOver(sync: NativeSync) {
   const { signOutResult } = await sync.call("signOut");
   sync.reportSignOut(signOutResult);
   if (sync.phase.kind === "problem" || sync.phase.kind === "authorizing")
-    throw Object.assign(new Error("Start over didn't finish. Choose Restart sync, then Start over again."), { code: "still_stopped" });
+    throw Object.assign(new Error(t`Start over didn't finish. Choose Restart sync, then Start over again.`), { code: "still_stopped" });
 }
 /**
  * Stop syncing this vault and sign this device out of mdbase. The SDK refuses
@@ -217,12 +218,12 @@ export async function signOut(sync: NativeSync) {
   const { signOutResult } = await sync.call("signOut");
   await sync.releaseCollection();
   sync.reportSignOut(signOutResult);
-  new Notice("mdbase: signed out. Your notes stay in this vault.");
+  new Notice(t`mdbase: signed out. Your notes stay in this vault.`);
 }
 export function reportSignOut(sync: NativeSync, result: SignOutResult | null | undefined) {
   sync.log(`signed out: server=${result?.server ?? "unknown"} local=${result?.local ?? "unknown"}`);
   const text = signOutText(result);
-  if (text) new Notice(`mdbase: ${text}`, 0);
+  if (text) new Notice(t`mdbase: ${text}`, 0);
 }
 /** Whether a stop asks for another collection: deleted, access removed, unavailable. */
 export function canChooseAgain(sync: NativeSync): boolean {
@@ -275,7 +276,7 @@ export async function handover(sync: NativeSync) {
     if (sync.markerTimer) window.clearInterval(sync.markerTimer);
     // Stopped on purpose: a state of its own, so it reads as done, not as a fault.
     sync.phase = { kind: "handed_over" };
-    sync.setStatus(HANDED_OVER);
-    new Notice("mdbase: everything is sent. Add this folder in the mdbase app to keep syncing it.", 10000);
+    sync.setStatus(HANDED_OVER());
+    new Notice(t`mdbase: everything is sent. Add this folder in the mdbase app to keep syncing it.`, 10000);
   } catch (e) { sync.mirroring = false; sync.fail("handover (marker retained)", e); }
 }

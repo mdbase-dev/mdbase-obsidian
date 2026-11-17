@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { formatNumber } from "../../i18n/runtime";
 import type { V02MigrationPlan } from "../../migration";
 import { renderStatus, type WorkspaceContext } from "../shared";
 
@@ -9,7 +11,7 @@ import { renderStatus, type WorkspaceContext } from "../shared";
  */
 export function renderSetup(container: HTMLElement, ctx: WorkspaceContext): void {
   const empty = container.createDiv({ cls: "mdbase-empty-state mdbase-setup" });
-  empty.createEl("h2", { text: "Set up mdbase" });
+  empty.createEl("h2", { text: t`Set up mdbase` });
   const choices = empty.createDiv({ cls: "mdbase-setup-choices" });
   const choice = (label: string, detail: string, cta: boolean, onClick: () => void) => {
     const row = choices.createDiv({ cls: "mdbase-setup-choice" });
@@ -20,13 +22,13 @@ export function renderSetup(container: HTMLElement, ctx: WorkspaceContext): void
     button.disabled = ctx.busy;
     button.onclick = onClick;
   };
-  choice("Start a collection", "Describe your notes with types in this vault. You can sync it later.", true, () => {
+  choice(t`Start a collection`, t`Describe your notes with types in this vault. You can sync it later.`, true, () => {
     void ctx.perform(async () => {
       await ctx.host.initializeCollection();
       await ctx.refresh(true);
     });
   });
-  choice("Sync from another device", "Bring a collection you already use elsewhere into this vault.", false, () => {
+  choice(t`Sync from another device`, t`Bring a collection you already use elsewhere into this vault.`, false, () => {
     ctx.showDestination("sync");
   });
 }
@@ -46,10 +48,10 @@ export class MigrationReview {
   renderBanner(container: HTMLElement): void {
     const banner = container.createDiv({ cls: "mdbase-legacy-banner" });
     const text = banner.createDiv();
-    text.createEl("strong", { text: "Read-only · v0.2 collection" });
-    text.createEl("p", { text: "Migrate to edit types." });
+    text.createEl("strong", { text: t`Read-only · v0.2 collection` });
+    text.createEl("p", { text: t`Migrate to edit types.` });
     if (!this.plan) {
-      const button = banner.createEl("button", { text: "Review migration" });
+      const button = banner.createEl("button", { text: t`Review migration` });
       button.disabled = this.ctx.busy;
       button.onclick = () => void this.ctx.perform(async () => {
         this.plan = await this.ctx.host.analyzeMigration();
@@ -62,18 +64,18 @@ export class MigrationReview {
   private renderReview(container: HTMLElement, plan: V02MigrationPlan): void {
     const review = container.createDiv({ cls: "mdbase-migration-review" });
     const header = review.createDiv({ cls: "mdbase-section-header" });
-    header.createEl("h3", { text: "Migration review" });
+    header.createEl("h3", { text: t`Migration review` });
     header.createSpan({ cls: "mdbase-spec-badge", text: `${plan.sourceVersion} → ${plan.targetVersion}` });
     const summary = review.createDiv({ cls: "mdbase-status-list" });
-    renderStatus(summary, "Files replaced", String(plan.operations.length));
-    renderStatus(summary, "Type definitions", String(plan.typeSummaries.length));
-    renderStatus(summary, "Record reads verified", String(plan.recordsVerified));
-    if (plan.recordsSkipped) renderStatus(summary, "Records skipped", String(plan.recordsSkipped));
-    renderStatus(summary, "Record files rewritten", "0");
-    renderStatus(summary, "Recovery backup", plan.backupLocation);
+    renderStatus(summary, t`Files replaced`, formatNumber(plan.operations.length));
+    renderStatus(summary, t`Type definitions`, formatNumber(plan.typeSummaries.length));
+    renderStatus(summary, t`Record reads verified`, formatNumber(plan.recordsVerified));
+    if (plan.recordsSkipped) renderStatus(summary, t`Records skipped`, formatNumber(plan.recordsSkipped));
+    renderStatus(summary, t`Record files rewritten`, "0");
+    renderStatus(summary, t`Recovery backup`, plan.backupLocation);
     const warnings = review.createDiv({ cls: "mdbase-review-list" });
     if (!plan.diagnostics.length) {
-      warnings.createDiv({ cls: "mdbase-review-ok", text: "No migration diagnostics." });
+      warnings.createDiv({ cls: "mdbase-review-ok", text: t`No migration diagnostics.` });
     }
     for (const diagnostic of plan.diagnostics.slice(0, 250)) {
       const item = warnings.createDiv({ cls: "mdbase-review-item" });
@@ -82,9 +84,10 @@ export class MigrationReview {
       item.createDiv({ text: diagnostic.message });
     }
     if (plan.diagnostics.length > 250) {
+      const count = plan.diagnostics.length;
       warnings.createDiv({
         cls: "mdbase-form-description",
-        text: `Showing 250 of ${plan.diagnostics.length} diagnostics.`,
+        text: t`Showing 250 of ${count} diagnostics.`,
       });
     }
     if (!plan.applicable) {
@@ -95,10 +98,10 @@ export class MigrationReview {
         this.allowLossy = checkbox.checked;
         this.ctx.render();
       };
-      consent.createSpan({ text: "I reviewed the lossy diagnostics and want to apply this migration." });
+      consent.createSpan({ text: t`I reviewed the lossy diagnostics and want to apply this migration.` });
     }
     const actions = review.createDiv({ cls: "mdbase-actions" });
-    const apply = actions.createEl("button", { text: "Apply migration" });
+    const apply = actions.createEl("button", { text: t`Apply migration` });
     apply.addClass("mod-warning");
     apply.disabled = this.ctx.busy || (!plan.applicable && !this.allowLossy);
     apply.onclick = () => void this.ctx.perform(async () => {
@@ -108,7 +111,7 @@ export class MigrationReview {
       this.onApplied();
       await this.ctx.refresh(true);
     });
-    const dismiss = actions.createEl("button", { text: "Close review" });
+    const dismiss = actions.createEl("button", { text: t`Close review` });
     dismiss.onclick = () => {
       this.plan = null;
       this.ctx.render();

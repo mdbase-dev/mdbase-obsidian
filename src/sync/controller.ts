@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { ConflictEntry, ConflictValue, Hold, MdbaseClient, MdbaseSync, SyncStatus } from "@mdbase-dev/sdk/thin-client";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import {
@@ -58,6 +59,7 @@ export interface PendingApproval {
 export interface SyncSnapshot {
   direct?: {
     text: string;
+    statusKind?: "busy" | "problem";
     phase: {
       kind: string; sync?: Pick<MdbaseSync, "state" | "connection" | "pending" | "health" | "live" | "holds" | "conflicts"> & { installing?: boolean }; problem?: unknown;
       /** A Private collection waiting for its key: how the account unlocks it. */
@@ -117,7 +119,7 @@ export interface SyncHost {
   openUrl(url: string): void;
 }
 
-const isMdbaseError = (error: unknown): error is { code: string; reason?: string; message: string } =>
+const isMdbaseError = (error: unknown): error is { code: string; reason?: string; message: string; authored?: boolean } =>
   typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string";
 
 function holdText(value: unknown): string | null {
@@ -204,7 +206,7 @@ export class SyncController {
   async restartNative(): Promise<void> {
     const old = this.native;
     if (!old || this.releasing) return;
-    this.set({ direct: { text: "Restarting sync", phase: { kind: "starting" } }, error: null });
+    this.set({ direct: { text: t`Restarting sync`, phase: { kind: "starting" } }, error: null });
     await this.dropNative();
     if (this.stopped) return;
     await this.refresh();
@@ -238,9 +240,9 @@ export class SyncController {
     if (!native.workerGone) return native.startOver();
     await this.restartNative();
     const fresh = await this.whenStartOverReady(60_000);
-    if (!fresh) throw new MdbaseError("internal", "Sync didn't restart in time, so Start over didn't run. Choose Restart sync, then Start over.");
+    if (!fresh) throw new MdbaseError("internal", t`Sync didn't restart in time, so Start over didn't run. Choose Restart sync, then Start over.`, undefined, true);
     if (fresh.phase.kind === "signed_out") return;
-    if (!fresh.canStartOver) throw new MdbaseError("internal", "Sync restarted, but Start over couldn't run yet. Try Start over again.");
+    if (!fresh.canStartOver) throw new MdbaseError("internal", t`Sync restarted, but Start over couldn't run yet. Try Start over again.`, undefined, true);
     await fresh.startOver();
   }
 
@@ -292,20 +294,20 @@ export class SyncController {
         if (!this.mobile && vaultPath) {
           const { fs, path } = desktopModules();
           try { marker = JSON.parse(fs.readFileSync(path.join(vaultPath, ".mdbase/host.json"), "utf8")); }
-          catch (e) { if ((e as { code?: string }).code !== "ENOENT") throw new Error("Sync can't tell whether another app is already syncing this vault, so it's waiting. Your notes here are untouched."); }
+          catch (e) { if ((e as { code?: string }).code !== "ENOENT") throw Object.assign(new Error(t`Sync can't tell whether another app is already syncing this vault, so it's waiting. Your notes here are untouched.`), { authored: true }); }
         }
         const owner = folderHost(marker);
-        if (owner === "wait") throw new Error("Another app is already syncing this vault. Turn sync off there first. Your notes here are untouched.");
+        if (owner === "wait") throw Object.assign(new Error(t`Another app is already syncing this vault. Turn sync off there first. Your notes here are untouched.`), { authored: true });
         if (owner === "plugin") {
           this.closeLink();
           // A host being torn down still holds the port and the SDK's storage.
           if (!this.native && this.releasing) await this.releasing;
           if (!this.native && !this.stopped) {
-            this.set({ direct: { text: "Starting sync", phase: { kind: "starting" } }, daemon: "running", error: null });
+            this.set({ direct: { text: t`Starting sync`, phase: { kind: "starting" } }, daemon: "running", error: null });
             const native: NativeSync = await this.host.createNative((text, phase, view) => {
               // A host already replaced or stopped says nothing more.
               if (this.native !== native) return;
-              this.set({ direct: { text, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], conflicts: view?.conflicts ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound } });
+              this.set({ direct: { text, statusKind: view?.statusKind, phase: phase as NonNullable<SyncSnapshot["direct"]>["phase"], failures: view?.failures ?? [], conflicts: view?.conflicts ?? [], merge: view?.merge ?? null, activity: view?.activity, lastSynced: view?.lastSynced, totals: view?.totals, device: view?.device, inclusion: view?.inclusion, bound: view?.bound } });
             }, this.lastDesktopCollection);
             if (this.stopped || this.native) { native.unload(); return; }
             if (this.takeOverFrom) { native.takeOverFrom = this.takeOverFrom; this.takeOverFrom = null; }
@@ -321,7 +323,7 @@ export class SyncController {
       } catch (error) {
         void this.dropNative();
         this.closeLink();
-        this.set({ direct: undefined, daemon: "error", error: new MdbaseError("unavailable", (error as Error).message) });
+        this.set({ direct: undefined, daemon: "error", error: new MdbaseError("unavailable", (error as Error).message, undefined, (error as { authored?: boolean }).authored === true) });
         return;
       }
     }
@@ -333,7 +335,7 @@ export class SyncController {
       // A busy daemon (say, taking in thousands of changes) can answer slowly; the open link still reports live.
       if (e.code === "timeout" && this.snapshotValue.link === "open") return;
       const daemon: DaemonState = e.reason === "not_installed" ? "not_installed"
-        : e.reason === "daemon_not_running" || e.code === "unavailable" && /not running/i.test(e.message) ? "not_running" : "error";
+        : e.reason === "daemon_not_running" || e.code === "unavailable" && !e.authored && /not running/i.test(e.message) ? "not_running" : "error";
       this.closeLink();
       // Keep the last known collection: the vault still syncs once mdbase is back.
       this.set({ daemon, error: e, status: null, live: null, holds: [], approvals: [] });
@@ -377,7 +379,7 @@ export class SyncController {
       return list.flatMap((entry) => {
         const d = entry as { device?: string; device_id?: string; id?: string; name?: string };
         const device = d.device ?? d.device_id ?? d.id;
-        return device ? [{ device, name: d.name ?? "A new device" }] : [];
+        return device ? [{ device, name: d.name ?? t`A new device` }] : [];
       });
     } catch {
       return [];
@@ -432,7 +434,7 @@ export class SyncController {
       if (attempt !== this.linkAttempt) return;
       this.clientFor = null;
       // The daemon asks one app at a time; another request's prompt is still open.
-      const waiting = isMdbaseError(error) && /waiting for confirmation/i.test(error.message);
+      const waiting = isMdbaseError(error) && !error.authored && /waiting for confirmation/i.test(error.message);
       const declined = !waiting && isMdbaseError(error) && error.reason === "link_not_approved";
       if (!waiting) console.warn("mdbase: could not link to the mdbase app", error);
       // Anything but a refusal retries at the next check.
@@ -501,8 +503,8 @@ export class SyncController {
 
   /** Accept what mdbase kept. */
   dismissMerged(change: MergedChange): Promise<void> {
-    return this.act("Saving your choice", async () => {
-      if (!this.client) throw new MdbaseError("unavailable", "Obsidian isn't linked to mdbase right now.");
+    return this.act(t`Saving your choice`, async () => {
+      if (!this.client) throw new MdbaseError("unavailable", t`Obsidian isn't linked to mdbase right now.`, undefined, true);
       await this.client.dismissConflict(change.entry);
       this.set({ merged: this.snapshotValue.merged.filter((m) => m !== change) });
     });
@@ -510,8 +512,8 @@ export class SyncController {
 
   /** Use the other device's value for a property instead. */
   useOtherValue(change: MergedChange): Promise<void> {
-    return this.act("Saving your choice", async () => {
-      if (!this.client || change.field === null) throw new MdbaseError("unavailable", "Obsidian isn't linked to mdbase right now.");
+    return this.act(t`Saving your choice`, async () => {
+      if (!this.client || change.field === null) throw new MdbaseError("unavailable", t`Obsidian isn't linked to mdbase right now.`, undefined, true);
       await this.client.resolveConflict(change.entry, change.field, change.lostValue as never);
       this.set({ merged: this.snapshotValue.merged.filter((m) => m !== change) });
     });
@@ -530,14 +532,14 @@ export class SyncController {
   }
 
   startApp(): Promise<void> {
-    return this.act("Starting mdbase", async () => {
+    return this.act(t`Starting mdbase`, async () => {
       await this.cli.run(["daemon", "start"], { timeoutMs: 60_000 });
     });
   }
 
   async signIn(): Promise<void> {
-    const result = await this.act("Opening sign-in", () => this.cli.run<{ verification_uri?: string }>(["account", "sign-in"]));
-    if (!result.verification_uri) throw new MdbaseError("internal", "mdbase didn't return a sign-in page.");
+    const result = await this.act(t`Opening sign-in`, () => this.cli.run<{ verification_uri?: string }>(["account", "sign-in"]));
+    if (!result.verification_uri) throw new MdbaseError("internal", t`mdbase didn't return a sign-in page.`, undefined, true);
     this.signInDeadline = Date.now() + 10 * 60_000;
     this.set({ signingIn: result.verification_uri });
     this.host.openUrl(result.verification_uri);
@@ -549,7 +551,7 @@ export class SyncController {
   }
 
   signOut(): Promise<void> {
-    return this.act("Signing out", async () => {
+    return this.act(t`Signing out`, async () => {
       await this.cli.run(["account", "sign-out"], { yes: true });
     });
   }
@@ -557,8 +559,8 @@ export class SyncController {
   /** Make this vault a collection and sync it. */
   setUp(kind: SyncKind, name: string): Promise<void> {
     const vault = this.host.vaultPath();
-    if (!vault) return Promise.reject(new MdbaseError("unavailable", "Sync needs Obsidian for desktop."));
-    return this.act("Turning on sync", async () => {
+    if (!vault) return Promise.reject(new MdbaseError("unavailable", t`Sync needs Obsidian for desktop.`, undefined, true));
+    return this.act(t`Turning on sync`, async () => {
       let collection = this.snapshotValue.collection;
       if (!collection) {
         collection = await this.cli.run<CollectionStatus>(["collection", "add", vault, "--name", name.trim() || "Notes"], { yes: true });
@@ -591,9 +593,9 @@ export class SyncController {
   join(pasted: string, folder: string): Promise<string> {
     const vault = this.host.vaultPath();
     const id = collectionIdFrom(pasted);
-    if (!vault) return Promise.reject(new MdbaseError("unavailable", "Sync needs Obsidian for desktop."));
-    if (!id) return Promise.reject(new MdbaseError("invalid_request", "That doesn't look like a collection link or ID.", "bad_id"));
-    return this.act("Adding the collection", async () => {
+    if (!vault) return Promise.reject(new MdbaseError("unavailable", t`Sync needs Obsidian for desktop.`, undefined, true));
+    if (!id) return Promise.reject(new MdbaseError("invalid_request", t`That doesn't look like a collection link or ID.`, "bad_id", true));
+    return this.act(t`Adding the collection`, async () => {
       const { fs, path } = desktopModules();
       const intoVault = this.host.vaultTopLevel().length === 0;
       const tryJoin = async (target: string) => {
@@ -609,7 +611,7 @@ export class SyncController {
       const name = safeFolderName(folder);
       const target = path.join(vault, name);
       if (fs.existsSync(target) && fs.readdirSync(target).length) {
-        throw new MdbaseError("invalid_request", `The folder "${name}" already has files. Choose another name.`, "folder_not_empty");
+        throw new MdbaseError("invalid_request", t`The folder "${name}" already has files. Choose another name.`, "folder_not_empty", true);
       }
       fs.mkdirSync(target, { recursive: true });
       try {
@@ -628,7 +630,7 @@ export class SyncController {
       await this.cli.run(["collection", "join", id, target], { yes: true, timeoutMs: 180_000 });
     } catch (error) {
       // A private collection has no cloud copy to join from ("not_current_cloud_copy").
-      if (!isMdbaseError(error) || !/private|e2e|end.to.end|not_current_cloud_copy/i.test(`${error.reason ?? ""} ${error.message}`)) throw error;
+      if (!isMdbaseError(error) || error.authored || !/private|e2e|end.to.end|not_current_cloud_copy/i.test(`${error.reason ?? ""} ${error.message}`)) throw error;
       await this.cli.run(["collection", "join", id, target, "--private"], { yes: true, timeoutMs: 180_000 });
     }
   }
@@ -637,7 +639,7 @@ export class SyncController {
   disconnect(): Promise<void> {
     const collection = this.snapshotValue.collection;
     if (!collection) return Promise.resolve();
-    return this.act("Disconnecting", async () => {
+    return this.act(t`Disconnecting`, async () => {
       this.closeLink();
       await this.cli.run(["collection", "remove", collection.id], { yes: true });
     });
@@ -646,7 +648,7 @@ export class SyncController {
   resolve(hold: HeldFile, choice: HoldChoice): Promise<void> {
     const collection = this.snapshotValue.collection;
     if (!collection) return Promise.resolve();
-    return this.act("Saving your choice", async () => {
+    return this.act(t`Saving your choice`, async () => {
       this.decided.add(hold.id);
       if (this.client && this.snapshotValue.link === "open") await this.client.resolveHold(hold.id, choice);
       else await this.cli.run(["resolve", collection.id, hold.id, choice], { yes: true });
@@ -657,7 +659,7 @@ export class SyncController {
   approve(device: string, code: string): Promise<void> {
     const collection = this.snapshotValue.collection;
     if (!collection) return Promise.resolve();
-    return this.act("Approving the device", async () => {
+    return this.act(t`Approving the device`, async () => {
       await this.cli.run(["device", "approve", collection.id, device, "--code", code.replace(/\s+/g, "")], { yes: true, timeoutMs: 60_000 });
     });
   }
@@ -665,7 +667,7 @@ export class SyncController {
   reject(device: string): Promise<void> {
     const collection = this.snapshotValue.collection;
     if (!collection) return Promise.resolve();
-    return this.act("Declining the device", async () => {
+    return this.act(t`Declining the device`, async () => {
       await this.cli.run(["device", "reject", collection.id, device], { yes: true });
     });
   }

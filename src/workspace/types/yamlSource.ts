@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Notice } from "obsidian";
 import type { MdbaseTypeDef } from "../../mdbaseCore";
 import { parseFrontmatter } from "../../mdbaseCore";
@@ -48,7 +49,7 @@ export class TypeYamlSource {
       section.appendChild(editor.dom);
     } else {
       const textarea = section.createEl("textarea", { cls: "mdbase-yaml-editor" });
-      textarea.setAttr("aria-label", "Type definition YAML");
+      textarea.setAttr("aria-label", t`Type definition YAML`);
       textarea.setAttr("data-focus-key", "yaml-editor");
       textarea.value = this.text;
       textarea.disabled = readOnly;
@@ -102,7 +103,8 @@ export class TypeYamlSource {
     for (const problem of problems.slice(0, 20)) {
       const row = container.createEl("button", { cls: "mdbase-yaml-problem" });
       row.setAttr("data-severity", problem.severity);
-      row.createSpan({ cls: "mdbase-yaml-problem-line-number", text: problem.line ? `Line ${problem.line}` : "Type" });
+      const line = problem.line;
+      row.createSpan({ cls: "mdbase-yaml-problem-line-number", text: line ? t`Line ${line}` : t({ message: "Type", context: "YAML problem location" }) });
       row.createSpan({ text: problem.message });
       row.disabled = problem.line === null;
       if (problem.line !== null) {
@@ -115,15 +117,15 @@ export class TypeYamlSource {
   /** The YAML draft as a type model, or the first problem that stops it parsing. */
   parse(): { model: TypeEditorModel } | { error: string; line?: number | null } {
     const parsed = parseFrontmatter(this.text);
-    if (!parsed.hasFrontmatter) return { error: "Type YAML must start with a --- frontmatter block.", line: 1 };
+    if (!parsed.hasFrontmatter) return { error: t`Type YAML must start with a --- frontmatter block.`, line: 1 };
     // Parser messages append a code excerpt; the first line carries the meaning.
     if (parsed.error) {
       // The row shows the editor's line number; the parser's own position counts from the frontmatter.
       const message = parsed.error.split("\n")[0].replace(/:$/, "").replace(/ at line \d+, column \d+$/, "");
-      return { error: `Invalid YAML: ${message}`, line: yamlErrorLine(parsed.error) };
+      return { error: t`Invalid YAML: ${message}`, line: yamlErrorLine(parsed.error) };
     }
     if (parsed.frontmatter.kind !== "mdbase.type") {
-      return { error: "Canonical v0.3 type YAML requires kind: mdbase.type.", line: yamlKeyLine(this.text, "kind") ?? 2 };
+      return { error: t`Canonical v0.3 type YAML requires kind: mdbase.type.`, line: yamlKeyLine(this.text, "kind") ?? 2 };
     }
     try {
       const current = this.deps.model();

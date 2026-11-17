@@ -7,7 +7,7 @@ import type {
 import { v03TypeDefFromFrontmatter } from "./typeDefinitions";
 import { getTypesForFile } from "./typeMatching";
 import { validateRecordAgainstType } from "./validation";
-import { frontmatterFromTypeModel } from "./typeModel";
+import { frontmatterFromTypeModel, TypeNameRequiredError } from "./typeModel";
 import type { TypeEditorModel } from "./typeEditorTypes";
 
 export interface TypeStats {
@@ -36,7 +36,7 @@ export interface TypeImpact {
   fixed: number;
 }
 
-export type TypeImpactResult = { impact: TypeImpact } | { error: string };
+export type TypeImpactResult = { impact: TypeImpact } | { error: string; nameRequired?: boolean };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -117,7 +117,7 @@ export async function analyzeTypeImpact(input: {
   try {
     draftDef = typeDefFromDraft(input.draft, input.filePath);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: error instanceof Error ? error.message : String(error), nameRequired: error instanceof TypeNameRequiredError };
   }
   const savedDef = input.savedName ? input.types.get(input.savedName) ?? null : null;
   const draftTypes = new Map(input.types);

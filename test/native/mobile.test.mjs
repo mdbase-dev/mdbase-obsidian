@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
+import { linguiMacros } from "../../scripts/lingui-macros.mjs";
 import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
@@ -21,7 +22,7 @@ const result = await build({
     export { SyncController } from './src/sync/controller.ts';
     export { TFile, setApiSupport } from 'obsidian';`, resolveDir: process.cwd() },
   bundle: true, platform: "node", format: "esm", write: false,
-  plugins: [{ name: "mobile-mocks", setup(builder) {
+  plugins: [linguiMacros({ production: false }), { name: "mobile-mocks", setup(builder) {
     builder.onResolve({ filter: /^obsidian$|^embedded:assets$/ }, args => ({ path: args.path, namespace: "mock" }));
     builder.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path === "obsidian" ? `
       export const Platform = { isMobile: true, isMobileApp: true };

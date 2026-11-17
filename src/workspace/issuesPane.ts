@@ -1,4 +1,6 @@
+import { plural, t } from "@lingui/core/macro";
 import { BulkFixConfirmationModal } from "../modals";
+import { formatNumber } from "../i18n/runtime";
 import { setIcon } from "obsidian";
 import type { MdbaseIssue } from "../mdbaseCore";
 import { groupIssuesByRule, issueRuleLabel } from "../issuePresentation";
@@ -37,21 +39,22 @@ export class IssuesPane {
     const document = container.createDiv({ cls: "mdbase-issues-document" });
     const allIssues = this.ctx.host.getIssues();
     const allFiles = new Set(allIssues.map((issue) => issue.path)).size;
+    const issueCount = allIssues.length;
     const header = document.createDiv({ cls: "mdbase-document-header" });
     const heading = header.createDiv();
     const validationSummary = this.ctx.host.getValidationSummary();
     heading.createEl("h2", { text: allIssues.length
-      ? `${allIssues.length.toLocaleString()} ${allIssues.length === 1 ? "issue" : "issues"} · ${allFiles.toLocaleString()} ${allFiles === 1 ? "file" : "files"}`
-      : validationSummary === "Not checked yet" ? "Validation" : "No known issues",
+      ? t`${plural(issueCount, { one: "# issue", other: "# issues" })} · ${plural(allFiles, { one: "# file", other: "# files" })}`
+      : this.ctx.host.isValidationUntouched() ? t`Validation` : t`No known issues`,
     });
     const freshness = heading.createDiv({ cls: "mdbase-muted", text: validationSummary });
     freshness.setAttr("role", "status");
     freshness.setAttr("data-validation-summary", "true");
     if (this.ctx.host.isValidating()) {
-      const cancel = header.createEl("button", { text: "Stop validation" });
+      const cancel = header.createEl("button", { text: t`Stop validation` });
       cancel.onclick = () => this.ctx.host.cancelValidation();
     }
-    const refresh = header.createEl("button", { text: "Validate" });
+    const refresh = header.createEl("button", { text: t`Validate` });
     refresh.disabled = this.ctx.busy || this.ctx.host.isValidating();
     refresh.onclick = () => void this.ctx.perform(async () => {
       await this.ctx.host.validateCollection();
@@ -60,10 +63,10 @@ export class IssuesPane {
     if (!allIssues.length) return;
     const controls = document.createDiv({ cls: "mdbase-issue-controls" });
     const severity = controls.createEl("select", { cls: "dropdown" });
-    severity.setAttr("aria-label", "Issue severity");
-    severity.createEl("option", { value: "all", text: "All severities" });
-    severity.createEl("option", { value: "error", text: "Errors" });
-    severity.createEl("option", { value: "warn", text: "Warnings" });
+    severity.setAttr("aria-label", t`Issue severity`);
+    severity.createEl("option", { value: "all", text: t`All severities` });
+    severity.createEl("option", { value: "error", text: t`Errors` });
+    severity.createEl("option", { value: "warn", text: t`Warnings` });
     severity.value = this.issueSeverity;
     severity.onchange = () => {
       this.issueSeverity = severity.value === "error" || severity.value === "warn" ? severity.value : "all";
@@ -71,9 +74,9 @@ export class IssuesPane {
       this.ctx.render();
     };
     const groupBy = controls.createEl("select", { cls: "dropdown" });
-    groupBy.setAttr("aria-label", "Group issues");
-    groupBy.createEl("option", { value: "file", text: "By file" });
-    groupBy.createEl("option", { value: "rule", text: "By rule" });
+    groupBy.setAttr("aria-label", t`Group issues`);
+    groupBy.createEl("option", { value: "file", text: t`By file` });
+    groupBy.createEl("option", { value: "rule", text: t`By rule` });
     groupBy.value = this.issueGroupBy;
     groupBy.onchange = () => {
       this.issueGroupBy = groupBy.value === "rule" ? "rule" : "file";
@@ -82,9 +85,9 @@ export class IssuesPane {
     // Obsidian's own search field markup, so it gets the magnifier and clear button.
     const searchBox = controls.createDiv({ cls: "search-input-container mdbase-issue-search" });
     const query = searchBox.createEl("input", { type: "search" });
-    query.setAttr("aria-label", "Filter issues");
+    query.setAttr("aria-label", t`Filter issues`);
     query.setAttr("data-focus-key", "issue-search");
-    query.placeholder = "Filter issues";
+    query.placeholder = t`Filter issues`;
     query.value = this.issueQuery;
     query.oninput = () => {
       this.issueQuery = query.value;
@@ -95,7 +98,7 @@ export class IssuesPane {
       next?.setSelectionRange(next.value.length, next.value.length);
     };
     const clear = searchBox.createDiv({ cls: "search-input-clear-button" });
-    clear.setAttr("aria-label", "Clear filter");
+    clear.setAttr("aria-label", t`Clear filter`);
     clear.onclick = () => {
       query.value = "";
       query.dispatchEvent(new Event("input"));
@@ -108,21 +111,24 @@ export class IssuesPane {
     });
     const filteredFiles = new Set(filtered.map((issue) => issue.path)).size;
     if (filtered.length !== allIssues.length || filtered.length > this.issueLimit) {
+      const shown = formatNumber(Math.min(filtered.length, this.issueLimit));
+      const filteredCount = filtered.length;
       document.createDiv({ cls: "search-results-info mdbase-issues-summary", text:
-        `${Math.min(filtered.length, this.issueLimit).toLocaleString()} of ${filtered.length.toLocaleString()} issues · ${filteredFiles.toLocaleString()} files`,
+        t`${shown} of ${plural(filteredCount, { one: "# issue", other: "# issues" })} · ${plural(filteredFiles, { one: "# file", other: "# files" })}`,
       });
     }
     if (!filtered.length) {
-      document.createDiv({ cls: "mdbase-empty-state", text: "No issues match these filters." });
+      document.createDiv({ cls: "mdbase-empty-state", text: t`No issues match these filters.` });
       return;
     }
     const issues = filtered.slice(0, this.issueLimit);
     if (this.issueGroupBy === "rule") this.renderIssuesByRule(document, issues);
     else this.renderIssuesByFile(document, issues);
     if (filtered.length > issues.length) {
+      const remaining = Math.min(250, filtered.length - issues.length);
       const load = document.createEl("button", {
         cls: "mdbase-load-more",
-        text: `Load ${Math.min(250, filtered.length - issues.length)} more`,
+        text: t`Load ${remaining} more`,
       });
       load.onclick = () => {
         this.issueLimit += 250;
@@ -139,18 +145,21 @@ export class IssuesPane {
       header.addClass("is-clickable");
       header.setAttr("role", "button");
       header.tabIndex = 0;
-      header.setAttr("title", `Open ${path}`);
+      header.setAttr("title", t`Open ${path}`);
       setIcon(name.createSpan({ cls: "mdbase-issue-file-icon" }), "file-text");
       name.createSpan({ cls: "mdbase-issue-file-path", text: path });
       const open = () => void this.ctx.host.openFileByPath(path);
       header.onclick = open;
       header.onkeydown = (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } };
-      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: `${fileIssues.length}` })
-        .setAttr("aria-label", `${fileIssues.length} ${fileIssues.length === 1 ? "issue" : "issues"}`);
+      const issueCount = fileIssues.length;
+      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: formatNumber(issueCount) })
+        .setAttr("aria-label", plural(issueCount, { one: "# issue", other: "# issues" }));
       const matches = group.createDiv({ cls: "search-result-file-matches" });
       for (const issue of fileIssues) {
         const row = matches.createDiv({ cls: "search-result-file-match mdbase-issue-row" });
-        this.fillIssueRow(row, issue, `${issue.severity === "warn" ? "Warning" : "Error"}${issue.field ? ` · ${issue.field}` : ""}`);
+        const severityLabel = issue.severity === "warn" ? t`Warning` : t`Error`;
+        const field = issue.field;
+        this.fillIssueRow(row, issue, field ? t`${severityLabel} · ${field}` : severityLabel);
       }
     }
   }
@@ -165,14 +174,14 @@ export class IssuesPane {
       title.createSpan({ cls: "mdbase-issue-file-path", text: issueRuleLabel(first) });
       const files = new Set(rule.issues.map((issue) => issue.path)).size;
       const actions = flair.createDiv({ cls: "mdbase-issue-row-actions" });
-      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: files.toLocaleString() })
-        .setAttr("aria-label", `${files.toLocaleString()} ${files === 1 ? "note" : "notes"}`);
+      flair.createSpan({ cls: "tree-item-flair mdbase-issue-file-count", text: formatNumber(files) })
+        .setAttr("aria-label", plural(files, { one: "# note", other: "# notes" }));
       this.renderEditRuleButton(actions, first);
       const fixLabel = this.ctx.host.getQuickFixLabel(first);
-      const fixable = fixLabel ? rule.issues.filter((issue) => this.ctx.host.getQuickFixLabel(issue) === fixLabel) : [];
+      const fixable = fixLabel ? rule.issues.filter((issue) => issue.code === first.code && this.ctx.host.getQuickFixLabel(issue) !== null) : [];
       const fixableNotes = new Set(fixable.map((issue) => issue.path)).size;
       if (fixLabel && fixableNotes > 1) {
-        const bulk = actions.createEl("button", { text: `${fixLabel} · ${fixableNotes} notes` });
+        const bulk = actions.createEl("button", { text: t`${fixLabel} · ${plural(fixableNotes, { one: "# note", other: "# notes" })}` });
         bulk.disabled = this.ctx.busy;
         bulk.onclick = () => void this.applyBulkQuickFix(fixLabel, fixable);
       }
@@ -196,12 +205,13 @@ export class IssuesPane {
   private fillIssueRow(row: HTMLElement, issue: MdbaseIssue, context: string, contextOpensFile = false): void {
     row.setAttr("data-severity", issue.severity);
     row.createSpan({ cls: "mdbase-issue-indicator" }).setAttr("aria-hidden", "true");
+    const { path, field } = issue;
     const technical = typeof issue.details?.technical_message === "string" ? issue.details.technical_message : "";
     row.setAttr("title", technical ? `${issue.code}: ${technical}` : issue.code);
     const metadata = row.createDiv({ cls: "mdbase-issue-metadata" });
     if (contextOpensFile) {
       const open = metadata.createEl("button", { cls: "mdbase-link-button mdbase-issue-context", text: context });
-      open.setAttr("title", `Open ${issue.path}${issue.field ? ` at ${issue.field}` : ""}`);
+      open.setAttr("title", field ? t`Open ${path} at ${field}` : t`Open ${path}`);
       open.onclick = () => void this.ctx.host.openFileByPath(issue.path, issue.field);
     } else {
       metadata.createDiv({ cls: "mdbase-issue-context", text: context });
@@ -209,8 +219,8 @@ export class IssuesPane {
     row.createDiv({ cls: "mdbase-issue-row-message", text: issue.message });
     const actions = row.createDiv({ cls: "mdbase-issue-row-actions" });
     // The file header already opens the note; a row action is only useful when it lands on the field.
-    if (!contextOpensFile && issue.field) {
-      const open = this.ctx.iconButton(actions, "arrow-up-right", `Open ${issue.path} at ${issue.field}`);
+    if (!contextOpensFile && field) {
+      const open = this.ctx.iconButton(actions, "arrow-up-right", t`Open ${path} at ${field}`, `open-${path}-${field}`);
       open.onclick = () => void this.ctx.host.openFileByPath(issue.path, issue.field);
     }
     if (!contextOpensFile) this.renderEditRuleButton(actions, issue);
@@ -229,10 +239,13 @@ export class IssuesPane {
     const typeName = issueTypeNames(issue, this.ctx.recordTypes())[0];
     const typeDef = typeName ? this.ctx.schema?.types.get(typeName) : undefined;
     if (!typeDef) return;
+    const { field } = issue;
+    const typeNameLabel = typeDef.name;
     const edit = this.ctx.iconButton(
       container,
       "pencil",
-      issue.field ? `Edit ${issue.field} in ${typeDef.name}` : `Edit type ${typeDef.name}`,
+      field ? t`Edit ${field} in ${typeNameLabel}` : t`Edit type ${typeNameLabel}`,
+      `edit-${issue.path}-${typeNameLabel}-${field ?? ""}`,
     );
     edit.onclick = () => void this.ctx.openTypeField(typeDef.filePath, issue.field);
   }
@@ -243,9 +256,10 @@ export class IssuesPane {
     if (!confirmed) return;
     await this.ctx.perform(async () => {
       const result = await this.ctx.host.applyQuickFixes(issues);
-      this.ctx.message = result.skipped
-        ? `${label}: updated ${result.changed} of ${notes} ${notes === 1 ? "note" : "notes"}. ${result.skipped} changed since validation and were left as they are.`
-        : `${label}: updated ${result.changed} ${result.changed === 1 ? "note" : "notes"}.`;
+      const { changed, skipped } = result;
+      this.ctx.message = skipped
+        ? t`${label}: updated ${changed} of ${plural(notes, { one: "# note", other: "# notes" })}. ${plural(skipped, { one: "# note changed since validation and was left as it is.", other: "# notes changed since validation and were left as they are." })}`
+        : t`${label}: updated ${plural(changed, { one: "# note", other: "# notes" })}.`;
     });
   }
 

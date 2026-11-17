@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 // The collection's mdbase.yaml: loading, first-run setup, type file templates,
 // and which vault paths belong to the collection.
 import legacyConfig from "./legacyConfig.json" with { type: "json" };
@@ -173,7 +174,7 @@ export async function createTypeDefinition(
   const typePath = normalizePath(`${config.settings.types_folder}/${safeName}.md`);
 
   if (await vault.adapter.exists(typePath)) {
-    throw new Error(`Type already exists: ${typePath}`);
+    throw new Error(t`Type already exists: ${typePath}`);
   }
 
   const content = buildTypeTemplate(safeName, pathGlob, config.spec_version);

@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 /**
  * The mdbase desktop app's background service (the daemon), as this plugin
  * sees it: its command-line tool for setup and status, and its state files for
@@ -7,7 +8,7 @@
 
 /** The daemon's `{error}` object (`code` is one of the API's codes, `reason` finer). */
 export class MdbaseError extends Error {
-  constructor(readonly code: string, message: string, readonly reason?: string) {
+  constructor(readonly code: string, message: string, readonly reason?: string, readonly authored = false) {
     super(message);
     this.name = "MdbaseError";
   }
@@ -102,7 +103,7 @@ let nodeModules: NodeModules | null = null;
 export function desktopModules(): NodeModules {
   if (nodeModules) return nodeModules;
   const load = (window as unknown as { require?: (id: string) => unknown }).require;
-  if (typeof load !== "function") throw new MdbaseError("unavailable", "Sync needs Obsidian for desktop.", "mobile");
+  if (typeof load !== "function") throw new MdbaseError("unavailable", t`Sync needs Obsidian for desktop.`, "mobile", true);
   nodeModules = {
     childProcess: load("child_process") as NodeModules["childProcess"],
     fs: load("fs") as NodeModules["fs"],
@@ -183,14 +184,14 @@ export async function readLinkFiles(): Promise<LinkFiles> {
     try {
       return JSON.parse(await fs.promises.readFile(path.join(dir, name), "utf8")) as Record<string, unknown>;
     } catch {
-      throw new MdbaseError("unavailable", "mdbase isn't running on this computer.", "daemon_not_running");
+      throw new MdbaseError("unavailable", t`mdbase isn't running on this computer.`, "daemon_not_running", true);
     }
   };
   const identity = await read("daemon.json");
   const link = await read("local-link.json");
   const hex64 = (value: unknown) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
   if (typeof identity.device !== "string" || !hex64(identity.noise_pk) || !Number.isInteger(link.port) || !hex64(link.token)) {
-    throw new MdbaseError("internal", "mdbase's connection files on this computer are incomplete. Restart the mdbase app.");
+    throw new MdbaseError("internal", t`mdbase's connection files on this computer are incomplete. Restart the mdbase app.`, undefined, true);
   }
   return { port: link.port as number, token: link.token as string, device: identity.device, noisePk: identity.noise_pk as string };
 }
@@ -207,7 +208,7 @@ export class MdbaseCli {
 
   run<T>(args: string[], options: RunOptions = {}): Promise<T> {
     const binary = this.binary();
-    if (!binary) return Promise.reject(new MdbaseError("not_found", "The mdbase app isn't installed on this computer.", "not_installed"));
+    if (!binary) return Promise.reject(new MdbaseError("not_found", t`The mdbase app isn't installed on this computer.`, "not_installed", true));
     const { childProcess } = desktopModules();
     const argv = ["--json", ...(options.yes ? ["--yes"] : []), ...args];
     return new Promise<T>((resolve, reject) => {
@@ -219,13 +220,13 @@ export class MdbaseCli {
         }
         const failure = value && typeof value === "object" ? (value as { error?: { code?: string; message?: string; reason?: string } }).error : undefined;
         if (failure) {
-          reject(new MdbaseError(failure.code ?? "internal", failure.message ?? "mdbase reported a problem.", failure.reason));
+          reject(new MdbaseError(failure.code ?? "internal", failure.message ?? t`mdbase reported a problem.`, failure.reason, !failure.message));
           return;
         }
         if (error) {
           const code = (error as NodeJS.ErrnoException).code;
-          if (code === "ENOENT" || code === "EACCES") reject(new MdbaseError("not_found", "The mdbase app isn't installed on this computer.", "not_installed"));
-          else if ((error as { killed?: boolean }).killed) reject(new MdbaseError("timeout", "mdbase took too long to answer."));
+          if (code === "ENOENT" || code === "EACCES") reject(new MdbaseError("not_found", t`The mdbase app isn't installed on this computer.`, "not_installed", true));
+          else if ((error as { killed?: boolean }).killed) reject(new MdbaseError("timeout", t`mdbase took too long to answer.`, undefined, true));
           else reject(new MdbaseError("internal", String(stderr).trim().replace(/^error:\s*/, "") || error.message));
           return;
         }

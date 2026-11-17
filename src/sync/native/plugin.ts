@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 // Native SDK host ported from the verified Obsidian SDK spike. The iframe owns the replica; all
 // vault IO and durable three-way sync state live here. No page/ runtime files.
 import { Notice, Component, TAbstractFile, TFile, App, Platform, parseYaml, type MarkdownView, type PluginManifest } from "obsidian";
@@ -25,6 +26,7 @@ export interface DirectFailure { path: string; title: string; detail: string; ch
 export interface MergePrompt { collectionId: string; name: string; local: number; remote: number }
 export interface SyncTotals { notes: number; attachments: number; definitions: number; attachmentBytes: number; notHere: number; byCollection: number }
 export interface NativeView {
+  statusKind?: "busy" | "problem";
   failures: DirectFailure[]; merge: MergePrompt | null;
   conflicts: { path: string; copy: string }[];
   /** Most recent first. */
@@ -43,7 +45,7 @@ export interface Remote { id: string; path: string; kind: ItemKind; revision: st
 /** A file as read here: its bytes and their hash. */
 export type LocalFile = NonNullable<Awaited<ReturnType<NativeSync["local"]>>>;
 /** Status while another device's writes keep invalidating a full scan. Matches words.ts' busy test. */
-const CATCHING_UP = "Checking your files: catching up with changes from other devices";
+
 /** How long starting may take before Sync offers Restart sync. */
 export const START_STALL_MS = 30_000;
 
@@ -91,6 +93,7 @@ export default class NativeSync extends Component {
   layout: CollectionLayout = DEFAULT_LAYOUT;
   merge: MergePrompt | null = null;
   statusText = "";
+  statusKind: "busy" | "problem" | undefined;
   activity: ActivityEntry[] = [];
   lastSynced: number | null = null;
   totals: SyncTotals | null = null;
@@ -114,7 +117,7 @@ export default class NativeSync extends Component {
   onload(): void { void this.initialize(); }
 
   async initialize(): Promise<void> {
-    this.setStatus("Starting sync");
+    this.setStatus(t`Starting sync`);
     this.pluginDir = this.host.pluginDir;
     this.root = this.host.root;
     // Obsidian's loadData returns null after a JSON parse failure. Treating that
@@ -334,7 +337,7 @@ export default class NativeSync extends Component {
     if (next.owner === this.phase.owner && next.takeover === this.phase.takeover && next.marker === this.blockedMarker) return;
     this.blockedMarker = next.marker;
     this.phase = { kind: "blocked", owner: next.owner, takeover: next.takeover };
-    this.setStatus(next.takeover && next.marker === null ? "Sync isn't set up in this vault." : next.message);
+    this.setStatus(next.takeover && next.marker === null ? t`Sync isn't set up in this vault.` : next.message);
   }
   /**
    * Set up sync here: the person chose it on the blocked host, and the
@@ -378,8 +381,11 @@ export default class NativeSync extends Component {
         this.requestReconcile(m.batch.reset ? undefined : paths, m.batch.cursor); break;
       }
       case "transfer":
-        if (this.mirroring && Number.isFinite(m.done) && Number.isFinite(m.total) && m.total > 0)
-          this.setStatus(`${m.direction === "upload" ? "uploading" : "downloading"} ${Math.min(100, Math.round(100 * m.done / m.total))}% (${Math.round(m.total / 1024 / 1024)} MiB)`);
+        if (this.mirroring && Number.isFinite(m.done) && Number.isFinite(m.total) && m.total > 0) {
+          const percent = Math.min(100, Math.round(100 * m.done / m.total));
+          const size = Math.round(m.total / 1024 / 1024);
+          this.setStatus(m.direction === "upload" ? t`uploading ${percent}% (${size} MiB)` : t`downloading ${percent}% (${size} MiB)`, "busy");
+        }
         break;
       case "log": this.log(this.safeText(m.text)); break;
       case "result": {
@@ -423,7 +429,7 @@ export default class NativeSync extends Component {
     // are harmless because reconciliation compares hashes and revisions.
     // watch may synchronously replay/reset before its RPC reply. Fold that
     // into the mandatory startup snapshot instead of running two full scans.
-    this.setStatus("Checking your files");
+    this.setStatus(t`Checking your files`, "busy");
     await this.sweepIncoming();
     this.startingMirror = true;
     try { await this.call("watch", this.data.cursor); }
@@ -471,7 +477,7 @@ export default class NativeSync extends Component {
       if (this.unloaded || this.phase.kind !== "starting") return;
       this.stalled = true;
       this.log(`still starting after ${this.stallMs / 1000} s`);
-      this.setStatus(STARTING_STALLED);
+      this.setStatus(STARTING_STALLED());
     }, this.stallMs);
   }
   endStartWatch() {
@@ -522,7 +528,7 @@ export default class NativeSync extends Component {
     // Between passes only: a pass in flight still holds the old choices.
     if (this.mirroring) await this.enqueue(async () => { await apply(); await this.reconcileAll(false, undefined, true); });
     else await apply();
-    this.setStatus(this.statusText);
+    this.setStatus(this.statusText, this.statusKind);
   }
   /** Skipped paths keep no synced state, so turning one back on compares both sides afresh. */
   async forgetSkipped() {
@@ -580,7 +586,7 @@ export default class NativeSync extends Component {
       if (errorInfo(e).code !== "unsafe_symlink") throw e;
       if (!this.warnedPaths.has(p)) {
         this.warnedPaths.add(p); this.log(`symlink path skipped: ${JSON.stringify(p)}`);
-        new Notice("mdbase: a symlink in the mirror was skipped. Its target will not be read or changed.", 10000);
+        new Notice(t`mdbase: a symlink in the mirror was skipped. Its target will not be read or changed.`, 10000);
       }
       return false;
     }
@@ -613,7 +619,7 @@ export default class NativeSync extends Component {
           if (p !== p.normalize("NFC") && !this.warnedPaths.has(p)) {
             this.warnedPaths.add(p);
             this.log(`unsupported non-NFC path skipped: ${JSON.stringify(p)}`);
-            new Notice("mdbase: a non-nfc filename cannot sync. Rename it to unicode nfc; existing files were not changed.", 10000);
+            new Notice(t`mdbase: a non-nfc filename cannot sync. Rename it to unicode nfc; existing files were not changed.`, 10000);
           }
           continue;
         }
@@ -696,7 +702,7 @@ export default class NativeSync extends Component {
       const affected = this.reconcileFull ? undefined : this.reconcilePaths;
       const nextCursor = this.reconcileCursor, now = this.reconcileImmediate;
       this.reconcileFull = false; this.reconcilePaths = new Set(); this.reconcileCursor = undefined; this.reconcileImmediate = false;
-      this.syncingFiles = true; this.passStatus("Checking your files");
+      this.syncingFiles = true; this.passStatus(t`Checking your files`, "busy");
       try {
         if (await this.reconcileAll(!now, affected) === false) {
           // Paths that didn't sync are listed in the Sync tab; everything else
@@ -719,7 +725,7 @@ export default class NativeSync extends Component {
         if (errorInfo(e).code === "invalid_request" && ["cursor_stale", "cursor_expired"].includes(errorInfo(e).reason ?? "")) {
           if (this.reconcileRetryDelay === 250) this.log("snapshot query invalidated; retrying full scan with cursor retained");
           // Not up to date until a full pass completes, whatever the SDK says (QA-2).
-          this.passStatus(CATCHING_UP);
+          this.passStatus(t`Checking your files: catching up with changes from other devices`, "busy");
           this.reconcileRetryTimer = window.setTimeout(() => {
             this.reconcileRetryTimer = null; this.requestReconcile();
           }, this.reconcileRetryDelay);
@@ -801,16 +807,16 @@ export default class NativeSync extends Component {
     await this.reconcileAll(true);
   }
 
-  setStatus(text: string) { this.statusText = text; this.changed(text, this.stalled && this.phase.kind === "starting" ? { ...this.phase, stalled: true } : this.phase, this.view()); }
+  setStatus(text: string, statusKind?: "busy" | "problem") { this.statusKind = statusKind; this.statusText = text; this.changed(text, this.stalled && this.phase.kind === "starting" ? { ...this.phase, stalled: true } : this.phase, this.view()); }
   /**
    * Progress from a pass. A pass still running when sync stops (access removed,
    * say) must not put "Synced" back over the words saying why; its counts still go out.
    */
-  passStatus(text: string) { this.setStatus(this.phase.kind === "ready" ? text : this.statusText); }
+  passStatus(text: string, statusKind?: "busy" | "problem") { this.setStatus(this.phase.kind === "ready" ? text : this.statusText, this.phase.kind === "ready" ? statusKind : this.statusKind); }
   view(): NativeView {
     const failures = Object.entries(this.data?.pathFailures ?? {}).map(([p, f]) => ({ path: p, ...describeFailure({ ...f, kind: this.data.paths[p]?.kind }) }));
     const conflicts = Object.values(this.data?.conflictCopies ?? {}).map(({ path, copy }) => ({ path, copy }));
-    return { failures: failures.sort((a, b) => a.path.localeCompare(b.path)), conflicts, merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
+    return { statusKind: this.statusKind, failures: failures.sort((a, b) => a.path.localeCompare(b.path)), conflicts, merge: this.merge, activity: this.activity, lastSynced: this.lastSynced, totals: this.totals, device: this.device, inclusion: this.inclusion ?? null, bound: !!this.data?.collectionId };
   }
   safeText(text: string) { return String(text).replace(/https?:\/\/[^\s"<>]+/g, value => { try { const u = new URL(value); return u.origin + u.pathname; } catch { return "[url]"; } }); }
   log(text: string) {
@@ -823,12 +829,19 @@ export default class NativeSync extends Component {
     if (this.unloaded) { this.log(`stopped during ${what} (plugin unloading)`); return; }
     // Do not log arbitrary mutation error bodies: they can contain documents.
     const detail = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ") || (what === "startup" || what === "ownership" || what === "start" ? this.safeText(errorInfo(e).message ?? "error") : "operation failed; local state retained");
-    if (errorInfo(e).code === "collection_bound") userMessage = "This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing.";
-    if (what === "ownership" && !userMessage) userMessage = "Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.";
+    if (errorInfo(e).code === "collection_bound") userMessage = t`This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing.`;
+    if (what === "ownership" && !userMessage) userMessage = t`Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.`;
     // Plain words for the status; the code stays for support, and the log keeps the detail.
     const code = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ");
-    const reason = userMessage ?? (what === "startup" || what === "start" ? detail : `Something went wrong${code ? ` (${code})` : ""}. Your files here are untouched`);
-    this.setStatus(whole && userMessage ? userMessage : failedText(reason));
-    this.log(`FAILED ${what}: ${detail}`); new Notice(`mdbase: ${userMessage ?? `${what}: ${detail}`}`, 10000);
+    const reason = userMessage ?? (what === "startup" || what === "start" ? detail : (code ? t`Something went wrong (${code}). Your files here are untouched.` : t`Something went wrong. Your files here are untouched.`));
+    this.setStatus(whole && userMessage ? userMessage : failedText(reason, !!userMessage || !(what === "startup" || what === "start")), "problem");
+    this.log(`FAILED ${what}: ${detail}`);
+    const notice = userMessage ? t`mdbase: ${userMessage}` : what === "startup" ? t`mdbase: startup: ${detail}`
+      : what === "ownership" ? t`mdbase: ownership: ${detail}` : what === "start" ? t`mdbase: start: ${detail}`
+      : what === "sync" ? t`mdbase: sync: ${detail}` : what === "saving state" ? t`mdbase: saving state: ${detail}`
+      : what === "phase" ? t`mdbase: phase: ${detail}` : what === "add collection" ? t`mdbase: add collection: ${detail}`
+      : what === "select" ? t`mdbase: select: ${detail}` : what === "open sign-in" ? t`mdbase: open sign-in: ${detail}`
+      : what === "discard rejected" ? t`mdbase: discard rejected: ${detail}` : t`mdbase: handover (marker retained): ${detail}`;
+    new Notice(notice, 10000);
   }
 }

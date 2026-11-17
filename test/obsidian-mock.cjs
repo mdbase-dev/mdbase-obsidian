@@ -243,7 +243,12 @@ async function requestUrl() {
 }
 
 
+function getLanguage() {
+  return "en";
+}
+
 module.exports = {
+  getLanguage,
   normalizePath,
   getFrontMatterInfo,
   parseYaml,

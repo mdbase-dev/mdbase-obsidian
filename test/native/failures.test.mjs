@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
-const result = await build({ entryPoints: ["src/sync/native/failures.ts"], bundle: true, format: "esm", write: false });
+import { linguiMacros } from "../../scripts/lingui-macros.mjs";
+const result = await build({ entryPoints: ["src/sync/native/failures.ts"], bundle: true, format: "esm", write: false, plugins: [linguiMacros({ production: false })] });
 const { describeFailure } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
 
 test("a validation reason names the field it's about", () => {

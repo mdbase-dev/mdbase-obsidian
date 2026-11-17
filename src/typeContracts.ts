@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { CollectionContractDescriptor, JsonObject } from "./contractTypes";
 import { schemaFromV03Fields } from "./typeDefinitions";
 import type {
@@ -81,32 +82,37 @@ export function mappingForContractField(
 
 export function assessMapping(field: ContractField, typeField?: TypeContractField): MappingAssessment {
   if (!typeField) {
+    const fieldReference = field.reference;
     return field.required
-      ? { level: "error", label: "Required", message: `Map required contract field ${field.reference}.` }
-      : { level: "unmapped", label: "Not exposed", message: "This optional contract field is not exposed." };
+      ? { level: "error", label: t({ message: "Required", context: "contract mapping status" }), message: t`Map required contract field ${fieldReference}.` }
+      : { level: "unmapped", label: t`Not exposed`, message: t`This optional contract field is not exposed.` };
   }
   const contractType = schemaType(field.schema);
+  const fieldReference = typeField.reference;
+  const fieldType = typeField.type;
   if (!compatibleTypes(contractType, typeField.type)) {
     return {
       level: "error",
-      label: "Incompatible",
-      message: `${typeField.reference} is ${typeField.type}, but the contract expects ${contractType}.`,
+      label: t`Incompatible`,
+      message: t`${fieldReference} is ${fieldType}, but the contract expects ${contractType}.`,
     };
   }
   if (field.required && !typeField.required) {
     return {
       level: "warning",
-      label: "Review",
-      message: `${typeField.reference} is optional in this type, so the contract value may be absent.`,
+      label: t({ message: "Review", context: "contract mapping status" }),
+      message: t`${fieldReference} is optional in this type, so the contract value may be absent.`,
     };
   }
-  return { level: "valid", label: "Ready", message: "This field satisfies the contract shape." };
+  return { level: "valid", label: t({ message: "Ready", context: "contract mapping status" }), message: t`This field satisfies the contract shape.` };
 }
 
 export function addImplementation(model: TypeEditorModel, contract: CollectionContractDescriptor): void {
   if (model.implementations.some((implementation) =>
     implementation.contract === contract.id && implementation.version === contract.version)) {
-    throw new Error(`${contract.id} ${contract.version} is already implemented.`);
+    const contractId = contract.id;
+    const version = contract.version;
+    throw new Error(t`${contractId} ${version} is already implemented.`);
   }
   const typeFields = typeFieldsForModel(model);
   const fields = Object.fromEntries(contractFields(contract).flatMap((field) => {
@@ -169,7 +175,7 @@ export function schemaType(schema: JsonObject): string {
 
 export function schemaTypeLabel(schema: JsonObject): string {
   const type = schemaType(schema);
-  return type === "array" ? "List" : type === "boolean" ? "Boolean" : type === "integer" ? "Integer" : type === "number" ? "Number" : type === "object" ? "Object" : type === "any" ? "Any value" : "Text";
+  return type === "array" ? t`List` : type === "boolean" ? t`Boolean` : type === "integer" ? t`Integer` : type === "number" ? t`Number` : type === "object" ? t`Object` : type === "any" ? t`Any value` : t`Text`;
 }
 
 function compatibleTypes(contractType: string, typeType: string): boolean {

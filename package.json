@@ -6,22 +6,26 @@
   "type": "module",
   "scripts": {
     "lint": "npm run lint:ts && npm run lint:scanner && npm run lint:css",
-    "lint:ts": "eslint . --max-warnings=0",
+    "lint:ts": "npm run i18n:compile:dev && eslint . --max-warnings=0",
     "lint:scanner": "eslint . --config eslint.scanner.config.mjs --max-warnings=0",
     "lint:ts:fix": "eslint . --fix",
     "lint:css": "stylelint styles.css --max-warnings=0",
     "lint:css:fix": "stylelint styles.css --fix",
     "lint:fix": "npm run lint:ts:fix && npm run lint:css:fix",
-    "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "dev": "npm run i18n:compile:dev && node esbuild.config.mjs",
+    "build": "npm run i18n:check && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "check:mobile": "npm run build && node scripts/check-mobile.mjs",
     "build:test": "npm run build && node copy-files.mjs",
     "profile:testvault": "node scripts/profile-testvault.mjs",
     "test": "npm run test:unit",
     "test:release": "node --test test/release/*.test.mjs",
-    "test:unit": "tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test .test-dist/test/**/*.test.js && node --test test/native/*.test.mjs",
+    "test:unit": "npm run i18n:compile:dev && tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test .test-dist/test/**/*.test.js && node --test test/native/*.test.mjs",
     "copy-files": "node copy-files.mjs",
-    "version": "node version-bump.mjs && git add manifest.json versions.json package-lock.json"
+    "version": "node version-bump.mjs && git add manifest.json versions.json package-lock.json",
+    "i18n:extract": "mdbase-i18n extract --clean",
+    "i18n:compile": "mdbase-i18n compile",
+    "i18n:check": "mdbase-i18n check",
+    "i18n:compile:dev": "node scripts/i18n-dev-compile.mjs"
   },
   "keywords": [
     "obsidian",
@@ -31,12 +35,15 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@babel/core": "7.29.7",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.43.13",
     "@eslint/js": "^9.39.5",
     "@lezer/highlight": "^1.2.3",
+    "@lingui/babel-plugin-lingui-macro": "6.9.0",
+    "@mdbase-dev/i18n": "0.1.2",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22.12.0",
     "@types/picomatch": "^4.0.2",
@@ -58,10 +65,12 @@
   },
   "dependencies": {
     "@callumalpass/mdbase-interop": "0.1.0-rc.2",
+    "@lingui/core": "6.9.0",
     "@mdbase-dev/sdk": "file:vendor/sdk-e433a42f-production-0.1.7.tgz",
     "@noble/hashes": "2.4.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
+    "fflate": "0.8.3",
     "picomatch": "^4.0.5"
   }
 }

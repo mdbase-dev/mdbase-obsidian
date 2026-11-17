@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 // Ownership: .mdbase/host.json says which app syncs this folder. .mdbase is
 // private, never a mirrored collection path. Another host's marker is never
 // removed, and a marker is replaced only when the person asks (takeOver).
@@ -36,13 +37,13 @@ export class FolderOwned extends Error {
 
 /** What the Sync tab and notices say. Never "marker" or "host". */
 export function ownerText(block: OwnershipBlock): string {
-  if (block.owner === "copied") return "This vault's sync settings came from another vault or device, so sync is off here. Set up sync here to start fresh. Your notes here are untouched.";
-  if (block.takeover) return "This vault was set up for sync before, maybe by an earlier install of this plugin. Your notes here are untouched.";
+  if (block.owner === "copied") return t`This vault's sync settings came from another vault or device, so sync is off here. Set up sync here to start fresh. Your notes here are untouched.`;
+  if (block.takeover) return t`This vault was set up for sync before, maybe by an earlier install of this plugin. Your notes here are untouched.`;
   switch (block.owner) {
-    case "desktop": return "Another app is already syncing this vault: the mdbase desktop app. Turn sync off there first. Your notes here are untouched.";
-    case "obsidian": return "Another copy of Obsidian is already syncing this vault, on this device or another one. Turn sync off there first. If you just reinstalled this plugin, you can set up sync here in a few minutes.";
-    case "unreadable": return "Sync can't tell whether another app is already syncing this vault, so it's waiting. Your notes here are untouched.";
-    default: return "Another app is already syncing this vault. Turn sync off there first. Your notes here are untouched.";
+    case "desktop": return t`Another app is already syncing this vault: the mdbase desktop app. Turn sync off there first. Your notes here are untouched.`;
+    case "obsidian": return t`Another copy of Obsidian is already syncing this vault, on this device or another one. Turn sync off there first. If you just reinstalled this plugin, you can set up sync here in a few minutes.`;
+    case "unreadable": return t`Sync can't tell whether another app is already syncing this vault, so it's waiting. Your notes here are untouched.`;
+    default: return t`Another app is already syncing this vault. Turn sync off there first. Your notes here are untouched.`;
   }
 }
 

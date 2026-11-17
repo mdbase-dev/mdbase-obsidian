@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
+import { linguiMacros } from "../../scripts/lingui-macros.mjs";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { MessageChannel } from "node:worker_threads";
@@ -16,7 +17,7 @@ const result = await build({
     export { SyncController } from './src/sync/controller.ts';
     export {TFile, FileSystemAdapter} from 'obsidian';`, resolveDir: process.cwd() },
   bundle: true, platform: "node", format: "esm", write: false,
-  plugins: [{ name: "mocks", setup(b) {
+  plugins: [linguiMacros({ production: false }), { name: "mocks", setup(b) {
     b.onResolve({ filter: /^obsidian$|^embedded:assets$/ }, args => ({ path: args.path, namespace: "mock" }));
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path === "obsidian" ? `
       export const Platform = {isMobile: false}; export const requireApiVersion = () => true; export class Component {} export class Notice {} export class SuggestModal {} export class App {}

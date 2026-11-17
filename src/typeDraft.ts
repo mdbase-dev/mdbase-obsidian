@@ -1,6 +1,7 @@
+import { plural, t } from "@lingui/core/macro";
 import type { CollectionContractDescriptor } from "./contractTypes";
 import type { TypeEditorModel } from "./typeEditorTypes";
-import { frontmatterFromTypeModel } from "./typeModel";
+import { frontmatterFromTypeModel, TypeNameRequiredError } from "./typeModel";
 import {
   assessMapping,
   contractFields,
@@ -78,7 +79,7 @@ function validateDefinition(
       code: "enum_without_values",
       severity: "warning",
       path,
-      message: "Add at least one allowed value, or use String for an unrestricted value.",
+      message: t`Add at least one allowed value, or use String for an unrestricted value.`,
     });
   }
   if (type === "enum" && Array.isArray(definition.values)) {
@@ -88,7 +89,7 @@ function validateDefinition(
         code: "enum_duplicate_values",
         severity: "error",
         path,
-        message: "Allowed values must be unique.",
+        message: t`Allowed values must be unique.`,
       });
     }
     if (definition.default !== undefined && !keys.includes(JSON.stringify(definition.default))) {
@@ -96,11 +97,11 @@ function validateDefinition(
         code: "default_not_allowed",
         severity: "error",
         path,
-        message: "The default is not one of the allowed values.",
+        message: t`The default is not one of the allowed values.`,
       });
     }
   }
-  for (const [lower, upper, label] of [["min", "max", "Minimum"], ["min_length", "max_length", "Minimum length"]] as const) {
+  for (const [lower, upper] of [["min", "max"], ["min_length", "max_length"]] as const) {
     const low = definition[lower];
     const high = definition[upper];
     if (typeof low === "number" && typeof high === "number" && low > high) {
@@ -108,7 +109,7 @@ function validateDefinition(
         code: "constraint_range_inverted",
         severity: "error",
         path,
-        message: `${label} is greater than the maximum.`,
+        message: lower === "min" ? t`Minimum is greater than the maximum.` : t`Minimum length is greater than the maximum.`,
       });
     }
   }
@@ -116,11 +117,12 @@ function validateDefinition(
     try {
       new RegExp(definition.pattern);
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
       diagnostics.push({
         code: "invalid_pattern",
         severity: "error",
         path,
-        message: `The pattern is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}`,
+        message: t`The pattern is not a valid regular expression: ${reason}`,
       });
     }
   }
@@ -131,7 +133,7 @@ function validateDefinition(
         code: "unknown_link_target",
         severity: "error",
         path,
-        message: `The target type '${target}' is not installed in this collection.`,
+        message: t`The target type '${target}' is not installed in this collection.`,
       });
     }
   }
@@ -141,7 +143,7 @@ function validateDefinition(
         code: "list_items_missing",
         severity: "error",
         path,
-        message: "Choose the shape of each list item.",
+        message: t`Choose the shape of each list item.`,
       });
     } else {
       validateDefinition(definition.items, `${path}[]`, diagnostics, knownTypes);
@@ -153,7 +155,7 @@ function validateDefinition(
         code: "object_fields_missing",
         severity: "error",
         path,
-        message: "Add an object field or change this field's type.",
+        message: t`Add an object field or change this field's type.`,
       });
       return;
     }
@@ -165,14 +167,14 @@ function validateDefinition(
           code: "field_name_required",
           severity: "error",
           path: childPath,
-          message: "Every nested field needs a name.",
+          message: t`Every nested field needs a name.`,
         });
       } else if (seen.has(name)) {
         diagnostics.push({
           code: "duplicate_field_name",
           severity: "error",
           path: childPath,
-          message: `The nested field '${name}' is declared more than once.`,
+          message: t`The nested field '${name}' is declared more than once.`,
         });
       }
       seen.add(name);
@@ -194,7 +196,7 @@ export function validateTypeDraft(
     frontmatterFromTypeModel(model);
   } catch (error) {
     diagnostics.push({
-      code: "invalid_type_document",
+      code: error instanceof TypeNameRequiredError ? "type_name_required" : "invalid_type_document",
       severity: "error",
       path: "type",
       message: error instanceof Error ? error.message : String(error),
@@ -210,14 +212,14 @@ export function validateTypeDraft(
         code: "field_name_required",
         severity: "error",
         path,
-        message: "Every field needs a name.",
+        message: t`Every field needs a name.`,
       });
     } else if (seen.has(name)) {
       diagnostics.push({
         code: "duplicate_field_name",
         severity: "error",
         path,
-        message: `The field '${name}' is declared more than once.`,
+        message: t`The field '${name}' is declared more than once.`,
       });
     }
     seen.add(name);
@@ -225,11 +227,12 @@ export function validateTypeDraft(
   }
 
   if (model.displayNameKey.trim() && !seen.has(model.displayNameKey.trim())) {
+    const displayField = model.displayNameKey.trim();
     diagnostics.push({
       code: "display_field_missing",
       severity: "error",
       path: "identity.displayNameKey",
-      message: `The display field '${model.displayNameKey.trim()}' is not declared.`,
+      message: t`The display field '${displayField}' is not declared.`,
     });
   }
 
@@ -243,7 +246,7 @@ export function validateTypeDraft(
         code: "contract_unavailable",
         severity: "error",
         path: `applications.${key}`,
-        message: "This exact application contract is not installed.",
+        message: t`This exact application contract is not installed.`,
       });
       continue;
     }
@@ -273,18 +276,21 @@ export function describeTypeChanges(
   current: TypeEditorModel,
 ): TypeDraftChange[] {
   if (!original) {
-    return [{ code: "create_type", risk: "safe", summary: `Create the type '${current.name || "Untitled type"}'.` }];
+    const typeName = current.name || t`Untitled type`;
+    return [{ code: "create_type", risk: "safe", summary: t`Create the type '${typeName}'.` }];
   }
   const changes: TypeDraftChange[] = [];
   if (original.name !== current.name) {
+    const oldName = original.name;
+    const newName = current.name;
     changes.push({
       code: "rename_type",
       risk: "high",
-      summary: `Rename the type from '${original.name}' to '${current.name}'. Existing type references may need review.`,
+      summary: t`Rename the type from '${oldName}' to '${newName}'. Existing type references may need review.`,
     });
   }
   if (original.description !== current.description || original.displayNameKey !== current.displayNameKey) {
-    changes.push({ code: "identity", risk: "safe", summary: "Update the type's identity and display metadata." });
+    changes.push({ code: "identity", risk: "safe", summary: t`Update the type's identity and display metadata.` });
   }
   if (
     original.matchPathGlob !== current.matchPathGlob
@@ -294,19 +300,19 @@ export function describeTypeChanges(
     changes.push({
       code: "membership",
       risk: "high",
-      summary: "Change which records belong to this type.",
+      summary: t`Change which records belong to this type.`,
     });
   }
   if (original.pathPattern !== current.pathPattern) {
-    changes.push({ code: "placement", risk: "review", summary: "Change the suggested path for new records." });
+    changes.push({ code: "placement", risk: "review", summary: t`Change the suggested path for new records.` });
   }
   if (original.strictMode !== current.strictMode) {
     changes.push({
       code: "strictness",
       risk: current.strictMode === true ? "high" : "review",
       summary: current.strictMode === true
-        ? "Reject fields that are not declared by this type."
-        : "Allow fields that are not declared by this type.",
+        ? t`Reject fields that are not declared by this type.`
+        : t`Allow fields that are not declared by this type.`,
     });
   }
 
@@ -315,17 +321,19 @@ export function describeTypeChanges(
   const added = [...after.keys()].filter((name) => !before.has(name));
   const removed = [...before.keys()].filter((name) => !after.has(name));
   if (added.length) {
+    const fieldNames = added.join(", ");
     changes.push({
       code: "add_fields",
       risk: added.some((name) => after.get(name)?.definition.required === true) ? "high" : "safe",
-      summary: `Add ${added.length === 1 ? "field" : "fields"}: ${added.join(", ")}.`,
+      summary: t`Add ${plural(added.length, { one: "field", other: "fields" })}: ${fieldNames}.`,
     });
   }
   if (removed.length) {
+    const fieldNames = removed.join(", ");
     changes.push({
       code: "remove_fields",
       risk: "high",
-      summary: `Remove ${removed.length === 1 ? "field" : "fields"}: ${removed.join(", ")}.`,
+      summary: t`Remove ${plural(removed.length, { one: "field", other: "fields" })}: ${fieldNames}.`,
     });
   }
   for (const [name, next] of after) {
@@ -337,14 +345,14 @@ export function describeTypeChanges(
       changes.push({
         code: "change_field_type",
         risk: "high",
-        summary: `Change '${name}' from ${previousType} to ${nextType}.`,
+        summary: t`Change '${name}' from ${previousType} to ${nextType}.`,
       });
     }
     if (previous.definition.required !== true && next.definition.required === true) {
       changes.push({
         code: "require_field",
         risk: "high",
-        summary: `Make '${name}' required. Existing records may become invalid.`,
+        summary: t`Make '${name}' required. Existing records may become invalid.`,
       });
     }
     if (
@@ -355,24 +363,24 @@ export function describeTypeChanges(
       changes.push({
         code: "field_rules",
         risk: "review",
-        summary: `Update validation or documentation for '${name}'.`,
+        summary: t`Update validation or documentation for '${name}'.`,
       });
     }
   }
   const keptBefore = [...before.keys()].filter((name) => after.has(name));
   const keptAfter = [...after.keys()].filter((name) => before.has(name));
   if (keptBefore.join("\u0000") !== keptAfter.join("\u0000")) {
-    changes.push({ code: "reorder_fields", risk: "safe", summary: "Reorder fields." });
+    changes.push({ code: "reorder_fields", risk: "safe", summary: t`Reorder fields.` });
   }
   if (JSON.stringify(original.implementations) !== JSON.stringify(current.implementations)) {
     changes.push({
       code: "application_compatibility",
       risk: "review",
-      summary: "Update application contract mappings or settings.",
+      summary: t`Update application contract mappings or settings.`,
     });
   }
   if (!changes.length && !typeModelsEqual(original, current)) {
-    changes.push({ code: "type_document", risk: "review", summary: "Update advanced type metadata or documentation." });
+    changes.push({ code: "type_document", risk: "review", summary: t`Update advanced type metadata or documentation.` });
   }
   return changes;
 }

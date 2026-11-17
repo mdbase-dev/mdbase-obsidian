@@ -1,3 +1,4 @@
+import { plural, t } from "@lingui/core/macro";
 import type { MdbaseTypeDef } from "../../mdbaseCore";
 import type { TypeEditorModel } from "../../typeEditorTypes";
 import { describeTypeChanges, type TypeDraftDiagnostic } from "../../typeDraft";
@@ -33,17 +34,17 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
   const diagnostics = env.diagnostics(model);
   const identity = container.createEl("section", { cls: "mdbase-editor-section" });
   identity.id = "mdbase-section-identity";
-  const name = inputRow(identity, "Name", model.name, (value) => {
+  const name = inputRow(identity, t({ message: "Name", context: "type property label" }), model.name, (value) => {
     model.name = value;
     env.markDirty();
-  });
+  }, { focusKey: "name" });
   name.disabled = readOnly;
   const nameError = name.parentElement?.createDiv({ cls: "mdbase-constraint-error mdbase-name-error" });
   nameError?.setAttr("aria-live", "polite");
   const nameRequired = () => {
-    if (nameError) nameError.textContent = name.value.trim() ? "" : "Give the type a name.";
+    if (nameError) nameError.textContent = name.value.trim() ? "" : t`Give the type a name.`;
   };
-  if (diagnostics.some((diagnostic) => /name is required/i.test(diagnostic.message))) nameRequired();
+  if (diagnostics.some((diagnostic) => diagnostic.code === "type_name_required")) nameRequired();
   name.addEventListener("input", () => { if (name.value.trim() && nameError) nameError.textContent = ""; });
   name.addEventListener("blur", () => {
     // Re-renders replace the box; only a real move of focus counts.
@@ -51,22 +52,23 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
     env.onNameBlur();
     nameRequired();
   });
-  const description = inputRow(identity, "Description", model.description, (value) => {
+  const description = inputRow(identity, t`Description`, model.description, (value) => {
     model.description = value;
     env.markDirty();
-  }, { multiline: true });
+  }, { focusKey: "description", multiline: true });
   description.disabled = readOnly;
-  const options = typesDisclosure(ctx, container, "type-options", "Options");
+  const options = typesDisclosure(ctx, container, "type-options", t`Options`);
   const displayRow = options.createDiv({ cls: "mdbase-form-row" });
-  const displayLabel = displayRow.createEl("label", { text: "Display field" });
+  const displayLabel = displayRow.createEl("label", { text: t`Display field` });
   const display = displayRow.createEl("select");
   displayLabel.htmlFor = display.id = "mdbase-display-field";
-  display.createEl("option", { value: "", text: "Use the file name" });
+  display.createEl("option", { value: "", text: t`Use the file name` });
   for (const field of model.fields) {
-    display.createEl("option", { value: field.name, text: field.name || "Unnamed field" });
+    display.createEl("option", { value: field.name, text: field.name || t`Unnamed field` });
   }
   if (model.displayNameKey && !model.fields.some((field) => field.name === model.displayNameKey)) {
-    display.createEl("option", { value: model.displayNameKey, text: `${model.displayNameKey} · missing` });
+    const displayField = model.displayNameKey;
+    display.createEl("option", { value: displayField, text: t`${displayField} · missing` });
   }
   display.value = model.displayNameKey;
   display.onchange = () => {
@@ -82,33 +84,34 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
     model.strictMode = strict.checked;
     env.markDirty();
   };
-  strictRow.createSpan({ text: "Reject undeclared fields" });
+  strictRow.createSpan({ text: t`Reject undeclared fields` });
 
   const membership = typesDisclosure(ctx, container, "type-matching", impact.matchingLabel());
   membership.id = "mdbase-section-membership";
   impact.fillMatchPreview(membership.createDiv({ cls: "mdbase-match-preview" }));
   // The pattern stays editable as written; plain words lead where they can be worked out.
   const globMeaning = (value: string) => value.trim()
-    ? describePathGlob(value) ?? "Notes whose path matches this pattern"
-    : "Any folder";
-  const glob = inputRow(membership, "Path", model.matchPathGlob, (value) => {
+    ? describePathGlob(value) ?? t`Notes whose path matches this pattern`
+    : t`Any folder`;
+  const glob = inputRow(membership, t`Path`, model.matchPathGlob, (value) => {
     model.matchPathGlob = value;
     globHint.textContent = globMeaning(value);
     env.markDirty();
-  }, { description: globMeaning(model.matchPathGlob), placeholder: "Projects/**/*.md" });
+  }, { focusKey: "path", description: globMeaning(model.matchPathGlob), placeholder: "Projects/**/*.md" });
   const globHint = glob.parentElement?.querySelector<HTMLElement>(".mdbase-form-description") ?? glob;
   glob.disabled = readOnly;
-  const present = inputRow(membership, "Has fields", model.matchFieldsPresent, (value) => {
+  const present = inputRow(membership, t`Has fields`, model.matchFieldsPresent, (value) => {
     model.matchFieldsPresent = value;
     env.markDirty();
-  }, { description: "Property names, separated by commas." });
+  }, { focusKey: "has-fields", description: t`Property names, separated by commas.` });
   present.disabled = readOnly;
-  const where = inputRow(membership, "Field values", model.matchWhere, (value) => {
+  const where = inputRow(membership, t`Field values`, model.matchWhere, (value) => {
     model.matchWhere = value;
     env.markDirty();
   }, {
+    focusKey: "field-values",
     multiline: true,
-    description: "Conditions written in YAML.",
+    description: t`Conditions written in YAML.`,
     placeholder: "tags:\n  contains: task",
   });
   where.disabled = readOnly;
@@ -119,16 +122,16 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
   if (membership.parentElement) container.appendChild(membership.parentElement);
   if (options.parentElement) container.appendChild(options.parentElement);
   const placement = options;
-  const path = inputRow(placement, "New note location", model.pathPattern, (value) => {
+  const path = inputRow(placement, t`New note location`, model.pathPattern, (value) => {
     model.pathPattern = value;
     env.markDirty();
-  }, { placeholder: "Notes/{title}.md" });
+  }, { focusKey: "new-note-location", placeholder: "Notes/{title}.md" });
   path.disabled = readOnly;
 
   renderContractEditor(ctx, container, model, readOnly, (render) => env.markDirty(render));
 
   if (!env.dirty() && !diagnostics.length) return;
-  const review = typesDisclosure(ctx, container, "type-review", "Changes", diagnostics.some((item) => item.severity === "error"));
+  const review = typesDisclosure(ctx, container, "type-review", t`Changes`, diagnostics.some((item) => item.severity === "error"));
   review.id = "mdbase-section-review";
   if (env.dirty()) impact.fillImpact(review.createDiv({ cls: "mdbase-impact" }));
   if (diagnostics.length) {
@@ -136,7 +139,7 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
     const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
     const warnings = diagnostics.length - errors;
     diagnosticSummary.createEl("strong", {
-      text: `${errors} ${errors === 1 ? "error" : "errors"} · ${warnings} ${warnings === 1 ? "warning" : "warnings"}`,
+      text: t`${plural(errors, { one: "# error", other: "# errors" })} · ${plural(warnings, { one: "# warning", other: "# warnings" })}`,
     });
     for (const diagnostic of diagnostics.slice(0, 12)) {
       const item = diagnosticSummary.createDiv({ cls: "mdbase-diagnostic-item" });
