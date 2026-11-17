@@ -34,7 +34,7 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
   const diagnostics = env.diagnostics(model);
   const identity = container.createEl("section", { cls: "mdbase-editor-section" });
   identity.id = "mdbase-section-identity";
-  const name = inputRow(identity, t`Name`, model.name, (value) => {
+  const name = inputRow(identity, t({ message: "Name", context: "type property label" }), model.name, (value) => {
     model.name = value;
     env.markDirty();
   });

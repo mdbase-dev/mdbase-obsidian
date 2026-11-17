@@ -206,7 +206,7 @@ export class FieldEditor {
       rules.textContent = fieldConstraintSummary(definition).join(" · ");
     };
     refreshSummary();
-    if (options.required) summary.createSpan({ cls: "mdbase-field-summary-rule", text: t`Required` });
+    if (options.required) summary.createSpan({ cls: "mdbase-field-summary-rule", text: t({ message: "Required", context: "field constraint" }) });
     if (options.onMove && !options.readOnly) {
       summary.addEventListener("keydown", (event: KeyboardEvent) => {
         if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
@@ -221,7 +221,7 @@ export class FieldEditor {
       row.createDiv({ cls: "mdbase-field-role", text: options.staticLabel });
     } else {
       const nameCell = row.createDiv({ cls: "mdbase-field-cell mdbase-field-name-cell" });
-      const nameLabel = nameCell.createEl("label", { text: t`Name` });
+      const nameLabel = nameCell.createEl("label", { text: t({ message: "Name", context: "field property label" }) });
       const name = nameCell.createEl("input", { type: "text", cls: "mdbase-field-name-control" });
       name.id = `mdbase-${fieldId}-name`;
       nameLabel.htmlFor = name.id;
@@ -234,7 +234,7 @@ export class FieldEditor {
     }
 
     const typeCell = row.createDiv({ cls: "mdbase-field-cell mdbase-field-type-cell" });
-    const typeLabel = typeCell.createEl("label", { text: t`Type` });
+    const typeLabel = typeCell.createEl("label", { text: t({ message: "Type", context: "field property label" }) });
     const type = typeCell.createEl("select", { cls: "mdbase-field-type-control" });
     type.id = `mdbase-${fieldId}-type`;
     typeLabel.htmlFor = type.id;
@@ -299,7 +299,7 @@ export class FieldEditor {
       checkbox.checked = options.required === true;
       checkbox.disabled = options.readOnly;
       checkbox.onchange = () => options.onRequiredChange?.(checkbox.checked);
-      required.createSpan({ text: t`Required` });
+      required.createSpan({ text: t({ message: "Required", context: "field constraint" }) });
     }
 
     if (options.onRemove || options.onMove) {
@@ -429,7 +429,9 @@ export class FieldEditor {
     input.id = controlId;
     input.setAttr("data-focus-key", `field-${fieldId}-default`);
     input.setAttr("aria-label", t`${fieldLabel} default`);
-    input.placeholder = typeName === "date" ? t`YYYY-MM-DD` : typeName === "time" ? t`HH:MM` : t`None`;
+    const dateFormat = "YYYY-MM-DD";
+    const timeFormat = "HH:MM";
+    input.placeholder = typeName === "date" ? dateFormat : typeName === "time" ? timeFormat : t`None`;
     input.value = definition.default === undefined ? "" : scalarText(definition.default);
     input.disabled = options.readOnly;
     const error = cell.createDiv({ cls: "mdbase-constraint-error" });
