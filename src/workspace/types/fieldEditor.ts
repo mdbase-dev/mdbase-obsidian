@@ -78,13 +78,13 @@ export class FieldEditor {
     fieldsHeader.createEl("h3", { text: "Fields" });
     const headerActions = fieldsHeader.createDiv({ cls: "mdbase-section-actions" });
     if (this.expandedFields.size) {
-      const collapse = this.ctx.iconButton(headerActions, "fold-vertical", "Collapse all fields");
+      const collapse = this.ctx.iconButton(headerActions, "fold-vertical", "Collapse all fields", "collapse-fields");
       collapse.onclick = () => {
         this.expandedFields.clear();
         this.ctx.render();
       };
     }
-    const addField = this.ctx.iconButton(headerActions, "plus", "Add field");
+    const addField = this.ctx.iconButton(headerActions, "plus", "Add field", "add-field");
     addField.disabled = readOnly;
     addField.onclick = () => {
       const definition: Record<string, unknown> = { type: "string" };
@@ -299,7 +299,7 @@ export class FieldEditor {
     }
 
     if (options.onRemove || options.onMove) {
-      const more = this.ctx.iconButton(row, "more-horizontal", `${label} actions`);
+      const more = this.ctx.iconButton(row, "more-horizontal", `${label} actions`, `field-${fieldId}-menu`);
       more.addClass("mdbase-field-menu");
       more.setAttr("data-focus-key", `field-${fieldId}-menu`);
       more.disabled = options.readOnly;
@@ -499,14 +499,14 @@ export class FieldEditor {
       // Types only need calling out when a list mixes them, e.g. `1` beside `"1"`.
       if (mixedTypes) row.createSpan({ cls: "mdbase-enum-kind", text: typeof value });
       for (const [icon, label, offset] of [["arrow-up", "Move value up", -1], ["arrow-down", "Move value down", 1]] as const) {
-        const move = this.ctx.iconButton(row, icon, `${label}: ${scalarText(value)}`);
+        const move = this.ctx.iconButton(row, icon, `${label}: ${scalarText(value)}`, `field-${fieldId}-value-${index}-${icon}`);
         move.disabled = options.readOnly || index + offset < 0 || index + offset >= values.length;
         move.onclick = () => {
           [values[index], values[index + offset]] = [values[index + offset], values[index]];
           this.deps.markDirty(true);
         };
       }
-      const remove = this.ctx.iconButton(row, "x", `Remove value ${scalarText(value)}`);
+      const remove = this.ctx.iconButton(row, "x", `Remove value ${scalarText(value)}`, `field-${fieldId}-value-${index}-remove`);
       remove.disabled = options.readOnly;
       remove.onclick = () => {
         values.splice(index, 1);
