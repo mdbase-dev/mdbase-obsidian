@@ -298,7 +298,7 @@ export class SyncPane {
         const done = (direct?.activity ?? []).filter((e) => e.at >= started);
         const failed = direct?.failures?.length ?? 0;
         this.syncingNow = false;
-        this.syncNowResult = syncNowSummary(done, failed, failedBefore, direct?.phase.kind === "ready" && !/stopped/i.test(direct.text));
+        this.syncNowResult = syncNowSummary(done, failed, failedBefore, direct?.phase.kind === "ready" && !direct.statusStopped);
         this.ctx.render();
       });
     };
@@ -418,7 +418,7 @@ export class SyncPane {
 
     const section = this.group(root, isCollection ? t`Turn on sync` : t`Sync this vault`);
     if (!isCollection) {
-      new Setting(section).setName(t`Name`).setDesc(t`How this vault appears on your other devices.`).addText((text) => text
+      new Setting(section).setName(t({ message: "Name", context: "collection" })).setDesc(t`How this vault appears on your other devices.`).addText((text) => text
         .setValue(this.name)
         .onChange((value) => { this.name = value; }));
     }
