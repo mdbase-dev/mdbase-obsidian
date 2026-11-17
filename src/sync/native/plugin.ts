@@ -831,7 +831,7 @@ export default class NativeSync extends Component {
     // Plain words for the status; the code stays for support, and the log keeps the detail.
     const code = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ");
     const reason = userMessage ?? (what === "startup" || what === "start" ? detail : `Something went wrong${code ? ` (${code})` : ""}. Your files here are untouched`);
-    this.setStatus(whole && userMessage ? userMessage : failedText(reason), !whole);
+    this.setStatus(whole && userMessage ? userMessage : failedText(reason), !whole || what === "sync");
     this.log(`FAILED ${what}: ${detail}`); new Notice(`mdbase: ${userMessage ?? `${what}: ${detail}`}`, 10000);
   }
 }
