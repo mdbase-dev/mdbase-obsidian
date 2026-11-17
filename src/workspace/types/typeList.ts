@@ -1,3 +1,5 @@
+import { plural, t } from "@lingui/core/macro";
+import { formatNumber } from "../../i18n/runtime";
 import { setIcon } from "obsidian";
 import type { MdbaseTypeDef } from "../../mdbaseCore";
 import type { TypeStats } from "../../typeImpact";
@@ -23,11 +25,11 @@ export function renderTypeList(container: HTMLElement, env: TypeListEnv): void {
   const { ctx } = env;
   const pane = container.createDiv({ cls: "mdbase-type-list-pane" });
   const header = pane.createDiv({ cls: "mdbase-pane-header" });
-  header.createEl("h2", { text: "Types" });
+  header.createEl("h2", { text: t`Types` });
   const createBlocked = (ctx.schema?.config.spec_version.startsWith("0.2.") ?? true)
-    ? "Migrate to v0.3 to create types"
+    ? t`Migrate to v0.3 to create types`
     : "";
-  const add = ctx.iconButton(header, "plus", createBlocked ? `Create type · ${createBlocked}` : "Create type");
+  const add = ctx.iconButton(header, "plus", createBlocked ? t`Create type · ${createBlocked}` : t`Create type`);
   add.disabled = Boolean(createBlocked);
   add.onclick = () => void env.createType();
 
@@ -35,9 +37,9 @@ export function renderTypeList(container: HTMLElement, env: TypeListEnv): void {
   const searchBox = pane.createDiv({ cls: "search-input-container mdbase-type-search-box" });
   const search = searchBox.createEl("input", { type: "search" });
   search.addClass("mdbase-type-search");
-  search.placeholder = "Search types";
+  search.placeholder = t`Search types`;
   search.spellcheck = false;
-  search.setAttr("aria-label", "Search types");
+  search.setAttr("aria-label", t`Search types`);
   search.setAttr("data-focus-key", "type-search");
   search.value = env.query;
   search.oninput = () => {
@@ -48,7 +50,7 @@ export function renderTypeList(container: HTMLElement, env: TypeListEnv): void {
     next?.setSelectionRange(next.value.length, next.value.length);
   };
   const clear = searchBox.createDiv({ cls: "search-input-clear-button" });
-  clear.setAttr("aria-label", "Clear search");
+  clear.setAttr("aria-label", t`Clear search`);
   clear.onclick = () => {
     search.value = "";
     search.dispatchEvent(new Event("input"));
@@ -60,7 +62,7 @@ export function renderTypeList(container: HTMLElement, env: TypeListEnv): void {
   const footer = pane.createDiv({ cls: "mdbase-type-list-footer" });
   const catalog = footer.createEl("button", { cls: "mdbase-type-catalog-button" });
   setIcon(catalog.createSpan({ cls: "mdbase-type-catalog-icon" }), "library");
-  catalog.createSpan({ text: "Browse ready-made types" });
+  catalog.createSpan({ text: t`Browse ready-made types` });
   catalog.setAttr("data-focus-key", "type-catalog");
   catalog.disabled = ctx.busy || ctx.schema?.config.spec_version.startsWith("0.2.") === true;
   catalog.onclick = () => void ctx.perform(() => ctx.host.openContractCatalog());
@@ -68,7 +70,7 @@ export function renderTypeList(container: HTMLElement, env: TypeListEnv): void {
   const entries = env.typeEntries().filter((entry) =>
     `${entry.name} ${entry.description ?? ""} ${entry.filePath}`.toLowerCase().includes(query));
   if (!entries.length) {
-    list.createDiv({ cls: "mdbase-empty-list", text: query ? "No matching types." : "No type definitions." });
+    list.createDiv({ cls: "mdbase-empty-list", text: query ? t`No matching types.` : t`No type definitions.` });
     return;
   }
   const { stats } = env.currentStats();
@@ -88,27 +90,27 @@ export function renderTypeList(container: HTMLElement, env: TypeListEnv): void {
     const unsaved = active ? env.dirty : ctx.host.loadTypeDraft(type.filePath) !== null;
     if (unsaved) {
       const dot = inner.createSpan({ cls: "mdbase-unsaved-dot" });
-      dot.setAttr("aria-label", "Unsaved changes");
-      dot.setAttr("title", "Unsaved changes");
+      dot.setAttr("aria-label", t`Unsaved changes`);
+      dot.setAttr("title", t`Unsaved changes`);
     }
     const typeStat = stats.get(type.name);
     if (ctx.records) {
       const flairs = row.createDiv({ cls: "tree-item-flair-outer mdbase-type-meta" });
       const notes = typeStat?.notes ?? 0;
-      const notesLabel = `${notes.toLocaleString()} ${notes === 1 ? "note" : "notes"}`;
+      const notesLabel = plural(notes, { one: "# note", other: "# notes" });
       if (typeStat?.issues) {
         // Coloured like the Issues tab: errors in the error colour, otherwise the warning colour.
         const errors = typeStat.errors;
         const warnings = typeStat.issues - errors;
         const parts = [
-          errors ? `${errors.toLocaleString()} ${errors === 1 ? "error" : "errors"}` : "",
-          warnings ? `${warnings.toLocaleString()} ${warnings === 1 ? "warning" : "warnings"}` : "",
+          errors ? plural(errors, { one: "# error", other: "# errors" }) : "",
+          warnings ? plural(warnings, { one: "# warning", other: "# warnings" }) : "",
         ].filter(Boolean);
         const issuesLabel = parts.join(", ");
         const issues = flairs.createSpan({ cls: "tree-item-flair mdbase-type-issues" });
         issues.setAttr("data-severity", errors ? "error" : "warn");
         setIcon(issues.createSpan({ cls: "mdbase-type-issues-icon" }), errors ? "alert-circle" : "alert-triangle");
-        issues.createSpan({ text: typeStat.issues.toLocaleString() });
+        issues.createSpan({ text: formatNumber(typeStat.issues) });
         issues.setAttr("aria-label", issuesLabel);
         issues.setAttr("title", issuesLabel);
       }

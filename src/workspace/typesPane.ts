@@ -1,3 +1,4 @@
+import { plural, t } from "@lingui/core/macro";
 import { DiscardChangesModal, TypeChangeConfirmationModal } from "../modals";
 import { Notice, Platform, setIcon } from "obsidian";
 import type { MdbaseTypeDef } from "../mdbaseCore";
@@ -175,13 +176,13 @@ export class TypesPane {
 
     if (!this.typeEntries().length && !this.model) {
       const welcome = container.createDiv({ cls: "mdbase-empty-state" });
-      welcome.createEl("h2", { text: "Add your first type" });
-      welcome.createEl("p", { text: "Start from a ready-made type, such as tasks, people or daily notes, or design your own." });
+      welcome.createEl("h2", { text: t`Add your first type` });
+      welcome.createEl("p", { text: t`Start from a ready-made type, such as tasks, people or daily notes, or design your own.` });
       const actions = welcome.createDiv({ cls: "mdbase-actions" });
-      const install = actions.createEl("button", { text: "Browse ready-made types", cls: "mod-cta" });
+      const install = actions.createEl("button", { text: t`Browse ready-made types`, cls: "mod-cta" });
       install.disabled = this.ctx.busy || this.ctx.schema.config.spec_version.startsWith("0.2.");
       install.onclick = () => void this.ctx.perform(() => this.ctx.host.openContractCatalog());
-      const custom = actions.createEl("button", { text: "Design a custom type" });
+      const custom = actions.createEl("button", { text: t`Design a custom type` });
       custom.disabled = this.ctx.schema.config.spec_version.startsWith("0.2.");
       custom.onclick = () => void this.createType();
       return;
@@ -207,13 +208,13 @@ export class TypesPane {
     pane.setAttr("data-scroll-key", "type-editor");
     if (!this.model) {
       const empty = pane.createDiv({ cls: "mdbase-empty-state" });
-      empty.createEl("p", { text: "Select a type" });
+      empty.createEl("p", { text: t`Select a type` });
       return;
     }
     const readOnly = this.model.specProfile === "v0.2" || Boolean(this.model.readOnlyReason);
-    const readOnlyReason = this.model.readOnlyReason ?? "Migrate this v0.2 collection to edit types.";
+    const readOnlyReason = this.model.readOnlyReason ?? t`Migrate this v0.2 collection to edit types.`;
     const header = pane.createDiv({ cls: "mdbase-editor-header" });
-    const back = this.ctx.iconButton(header, "arrow-left", "Back to type list");
+    const back = this.ctx.iconButton(header, "arrow-left", t`Back to type list`);
     back.addClass("mdbase-mobile-back");
     back.onclick = () => void this.leaveCurrentType().then(() => {
       this.selectedPath = null;
@@ -223,24 +224,24 @@ export class TypesPane {
     });
     const heading = header.createDiv({ cls: "mdbase-editor-heading" });
     const titleLine = heading.createDiv({ cls: "mdbase-editor-title-line" });
-    titleLine.createEl("h2", { text: this.model.name || "Untitled type" });
+    titleLine.createEl("h2", { text: this.model.name || t`Untitled type` });
     if (this.dirty && !readOnly) {
       const unsaved = titleLine.createSpan({ cls: "mdbase-editor-dirty" });
       setIcon(unsaved.createSpan({ cls: "mdbase-editor-dirty-icon" }), "circle-dot");
-      unsaved.createSpan({ text: this.selectedPath ? "Unsaved changes" : "Not saved yet" });
+      unsaved.createSpan({ text: this.selectedPath ? t`Unsaved changes` : t`Not saved yet` });
     }
-    heading.createDiv({ cls: "mdbase-editor-path", text: this.selectedPath ?? "New type" });
+    heading.createDiv({ cls: "mdbase-editor-path", text: this.selectedPath ?? t`New type` });
 
     const headerActions = header.createDiv({ cls: "mdbase-editor-actions" });
     if (this.selectedPath) {
       const selectedPath = this.selectedPath;
-      const source = this.ctx.iconButton(headerActions, "file-code", "Open source");
+      const source = this.ctx.iconButton(headerActions, "file-code", t`Open source`);
       source.onclick = () => void this.ctx.host.openFileByPath(selectedPath);
     }
 
     if (this.selectedPath) {
       const name = this.model.name;
-      const create = headerActions.createEl("button", { text: "New note" });
+      const create = headerActions.createEl("button", { text: t`New note` });
       create.disabled = readOnly || this.ctx.busy;
       create.onclick = () => void this.ctx.host.createNoteFromType(name);
       renderStaleDrafts(this.ctx, pane, this.selectedPath, {
@@ -256,7 +257,7 @@ export class TypesPane {
     }
     const mode = pane.createDiv({ cls: "mdbase-mode-switch" });
     mode.setAttr("role", "tablist");
-    for (const [value, label] of [["design", "Design"], ["yaml", "YAML"]] as const) {
+    for (const [value, label] of [["design", t`Design`], ["yaml", "YAML"]] as const) {
       const button = mode.createEl("button", { text: label });
       button.id = `mdbase-mode-${value}`;
       button.setAttr("role", "tab");
@@ -298,14 +299,14 @@ export class TypesPane {
     const shownErrors = this.editorMode === "yaml" ? yamlErrors : errorCount;
     summary.setAttr("data-tone", shownErrors ? "error" : failing || highRiskCount ? "warning" : "normal");
     summary.createSpan({
-      text: shownErrors ? `${shownErrors} ${shownErrors === 1 ? "error" : "errors"}`
-        : failing ? `${failing} ${failing === 1 ? "note" : "notes"} would fail`
-          : highRiskCount ? `${highRiskCount} high-impact ${highRiskCount === 1 ? "change" : "changes"}`
-            : "Unsaved changes",
+      text: shownErrors ? plural(shownErrors, { one: "# error", other: "# errors" })
+        : failing ? plural(failing, { one: "# note would fail", other: "# notes would fail" })
+          : highRiskCount ? plural(highRiskCount, { one: "# high-impact change", other: "# high-impact changes" })
+            : t`Unsaved changes`,
     });
     const actions = bar.createDiv({ cls: "mdbase-actions" });
     if (this.editorMode === "design") {
-      const review = actions.createEl("button", { text: "Review" });
+      const review = actions.createEl("button", { text: t`Review` });
       review.onclick = () => {
         const target = this.ctx.containerEl.querySelector<HTMLElement>("#mdbase-section-review");
         const details = target?.closest("details");
@@ -314,9 +315,9 @@ export class TypesPane {
         this.ctx.containerEl.querySelector("#mdbase-section-review")?.scrollIntoView({ block: "nearest" });
       };
     }
-    const discard = actions.createEl("button", { text: "Discard" });
+    const discard = actions.createEl("button", { text: t`Discard` });
     discard.onclick = () => void this.confirmDiscard();
-    const save = actions.createEl("button", { text: "Save" });
+    const save = actions.createEl("button", { text: t`Save` });
     save.addClass("mod-cta", "mdbase-draft-save");
     save.disabled = (this.editorMode === "design" ? errorCount > 0 : yamlErrors > 0) || this.ctx.busy;
     save.onclick = () => void this.saveCurrentType();
@@ -329,7 +330,7 @@ export class TypesPane {
       contracts: this.ctx.schema?.contracts.values(),
     });
     if (!this.holdNameError || model.name.trim()) return diagnostics;
-    return diagnostics.filter((diagnostic) => diagnostic.code !== "invalid_type_document" || !/name is required/i.test(diagnostic.message));
+    return diagnostics.filter((diagnostic) => diagnostic.code !== "type_name_required");
   }
 
   /**
@@ -389,9 +390,9 @@ export class TypesPane {
     this.editorMode = canRestore && draft.editorMode === "yaml" ? "yaml" : "design";
     if (this.editorMode === "yaml") this.dirty = true;
     if (canRestore && this.dirty) {
-      if (!this.sessionDrafts.has(path)) this.ctx.message = `Recovered unsaved changes for ${path}.`;
+      if (!this.sessionDrafts.has(path)) this.ctx.message = t`Recovered unsaved changes for ${path}.`;
     } else if (draft && !canRestore) {
-      this.ctx.message = `An older draft for ${path} was kept, but the source changed. The current file is shown.`;
+      this.ctx.message = t`An older draft for ${path} was kept, but the source changed. The current file is shown.`;
     }
     this.impact.schedule(0);
     this.ctx.render();
@@ -408,7 +409,7 @@ export class TypesPane {
     this.yaml.text = draft?.yamlDraft
       ?? "";
     this.dirty = true;
-    if (draft && !this.sessionDrafts.has("__new__")) this.ctx.message = "Recovered an unsaved new type.";
+    if (draft && !this.sessionDrafts.has("__new__")) this.ctx.message = t`Recovered an unsaved new type.`;
     this.editorMode = draft?.editorMode ?? "design";
     this.holdNameError = !model.name.trim();
     if (this.editorMode === "design") this.ctx.pendingFocusKey = "form-name";
@@ -453,7 +454,7 @@ export class TypesPane {
     const diagnostics = this.diagnostics(this.model);
     const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
     if (errors.length) {
-      this.ctx.message = `${errors.length} ${errors.length === 1 ? "error must" : "errors must"} be fixed before saving.`;
+      this.ctx.message = plural(errors.length, { one: "# error must be fixed before saving.", other: "# errors must be fixed before saving." });
       this.ctx.render();
       new Notice(errors[0].message);
       return;
@@ -483,7 +484,8 @@ export class TypesPane {
       this.selectedPath = file.path;
       this.originalModel = clone(model);
       this.dirty = false;
-      this.ctx.message = `Saved ${file.path}.`;
+      const savedPath = file.path;
+      this.ctx.message = t`Saved ${savedPath}.`;
       await this.ctx.refresh(true);
     });
   }
@@ -507,7 +509,7 @@ export class TypesPane {
       bar.remove();
       this.renderDraftBar(pane, this.model);
       const title = pane.querySelector(".mdbase-editor-title-line h2");
-      if (title) title.textContent = this.model.name || "Untitled type";
+      if (title) title.textContent = this.model.name || t`Untitled type`;
     }
   }
 
@@ -550,16 +552,17 @@ export class TypesPane {
     const isNew = !this.selectedPath;
     const name = model.name.trim();
     const lost = this.editorMode === "yaml"
-      ? ["Your edits in YAML"]
+      ? [t`Your edits in YAML`]
       : describeTypeChanges(this.originalModel, model).map((change) => change.summary);
+    const selectedPath = this.selectedPath ?? "";
     const confirmed = await new DiscardChangesModal(this.ctx.app).confirm(
       isNew
-        ? name ? `Discard the new type ${name}?` : "Discard this new type?"
-        : `Discard changes to ${name || "this type"}?`,
+        ? name ? t`Discard the new type ${name}?` : t`Discard this new type?`
+        : name ? t`Discard changes to ${name}?` : t`Discard changes to this type?`,
       isNew ? [] : lost,
       isNew
-        ? "It hasn't been saved, so it will be gone. This can't be undone."
-        : `${this.selectedPath} goes back to how it was last saved. This can't be undone.`,
+        ? t`It hasn't been saved, so it will be gone. This can't be undone.`
+        : t`${selectedPath} goes back to how it was last saved. This can't be undone.`,
     );
     if (confirmed) await this.discardCurrentType();
   }
@@ -581,7 +584,7 @@ export class TypesPane {
       this.dirty = false;
       this.holdNameError = false;
     }
-    this.ctx.message = "Unsaved changes discarded.";
+    this.ctx.message = t`Unsaved changes discarded.`;
     this.ctx.render();
   }
 
