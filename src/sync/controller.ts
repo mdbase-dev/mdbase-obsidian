@@ -103,7 +103,7 @@ export interface SyncSnapshot {
   merged: MergedChange[];
   /** The sign-in page while a sign-in waits for approval in the browser. */
   signingIn: string | null;
-  /** What is being done right now, e.g. t`Turning on sync`. */
+  /** What is being done right now, e.g. "Turning on sync". */
   busy: string | null;
 }
 
