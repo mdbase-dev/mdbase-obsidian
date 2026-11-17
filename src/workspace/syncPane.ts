@@ -197,7 +197,7 @@ export class SyncPane {
         if (startOver) buttons[brokenSignIn ? "unshift" : "push"](["Start over", brokenSignIn, () => this.run(() => controller.startOver())]);
         if (buttons.length) this.actions(root, buttons);
         if (startOver) root.createEl("p", { cls: "mdbase-muted", text: START_OVER_HINT });
-        if (step === "choose") root.createEl("p", { cls: "mdbase-muted", text: CHOOSE_AGAIN_HINT });
+        if (step === "choose") root.createEl("p", { cls: "mdbase-muted", text: CHOOSE_AGAIN_HINT() });
       }
       return;
     }

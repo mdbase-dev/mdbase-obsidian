@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 // Conflicts and rejected writes: the local side is always kept as a separate
 // copy before the remote side wins the original path, and a rejected write is
 // acknowledged only once its exact bytes are proven preserved.
@@ -50,18 +51,18 @@ export async function keepConflictCopies(sync: NativeSync, copyPath: string) {
       const remote = remotes.get(copy.copy), local = await sync.local(copy.copy);
       const original = remotes.get(copy.path), current = await sync.local(copy.path);
       if (remote?.confirmed !== true || remote.hash !== copy.hash || local?.hash !== copy.hash || !sync.data.paths[copy.path] || original?.confirmed !== true || !current || original.hash !== current.hash) {
-        new Notice("mdbase: both files must finish syncing before keeping them."); return;
+        new Notice(t`mdbase: both files must finish syncing before keeping them.`); return;
       }
       delete sync.data.conflictCopies![key];
     }
-    await sync.persist(); sync.setStatus(sync.statusText);
+    await sync.persist(); sync.setStatus(sync.statusText, sync.statusKind);
   });
 }
 // User-reviewed escape hatch for rejections the plugin cannot prove it preserved.
 // The user picks one entry; nothing is discarded automatically.
 export async function discardRejected(sync: NativeSync) {
   const entries: { mutationId: string; records: string[]; code: string }[] = await sync.call("rejectedWrites");
-  if (!entries.length) { new Notice("mdbase: no rejected writes"); return; }
+  if (!entries.length) { new Notice(t`mdbase: no rejected writes`); return; }
   const label = (e: typeof entries[number]) => {
     const p = Object.entries(sync.data.paths).find(([, k]) => e.records.includes(k.id))?.[0] ?? "unknown path";
     return `${p} — ${e.code} — ${e.mutationId}`;
@@ -71,7 +72,7 @@ export async function discardRejected(sync: NativeSync) {
       const ok = await sync.call("acknowledge", entry.mutationId);
       delete sync.data.handledRejections?.[entry.mutationId]; await sync.persist();
       sync.log(`rejected write discarded by user: mutationId=${entry.mutationId} problem=${entry.code} ok=${ok}`);
-      new Notice(ok ? "mdbase: rejected write discarded" : "mdbase: discard failed");
+      new Notice(ok ? t`mdbase: rejected write discarded` : t`mdbase: discard failed`);
     }).catch(error => sync.fail("discard rejected", error));
   };
   chooseRejectedWrite(sync.app, entries, label, discard);
@@ -116,5 +117,5 @@ export async function conflict(sync: NativeSync, p: string, l: LocalFile | undef
   for (const [key, copy] of Object.entries(sync.data.conflictCopies ?? {})) if (copy.path === p) delete sync.data.conflictCopies![key];
   await sync.persist();
   sync.log("conflict: local preserved as a new conflict item; remote wins original path");
-  new Notice("mdbase: conflict preserved in a separate file; remote version kept at original path.");
+  new Notice(t`mdbase: conflict preserved in a separate file; remote version kept at original path.`);
 }
