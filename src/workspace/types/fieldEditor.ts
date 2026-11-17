@@ -508,7 +508,7 @@ export class FieldEditor {
       // Types only need calling out when a list mixes them, e.g. `1` beside `"1"`.
       if (mixedTypes) {
         const kind = typeof value;
-        row.createSpan({ cls: "mdbase-enum-kind", text: kind === "string" ? t`string` : kind === "number" ? t`number` : kind === "boolean" ? t`boolean` : kind });
+        row.createSpan({ cls: "mdbase-enum-kind", text: kind === "string" ? t`string` : kind === "number" ? t`number` : kind === "boolean" ? t`boolean` : kind === "object" ? t`object` : kind });
       }
       for (const [icon, label, offset] of [["arrow-up", t`Move value up`, -1], ["arrow-down", t`Move value down`, 1]] as const) {
         const valueText = scalarText(value);
