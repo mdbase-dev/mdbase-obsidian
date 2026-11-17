@@ -1,2 +1,4 @@
 node_modules/
 .test-dist/
+# Compiled from the PO files by `npm run i18n:compile:dev` or `npm run i18n:check`.
+/src/i18n/locales/*/messages.json

@@ -1,0 +1,168 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-11-17 22:34+1100\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: zh\n"
+
+#. placeholder {0}: fileIssues.length
+#: src/workspace/issuesPane.ts
+msgid "{0, plural, one {# issue} other {# issues}}"
+msgstr ""
+
+#. placeholder {0}: allIssues.length
+#: src/workspace/issuesPane.ts
+msgid "{0, plural, one {# issue} other {# issues}} · {allFiles, plural, one {# file} other {# files}}"
+msgstr ""
+
+#. placeholder {0}: formatNumber(Math.min(filtered.length, this.issueLimit))
+#. placeholder {1}: filtered.length
+#: src/workspace/issuesPane.ts
+msgid "{0} of {1, plural, one {# issue} other {# issues}} · {filteredFiles, plural, one {# file} other {# files}}"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "{files, plural, one {# note} other {# notes}}"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "{fixLabel} · {fixableNotes, plural, one {# note} other {# notes}}"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "{label}: updated {changed, plural, one {# note} other {# notes}}."
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "{label}: updated {changed} of {notes, plural, one {# note} other {# notes}}. {skipped, plural, one {# note changed since validation and was left as it is.} other {# notes changed since validation and were left as they are.}}"
+msgstr ""
+
+#. placeholder {0}: issue.field
+#: src/workspace/issuesPane.ts
+msgid "{severityLabel} · {0}"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "All severities"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "By file"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "By rule"
+msgstr ""
+
+#: src/validationState.ts
+msgid "Changed since last collection validation · {checked} of {total, plural, one {# note} other {# notes}} checked"
+msgstr ""
+
+#: src/validationState.ts
+msgid "Checked {checked} of {total, plural, one {# note} other {# notes}} · duplicate values not checked yet"
+msgstr ""
+
+#: src/validationState.ts
+msgid "Checked {completed} of {total, plural, one {# note} other {# notes}} · checking for duplicate values…"
+msgstr ""
+
+#: src/validationState.ts
+msgid "Checked {total, plural, one {# note} other {# notes}} at {time}"
+msgstr ""
+
+#: src/validationState.ts
+msgid "Checking {completed} of {total, plural, one {# note} other {# notes}}…"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Clear filter"
+msgstr ""
+
+#. placeholder {0}: issue.field
+#. placeholder {1}: typeDef.name
+#: src/workspace/issuesPane.ts
+msgid "Edit {0} in {1}"
+msgstr ""
+
+#. placeholder {0}: typeDef.name
+#: src/workspace/issuesPane.ts
+msgid "Edit type {0}"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Error"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Errors"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Filter issues"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Group issues"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Issue severity"
+msgstr ""
+
+#. placeholder {0}: Math.min(250, filtered.length - issues.length)
+#: src/workspace/issuesPane.ts
+msgid "Load {0} more"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "No issues match these filters."
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "No known issues"
+msgstr ""
+
+#: src/validationState.ts
+msgid "Not checked yet"
+msgstr ""
+
+#. placeholder {0}: issue.path
+#: src/workspace/issuesPane.ts
+msgid "Open {0}"
+msgstr ""
+
+#. placeholder {0}: issue.path
+#. placeholder {1}: issue.field
+#: src/workspace/issuesPane.ts
+msgid "Open {0} at {1}"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Open {path}"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Stop validation"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Validate"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Validation"
+msgstr ""
+
+#: src/validationState.ts
+msgid "Validation stopped · {checked} of {total, plural, one {# note} other {# notes}} checked · results incomplete"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Warning"
+msgstr ""
+
+#: src/workspace/issuesPane.ts
+msgid "Warnings"
+msgstr ""

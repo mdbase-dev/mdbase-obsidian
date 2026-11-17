@@ -36,6 +36,8 @@ export interface MdbaseWorkspaceHost {
   getIssues(): MdbaseIssue[];
   validateCollection(): Promise<void>;
   getValidationSummary(): string;
+  /** Nothing has been validated this session; the summary is the "not checked" state. */
+  isValidationUntouched(): boolean;
   isValidating(): boolean;
   cancelValidation(): void;
   getQuickFixLabel(issue: MdbaseIssue): string | null;

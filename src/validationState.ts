@@ -1,3 +1,6 @@
+import { plural, t } from "@lingui/core/macro";
+import { formatDate } from "./i18n/runtime";
+
 export interface ValidationProgress {
   completed: number;
   total: number;
@@ -22,16 +25,26 @@ export class ValidationState {
   markChecked(path: string): void { this.checked.add(path); }
   isChecked(path: string): boolean { return this.checked.has(path); }
 
+  /** True until anything has been checked in this session (the summary reads "Not checked yet"). */
+  untouched(): boolean {
+    return !this.progress && !this.cancelled && !this.lastCompletedAt && this.checked.size === 0;
+  }
+
   summary(paths: string[]): string {
-    if (this.progress) return this.progress.phase === "uniqueness"
-      ? `Checked ${this.progress.completed} of ${this.progress.total} notes · checking for duplicate values…`
-      : `Checking ${this.progress.completed} of ${this.progress.total} notes…`;
-    const checked = paths.filter(path => this.checked.has(path)).length;
-    if (this.cancelled) return `Validation stopped · ${checked} of ${paths.length} notes checked · results incomplete`;
-    if (this.lastCompletedAt && this.completedRevision === this.revision) {
-      return `Checked ${paths.length} notes at ${new Date(this.lastCompletedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+    if (this.progress) {
+      const { completed, total } = this.progress;
+      return this.progress.phase === "uniqueness"
+        ? t`Checked ${completed} of ${plural(total, { one: "# note", other: "# notes" })} · checking for duplicate values…`
+        : t`Checking ${completed} of ${plural(total, { one: "# note", other: "# notes" })}…`;
     }
-    if (this.lastCompletedAt) return `Changed since last collection validation · ${checked} of ${paths.length} notes checked`;
-    return checked ? `Checked ${checked} of ${paths.length} notes · duplicate values not checked yet` : "Not checked yet";
+    const checked = paths.filter(path => this.checked.has(path)).length;
+    const total = paths.length;
+    if (this.cancelled) return t`Validation stopped · ${checked} of ${plural(total, { one: "# note", other: "# notes" })} checked · results incomplete`;
+    if (this.lastCompletedAt && this.completedRevision === this.revision) {
+      const time = formatDate(new Date(this.lastCompletedAt), { hour: "2-digit", minute: "2-digit" });
+      return t`Checked ${plural(total, { one: "# note", other: "# notes" })} at ${time}`;
+    }
+    if (this.lastCompletedAt) return t`Changed since last collection validation · ${checked} of ${plural(total, { one: "# note", other: "# notes" })} checked`;
+    return checked ? t`Checked ${checked} of ${plural(total, { one: "# note", other: "# notes" })} · duplicate values not checked yet` : t`Not checked yet`;
   }
 }

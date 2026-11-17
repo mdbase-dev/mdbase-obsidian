@@ -2,6 +2,7 @@ import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from "node:module";
 import { nativeAssets } from "./scripts/native-assets.mjs";
+import { linguiMacros } from "./scripts/lingui-macros.mjs";
 const packedNativeAssets = await nativeAssets();
 
 const banner =
@@ -17,7 +18,9 @@ const context = await esbuild.context({
   plugins: [{ name: "embedded-native-assets", setup(b) {
     b.onResolve({ filter: /^embedded:assets$/ }, () => ({ path: "assets", namespace: "native" }));
     b.onLoad({ filter: /.*/, namespace: "native" }, () => ({ contents: `export default ${JSON.stringify(packedNativeAssets)};`, loader: "js" }));
-  } }],
+  } }, linguiMacros({ production: prod })],
+  // Keep translated text readable (and smaller) instead of \u-escaping it.
+  charset: "utf8",
   banner: {
     js: banner,
   },

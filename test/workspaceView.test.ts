@@ -105,6 +105,7 @@ function fixture(connected = false) {
     createNoteFromType: async () => undefined,
     openContractCatalog: async () => undefined,
     getValidationSummary: () => "Not checked yet",
+    isValidationUntouched: () => true,
     isValidating: () => false,
     cancelValidation: () => undefined,
     loadCollectionRecords: async () => [] as Array<{ path: string; frontmatter: Record<string, unknown> }>,

@@ -1,3 +1,4 @@
+import { activateLanguage } from "./src/i18n/runtime";
 import { ContractCatalogModal, recoverPackInstall } from "./src/contractCatalog";
 import { ValidationState } from "./src/validationState";
 import { createNoteFromTypeCommand } from "./src/commands";
@@ -5,6 +6,7 @@ import { applyQuickFixToDocument, quickFixLabel } from "./src/quickFix";
 import {
   App,
   addIcon,
+  getLanguage,
   FileSystemAdapter,
   MarkdownView,
   Notice,
@@ -191,6 +193,8 @@ export default class MdbasePlugin extends Plugin {
   }
 
   async onload(): Promise<void> {
+    // Obsidian restarts when its display language changes, so pick it once, before any UI.
+    activateLanguage(getLanguage());
     await this.loadSettings();
     addIcon(MDBASE_ICON_ID, MDBASE_ICON_SVG);
 
@@ -398,6 +402,8 @@ export default class MdbasePlugin extends Plugin {
     const paths = this.app.vault.getMarkdownFiles().filter(file => !config || !isExcluded(file.path, config)).map(file => file.path);
     return this.validation.summary(paths);
   }
+
+  isValidationUntouched(): boolean { return this.validation.untouched(); }
 
   isValidating(): boolean { return this.validationAbort !== null; }
 
