@@ -35,13 +35,13 @@ export async function onPhase(sync: NativeSync, phase: NativePhase) {
   // A later notice of the same stop (its sync counts or collection list
   // changed) keeps the words saying why, not the generic problem text.
   const sameStop = phase.kind !== "ready" && phase.kind !== "needs_unlock" && phase.kind === was.kind && phase.problem && JSON.stringify(phase.problem) === JSON.stringify(was.problem);
-  if (sync.admitting && sameStop) sync.setStatus(sync.statusText);
+  if (sync.admitting && sameStop) sync.refreshStatus();
   else if (sync.admitting && !(phase.kind === "ready" && (sync.syncingFiles || sync.startingMirror || sync.reconcileRetryTimer !== null)))
     sync.setStatus(phase.kind === "ready" ? phase.sync ? readyText(phase.sync) : "Checking your files" : phaseText[phase.kind] ?? "Starting sync");
   // A pass in progress keeps its own progress text, but going offline or
   // coming back must still reach the UI; "Uploading 83 of 500" would
   // otherwise stay up for as long as the connection is down (QA2-1).
-  else if (sync.admitting && phase.sync?.state !== was.sync?.state) sync.setStatus(sync.statusText);
+  else if (sync.admitting && phase.sync?.state !== was.sync?.state) sync.refreshStatus();
   // Names/documents never belong in this log.
   sync.log(`phase ${phase.kind}${phase.problem ? ` ${phase.problem.code ?? ""} ${phase.problem.reason ?? ""}` : ""}${phase.sync ? ` sync=${phase.sync.state} pending=${phase.sync.pending}` : ""}`);
   // A wrong password is shown beside the form; it doesn't stop sync.
