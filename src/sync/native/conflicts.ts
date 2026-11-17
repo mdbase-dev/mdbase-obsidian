@@ -54,7 +54,7 @@ export async function keepConflictCopies(sync: NativeSync, copyPath: string) {
       }
       delete sync.data.conflictCopies![key];
     }
-    await sync.persist(); sync.setStatus(sync.statusText);
+    await sync.persist(); sync.refreshStatus();
   });
 }
 // User-reviewed escape hatch for rejections the plugin cannot prove it preserved.
