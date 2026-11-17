@@ -49,7 +49,9 @@ test("full releases are promoted only by hand", () => {
   assert.notEqual(definition.concurrency.group, workflow("build").jobs.release.concurrency.group);
   for (const step of definition.jobs.promote.steps.filter((value) => value.uses)) assert.match(step.uses, /@[0-9a-f]{40}$/);
   assert.match(definition.jobs.promote.steps.at(-1).run, /plugin-release.mjs promote/);
-  assert.ok(!JSON.stringify(definition).includes("permission-pull-requests"));
+  // It opens the listing PR that points main's manifest.json at the promoted release.
+  assert.equal(definition.jobs.promote.steps[0].with["permission-pull-requests"], "write");
+  assert.equal(definition.jobs.promote.steps.at(-1).env.APP_SLUG, "${{ steps.app.outputs.app-slug }}");
   for (const name of ["build", "version-bump", "prerelease"]) assert.ok(!JSON.stringify(workflow(name)).includes("--latest"));
 });
 

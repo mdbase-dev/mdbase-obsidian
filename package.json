@@ -21,7 +21,7 @@
     "test:release": "node --test test/release/*.test.mjs",
     "test:unit": "npm run i18n:compile:dev && tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node --loader ./test/obsidian-loader.mjs --test .test-dist/test/**/*.test.js && node --test test/native/*.test.mjs",
     "copy-files": "node copy-files.mjs",
-    "version": "node version-bump.mjs && git add manifest.json versions.json package-lock.json",
+    "version": "node version-bump.mjs && git add versions.json package-lock.json",
     "i18n:extract": "mdbase-i18n extract --clean",
     "i18n:compile": "mdbase-i18n compile",
     "i18n:check": "mdbase-i18n check",

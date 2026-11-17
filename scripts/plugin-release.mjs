@@ -1,13 +1,32 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
 
 const assets = ["main.js", "manifest.json", "styles.css"];
+
+// Two versions live on main. package.json holds the version being built and
+// prereleased. manifest.json holds the version Obsidian's community list serves:
+// Obsidian reads it from main and delists the plugin while it names a version
+// with no full release. So manifest.json moves only when a release is promoted
+// (pointListing), and published assets carry a manifest stamped with the
+// package.json version (stampedManifest).
+export function buildVersion(directory = ".") {
+  return JSON.parse(readFileSync(join(directory, "package.json"), "utf8")).version;
+}
+
+/** Write manifest.json for the release assets: main's manifest at the build version. */
+export function stampedManifest(directory, version = buildVersion()) {
+  const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
+  manifest.version = version;
+  const path = join(directory, "manifest.json");
+  writeFileSync(path, JSON.stringify(manifest, null, "\t") + "\n");
+  return path;
+}
 const numericVersion = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 
 export function versionParts(version) {
@@ -89,14 +108,14 @@ function isCurrent(run, environment) {
 export function releaseTarget(run = execute, environment = process.env) {
   if (!isCurrent(run, environment)) return { action: "none", reason: "stale" };
   assert.equal(run("git", "rev-parse", "HEAD"), environment.GITHUB_SHA);
-  const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
+  const version = buildVersion();
   const state = stateFor(run, environment.GITHUB_REPOSITORY, version);
   if (state.published) return { action: "none", reason: "published" };
   assert.ok(compareVersions(version, state.baseline) > 0, "Plugin version is behind the published release");
   const sha = state.tags.get(version) ?? state.draft?.target_commitish ?? environment.GITHUB_SHA;
   assert.match(sha, /^[0-9a-f]{40}$/);
   run("git", "merge-base", "--is-ancestor", sha, environment.GITHUB_SHA);
-  assert.equal(JSON.parse(run("git", "show", `${sha}:manifest.json`)).version, version);
+  assert.equal(JSON.parse(run("git", "show", `${sha}:package.json`)).version, version);
   return { action: "publish", version, sha };
 }
 
@@ -107,7 +126,7 @@ export function releasePlugin(run = execute, environment = process.env) {
   assert.match(sha, /^[0-9a-f]{40}$/);
   assert.equal(run("git", "rev-parse", "HEAD"), sha);
   const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
-  const version = manifest.version;
+  const version = buildVersion();
   const state = stateFor(run, environment.GITHUB_REPOSITORY, version);
   if (state.published) return none("published");
   assert.ok(compareVersions(version, state.baseline) > 0, "Plugin version is behind the published release");
@@ -115,15 +134,17 @@ export function releasePlugin(run = execute, environment = process.env) {
   assert.ok(!state.draft || state.tags.has(version) || state.draft.target_commitish === sha, "Draft has no verifiable original commit");
   run("git", "merge-base", "--is-ancestor", sha, environment.GITHUB_SHA);
   run("git", "merge-base", "--is-ancestor", `refs/tags/${state.baseline}^{}`, sha);
-  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   const lock = JSON.parse(readFileSync("package-lock.json", "utf8"));
-  assert.equal(pkg.version, version);
+  assert.ok(compareVersions(manifest.version, version) < 0, "manifest.json is ahead of the version being published");
   assert.equal(lock.version, version);
   assert.equal(lock.packages[""].version, version);
   assert.equal(JSON.parse(readFileSync("versions.json", "utf8"))[version], manifest.minAppVersion);
   for (const file of assets) assert.ok(statSync(file).size > 0, `Missing or empty release asset: ${file}`);
   assert.equal(run("git", "show", `${sha}:manifest.json`), readFileSync("manifest.json", "utf8").trim());
+  assert.equal(JSON.parse(run("git", "show", `${sha}:package.json`)).version, version);
   const directory = mkdtempSync(join(tmpdir(), "obsidian-release-"));
+  const staged = mkdtempSync(join(tmpdir(), "obsidian-release-assets-"));
+  const upload = assets.map((file) => file === "manifest.json" ? stampedManifest(staged, version) : file);
   try {
     run("gh", "release", "download", state.baseline, "--dir", directory, ...assets.flatMap((file) => ["--pattern", file]));
     if (sameAssets(directory)) return none("unchanged-assets");
@@ -136,17 +157,18 @@ export function releasePlugin(run = execute, environment = process.env) {
     }
     if (!isCurrent(run, environment)) return none("stale");
     if (!state.draft) run("gh", "release", "create", version, "--verify-tag", "--target", sha, "--draft", "--prerelease", "--title", `mdbase Obsidian ${version}`, "--notes", `Built and validated from ${sha}. Includes main.js, manifest.json and styles.css.`);
-    run("gh", "release", "upload", version, ...assets, "--clobber");
+    run("gh", "release", "upload", version, ...upload, "--clobber");
     run("gh", "release", "download", version, "--dir", directory, "--clobber", ...assets.flatMap((file) => ["--pattern", file]));
-    for (const file of assets) {
+    assets.forEach((file, index) => {
       const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
-      assert.equal(digest(join(directory, file)), digest(file), `Uploaded asset mismatch: ${file}`);
-    }
+      assert.equal(digest(join(directory, file)), digest(upload[index]), `Uploaded asset mismatch: ${file}`);
+    });
     if (!isCurrent(run, environment)) return none("stale");
     run("gh", "release", "edit", version, "--draft=false", "--prerelease=true", "--latest=false");
     return { action: "publish", version, sha };
   } finally {
     rmSync(directory, { recursive: true, force: true });
+    rmSync(staged, { recursive: true, force: true });
   }
 }
 
@@ -156,7 +178,7 @@ export function releasePlugin(run = execute, environment = process.env) {
 // scheduled job opens a version PR set to merge when required CI passes; that
 // merge publishes the prerelease (releasePlugin). A burst of merges ships once.
 export const quietMs = 3 * 60 * 60 * 1000;
-const versionFiles = ["manifest.json", "versions.json", "package.json", "package-lock.json"];
+const versionFiles = ["versions.json", "package.json", "package-lock.json"];
 const releaseBranch = /^release\/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 // Paths that cannot change main.js, styles.css or the manifest. A diff touching
 // only these skips the build; otherwise the built bytes decide.
@@ -194,7 +216,7 @@ export function quietCheck(run = execute, environment = process.env, now = Date.
   }
   const head = run("git", "rev-parse", "HEAD");
   assert.equal(run("git", "ls-remote", "origin", "refs/heads/main").split(/\s/)[0], head, "Checkout is not current main");
-  const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
+  const version = buildVersion();
   const state = stateFor(run, repository, version);
   if (state.pending.size) return none("publishing", { version });
   // A bumped version still unpublished is the Build's to publish, not a new bump.
@@ -219,7 +241,7 @@ export function quietOpen(run = execute, environment = process.env, now = Date.n
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-  const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
+  const version = buildVersion();
   const next = nextVersion(stateFor(run, repository, version), version);
   const branch = `release/${next}`;
   // A leftover branch means its PR was closed without merging: someone held this
@@ -242,7 +264,9 @@ export function quietOpen(run = execute, environment = process.env, now = Date.n
 
 // ---- Full releases -----------------------------------------------------------
 // Only by hand (promote.yml, workflow_dispatch): the newest published prerelease
-// becomes the full release marked Latest, which Obsidian's community list serves.
+// becomes the full release marked Latest, then a listing/<version> PR points
+// main's manifest.json at it, which is what Obsidian's community list serves.
+// The release turns full first: a manifest naming a prerelease delists the plugin.
 export function promotionDecision(releases, tagOutput) {
   const numeric = releases.filter((release) => numericVersion.test(release.tag_name));
   const published = numeric.filter((release) => !release.draft);
@@ -257,20 +281,60 @@ export function promotionDecision(releases, tagOutput) {
   return { action: "promote", version: candidate.tag_name };
 }
 
+/** The newest full release, which main's manifest.json should name. */
+export function listedVersion(releases) {
+  const full = releases.filter((release) => !release.draft && !release.prerelease && numericVersion.test(release.tag_name));
+  full.sort((left, right) => compareVersions(right.tag_name, left.tag_name));
+  return full[0]?.tag_name;
+}
+
+/** Open (or move along) the PR that points manifest.json at the newest full release. */
+export function pointListing(run, environment, releases) {
+  const repository = environment.GITHUB_REPOSITORY;
+  const version = listedVersion(releases);
+  if (!version) return { action: "none", reason: "no-full-release" };
+  const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
+  if (compareVersions(version, manifest.version) <= 0) return { action: "none", reason: "listed", version: manifest.version };
+  const branch = `listing/${version}`;
+  const open = JSON.parse(run("gh", "pr", "list", "--repo", repository, "--base", "main", "--head", branch, "--state", "open", "--json", "number,autoMergeRequest,url"));
+  if (open.length) {
+    if (!open[0].autoMergeRequest) run("gh", "pr", "merge", String(open[0].number), "--repo", repository, "--auto", "--merge");
+    return { action: "pending", version, url: open[0].url };
+  }
+  // A leftover branch means its PR was closed without merging; delete it to retry.
+  if (run("git", "ls-remote", "--heads", "origin", `refs/heads/${branch}`)) return { action: "none", reason: "held", branch };
+  const head = run("git", "rev-parse", "HEAD");
+  assert.equal(run("git", "ls-remote", "origin", "refs/heads/main").split(/\s/)[0], head, "Checkout is not current main");
+  manifest.version = version;
+  writeFileSync("manifest.json", JSON.stringify(manifest, null, "\t") + "\n");
+  run("git", "config", "user.name", `${environment.APP_SLUG}[bot]`);
+  run("git", "config", "user.email", `${environment.APP_SLUG}[bot]@users.noreply.github.com`);
+  run("git", "switch", "--create", branch);
+  run("git", "add", "manifest.json");
+  run("git", "commit", "--message", `List Obsidian plugin ${version} in the community directory`);
+  run("git", "push", "origin", `HEAD:refs/heads/${branch}`);
+  const url = run("gh", "pr", "create", "--repo", repository, "--base", "main", "--head", branch, "--title", `List Obsidian plugin ${version} in the community directory`, "--body",
+    `${version} is now the full release. Obsidian's community list installs the version named in main's manifest.json, so this points it at ${version}. ` +
+    "It changes only that version, publishes nothing, and merges itself when required CI passes.");
+  run("gh", "pr", "merge", url, "--repo", repository, "--auto", "--merge");
+  return { action: "open", version, url };
+}
+
 export function promoteRelease(run = execute, environment = process.env) {
   const repository = environment.GITHUB_REPOSITORY;
   assert.equal(repository, "mdbase-dev/mdbase-obsidian");
-  const releases = JSON.parse(run("gh", "api", "--paginate", "--slurp", `repos/${repository}/releases?per_page=100`)).flat();
-  const decision = promotionDecision(releases, run("git", "ls-remote", "--tags", "origin"));
+  const releases = () => JSON.parse(run("gh", "api", "--paginate", "--slurp", `repos/${repository}/releases?per_page=100`)).flat();
+  const decision = promotionDecision(releases(), run("git", "ls-remote", "--tags", "origin"));
   if (decision.action === "promote") {
     run("gh", "release", "edit", decision.version, "--repo", repository, "--prerelease=false", "--latest");
   }
-  return decision;
+  // Also when nothing was promoted, so a rerun finishes an earlier listing.
+  return { ...decision, listing: pointListing(run, environment, releases()) };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   if (process.argv[2] === "next-version") {
-    const version = JSON.parse(readFileSync("manifest.json", "utf8")).version;
+    const version = buildVersion();
     console.log(nextVersion(stateFor(execute, "mdbase-dev/mdbase-obsidian", version), version));
   } else if (process.argv[2] === "promote") {
     console.log(JSON.stringify(promoteRelease()));

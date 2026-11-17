@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { copyFile, mkdir, access, constants, readFile } from "fs/promises";
+import { copyFile, mkdir, access, constants, readFile, writeFile } from "fs/promises";
 import { isAbsolute, join, resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { homedir } from "os";
@@ -59,6 +59,14 @@ async function copyToDestination(destPath) {
   await Promise.all(
     files.map(async (file) => {
       await access(file, constants.F_OK);
+      if (file === "manifest.json") {
+        // manifest.json in the repo carries the community list's version; a
+        // local build is the version in package.json, as release assets are.
+        const manifest = JSON.parse(await readFile(file, "utf8"));
+        manifest.version = JSON.parse(await readFile("package.json", "utf8")).version;
+        await writeFile(join(resolvedPath, file), JSON.stringify(manifest, null, "\t") + "\n");
+        return;
+      }
       await copyFile(file, join(resolvedPath, file));
     }),
   );

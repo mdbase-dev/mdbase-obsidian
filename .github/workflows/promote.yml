@@ -1,7 +1,8 @@
 name: Promote plugin release
 
 # Run by hand from the Actions tab: the newest published prerelease becomes the
-# full release marked Latest, which Obsidian's community list serves. Nothing
+# full release marked Latest, then a listing/<version> PR points main's
+# manifest.json at it, which is what Obsidian's community list serves. Nothing
 # promotes a release automatically (scripts/plugin-release.mjs).
 on:
   workflow_dispatch:
@@ -30,6 +31,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: main
@@ -38,7 +40,8 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Promote the newest prerelease
+      - name: Promote the newest prerelease and point the listing at it
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: node scripts/plugin-release.mjs promote
