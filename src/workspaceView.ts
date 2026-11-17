@@ -1,3 +1,4 @@
+import { plural, t } from "@lingui/core/macro";
 import { ItemView, Notice, setIcon, WorkspaceLeaf } from "obsidian";
 import { addChevron } from "./workspace/types/disclosure";
 import type { CollectionRecord } from "./mdbaseCore";
@@ -175,7 +176,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (this.message) {
       const message = shell.createDiv({ cls: "mdbase-inline-message mdbase-notice" });
       message.createSpan({ text: this.message }).setAttr("role", "status");
-      const dismiss = this.iconButton(message, "x", "Dismiss message");
+      const dismiss = this.iconButton(message, "x", t`Dismiss message`, "dismiss-message");
       dismiss.onclick = () => { this.message = ""; this.render(); };
     }
     const content = shell.createDiv({ cls: "mdbase-workspace-content" });
@@ -198,9 +199,9 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   /** Files waiting for a choice, or devices waiting for approval, badge the Sync tab. */
   private syncAttention(): { count: number; label: string } | null {
     const { holds, approvals, merged } = this.host.syncController.snapshot;
-    if (holds.length) return { count: holds.length, label: `${holds.length} ${holds.length === 1 ? "file needs" : "files need"} your choice` };
-    if (approvals.length) return { count: approvals.length, label: `${approvals.length} ${approvals.length === 1 ? "device wants" : "devices want"} to join` };
-    if (merged.length) return { count: merged.length, label: `${merged.length} ${merged.length === 1 ? "change" : "changes"} to check` };
+    if (holds.length) return { count: holds.length, label: plural(holds.length, { one: "# file needs your choice", other: "# files need your choice" }) };
+    if (approvals.length) return { count: approvals.length, label: plural(approvals.length, { one: "# device wants to join", other: "# devices want to join" }) };
+    if (merged.length) return { count: merged.length, label: plural(merged.length, { one: "# change to check", other: "# changes to check" }) };
     return null;
   }
 
@@ -209,7 +210,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     if (this.destination === "sync") return null;
     const summary = summarize(this.host.syncController.snapshot);
     if (!summary.syncing || (summary.tone !== "attention" && summary.tone !== "problem")) return null;
-    return { kind: summary.tone, label: summary.tone === "problem" ? "Problem" : "Check", detail: summary.detail };
+    return { kind: summary.tone, label: summary.tone === "problem" ? t({ message: "Problem", context: "sync status" }) : t({ message: "Check", context: "sync status" }), detail: summary.detail };
   }
 
   /** Refresh tab badges without rebuilding the active pane (and losing its focus). */
@@ -271,11 +272,11 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       .find((element) => element.getAttr("data-focus-key") === key);
   }
 
-  iconButton(container: HTMLElement, icon: string, label: string): HTMLButtonElement {
+  iconButton(container: HTMLElement, icon: string, label: string, focusKey = icon): HTMLButtonElement {
     const button = container.createEl("button", { cls: "clickable-icon mdbase-icon-button" });
     button.setAttr("aria-label", label);
     button.setAttr("title", label);
-    button.setAttr("data-focus-key", `action-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
+    button.setAttr("data-focus-key", `action-${focusKey}`);
     setIcon(button, icon);
     return button;
   }
@@ -299,8 +300,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
     const topbar = container.createDiv({ cls: "mdbase-topbar" });
     const nav = topbar.createDiv({ cls: "nav-buttons-container mdbase-nav" });
     nav.setAttr("role", "tablist");
-    nav.setAttr("aria-label", "mdbase destinations");
-    const destinations = [["sync", "Sync", "refresh-cw"], ["types", "Types", "shapes"], ["issues", "Issues", "alert-triangle"]] as const;
+    nav.setAttr("aria-label", t`mdbase destinations`);
+    const destinations = [["sync", t`Sync`, "refresh-cw"], ["types", t`Types`, "shapes"], ["issues", t`Issues`, "alert-triangle"]] as const;
     for (const [index, [destination, label, icon]] of destinations.entries()) {
       const button = nav.createEl("button", { cls: "clickable-icon nav-action-button mdbase-nav-button" });
       setIcon(button.createSpan({ cls: "mdbase-nav-icon" }), icon);
@@ -315,8 +316,8 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       if (destination === "issues" && this.host.getIssues().length) {
         const issueCount = this.host.getIssues().length;
         const count = button.createSpan({ cls: "mdbase-count", text: compactCount(issueCount) });
-        count.setAttr("title", `${issueCount} issues`);
-        button.setAttr("aria-label", `Issues · ${issueCount} validation ${issueCount === 1 ? "issue" : "issues"}`);
+        count.setAttr("title", t`${issueCount} issues`);
+        button.setAttr("aria-label", t`Issues · ${plural(issueCount, { one: "# validation issue", other: "# validation issues" })}`);
       }
       const tabStatus = destination === "sync" ? this.syncTabStatus() : null;
       const attention = destination === "sync" ? this.syncAttention() : null;
@@ -324,11 +325,13 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
         const indicator = button.createSpan({ cls: "mdbase-count mdbase-nav-status", text: tabStatus.label });
         indicator.setAttr("data-kind", tabStatus.kind);
         indicator.setAttr("title", tabStatus.detail);
-        button.setAttr("aria-label", `Sync · ${tabStatus.detail}`);
+        const detail = tabStatus.detail;
+        button.setAttr("aria-label", t`Sync · ${detail}`);
       } else if (attention) {
         const count = button.createSpan({ cls: "mdbase-count", text: compactCount(attention.count) });
         count.setAttr("title", attention.label);
-        button.setAttr("aria-label", `Sync · ${attention.label}`);
+        const label = attention.label;
+        button.setAttr("aria-label", t`Sync · ${label}`);
       }
       button.onclick = () => this.showDestination(destination);
       button.onkeydown = (event) => {
