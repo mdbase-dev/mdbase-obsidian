@@ -43,7 +43,7 @@ export function renderDesignForm(container: HTMLElement, model: TypeEditorModel,
   const nameRequired = () => {
     if (nameError) nameError.textContent = name.value.trim() ? "" : "Give the type a name.";
   };
-  if (diagnostics.some((diagnostic) => /name is required/i.test(diagnostic.message))) nameRequired();
+  if (diagnostics.some((diagnostic) => diagnostic.code === "type_name_required")) nameRequired();
   name.addEventListener("input", () => { if (name.value.trim() && nameError) nameError.textContent = ""; });
   name.addEventListener("blur", () => {
     // Re-renders replace the box; only a real move of focus counts.

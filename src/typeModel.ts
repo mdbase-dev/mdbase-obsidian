@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { parseYaml, stringifyYaml } from "obsidian";
 import type { MdbaseFieldDef } from "./mdbaseCore";
 import { fieldsFromV03Schema, schemaFromV03Fields } from "./typeDefinitions";
@@ -17,16 +18,18 @@ function clone<T>(value: T): T {
 
 const RESERVED_TYPE_NAMES = new Set(["file", "formula", "this"]);
 
+export class TypeNameRequiredError extends Error {}
+
 export function validateMdbaseTypeName(input: string): string {
   const name = input.trim();
-  if (!name) throw new Error("Type name is required.");
-  if (!/^[A-Za-z]/.test(name)) throw new Error("Type name must start with a letter.");
-  if (name.length >= 64) throw new Error("Type name must be shorter than 64 characters.");
+  if (!name) throw new TypeNameRequiredError(t`Type name is required.`);
+  if (!/^[A-Za-z]/.test(name)) throw new Error(t`Type name must start with a letter.`);
+  if (name.length >= 64) throw new Error(t`Type name must be shorter than 64 characters.`);
   if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(name)) {
-    throw new Error("Type name may contain only letters, numbers, hyphens, and underscores.");
+    throw new Error(t`Type name may contain only letters, numbers, hyphens, and underscores.`);
   }
   if (RESERVED_TYPE_NAMES.has(name.toLowerCase())) {
-    throw new Error(`Type name '${name}' is reserved.`);
+    throw new Error(t`Type name '${name}' is reserved.`);
   }
   return name;
 }
@@ -232,14 +235,14 @@ export function typeModelFromDocument(
     body: body.trim() || `# ${fallbackName}\n\nType definition for ${fallbackName}.`,
     extraFrontmatter,
     ...(schemaReference ? {
-      readOnlyReason: `This type uses schema.ref (${schemaReference}). Edit the referenced JSON Schema file directly.`,
+      readOnlyReason: t`This type uses schema.ref (${schemaReference}). Edit the referenced JSON Schema file directly.`,
     } : {}),
   };
 }
 
 export function frontmatterFromTypeModel(model: TypeEditorModel): Record<string, unknown> {
   if (model.specProfile !== "v0.3") {
-      throw new Error("mdbase v0.2 type definitions are read-only. Migrate the collection before editing.");
+      throw new Error(t`mdbase v0.2 type definitions are read-only. Migrate the collection before editing.`);
   }
   if (model.readOnlyReason) throw new Error(model.readOnlyReason);
   const original = model.originalFrontmatter ? clone(model.originalFrontmatter) : {};
@@ -248,8 +251,8 @@ export function frontmatterFromTypeModel(model: TypeEditorModel): Record<string,
   const fields: Record<string, MdbaseFieldDef> = Object.create(null) as Record<string, MdbaseFieldDef>;
   for (const field of model.fields) {
     const name = field.name.trim();
-    if (!name) throw new Error("Every field needs a name.");
-    if (Object.prototype.hasOwnProperty.call(fields, name)) throw new Error(`Duplicate field name: ${name}`);
+    if (!name) throw new Error(t`Every field needs a name.`);
+    if (Object.prototype.hasOwnProperty.call(fields, name)) throw new Error(t`Duplicate field name: ${name}`);
     fields[name] = clone(field.definition);
   }
   const typeName = validateMdbaseTypeName(model.name);
@@ -276,7 +279,7 @@ export function frontmatterFromTypeModel(model: TypeEditorModel): Record<string,
   else delete match.fields_present;
   if (model.matchWhere.trim()) {
     const where: unknown = parseYaml(model.matchWhere);
-    if (!isRecord(where)) throw new Error("Match where must be a YAML mapping.");
+    if (!isRecord(where)) throw new Error(t`Match where must be a YAML mapping.`);
     match.where = where;
   } else delete match.where;
   if (Object.keys(match).length) frontmatter.match = match;

@@ -329,7 +329,7 @@ export class TypesPane {
       contracts: this.ctx.schema?.contracts.values(),
     });
     if (!this.holdNameError || model.name.trim()) return diagnostics;
-    return diagnostics.filter((diagnostic) => diagnostic.code !== "invalid_type_document" || !/name is required/i.test(diagnostic.message));
+    return diagnostics.filter((diagnostic) => diagnostic.code !== "type_name_required");
   }
 
   /**

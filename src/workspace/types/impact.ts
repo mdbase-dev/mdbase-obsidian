@@ -151,7 +151,7 @@ export class TypeImpact {
       if (!this.ctx.records || !name || (result && "error" in result && this.deps.dirty())) {
         container.createDiv({
           cls: "mdbase-muted",
-          text: !this.ctx.records ? "Counting notes…" : result && "error" in result ? `${fixFirst(result.error)} to preview matching notes.` : "Save the type to preview matching notes.",
+          text: !this.ctx.records ? "Counting notes…" : result && "error" in result ? `${fixFirst(result.nameRequired)} to preview matching notes.` : "Save the type to preview matching notes.",
         });
         return;
       }
@@ -209,7 +209,7 @@ export class TypeImpact {
       return;
     }
     if ("error" in result) {
-      container.createDiv({ cls: "mdbase-muted", text: `${fixFirst(result.error)} to check existing notes.` });
+      container.createDiv({ cls: "mdbase-muted", text: `${fixFirst(result.nameRequired)} to check existing notes.` });
       return;
     }
     const { impact } = result;
@@ -244,6 +244,6 @@ export class TypeImpact {
 }
 
 /** What to do before notes can be checked: name a nameless type, otherwise fix its errors. */
-function fixFirst(error: string): string {
-  return /name is required/i.test(error) ? "Name the type" : "Fix errors";
+function fixFirst(nameRequired?: boolean): string {
+  return nameRequired ? "Name the type" : "Fix errors";
 }

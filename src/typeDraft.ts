@@ -1,6 +1,6 @@
 import type { CollectionContractDescriptor } from "./contractTypes";
 import type { TypeEditorModel } from "./typeEditorTypes";
-import { frontmatterFromTypeModel } from "./typeModel";
+import { frontmatterFromTypeModel, TypeNameRequiredError } from "./typeModel";
 import {
   assessMapping,
   contractFields,
@@ -194,7 +194,7 @@ export function validateTypeDraft(
     frontmatterFromTypeModel(model);
   } catch (error) {
     diagnostics.push({
-      code: "invalid_type_document",
+      code: error instanceof TypeNameRequiredError ? "type_name_required" : "invalid_type_document",
       severity: "error",
       path: "type",
       message: error instanceof Error ? error.message : String(error),
