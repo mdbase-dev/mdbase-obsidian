@@ -25,7 +25,7 @@ export function renderStaleDrafts(
     const row = container.createDiv({ cls: "mdbase-draft-recovery" });
     const message = row.createDiv({ cls: "mdbase-draft-recovery-message" });
     setIcon(message.createSpan({ cls: "mdbase-draft-recovery-icon", attr: { "aria-hidden": "true" } }), "history");
-    const updatedAt = formatDate(new Date(draft.updatedAt), { dateStyle: "short", timeStyle: "medium" });
+    const updatedAt = formatDate(new Date(draft.updatedAt), { year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
     message.createSpan({
       text: t`Older unsaved changes from ${updatedAt}. The file has changed since, so they weren't applied.`,
     });
