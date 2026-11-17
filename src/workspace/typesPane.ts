@@ -554,7 +554,7 @@ export class TypesPane {
     const lost = this.editorMode === "yaml"
       ? [t`Your edits in YAML`]
       : describeTypeChanges(this.originalModel, model).map((change) => change.summary);
-    const selectedPath = this.selectedPath;
+    const selectedPath = this.selectedPath ?? "";
     const confirmed = await new DiscardChangesModal(this.ctx.app).confirm(
       isNew
         ? name ? t`Discard the new type ${name}?` : t`Discard this new type?`

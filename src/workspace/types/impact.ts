@@ -161,8 +161,10 @@ export class TypeImpact {
     }
     const summary = container.createDiv({ cls: "mdbase-match-summary" });
     summary.createSpan({ text: plural(matched.length, { one: "# note matches", other: "# notes match" }) });
-    if (added.length) summary.createSpan({ cls: "mdbase-match-added", text: t`${added.length} added` });
-    if (removed.length) summary.createSpan({ cls: "mdbase-match-removed", text: t`${removed.length} no longer match` });
+    const addedCount = added.length;
+    const removedCount = removed.length;
+    if (addedCount) summary.createSpan({ cls: "mdbase-match-added", text: t`${addedCount} added` });
+    if (removedCount) summary.createSpan({ cls: "mdbase-match-removed", text: t`${removedCount} no longer match` });
     const addedSet = new Set(added);
     const ordered: Array<{ path: string; change: "added" | "removed" | null }> = [
       ...added.map((path) => ({ path, change: "added" as const })),
@@ -188,13 +190,14 @@ export class TypeImpact {
       row.onclick = () => void this.ctx.host.openFileByPath(entry.path);
     }
     if (ordered.length > 5) {
+      const total = formatNumber(ordered.length);
       const more = container.createEl("button", {
         cls: "mdbase-link-button",
         text: this.showAllMatches
           ? t`Show fewer`
           : ordered.length > 200
-            ? t`Show 200 of ${formatNumber(ordered.length)}`
-            : t`Show all ${formatNumber(ordered.length)}`,
+            ? t`Show 200 of ${total}`
+            : t`Show all ${total}`,
       });
       more.onclick = () => {
         this.showAllMatches = !this.showAllMatches;
@@ -226,7 +229,8 @@ export class TypeImpact {
         : t`No notes newly fail`,
     });
     const facts = [plural(impact.matched.length, { one: "# note checked", other: "# notes checked" })];
-    if (impact.fixed) facts.push(t`${impact.fixed} fixed`);
+    const fixed = impact.fixed;
+    if (fixed) facts.push(t`${fixed} fixed`);
     if (alreadyFailing) facts.push(t`${alreadyFailing} already failing`);
     heading.createSpan({ cls: "mdbase-muted", text: facts.join(" · ") });
     if (!newlyFailing.length) return;
@@ -235,11 +239,11 @@ export class TypeImpact {
       const row = list.createDiv({ cls: "mdbase-impact-row" });
       const open = row.createEl("button", { cls: "mdbase-link-button", text: record.path });
       open.onclick = () => void this.ctx.host.openFileByPath(record.path, record.issues[0]?.field);
+      const message = record.issues[0]?.message ?? "";
+      const moreCount = record.issues.length - 1;
       row.createSpan({
         cls: "mdbase-muted",
-        text: record.issues.length > 1
-          ? t`${record.issues[0]?.message ?? ""} · +${record.issues.length - 1} more`
-          : record.issues[0]?.message ?? "",
+        text: moreCount > 0 ? t`${message} · +${moreCount} more` : message,
       });
     }
     if (newlyFailing.length > 10) {
