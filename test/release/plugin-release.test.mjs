@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { needsBuild, nextVersion, promoteRelease, promotionDecision, quietCheck, quietOpen, quietUntil, releasePlugin, releaseState, releaseTarget, sameAssets } from "../../scripts/plugin-release.mjs";
+import { listedVersion, needsBuild, nextVersion, pointListing, promoteRelease, promotionDecision, quietCheck, quietOpen, quietUntil, releasePlugin, releaseState, releaseTarget, sameAssets, stampedManifest } from "../../scripts/plugin-release.mjs";
 
 const sha = "a".repeat(40);
 const older = "b".repeat(40);
@@ -18,8 +18,10 @@ function fixture(options, callback) {
   const directory = mkdtempSync(join(tmpdir(), "obsidian-release-test-"));
   const original = process.cwd();
   const version = options.version ?? "0.4.3";
-  const manifest = JSON.stringify({ id: "mdbase-obsidian", version, minAppVersion: "1.11.4" }) + "\n";
+  // main's manifest names the listed full release; package.json the build version.
+  const manifest = JSON.stringify({ id: "mdbase-obsidian", version: options.listed ?? "0.4.2", minAppVersion: "1.11.4" }) + "\n";
   const calls = [];
+  let uploaded = [];
   let observations = 0;
   try {
     process.chdir(directory);
@@ -38,14 +40,16 @@ function fixture(options, callback) {
         observations += 1;
         return `${observations >= (options.staleAt ?? Infinity) ? older : sha}\trefs/heads/main`;
       }
-      if (args[0] === "git" && args[1] === "show") return manifest.trim();
+      if (args[0] === "git" && args[1] === "show") return args[2].endsWith(":package.json") ? JSON.stringify({ version }) : manifest.trim();
       if (command === "git merge-base --is-ancestor" && options.diverged) throw new Error("release is not an ancestor");
       if (command === "gh api --paginate") return JSON.stringify([[baseline, ...(options.published ? [{ tag_name: version, draft: false }] : []), ...(options.draft ? [{ tag_name: version, draft: true, target_commitish: options.draftTarget ?? sha }] : [])]]);
       if (command === "gh release upload" && options.uploadFailure) throw new Error("upload interrupted");
+      if (command === "gh release upload") uploaded = args.slice(4).filter((value) => !value.startsWith("--")).map((path) => [path.split("/").at(-1), readFileSync(path)]);
       if (command === "gh release download") {
         if (options.downloadFailure) throw new Error("asset download failed");
         const destination = args[args.indexOf("--dir") + 1];
         for (const file of ["main.js", "manifest.json", "styles.css"]) copyFileSync(file, join(destination, file));
+        for (const [file, bytes] of uploaded) writeFileSync(join(destination, file), bytes);
         if (args[3] === "0.4.2") {
           if (!options.unchanged) writeFileSync(join(destination, "main.js"), "previous bundle");
           writeFileSync(join(destination, "manifest.json"), JSON.stringify({ minAppVersion: "1.11.4", version: "0.4.2", id: "mdbase-obsidian" }));
@@ -69,15 +73,43 @@ test("next version is selected in the repin PR, reusing an untagged version", ()
   assert.throws(() => releaseState([baseline], "", "v0.4.3"));
 });
 
-test("existing version-bump updates all four version files in one sandbox", () => {
+test("version-bump moves the build version and leaves the listed manifest alone", () => {
   fixture({ version: "0.4.2" }, () => {
+    const manifest = readFileSync("manifest.json", "utf8");
     execFileSync("node", [fileURLToPath(new URL("../../version-bump.mjs", import.meta.url)), "0.4.3"]);
-    for (const file of ["manifest.json", "package.json", "package-lock.json"]) assert.equal(JSON.parse(readFileSync(file, "utf8")).version, "0.4.3");
+    for (const file of ["package.json", "package-lock.json"]) assert.equal(JSON.parse(readFileSync(file, "utf8")).version, "0.4.3");
+    assert.equal(JSON.parse(readFileSync("package-lock.json", "utf8")).packages[""].version, "0.4.3");
     assert.equal(JSON.parse(readFileSync("versions.json", "utf8"))["0.4.3"], "1.11.4");
+    assert.equal(readFileSync("manifest.json", "utf8"), manifest);
   });
 });
 
-test("ordinary merges with a published manifest version do not release or bump", () => {
+test("the published manifest is main's manifest at the build version", () => {
+  fixture({}, ({ run, calls }) => {
+    const before = readFileSync("manifest.json", "utf8");
+    assert.equal(releasePlugin(run, environment).action, "publish");
+    assert.equal(readFileSync("manifest.json", "utf8"), before);
+    const upload = calls.find((args) => args.slice(0, 3).join(" ") === "gh release upload");
+    const path = upload.find((value) => value.endsWith("/manifest.json"));
+    assert.ok(path && path !== "manifest.json");
+    assert.ok(upload.includes("main.js") && upload.includes("styles.css"));
+  });
+  fixture({}, ({ directory }) => {
+    const staged = join(directory, "staged");
+    mkdirSync(staged);
+    const stamped = JSON.parse(readFileSync(stampedManifest(staged), "utf8"));
+    assert.deepEqual(stamped, { ...JSON.parse(readFileSync("manifest.json", "utf8")), version: "0.4.3" });
+  });
+});
+
+test("refuses to publish while main's manifest is ahead of the build version", () => {
+  fixture({ listed: "0.4.3" }, ({ run, calls }) => {
+    assert.throws(() => releasePlugin(run, environment), /ahead/);
+    assert.equal(mutations(calls).length, 0);
+  });
+});
+
+test("ordinary merges with a published build version do not release or bump", () => {
   fixture({ version: "0.4.2" }, ({ run, calls }) => {
     assert.equal(releaseTarget(run, environment).reason, "published");
     assert.equal(releasePlugin(run, environment).reason, "published");
@@ -205,15 +237,84 @@ test("promotion by hand picks the newest prerelease, never during publication", 
   assert.equal(promotionDecision(releases, tagsFor("0.4.33")).reason, "publishing");
 });
 
-test("promotion edits only the chosen release", () => {
+// main's manifest lists 0.4.2; 0.4.3 is the newest prerelease unless `promoted`.
+function listing(options, callback) {
+  const directory = mkdtempSync(join(tmpdir(), "obsidian-listing-test-"));
+  const original = process.cwd();
   const calls = [];
-  const run = (...args) => {
-    calls.push(args);
-    if (args[0] === "gh" && args[1] === "api") return JSON.stringify([[{ tag_name: "0.4.3", draft: false, prerelease: true }, { ...baseline, prerelease: false }]]);
-    return "";
-  };
-  assert.equal(promoteRelease(run, environment).action, "promote");
-  assert.deepEqual(mutations(calls), [["gh", "release", "edit", "0.4.3", "--repo", "mdbase-dev/mdbase-obsidian", "--prerelease=false", "--latest"]]);
+  let promoted = options.promoted ?? false;
+  try {
+    process.chdir(directory);
+    writeFileSync("manifest.json", JSON.stringify({ id: "mdbase-sync", version: options.listed ?? "0.4.2", minAppVersion: "1.11.4" }, null, "\t") + "\n");
+    const run = (...args) => {
+      calls.push(args);
+      const command = args.slice(0, 3).join(" ");
+      if (command === "gh api --paginate") return JSON.stringify([[{ tag_name: "0.4.3", draft: false, prerelease: !promoted }, { ...baseline, prerelease: false }]]);
+      if (command === "gh release edit") promoted = true;
+      if (command === "gh pr list") return JSON.stringify(options.pulls ?? []);
+      if (command === "git ls-remote --heads") return options.held ? `${sha}\t${args[4]}` : "";
+      if (command === "git rev-parse HEAD") return sha;
+      if (command === "git ls-remote origin") return `${sha}\trefs/heads/main`;
+      if (command === "gh pr create") return "https://github.com/mdbase-dev/mdbase-obsidian/pull/201";
+      return "";
+    };
+    callback({ run, calls });
+  } finally {
+    process.chdir(original);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+const listingChanges = (calls) => calls.filter((args) => (args[0] === "git" && ["switch", "add", "commit", "push"].includes(args[1])) || (args[0] === "gh" && ["pr", "release"].includes(args[1]) && args[2] !== "list"));
+
+test("promotion turns the release full before pointing the listing at it", () => {
+  listing({}, ({ run, calls }) => {
+    const decision = promoteRelease(run, environment);
+    assert.equal(decision.action, "promote");
+    assert.deepEqual(decision.listing, { action: "open", version: "0.4.3", url: "https://github.com/mdbase-dev/mdbase-obsidian/pull/201" });
+    assert.deepEqual(listingChanges(calls).map((args) => args.slice(0, 4)), [
+      ["gh", "release", "edit", "0.4.3"],
+      ["git", "switch", "--create", "listing/0.4.3"],
+      ["git", "add", "manifest.json"],
+      ["git", "commit", "--message", "List Obsidian plugin 0.4.3 in the community directory"],
+      ["git", "push", "origin", "HEAD:refs/heads/listing/0.4.3"],
+      ["gh", "pr", "create", "--repo"],
+      ["gh", "pr", "merge", "https://github.com/mdbase-dev/mdbase-obsidian/pull/201"],
+    ]);
+    assert.ok(calls.find((args) => args[2] === "edit").includes("--latest"));
+    assert.ok(calls.at(-1).includes("--auto") && !calls.some((args) => args.includes("--force")));
+    assert.deepEqual(JSON.parse(readFileSync("manifest.json", "utf8")), { id: "mdbase-sync", version: "0.4.3", minAppVersion: "1.11.4" });
+  });
+});
+
+test("a rerun finishes the listing without promoting again", () => {
+  listing({ promoted: true }, ({ run, calls }) => {
+    const decision = promoteRelease(run, environment);
+    assert.equal(decision.reason, "current");
+    assert.equal(decision.listing.action, "open");
+    assert.ok(!calls.some((args) => args.slice(0, 3).join(" ") === "gh release edit"));
+  });
+  listing({ promoted: true, pulls: [{ number: 9, url: "u" }] }, ({ run, calls }) => {
+    assert.deepEqual(promoteRelease(run, environment).listing, { action: "pending", version: "0.4.3", url: "u" });
+    assert.deepEqual(listingChanges(calls).map((args) => args.slice(0, 4)), [["gh", "pr", "merge", "9"]]);
+  });
+  listing({ promoted: true, held: true }, ({ run, calls }) => {
+    assert.equal(promoteRelease(run, environment).listing.reason, "held");
+    assert.equal(listingChanges(calls).length, 0);
+  });
+  listing({ promoted: true, listed: "0.4.3" }, ({ run, calls }) => {
+    assert.deepEqual(promoteRelease(run, environment).listing, { action: "none", reason: "listed", version: "0.4.3" });
+    assert.equal(listingChanges(calls).length, 0);
+  });
+});
+
+test("the listing never names a prerelease or moves backwards", () => {
+  const releases = [{ tag_name: "0.4.9", draft: false, prerelease: true }, { tag_name: "0.4.10", draft: true }, { tag_name: "0.4.8", draft: false, prerelease: false }, { tag_name: "0.4.7", draft: false, prerelease: false }];
+  assert.equal(listedVersion(releases), "0.4.8");
+  assert.equal(listedVersion([{ tag_name: "0.4.9", draft: false, prerelease: true }]), undefined);
+  listing({ listed: "0.4.4" }, ({ run, calls }) => {
+    assert.equal(pointListing(run, environment, [{ tag_name: "0.4.3", draft: false, prerelease: false }]).reason, "listed");
+    assert.equal(listingChanges(calls).length, 0);
+  });
 });
 
 const hour = 60 * 60 * 1000;
@@ -228,7 +329,8 @@ function quiet(options, callback) {
   const calls = [];
   try {
     process.chdir(directory);
-    writeFileSync("manifest.json", JSON.stringify({ id: "mdbase-sync", version, minAppVersion: "1.11.4" }));
+    writeFileSync("manifest.json", JSON.stringify({ id: "mdbase-sync", version: "0.4.2", minAppVersion: "1.11.4" }));
+    writeFileSync("package.json", JSON.stringify({ version }));
     writeFileSync("main.js", "current bundle");
     writeFileSync("styles.css", "styles");
     const run = (...args) => {
@@ -323,6 +425,7 @@ test("the version PR opens only when the built bytes differ, and is set to merge
       ["gh", "pr", "merge"],
     ]);
     assert.ok(calls.find((args) => args[1] === "switch").includes("release/0.4.3"));
+    assert.deepEqual(calls.find((args) => args[1] === "add").slice(2), ["versions.json", "package.json", "package-lock.json"]);
     assert.ok(calls.at(-1).includes("--auto") && !calls.some((args) => args.includes("--force")));
     assert.ok(!calls.some((args) => args[1] === "release" && args[2] !== "download"));
   });
