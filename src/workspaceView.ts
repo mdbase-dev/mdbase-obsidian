@@ -272,7 +272,7 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
       .find((element) => element.getAttr("data-focus-key") === key);
   }
 
-  iconButton(container: HTMLElement, icon: string, label: string, focusKey = icon): HTMLButtonElement {
+  iconButton(container: HTMLElement, icon: string, label: string, focusKey: string): HTMLButtonElement {
     const button = container.createEl("button", { cls: "clickable-icon mdbase-icon-button" });
     button.setAttr("aria-label", label);
     button.setAttr("title", label);
