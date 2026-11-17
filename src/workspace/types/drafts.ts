@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { formatDate } from "../../i18n/runtime";
 import { Modal, setIcon } from "obsidian";
 import { formatMarkdown } from "../../mdbaseCore";
 import type { TypeEditorModel } from "../../typeEditorTypes";
@@ -23,42 +25,44 @@ export function renderStaleDrafts(
     const row = container.createDiv({ cls: "mdbase-draft-recovery" });
     const message = row.createDiv({ cls: "mdbase-draft-recovery-message" });
     setIcon(message.createSpan({ cls: "mdbase-draft-recovery-icon", attr: { "aria-hidden": "true" } }), "history");
+    const updatedAt = formatDate(new Date(draft.updatedAt), { dateStyle: "short", timeStyle: "medium" });
     message.createSpan({
-      text: `Older unsaved changes from ${new Date(draft.updatedAt).toLocaleString()}. The file has changed since, so they weren't applied.`,
+      text: t`Older unsaved changes from ${updatedAt}. The file has changed since, so they weren't applied.`,
     });
     const actions = row.createDiv({ cls: "mdbase-draft-recovery-actions" });
-    const compare = actions.createEl("button", { text: "Compare draft" });
+    const compare = actions.createEl("button", { text: t`Compare draft` });
     compare.onclick = () => {
       const modal = new Modal(ctx.app);
-      modal.titleEl.setText("Current source and recovered draft");
+      modal.titleEl.setText(t`Current source and recovered draft`);
       let draftText = draft.yamlDraft;
       if (draftText === undefined) {
         try { draftText = formatMarkdown(frontmatterFromReadableModel(draft.model), draft.model.body); }
         catch { draftText = JSON.stringify(draft.model, null, 2); }
       }
-      modal.contentEl.createEl("h3", { text: "Current source" });
+      modal.contentEl.createEl("h3", { text: t`Current source` });
       const saved = current.originalModel();
       modal.contentEl.createEl("pre", { text: saved ? formatMarkdown(frontmatterFromReadableModel(saved), saved.body) : current.yamlDraft() });
-      modal.contentEl.createEl("h3", { text: "Recovered draft (read-only)" });
+      modal.contentEl.createEl("h3", { text: t`Recovered draft (read-only)` });
       modal.contentEl.createEl("pre", { text: draftText });
-      modal.contentEl.createEl("p", { text: "Copy the parts you want into the current definition, then review before saving." });
+      modal.contentEl.createEl("p", { text: t`Copy the parts you want into the current definition, then review before saving.` });
       modal.open();
     };
-    const exportDraft = actions.createEl("button", { text: "Export draft" });
+    const exportDraft = actions.createEl("button", { text: t`Export draft` });
     exportDraft.onclick = () => void ctx.perform(async () => {
       const folder = "mdbase-draft-recovery";
       if (!ctx.app.vault.getAbstractFileByPath(folder)) await ctx.app.vault.createFolder(folder);
       const file = await ctx.app.vault.create(`${folder}/draft-${crypto.randomUUID()}.txt`, draft.yamlDraft ?? JSON.stringify(draft.model, null, 2));
-      ctx.message = `Exported recovery draft to ${file.path}. The original draft is still retained.`;
+      const path = file.path;
+      ctx.message = t`Exported recovery draft to ${path}. The original draft is still retained.`;
     });
-    const discard = actions.createEl("button", { text: "Discard old draft" });
+    const discard = actions.createEl("button", { text: t`Discard old draft` });
     discard.onclick = () => {
       const modal = new Modal(ctx.app);
-      modal.titleEl.setText("Discard this recovered draft?");
-      modal.contentEl.createEl("p", { text: "This removes the saved recovery copy, not the current source or your current edits. Export it first if you might need it." });
+      modal.titleEl.setText(t`Discard this recovered draft?`);
+      modal.contentEl.createEl("p", { text: t`This removes the saved recovery copy, not the current source or your current edits. Export it first if you might need it.` });
       const buttons = modal.contentEl.createDiv({ cls: "modal-button-container" });
-      buttons.createEl("button", { text: "Cancel" }).onclick = () => modal.close();
-      buttons.createEl("button", { text: "Discard old draft", cls: "mod-warning" }).onclick = () => {
+      buttons.createEl("button", { text: t`Cancel` }).onclick = () => modal.close();
+      buttons.createEl("button", { text: t`Discard old draft`, cls: "mod-warning" }).onclick = () => {
         modal.close();
         void ctx.perform(async () => {
           if (draft === active) await ctx.host.clearTypeDraft(path);
