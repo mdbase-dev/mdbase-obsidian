@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import { Notice } from "obsidian";
 import type { CollectionContractDescriptor, JsonObject } from "../../contractTypes";
 import type { TypeEditorModel } from "../../typeEditorTypes";
@@ -29,7 +30,7 @@ export function renderContractEditor(
   readOnly: boolean,
   markDirty: (render?: boolean) => void,
 ): void {
-  const section = typesDisclosure(ctx, container, "type-applications", "Applications");
+  const section = typesDisclosure(ctx, container, "type-applications", t`Applications`);
   section.addClass("mdbase-contracts-section");
   section.id = "mdbase-section-applications";
 
@@ -40,7 +41,7 @@ export function renderContractEditor(
   if (!contracts.length) {
     section.createDiv({
       cls: "mdbase-contract-empty",
-      text: "No app formats installed. Ready-made types add them.",
+      text: t`No app formats installed. Ready-made types add them.`,
     });
   }
 
@@ -52,13 +53,13 @@ export function renderContractEditor(
 
   if (available.length) {
     const add = section.createDiv({ cls: "mdbase-contract-add" });
-    const label = add.createEl("label", { text: "App format" });
+    const label = add.createEl("label", { text: t`App format` });
     const select = add.createEl("select");
     label.htmlFor = select.id = `mdbase-contract-${Math.random().toString(36).slice(2)}`;
     for (const contract of available) {
       select.createEl("option", { value: contractKey(contract), text: `${contract.id} · ${contract.version}` });
     }
-    const button = add.createEl("button", { text: "Add format" });
+    const button = add.createEl("button", { text: t`Add format` });
     button.disabled = readOnly;
     button.onclick = () => {
       const selected = available.find((candidate) => contractKey(candidate) === select.value);
@@ -86,7 +87,7 @@ function renderContractImplementation(
   const identity = header.createDiv();
   identity.createEl("strong", { text: implementation.contract });
   identity.createSpan({ cls: "mdbase-contract-version", text: implementation.version });
-  const remove = header.createEl("button", { text: "Remove" });
+  const remove = header.createEl("button", { text: t`Remove` });
   remove.disabled = readOnly;
   remove.onclick = () => {
     removeImplementation(model, implementation.contract, implementation.version);
@@ -96,7 +97,7 @@ function renderContractImplementation(
   if (!contract) {
     article.createDiv({
       cls: "mdbase-contract-unavailable",
-      text: "This app format isn't installed in the collection. Install it again or remove it before saving.",
+      text: t`This app format isn't installed in the collection. Install it again or remove it before saving.`,
     });
     return;
   }
@@ -109,17 +110,20 @@ function renderContractImplementation(
   const details = article.createEl("details");
   details.open = requiredMapped < required.length;
   const summary = details.createEl("summary");
-  summary.createSpan({ text: "Field mappings" });
+  summary.createSpan({ text: t`Field mappings` });
+  const requiredCount = required.length;
+  const mappedCount = mapped.length;
+  const fieldCount = fields.length;
   summary.createSpan({
     cls: "mdbase-contract-summary",
-    text: `${requiredMapped} of ${required.length} required · ${mapped.length} of ${fields.length} mapped`,
+    text: t`${requiredMapped} of ${requiredCount} required · ${mappedCount} of ${fieldCount} mapped`,
   });
   addChevron(summary);
   const mappingList = details.createDiv({ cls: "mdbase-contract-mapping-list" });
   if (!fields.length) {
     mappingList.createDiv({
       cls: "mdbase-contract-unavailable",
-      text: "This format's fields can only be mapped in YAML.",
+      text: t`This format's fields can only be mapped in YAML.`,
     });
   }
   for (const field of fields) {
@@ -131,19 +135,23 @@ function renderContractImplementation(
     definition.createEl("code", { text: field.reference });
     definition.createSpan({
       cls: field.required ? "mdbase-contract-required" : "mdbase-contract-optional",
-      text: field.required ? "Required" : "Optional",
+      text: field.required ? t`Required` : t`Optional`,
     });
     definition.createEl("small", { text: field.description || schemaTypeLabel(field.schema) });
     const source = row.createEl("select");
-    source.setAttr("aria-label", `${implementation.contract} ${field.reference} source field`);
+    const contractName = implementation.contract;
+    const fieldName = field.reference;
+    source.setAttr("aria-label", t`${contractName} ${fieldName} source field`);
     source.setAttr("aria-invalid", assessment.level === "error" ? "true" : "false");
     source.disabled = readOnly;
-    source.createEl("option", { value: "", text: field.required ? "Choose a source field" : "Not exposed" });
+    source.createEl("option", { value: "", text: field.required ? t`Choose a source field` : t`Not exposed` });
     for (const candidate of typeFields) {
       const optionAssessment = assessMapping(field, candidate);
+      const reference = candidate.reference;
+      const candidateType = candidate.type;
       const option = source.createEl("option", {
         value: candidate.reference,
-        text: `${candidate.reference} · ${candidate.type}${optionAssessment.level === "warning" ? " · review" : ""}`,
+        text: optionAssessment.level === "warning" ? t`${reference} · ${candidateType} · review` : `${reference} · ${candidateType}`,
       });
       option.disabled = optionAssessment.level === "error";
     }
@@ -161,19 +169,19 @@ function renderContractImplementation(
     const settings = article.createEl("details", { cls: "mdbase-contract-settings" });
     settings.open = Boolean(implementation.binding);
     const settingsSummary = settings.createEl("summary");
-    settingsSummary.createSpan({ text: "Settings" });
+    settingsSummary.createSpan({ text: t`Settings` });
     settingsSummary.createSpan({
       cls: "mdbase-contract-summary",
-      text: implementation.binding ? "Configured" : "Optional",
+      text: implementation.binding ? t`Configured` : t`Optional`,
     });
     addChevron(settingsSummary);
     const body = settings.createDiv({ cls: "mdbase-contract-settings-body" });
     body.createEl("p", {
       cls: "mdbase-form-description",
-      text: "How apps that read this format treat this type.",
+      text: t`How apps that read this format treat this type.`,
     });
     if (!implementation.binding) {
-      const configure = body.createEl("button", { text: "Configure settings" });
+      const configure = body.createEl("button", { text: t`Configure settings` });
       configure.disabled = readOnly;
       configure.onclick = () => {
         const initial = schemaInitialValue(contract.binding_schema);
@@ -186,7 +194,7 @@ function renderContractImplementation(
         if (!isRecord(value)) return;
         setBinding(implementation, value);
         markDirty();
-      }, "Settings", readOnly);
+      }, t`Settings`, readOnly);
     }
   }
 }
@@ -212,19 +220,19 @@ function renderContractSchemaValue(
       if (!isRecord(childSchema)) continue;
       const row = fieldset.createDiv({ cls: "mdbase-contract-schema-field" });
       const description = typeof childSchema.description === "string" ? childSchema.description : undefined;
-      row.createEl("label", { text: `${name}${required.has(name) ? " (required)" : ""}` });
+      row.createEl("label", { text: required.has(name) ? t`${name} (required)` : name });
       if (description) row.createEl("small", { text: description });
       renderContractSchemaControl(row, childSchema, object[name], (next) => {
         onChange({ ...object, [name]: next });
       }, name, readOnly);
     }
-    if (!names.length) fieldset.createDiv({ cls: "mdbase-empty-list", text: "No settings declared." });
+    if (!names.length) fieldset.createDiv({ cls: "mdbase-empty-list", text: t`No settings declared.` });
     const optional = Object.keys(properties).filter((name) => !names.includes(name));
     if (optional.length) {
       const add = fieldset.createDiv({ cls: "mdbase-contract-schema-add" });
       const select = add.createEl("select");
       for (const name of optional) select.createEl("option", { value: name, text: name });
-      const button = add.createEl("button", { text: "Add optional setting" });
+      const button = add.createEl("button", { text: t`Add optional setting` });
       button.disabled = readOnly;
       button.onclick = () => {
         const name = select.value;
@@ -263,14 +271,16 @@ function renderContractSchemaControl(
     for (const [index, item] of list.entries()) {
       const itemEl = listEl.createDiv({ cls: "mdbase-contract-schema-array-item" });
       itemEl.createSpan({ text: `${index + 1}.` });
+      const itemNumber = index + 1;
       renderContractSchemaControl(itemEl, itemsSchema, item, (next) => {
         onChange(list.map((current, currentIndex) => currentIndex === index ? next : current));
-      }, `${label} item ${index + 1}`, readOnly);
-      const remove = itemEl.createEl("button", { text: "Remove" });
+      }, t`${label} item ${itemNumber}`, readOnly);
+      const remove = itemEl.createEl("button", { text: t`Remove` });
       remove.disabled = readOnly || list.length <= (typeof schema.minItems === "number" ? schema.minItems : 0);
       remove.onclick = () => onChange(list.filter((_, currentIndex) => currentIndex !== index));
     }
-    const add = container.createEl("button", { text: `Add ${label.toLowerCase()} item` });
+    const itemLabel = label.toLowerCase();
+    const add = container.createEl("button", { text: t`Add ${itemLabel} item` });
     add.disabled = readOnly || (typeof schema.maxItems === "number" && list.length >= schema.maxItems);
     add.onclick = () => onChange([...list, schemaInitialValue(itemsSchema)]);
     return;
