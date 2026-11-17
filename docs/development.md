@@ -81,6 +81,38 @@ appear in Obsidian's settings search. On older versions, `display()` renders
 the same definitions. Mobile sync requires Obsidian 1.12.3, enforced with
 `requireApiVersion` as well as an adapter capability check.
 
+## Translations
+
+The plugin follows Obsidian's display language. It ships English, French,
+German, Spanish, Italian, Brazilian Portuguese, Russian, Japanese, Korean and
+Simplified Chinese, the languages of the mdbase ecosystem, and falls back to
+English for any other language. It uses the shared `@mdbase-dev/i18n` kit
+(Lingui).
+
+- Write UI text with the macros from `@lingui/core/macro`: `` t`…` ``,
+  `plural(…)`, and `` msg`…` `` for text defined at module level. Write whole
+  sentences with named placeholders, never fragments joined together. Format
+  numbers and dates with `formatNumber` and `formatDate` from
+  `src/i18n/runtime.ts`.
+- Never compare translated text or decide behaviour from it. Use a code or a
+  flag instead.
+- The ESLint rule `plugin-review/untranslated-ui-text` flags literal text
+  passed to Obsidian UI methods.
+- After changing UI text, run `npm run i18n:extract` to update the PO files in
+  `src/i18n/locales/`, then translate the new entries in every locale.
+  `node scripts/i18n-locale-check.mjs <locale>…` lists everything still to do in
+  each locale.
+- A translation that is correct unchanged from English, such as a placeholder
+  pattern or a word both languages share, needs its message ID in
+  `i18n-policy.json` under `allowIdentical`.
+- `npm run build` runs the strict `npm run i18n:check`, which needs every
+  locale complete. `npm test`, `npm run dev` and lint compile the catalogues
+  without it, so work in progress still runs; missing translations show in
+  English.
+- The release bundle stores the non-English catalogues compressed and unpacks
+  only the active one. They add about 0.33 MB, which counts against the
+  `check:mobile` budget.
+
 ## Behaviour details
 
 - **Views:** canonical view files remain ordinary v0.3 records. When a
