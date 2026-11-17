@@ -220,7 +220,7 @@ export class IssuesPane {
     const actions = row.createDiv({ cls: "mdbase-issue-row-actions" });
     // The file header already opens the note; a row action is only useful when it lands on the field.
     if (!contextOpensFile && field) {
-      const open = this.ctx.iconButton(actions, "arrow-up-right", t`Open ${path} at ${field}`);
+      const open = this.ctx.iconButton(actions, "arrow-up-right", t`Open ${path} at ${field}`, `open-${path}-${field}`);
       open.onclick = () => void this.ctx.host.openFileByPath(issue.path, issue.field);
     }
     if (!contextOpensFile) this.renderEditRuleButton(actions, issue);
@@ -245,6 +245,7 @@ export class IssuesPane {
       container,
       "pencil",
       field ? t`Edit ${field} in ${typeNameLabel}` : t`Edit type ${typeNameLabel}`,
+      `edit-${issue.path}-${typeNameLabel}-${field ?? ""}`,
     );
     edit.onclick = () => void this.ctx.openTypeField(typeDef.filePath, issue.field);
   }
