@@ -199,9 +199,10 @@ export class MdbaseWorkspaceView extends ItemView implements WorkspaceContext {
   /** Files waiting for a choice, or devices waiting for approval, badge the Sync tab. */
   private syncAttention(): { count: number; label: string } | null {
     const { holds, approvals, merged } = this.host.syncController.snapshot;
-    if (holds.length) return { count: holds.length, label: plural(holds.length, { one: "# file needs your choice", other: "# files need your choice" }) };
-    if (approvals.length) return { count: approvals.length, label: plural(approvals.length, { one: "# device wants to join", other: "# devices want to join" }) };
-    if (merged.length) return { count: merged.length, label: plural(merged.length, { one: "# change to check", other: "# changes to check" }) };
+    const holdCount = holds.length, approvalCount = approvals.length, mergedCount = merged.length;
+    if (holdCount) return { count: holdCount, label: plural(holdCount, { one: "# file needs your choice", other: "# files need your choice" }) };
+    if (approvalCount) return { count: approvalCount, label: plural(approvalCount, { one: "# device wants to join", other: "# devices want to join" }) };
+    if (mergedCount) return { count: mergedCount, label: plural(mergedCount, { one: "# change to check", other: "# changes to check" }) };
     return null;
   }
 
