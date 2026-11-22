@@ -13,6 +13,8 @@ and run **mdbase: Validate current note**.
   (by its `type` key only).
 - `Library/Broken record.md` breaks every rule of `book` on purpose.
 - `Library/Untyped draft.md` is typed only by its path.
+- Type `@` in a note to link to a book or a person, or to create one. The
+  broken record's missing author can be created from its issue.
 
 It isn't connected to mdbase Connect. To test sync, enroll a copy of it, never
 this committed one.

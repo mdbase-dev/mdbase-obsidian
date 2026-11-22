@@ -55,12 +55,16 @@ import { registerCommands } from "./src/commands";
 import { MdbaseSettingTab } from "./src/settingsTab";
 import { SyncController } from "./src/sync/controller";
 import { summarize } from "./src/sync/words";
+import { NoteLinks } from "./src/noteLinks";
+import { TypedLinkSuggest } from "./src/linkSuggest";
 
 interface MdbasePluginSettings {
   validateOnSave: boolean;
   validateOnOpen: boolean;
   showNoticeOnSave: boolean;
   interopEnabled: boolean;
+  /** Typing @ in a note suggests notes to link to and types to create. */
+  linkSuggestions: boolean;
   typeDrafts: Record<string, StoredTypeDraft>;
   archivedTypeDrafts: StoredTypeDraft[];
   /** Path of the mdbase app's `mdbase` tool; empty to find it automatically. */
@@ -77,6 +81,7 @@ const DEFAULT_SETTINGS: MdbasePluginSettings = {
   validateOnOpen: true,
   showNoticeOnSave: false,
   interopEnabled: false,
+  linkSuggestions: true,
   typeDrafts: {},
   archivedTypeDrafts: [],
   mdbaseAppPath: "",
@@ -108,6 +113,7 @@ const STATUS_ICONS: Record<ReturnType<typeof summarize>["tone"], string> = {
 export default class MdbasePlugin extends Plugin {
   readonly api: MdbaseObsidianApiV1;
   readonly syncController: SyncController;
+  readonly links = new NoteLinks(this);
   settings: MdbasePluginSettings;
   private issueMap = new Map<string, MdbaseIssue[]>();
   private readonly validation = new ValidationState();
@@ -229,6 +235,7 @@ export default class MdbasePlugin extends Plugin {
     this.updateStatusBar();
 
     registerCommands(this);
+    this.registerEditorSuggest(new TypedLinkSuggest(this.links));
     this.registerObsidianProtocolHandler("mdbase-join", (params) => {
       void this.openWorkspace("sync").then((view) => view.prefillJoin(params.collection ?? "", params.name ?? ""));
     });
@@ -490,6 +497,16 @@ export default class MdbasePlugin extends Plugin {
     const fileName = file.basename;
     new Notice(changed ? t`Updated '${field}' in ${fileName}` : t`The field changed or no safe quick fix is available. Revalidate the note.`);
     await this.validateFileAndStore(file, "manual");
+  }
+
+  getCreateLinkLabel(issue: MdbaseIssue): string | null {
+    return this.links.missingLinkLabel(issue, this.schemaCache);
+  }
+
+  async createMissingLink(issue: MdbaseIssue): Promise<void> {
+    if (!await this.links.createMissingLink(issue)) return;
+    const file = this.app.vault.getAbstractFileByPath(issue.path);
+    if (file instanceof TFile) await this.validateFileAndStore(file, "manual");
   }
 
   async applyQuickFixes(issues: MdbaseIssue[]): Promise<{ changed: number; skipped: number }> {

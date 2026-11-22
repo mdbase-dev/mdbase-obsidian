@@ -1276,6 +1276,10 @@ msgstr "Подсчёт заметок…"
 msgid "Counting…"
 msgstr "Подсчёт…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "Создать: {typeName} «{name}»"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "Создать заметку"
@@ -1299,6 +1303,10 @@ msgstr "Создать тип · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "Создать определение типа"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "Создано: {created}"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "Если вы настраиваете новое устройство, 
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "Изображения"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "В заметке введите @, чтобы сослаться на заметку или создать заметку нужного типа и сослаться на неё."
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "Вложенное поле уже существует: {nextName}"
 msgid "Nested field name is required."
 msgstr "Необходимо указать имя вложенного поля."
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "Создать «{name}» другого типа…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "Новая запись: {typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "Новая запись: {typeName} «{name}»"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "Не удалось сохранить тип и выполнить ав
 msgid "Saving your choice"
 msgstr "Сохранение вашего выбора"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "Поиск заметок"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "строка"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "Предлагать ссылки при вводе @"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "Поле изменилось или безопасное быстрое
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "В папке «{name}» уже есть файлы. Выберите другое имя."
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "Ссылка или её тип изменились. Проверьте заметку снова."
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts

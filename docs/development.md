@@ -132,6 +132,17 @@ English for any other language. It uses the shared `@mdbase-dev/i18n` kit
   schema and extension data is preserved by guided edits.
 - **Drafts:** drafts with a stale source revision are blocked from saving. They
   can be compared, exported or discarded without losing newer edits.
+- **Links:** `src/links.ts` holds the link model with no UI: which fields link
+  and to what type, the notes a link can point at, the suggestion rows, and the
+  note a missing link asks for. `src/linkSuggest.ts` is the `@` suggester and
+  the creation form's link fields, and `src/noteLinks.ts` connects both to the
+  plugin. Link targets come from the same cached record list as the Types
+  pane, and are recomputed only when that list or the types change. A note
+  created for a link goes through the creation form's own checks; the form
+  opens only when the type requires more than a name or the note would not
+  validate. The missing-link fix creates the note where the link, as written,
+  resolves: at the link's own path when it has a folder, otherwise in the
+  type's folder under the link's name.
 - **Quick fixes:** quick fixes target exact nested properties, preserve sibling
   data, and use Obsidian's atomic file processing API. Ambiguous legacy nested
   paths get no automatic fix.

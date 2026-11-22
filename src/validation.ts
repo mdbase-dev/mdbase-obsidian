@@ -18,6 +18,7 @@ import {
   type MdbaseTypeDef,
   type StrictMode,
 } from "./mdbaseCore";
+import { isWebLink, parseLinkReference } from "./links";
 import { getTypesForFile } from "./typeMatching";
 
 let ajv: Ajv2020 | null = null;
@@ -50,25 +51,6 @@ function stripListAndNestedPath(fieldPath: string): string {
   if (dotIndex === -1) return fieldPath.slice(0, bracketIndex);
   if (bracketIndex === -1) return fieldPath.slice(0, dotIndex);
   return fieldPath.slice(0, Math.min(dotIndex, bracketIndex));
-}
-
-function parseLinkReference(raw: string): string {
-  let value = raw.trim();
-  if (value.startsWith("[[") && value.endsWith("]]")) {
-    value = value.slice(2, -2);
-  }
-
-  const aliasIndex = value.indexOf("|");
-  if (aliasIndex >= 0) value = value.slice(0, aliasIndex);
-
-  const headingIndex = value.indexOf("#");
-  if (headingIndex >= 0) value = value.slice(0, headingIndex);
-
-  return value.trim();
-}
-
-function isWebLink(value: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
 }
 
 function resolveLinkInVault(vault: Vault, filePath: string, rawReference: string): TFile | null {
@@ -144,6 +126,7 @@ function pushIssue(
   code: string,
   message: string,
   field?: string,
+  details?: Record<string, unknown>,
 ): void {
   issues.push({
     path,
@@ -151,6 +134,7 @@ function pushIssue(
     message,
     severity,
     field,
+    ...(details ? { details } : {}),
   });
 }
 
@@ -407,6 +391,7 @@ function validateFieldValue(
             "missing_link_target",
             t`Field ''${fieldPath}'' references a missing note`,
             fieldPath,
+            { link: raw, target_type: fieldDef.target },
           );
         }
       }
@@ -648,7 +633,8 @@ async function validateV03Links(
       if (typeof value !== "string") continue;
       const target = resolveLinkInVault(vault, filePath, value);
       if (!target && rule.validate_exists === true) {
-        pushIssue(issues, filePath, "error", "link_not_found", t`Field ''${field}'' references a missing note`, field);
+        pushIssue(issues, filePath, "error", "link_not_found", t`Field ''${field}'' references a missing note`, field,
+          { link: value, target_type: rule.target_type });
         continue;
       }
       if (target && rule.target_type && rule.target_type !== "any") {

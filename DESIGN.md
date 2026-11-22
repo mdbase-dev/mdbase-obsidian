@@ -61,6 +61,14 @@ Field rows show name, data shape, required state, and a compact summary. Editing
 
 The YAML mode uses an ordinary textarea/editor surface with monospace text, clear validation feedback, and no hidden normalization on failed parse.
 
+## Linking
+
+Typing `@` in a note opens Obsidian's own suggestion list (an `EditorSuggest`), not a custom popover. Rows are laid out like the quick switcher's: the note's name, its folder beneath, its type at the end. Rows that create a note come after the matches, read "New person “Name”", and carry a plus. With more types than fit, the most used get a row each and one last row asks for the type.
+
+Choosing a create row makes the note at once when the type needs only a name. Otherwise the ordinary creation form opens with the name filled in and the keyboard in the first empty field; closing it leaves the `@` text as typed and creates nothing. Link fields in that form use the same rows, limited to the type the field points at.
+
+A new note's file is named after the note, so links read as names. `@` is not offered in properties or code, and one setting turns it off.
+
 ## Synchronization
 
 The Sync destination presents one status, regardless of which app owns the folder. A desktop ownership marker means Obsidian connects to desktop; without one, the plugin syncs through the SDK. Ownership details are not a user-selectable mode. It answers, in order:

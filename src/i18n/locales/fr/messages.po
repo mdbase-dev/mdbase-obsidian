@@ -1276,6 +1276,10 @@ msgstr "Comptage des notes…"
 msgid "Counting…"
 msgstr "Comptage…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "Créer {typeName} « {name} »"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "Créer une note"
@@ -1299,6 +1303,10 @@ msgstr "Créer un type · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "Créer une définition de type"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "Créé : {created}"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "Si vous configurez un nouvel appareil, saisissez le code à six chiffres
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "Images"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "Dans une note, saisissez @ pour créer un lien vers une note, ou pour en créer une d’un type et la lier."
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "Le champ imbriqué existe déjà : {nextName}"
 msgid "Nested field name is required."
 msgstr "Le nom du champ imbriqué est obligatoire."
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "Nouveau « {name} » d’un autre type…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "Nouveau : {typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "Nouveau : {typeName} « {name} »"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "L’enregistrement du type a échoué et la récupération automatique a
 msgid "Saving your choice"
 msgstr "Enregistrement de votre choix"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "Rechercher des notes"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "chaîne de caractères"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "Suggérer des liens à la saisie de @"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "Le champ a changé ou aucune correction rapide sûre n’est disponible.
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "Le dossier « {name} » contient déjà des fichiers. Choisissez un autre nom."
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "Le lien ou son type a changé. Validez à nouveau la note."
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts

@@ -44,6 +44,9 @@ export interface MdbaseWorkspaceHost {
   getQuickFixLabel(issue: MdbaseIssue): string | null;
   applyQuickFix(issue: MdbaseIssue): Promise<void>;
   applyQuickFixes(issues: MdbaseIssue[]): Promise<{ changed: number; skipped: number }>;
+  /** The action that creates the note a missing link points at, when its field names the type. */
+  getCreateLinkLabel(issue: MdbaseIssue): string | null;
+  createMissingLink(issue: MdbaseIssue): Promise<void>;
   loadCollectionRecords(): Promise<CollectionRecord[]>;
   openFileByPath(path: string, field?: string): Promise<void>;
   analyzeMigration(): Promise<V02MigrationPlan>;

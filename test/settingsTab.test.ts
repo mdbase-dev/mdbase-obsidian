@@ -57,7 +57,7 @@ function createFixture(version: string, initial: SyncSnapshot = snapshot()) {
   const cleanups: (() => void)[] = [];
   const plugin = {
     register(cleanup: () => void) { cleanups.push(cleanup); },
-    settings: { validateOnSave: true, validateOnOpen: true, showNoticeOnSave: true, interopEnabled: true, mdbaseAppPath: "" },
+    settings: { validateOnSave: true, validateOnOpen: true, showNoticeOnSave: true, interopEnabled: true, linkSuggestions: true, mdbaseAppPath: "" },
     saveSettings: async () => undefined,
     syncController: controller,
     openWorkspace: async (destination: string) => { navigation.push("workspace"); opened.push(destination); },
@@ -208,7 +208,7 @@ for (const version of ["1.14.4", "1.11.4"]) {
       assert.equal(names().filter(name => name === "Show validation notices").length, enabled ? 1 : 0);
       assert.equal(names().filter(name => name === "Validate notes automatically").length, 1);
       assert.equal(f.root.querySelectorAll(".setting-item-heading").length, 1);
-      assert.equal(f.root.querySelectorAll(".setting-item").length, enabled || version !== "1.11.4" ? 7 : 6);
+      assert.equal(f.root.querySelectorAll(".setting-item").length, enabled || version !== "1.11.4" ? 8 : 7);
     }
     if (version !== "1.11.4") {
       assert.equal(f.root.querySelector("input[type='checkbox']"), automatic);

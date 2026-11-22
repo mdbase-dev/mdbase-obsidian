@@ -1276,6 +1276,10 @@ msgstr "Notizen werden gezählt…"
 msgid "Counting…"
 msgstr "Wird gezählt…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "{typeName} „{name}“ erstellen"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "Notiz erstellen"
@@ -1299,6 +1303,10 @@ msgstr "Typ erstellen · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "Typdefinition erstellen"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "{created} erstellt"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "Wenn Sie ein neues Gerät einrichten, geben Sie den angezeigten sechsste
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "Bilder"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "Geben Sie in einer Notiz @ ein, um eine Notiz zu verlinken oder eine Notiz eines Typs zu erstellen und zu verlinken."
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "Verschachteltes Feld existiert bereits: {nextName}"
 msgid "Nested field name is required."
 msgstr "Ein Name für das verschachtelte Feld ist erforderlich."
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "„{name}“ mit einem anderen Typ erstellen…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "Neuer Typ: {typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "Neu: {typeName} „{name}“"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "Das Speichern des Typs und die automatische Wiederherstellung sind fehlg
 msgid "Saving your choice"
 msgstr "Ihre Auswahl wird gespeichert"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "Notizen suchen"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "Zeichenfolge"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "Links beim Tippen von @ vorschlagen"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "Das Feld wurde geändert oder es ist keine sichere Schnellkorrektur verf
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "Der Ordner „{name}“ enthält bereits Dateien. Wählen Sie einen anderen Namen."
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "Der Link oder sein Typ wurde geändert. Validieren Sie die Notiz erneut."
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts

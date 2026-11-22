@@ -128,5 +128,5 @@ export async function createNoteFromTypeCommand(plugin: MdbasePlugin, typeName?:
       const file = await plugin.createTypedNote(path, frontmatter);
       await plugin.app.workspace.getLeaf(true).openFile(file);
       await plugin.validateFileAndStore(file, "manual");
-    }).open();
+    }, { links: plugin.links }).open();
   }

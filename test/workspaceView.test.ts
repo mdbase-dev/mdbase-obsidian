@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
-import { CreateTypedNoteModal } from "../src/createTypedNoteModal";
+import { createLinkedNote, CreateTypedNoteModal } from "../src/createTypedNoteModal";
 import { MdbaseWorkspaceView } from "../src/workspaceView";
 import { createDefaultTypeModel } from "../src/typeModel";
 import { typeDefFromDraft } from "../src/typeImpact";
-import { Menu } from "obsidian";
+import { AbstractInputSuggest as RealInputSuggest, Menu } from "obsidian";
 import { MdbaseSettingTab } from "../src/settingsTab";
 import type { SyncSnapshot } from "../src/sync/controller";
 import type { CollectionStatus } from "../src/sync/daemon";
@@ -13,13 +13,15 @@ import { manageAppsUrl } from "../src/workspace/syncPane";
 import { summarize } from "../src/sync/words";
 
 type TypeModel = ReturnType<typeof createDefaultTypeModel>;
+/** The test double records each suggester attached to an input. */
+const AbstractInputSuggest = RealInputSuggest as unknown as { instances: unknown[] };
 
 test("settings search definitions share the legacy renderer's labels and controls", async () => {
   const fixtureState = fixture();
   let saves = 0;
   const plugin = {
     register: () => {},
-    settings: { validateOnOpen: true, validateOnSave: true, showNoticeOnSave: false, interopEnabled: false, mdbaseAppPath: "" },
+    settings: { validateOnOpen: true, validateOnSave: true, showNoticeOnSave: false, interopEnabled: false, linkSuggestions: true, mdbaseAppPath: "" },
     syncController: fixtureState.sync.controller,
     saveSettings: async () => { saves++; },
     openWorkspace: async () => {},
@@ -28,7 +30,7 @@ test("settings search definitions share the legacy renderer's labels and control
   const definitions = tab.getSettingDefinitions();
   assert.equal(tab.containerEl.children.length, 0);
   assert.deepEqual(definitions.filter(definition => "name" in definition).map(definition => definition.name), [
-    "Validate notes automatically", "Show validation notices", "Allow plugin integrations",
+    "Validate notes automatically", "Show validation notices", "Suggest links when typing @", "Allow plugin integrations",
   ]);
   const group = definitions.find(definition => "items" in definition);
   assert.ok(group && "items" in group);
@@ -110,6 +112,7 @@ function fixture(connected = false) {
     cancelValidation: () => undefined,
     loadCollectionRecords: async () => [] as Array<{ path: string; frontmatter: Record<string, unknown> }>,
     getQuickFixLabel: () => null as string | null,
+    getCreateLinkLabel: () => null as string | null,
     openSettings: () => { settingsOpened++; },
   };
   const view = new MdbaseWorkspaceView({ containerEl: root, app: { vault: { getName: () => "Notes", getAbstractFileByPath: () => null, getAllLoadedFiles: () => [], createFolder: async () => undefined, create: async () => ({ path: "export.txt" }) } } } as never, host as never);
@@ -800,6 +803,105 @@ test("native-style creation modal retains inputs across errors and preserves boo
   await new Promise<void>(resolve => setImmediate(resolve));
   assert.deepEqual(created, { type: "sample", title: "Keep this text", count: 12, active: false, status: 10 });
   assert.equal(modal.containerEl.parentNode, null);
+  f.dom.window.close();
+});
+
+test("a link asking for more than a name opens the form with the name filled in and the link field searching its type", async () => {
+  const f = fixture();
+  const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };
+  const person = { name: "person", filePath: "_types/person.md", display_name_key: "name", fields: { name: { type: "string", required: true } } };
+  const book = { name: "book", filePath: "_types/book.md", display_name_key: "title",
+    collection: { links: { author: { target_type: "person" } } },
+    fields: { title: { type: "string", required: true }, author: { type: "string", required: true } } };
+  const types = new Map<string, unknown>([["book", book], ["person", person]]);
+  const written: Array<{ path: string; frontmatter: Record<string, unknown> }> = [];
+  const host = {
+    app: { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } } as never,
+    createTypedNote: async (path: string, frontmatter: Record<string, unknown>) => {
+      written.push({ path, frontmatter });
+      return { path, basename: path.split("/").pop()!.replace(/\.md$/, "") } as never;
+    },
+  };
+  const links = {
+    targets: async () => [{ path: "People/ted-chiang.md", name: "Ted Chiang", types: ["person"] }, { path: "Library/Exhalation.md", name: "Exhalation", types: ["book"] }],
+    create: (type: typeof person, name: string) => createLinkedNote(host, type as never, name, config, types as never, { links }),
+  };
+  AbstractInputSuggest.instances.length = 0;
+  const pending = createLinkedNote(host, book as never, "Dune", config, types as never, { links });
+  await settle();
+  assert.deepEqual(written, [], "a book needs an author first");
+  const root = f.dom.window.document.body.querySelector<HTMLElement>(".mdbase-create-note")!;
+  const title = root.querySelector<HTMLInputElement>("#mdbase-note-title")!;
+  const author = root.querySelector<HTMLInputElement>("#mdbase-note-author")!;
+  assert.equal(title.value, "Dune");
+  assert.equal(f.dom.window.document.activeElement, author, "the first field still to give has the keyboard");
+  assert.equal(root.querySelector<HTMLInputElement>("#mdbase-note-location")!.value, "Dune.md");
+  assert.doesNotMatch(root.textContent ?? "", /Required\s*Required/, "nothing is reported before anything is typed");
+  assert.equal(author.placeholder, "Search notes");
+
+  const [suggest] = AbstractInputSuggest.instances as unknown as Array<{
+    getSuggestions(query: string): Promise<Array<{ kind: string }>>; selectSuggestion(row: unknown): void; renderSuggestion(row: unknown, el: HTMLElement): void }>;
+  assert.equal(AbstractInputSuggest.instances.length, 1, "only the link field suggests notes");
+  const rows = await suggest.getSuggestions("frank herbert");
+  assert.deepEqual(rows.map(row => row.kind), ["create"], "books are not people");
+  const rendered = f.dom.window.document.createElement("div");
+  suggest.renderSuggestion(rows[0], rendered);
+  assert.equal(rendered.querySelector(".suggestion-title")?.textContent, "New person “frank herbert”");
+  suggest.renderSuggestion((await suggest.getSuggestions("ted"))[0], rendered);
+  assert.match(rendered.textContent ?? "", /Ted Chiang\s*People\s*person/);
+
+  // A person needs only a name, so choosing the row creates it and fills the field.
+  suggest.selectSuggestion(rows[0]);
+  await settle();
+  assert.deepEqual(written, [{ path: "frank herbert.md", frontmatter: { type: "person", name: "frank herbert" } }]);
+  assert.equal(author.value, "[[frank herbert]]");
+  button(root, "Create note").click();
+  await settle();
+  assert.deepEqual(written[1], { path: "Dune.md", frontmatter: { type: "book", title: "Dune", author: "[[frank herbert]]" } });
+  assert.deepEqual(await pending, { path: "Dune.md", name: "Dune", types: ["book"] });
+  f.dom.window.close();
+});
+
+test("a link's form closed without creating settles to nothing, and a fixed location stays put", async () => {
+  const f = fixture();
+  const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };
+  const person = { name: "person", filePath: "_types/person.md", display_name_key: "name",
+    fields: { name: { type: "string", required: true }, born: { type: "date", required: true } } };
+  const host = { app: { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } } as never,
+    createTypedNote: async () => { throw new Error("nothing should be created"); } };
+  const pending = createLinkedNote(host, person as never, "Nobody", config, new Map([["person", person]]) as never, { path: "People/Nobody.md" });
+  await settle();
+  const root = f.dom.window.document.body.querySelector<HTMLElement>(".mdbase-create-note")!;
+  const location = root.querySelector<HTMLInputElement>("#mdbase-note-location")!;
+  assert.equal(location.value, "People/Nobody.md");
+  assert.ok(location.readOnly);
+  assert.ok(button(root, "Use suggested location").classList.contains("mdbase-hidden"));
+  button(root, "Create note").click();
+  await settle();
+  assert.match(root.textContent ?? "", /Required/, "the missing date is reported");
+  button(root, "Cancel").click();
+  assert.equal(await pending, null);
+  f.dom.window.close();
+});
+
+test("a missing link to a known type offers to create its note", async () => {
+  const f = typesFixture();
+  const issue = { path: "tasks/a.md", severity: "error", code: "link_not_found", field: "owner", type: "task",
+    message: "Field 'owner' references a missing note", details: { link: "[[People/Nobody]]", target_type: "person" } };
+  const created: unknown[] = [];
+  Object.assign(f.host, {
+    getIssues: () => [issue, { ...issue, path: "tasks/b.md" }],
+    getCreateLinkLabel: () => "Create person “Nobody”",
+    createMissingLink: async (selected: unknown) => { created.push(selected); },
+  });
+  f.state.destination = "issues";
+  f.state.render();
+  const buttons = Array.from(f.root.querySelectorAll("button")).filter(el => el.textContent === "Create person “Nobody”");
+  assert.equal(buttons.length, 2, "one per note, with no bulk action");
+  buttons[0].click();
+  await settle();
+  assert.deepEqual(created, [issue]);
+  await f.view.onClose();
   f.dom.window.close();
 });
 
