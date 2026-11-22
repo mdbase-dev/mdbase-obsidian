@@ -1276,6 +1276,10 @@ msgstr "Contando notas…"
 msgid "Counting…"
 msgstr "Contando…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "Crear {typeName} «{name}»"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "Crear nota"
@@ -1299,6 +1303,10 @@ msgstr "Crear tipo · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "Crear definición de tipo"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "Se creó {created}"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "Si estás configurando un dispositivo nuevo, escribe el código de seis 
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "Imágenes"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "En una nota, escribe @ para enlazar una nota o para crear una de un tipo y enlazarla."
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "El campo anidado ya existe: {nextName}"
 msgid "Nested field name is required."
 msgstr "El nombre del campo anidado es obligatorio."
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "Nuevo «{name}» de otro tipo…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "Nuevo {typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "Nuevo {typeName} «{name}»"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "No se pudo guardar el tipo y también falló la recuperación automátic
 msgid "Saving your choice"
 msgstr "Guardando tu elección"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "Buscar notas"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "cadena"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "Sugerir enlaces al escribir @"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "El campo cambió o no hay ninguna corrección rápida segura disponible.
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "La carpeta \"{name}\" ya tiene archivos. Elige otro nombre."
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "El enlace o su tipo cambió. Vuelve a validar la nota."
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts

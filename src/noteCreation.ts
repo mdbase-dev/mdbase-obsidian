@@ -90,7 +90,7 @@ export function resolveFilenameForType(typeDef: MdbaseTypeDef, frontmatter: Reco
     }
   }
 
-  return `${slugify(fallbackSource)}.md`;
+  return `${fileNameFrom(fallbackSource)}.md`;
 }
 
 export function buildInitialFrontmatter(typeDef: MdbaseTypeDef, config: MdbaseConfig): Record<string, unknown> {
@@ -186,7 +186,25 @@ export function coerceFieldInput(rawInput: string, fieldDef: MdbaseFieldDef): un
   }
 }
 
-export function slugify(input: string): string {
+/**
+ * A file name from a note's name, kept as written so the note reads the same
+ * in the file list and in links. Only what a file system or a wikilink can't
+ * hold is dropped.
+ */
+export function fileNameFrom(input: string): string {
+  const value = input
+    // eslint-disable-next-line no-control-regex -- control characters are exactly what must go
+    .replace(/[\\/:*?"<>|#^[\]\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 80)
+    .trim()
+    .replace(/^\.+|[. ]+$/g, "");
+
+  return value.length > 0 ? value : "note";
+}
+
+/** The file name a v0.2 `filename_pattern` renders to. */
+function slugify(input: string): string {
   const value = input
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, "")

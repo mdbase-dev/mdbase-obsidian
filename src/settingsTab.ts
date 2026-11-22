@@ -88,6 +88,17 @@ export class MdbaseSettingTab extends PluginSettingTab {
     });
 
     definitions.push({
+      name: t`Suggest links when typing @`,
+      desc: t`In a note, type @ to link to a note, or to create one of a type and link to it.`,
+      render: setting => { setting.addToggle((toggle) =>
+        toggle.setValue(plugin.settings.linkSuggestions).onChange(async (value) => {
+          plugin.settings.linkSuggestions = value;
+          await plugin.saveSettings();
+        }),
+      ); },
+    });
+
+    definitions.push({
       name: t`Allow plugin integrations`,
       desc: t`Let other installed plugins exchange mdbase events and actions in this vault.`,
       render: setting => { setting.addToggle((toggle) =>

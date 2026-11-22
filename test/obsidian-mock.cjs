@@ -88,6 +88,24 @@ class Modal {
 }
 
 class SuggestModal extends Modal {}
+class PopoverSuggest {
+  constructor(app) { this.app = app; this.closes = 0; }
+  open() {}
+  close() { this.closes += 1; }
+}
+class EditorSuggest extends PopoverSuggest {
+  constructor(app) { super(app); this.context = null; this.limit = 100; }
+}
+class AbstractInputSuggest extends PopoverSuggest {
+  static instances = [];
+  constructor(app, element) {
+    super(app);
+    this.textInputEl = element;
+    AbstractInputSuggest.instances.push(this);
+  }
+  setValue(value) { this.textInputEl.value = value; }
+  getValue() { return this.textInputEl.value; }
+}
 class Notice {
   static messages = [];
   constructor(message) { Notice.messages.push(message); }
@@ -265,6 +283,8 @@ module.exports = {
   Menu,
   Modal,
   SuggestModal,
+  EditorSuggest,
+  AbstractInputSuggest,
   Notice,
   PluginSettingTab,
   requireApiVersion,

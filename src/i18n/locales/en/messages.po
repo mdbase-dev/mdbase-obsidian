@@ -1276,6 +1276,10 @@ msgstr "Counting notes…"
 msgid "Counting…"
 msgstr "Counting…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "Create {typeName} “{name}”"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "Create note"
@@ -1299,6 +1303,10 @@ msgstr "Create type · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "Create type definition"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "Created {created}"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "If you're setting up a new device, type the six-digit code it shows. Onl
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "Images"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "In a note, type @ to link to a note, or to create one of a type and link to it."
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "Nested field already exists: {nextName}"
 msgid "Nested field name is required."
 msgstr "Nested field name is required."
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "New “{name}” of another type…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "New {typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "New {typeName} “{name}”"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "Saving the type failed and automatic recovery also failed. Review '{orig
 msgid "Saving your choice"
 msgstr "Saving your choice"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "Search notes"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "string"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "Suggest links when typing @"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "The field changed or no safe quick fix is available. Revalidate the note
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "The folder \"{name}\" already has files. Choose another name."
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "The link or its type changed. Revalidate the note."
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts

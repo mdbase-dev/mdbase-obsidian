@@ -12,6 +12,8 @@ against them.
   from 1 to 5, say).
 - **Create notes from a type**, with a form that fills in the properties for
   you.
+- **Link notes by type**: type `@` in a note to link to a book, a person or
+  any other note, or to create one and link to it in the same step.
 - **Check notes against their types** as you open and save them, or check the
   whole vault at once, with one-click fixes for common problems.
 
@@ -55,10 +57,26 @@ Open the workspace and choose **Types**.
   changed and any problems with it. Changes that could affect existing notes
   ask you to review them first.
 - **New note** opens a form for a note of that type, previews where it will be
-  saved, and checks it before creating it.
+  saved, and checks it before creating it. A link field searches the notes of
+  the type it points at, and can create one.
 
 On phones, the type list and the editor are separate screens with buttons big
 enough to tap.
+
+## Linking notes
+
+Type `@` in a note to link to another note. The list shows each note by its
+name and type. Keep typing a name that doesn't exist yet and it offers to
+create it: **New person “Octavia Butler”** makes the note where people go,
+gives it its type and name, and links to it. If the type needs more than a
+name, a short form asks for the rest first.
+
+`@` only starts a link at the beginning of a word, so an email address is left
+alone, and it does nothing in properties or code. Obsidian's own `[[` links
+work as before. To turn it off, see [Settings](#settings).
+
+A new note's file is named after the note, so the link reads the same as its
+name.
 
 ## Checking notes
 
@@ -68,6 +86,8 @@ checks the whole vault, shows progress, and can be stopped. A note without
 properties that no type matches, such as a plain note or an app's README, is
 fine and isn't reported. Many problems come
 with a fix you can apply in one click; it changes only the property it names.
+When a property links to a note that doesn't exist and its type says what kind
+of note it should be, the fix creates that note, so the link works as written.
 
 ## Sync
 
@@ -154,6 +174,8 @@ collection's settings and types.
 - **Validate notes automatically:** check notes when they're opened or saved.
 - **Show validation notices:** show a notice when you save a note with
   problems.
+- **Suggest links when typing @:** offer notes to link to, and types to
+  create, when you type `@` in a note. On by default.
 - **Allow plugin integrations:** let other plugins exchange mdbase events and
   actions in this vault. Off by default.
 - **Sync:** status, and a shortcut to the Sync tab. When the desktop app syncs

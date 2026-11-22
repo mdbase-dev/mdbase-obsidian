@@ -1276,6 +1276,10 @@ msgstr "正在统计笔记…"
 msgid "Counting…"
 msgstr "正在统计…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "创建 {typeName}“{name}”"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "创建笔记"
@@ -1299,6 +1303,10 @@ msgstr "创建类型 · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "创建类型定义"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "已创建 {created}"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "如果正在设置新设备，请输入该设备显示的六位数代码
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "图片"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "在笔记中输入 @ 可链接到笔记，或创建某个类型的笔记并链接到它。"
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "嵌套字段已存在：{nextName}"
 msgid "Nested field name is required."
 msgstr "嵌套字段名称为必填项。"
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "以其他类型新建“{name}”…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "新建 {typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "新建 {typeName}“{name}”"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "保存类型失败，自动恢复也失败。请检查 '{originalPath}' 
 msgid "Saving your choice"
 msgstr "正在保存你的选择"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "搜索笔记"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "字符串"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "输入 @ 时建议链接"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "字段已更改，或没有可用的安全快速修复。请重新验证
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "文件夹“{name}”已有文件。请选择其他名称。"
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "链接或其类型已更改。请重新验证笔记。"
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts

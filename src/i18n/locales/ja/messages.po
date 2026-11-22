@@ -1276,6 +1276,10 @@ msgstr "ノートを集計中…"
 msgid "Counting…"
 msgstr "集計中…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "{typeName}「{name}」を作成"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "ノートを作成"
@@ -1299,6 +1303,10 @@ msgstr "タイプを作成 · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "タイプ定義を作成"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "{created} を作成しました"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "新しいデバイスを設定している場合は、表示される6�
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "画像"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "ノート内で @ を入力すると、ノートにリンクしたり、タイプを選んで新しいノートを作成してリンクしたりできます。"
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "ネストされたフィールドはすでに存在します: {nextName}
 msgid "Nested field name is required."
 msgstr "ネストされたフィールドの名前が必要です。"
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "別のタイプで「{name}」を作成…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "新しい{typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "新しい{typeName}「{name}」"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "タイプの保存と自動復旧の両方に失敗しました。「'{o
 msgid "Saving your choice"
 msgstr "選択内容を保存中"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "ノートを検索"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "文字列"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "@ の入力時にリンクを提案"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "フィールドが変更されたか、安全なクイック修正があ
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "フォルダー「{name}」にはすでにファイルがあります。別の名前を選択してください。"
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "リンクまたはそのタイプが変更されました。ノートを再検証してください。"
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts

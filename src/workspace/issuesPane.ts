@@ -232,6 +232,14 @@ export class IssuesPane {
         await this.ctx.host.applyQuickFix(issue);
       });
     }
+    const createLabel = this.ctx.host.getCreateLinkLabel(issue);
+    if (createLabel) {
+      const create = actions.createEl("button", { text: createLabel });
+      create.disabled = this.ctx.busy;
+      create.onclick = () => void this.ctx.perform(async () => {
+        await this.ctx.host.createMissingLink(issue);
+      });
+    }
   }
 
   /** Jump from an issue to the type field whose rule produced it. */

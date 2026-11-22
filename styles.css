@@ -2485,6 +2485,11 @@ button.mdbase-match-row:hover {
   width: 100%;
 }
 
+/* A location the note has to have, for a link that already points there. */
+.mdbase-create-note input[readonly] {
+  color: var(--text-muted);
+}
+
 .mdbase-create-note textarea {
   min-height: 80px;
 }

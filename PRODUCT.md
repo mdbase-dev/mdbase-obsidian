@@ -15,6 +15,7 @@ The local vault remains useful while offline. Sync should feel like a mature des
 
 - People who want their mdbase collections available as ordinary Markdown in an Obsidian vault, synced across their devices and mdbase apps.
 - People who edit an mdbase collection in Obsidian and want a first-class way to understand and change its types.
+- People who write in a typed vault and want their notes about books, people and projects to link to each other as those things.
 - Existing mdbase v0.2 users who need to inspect their collection and migrate safely to v0.3.
 
 ## Core jobs
@@ -38,6 +39,13 @@ The local vault remains useful while offline. Sync should feel like a mature des
 - Preserve unknown extension fields rather than silently discarding them.
 - Use the same core workflow on desktop and mobile.
 
+### Link notes by type
+
+- Link to a note from the note being written, seeing each candidate's name and type.
+- Create the note a link needs without leaving the sentence: of the chosen type, in that type's folder, with what the type requires.
+- Settle a link property whose note is missing by creating the note its type calls for.
+- Leave Obsidian's own links, properties and backlinks as they are. This adds what types know; it does not replace them.
+
 ### Manage a collection
 
 - Initialize an unconfigured vault as a canonical mdbase v0.3 collection.
@@ -49,6 +57,7 @@ The local vault remains useful while offline. Sync should feel like a mature des
 
 - Obsidian-native: use workspace views, commands, settings, notices, and vault APIs as users expect.
 - Sync first: most people come to mdbase to sync, so the workspace opens on Sync. Types are the power tool: most people rarely edit a type definition by hand, but when they do, the type workbench should make it fast and safe.
+- Types at work while writing: a type earns its keep when creating and linking notes, not only when checking them. That help arrives in the editor, through Obsidian's own suggestion list and forms.
 - Files remain real: configuration, types, and records stay ordinary files in the vault.
 - Conservative writes: validate before saving and leave recovery artifacts for migration.
 - Mobile-capable: types, validation and sync work on phones and tablets with touch-sized controls. Sync code loads only when sync is used; Node-only code loads only on desktop.
@@ -65,7 +74,8 @@ The local vault remains useful while offline. Sync should feel like a mature des
 
 ## Out of scope
 
-- A general-purpose record editor or database dashboard.
+- A general-purpose record editor or database dashboard. Linking and creating notes by type is part of writing; tables, boards and a record browser are not.
+- Replacing Obsidian's Properties panel or backlinks pane. Neither can be extended through Obsidian's public API, and the plugin does not reach past it.
 - Automatic background sync that cannot communicate failures to the user. Background sync reports problems in the status bar and Sync destination and backs off rather than failing silently.
 - Sync on iPhone and iPad (not yet: the Sync tab says so in plain words). Obsidian serves plugins there from `capacitor://localhost`, which sync and Connect haven't been qualified for.
 - Creating, approving or serving Private collections from Obsidian. Phones and Obsidian join and sync; the desktop app stays the always-on device.

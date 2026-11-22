@@ -1276,6 +1276,10 @@ msgstr "노트 개수 확인 중…"
 msgid "Counting…"
 msgstr "개수 확인 중…"
 
+#: src/noteLinks.ts
+msgid "Create {typeName} “{name}”"
+msgstr "{typeName} “{name}” 만들기"
+
 #: src/createTypedNoteModal.ts
 msgid "Create note"
 msgstr "노트 만들기"
@@ -1299,6 +1303,10 @@ msgstr "타입 만들기 · {createBlocked}"
 #: src/commands.ts
 msgid "Create type definition"
 msgstr "타입 정의 만들기"
+
+#: src/noteLinks.ts
+msgid "Created {created}"
+msgstr "{created} 생성됨"
 
 #: src/workspace/types/drafts.ts
 msgid "Current source"
@@ -1770,6 +1778,10 @@ msgstr "새 기기를 설정하고 있다면 해당 기기에 표시된 여섯 �
 #: src/settingsTab.ts
 msgid "Images"
 msgstr "이미지"
+
+#: src/settingsTab.ts
+msgid "In a note, type @ to link to a note, or to create one of a type and link to it."
+msgstr "노트에서 @를 입력하면 노트에 링크하거나, 타입을 골라 새 노트를 만들어 링크할 수 있습니다."
 
 #: src/workspace/syncPane.ts
 msgid "In the collection, but its own file settings leave them out."
@@ -2472,9 +2484,17 @@ msgstr "중첩 필드가 이미 있습니다: {nextName}"
 msgid "Nested field name is required."
 msgstr "중첩 필드 이름이 필요합니다."
 
+#: src/linkSuggest.ts
+msgid "New “{name}” of another type…"
+msgstr "다른 타입으로 “{name}” 만들기…"
+
 #: src/createTypedNoteModal.ts
 msgid "New {typeName}"
 msgstr "새 {typeName}"
+
+#: src/linkSuggest.ts
+msgid "New {typeName} “{name}”"
+msgstr "새 {typeName} “{name}”"
 
 #: src/sync/native/session.ts
 msgid "New collection…"
@@ -3112,6 +3132,10 @@ msgstr "타입 저장과 자동 복구에 모두 실패했습니다. '{originalP
 msgid "Saving your choice"
 msgstr "선택 사항 저장 중"
 
+#: src/createTypedNoteModal.ts
+msgid "Search notes"
+msgstr "노트 검색"
+
 #: src/modals.ts
 #: src/workspace/types/typeList.ts
 msgid "Search types"
@@ -3349,6 +3373,10 @@ msgid "string"
 msgstr "문자열"
 
 #: src/settingsTab.ts
+msgid "Suggest links when typing @"
+msgstr "@ 입력 시 링크 제안"
+
+#: src/settingsTab.ts
 #: src/workspace/syncPane.ts
 #: src/workspaceView.ts
 msgid "Sync"
@@ -3566,6 +3594,10 @@ msgstr "필드가 변경되었거나 안전한 빠른 수정이 없습니다. �
 #: src/sync/controller.ts
 msgid "The folder \"{name}\" already has files. Choose another name."
 msgstr "\"{name}\" 폴더에 이미 파일이 있습니다. 다른 이름을 선택하세요."
+
+#: src/noteLinks.ts
+msgid "The link or its type changed. Revalidate the note."
+msgstr "링크 또는 해당 타입이 변경되었습니다. 노트를 다시 검증하세요."
 
 #: src/sync/daemon.ts
 #: src/sync/words.ts
