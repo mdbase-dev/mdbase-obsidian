@@ -1,7 +1,7 @@
 {
 	"id": "mdbase-sync",
 	"name": "mdbase",
-	"version": "0.5.6",
+	"version": "0.5.7",
 	"minAppVersion": "1.11.4",
 	"isDesktopOnly": false,
 	"description": "Sync your vault across devices and use it in mdbase apps like TaskNotes. Also lets you define note types and check notes against them.",
