@@ -1266,3 +1266,96 @@ test("a stale marker that a file-sync service carried from another device is jud
   assert.equal(classifyMarker({ host: "daemon", heartbeat_ms: 0 }, now).takeover, false);
   assert.equal(MARKER_STALE_MS, 10 * 60_000);
 });
+
+test("pushing a new or updated record reflects collection lifecycle rewrites back into the vault (issue 166)", async t => {
+  const f = fixture(t);
+  const localDraft = "---\ntype: event\ntitle: Guarded Party\nstarts: 2026-11-24T10:00:00.000Z\n---\n";
+  const afterOnCreate = "---\ntype: event\ntitle: Guarded Party\nstarts: 2026-11-24T10:00:00.000Z\nid: 13e1bbc6-0000-4000-8000-000000000001\ndateCreated: 2026-11-23T13:11:15.000Z\ndateModified: 2026-11-23T13:11:15.000Z\nslug: guarded-party\nends: 2099-12-31T23:00:00Z\n---\n";
+  const editedLocal = `${afterOnCreate}\nNotes\n`;
+  const afterOnUpdate = "---\ntype: event\ntitle: Guarded Party\nstarts: 2026-11-24T10:00:00.000Z\nid: 13e1bbc6-0000-4000-8000-000000000001\ndateCreated: 2026-11-23T13:11:15.000Z\ndateModified: 2026-11-23T13:20:00.000Z\nslug: guarded-party\nends: 2099-12-31T23:00:00Z\n---\n\nNotes\n";
+
+  let createCalls = 0;
+  let replaceCalls = 0;
+  const baseCall = f.native.call.bind(f.native);
+  f.native.call = async (method, ...args) => {
+    if (method === "create") {
+      createCalls++;
+      f.putRemote(args[0], afterOnCreate, digest(afterOnCreate), "ev-1");
+      return f.remote.get(args[0]);
+    }
+    if (method === "replace") {
+      replaceCalls++;
+      const [id, , next] = args;
+      f.putRemote(next.path, afterOnUpdate, digest(afterOnUpdate), id);
+      return f.remote.get(next.path);
+    }
+    if (method === "get") {
+      for (const r of f.remote.values()) if (r.id === args[0]) return r;
+      throw Object.assign(new Error("not found"), { code: "not_found" });
+    }
+    return baseCall(method, ...args);
+  };
+
+  f.put("Guarded Party.md", localDraft);
+  assert.equal(await f.pass(), true);
+  assert.equal(createCalls, 1);
+  assert.equal(f.read("Guarded Party.md"), afterOnCreate, "vault file must match the collection after on_create (including guarded ends)");
+  assert.equal(f.native.data.paths["Guarded Party.md"].hash, digest(afterOnCreate));
+  assert.equal(f.native.data.paths["Guarded Party.md"].revision, digest(afterOnCreate));
+
+  // A subsequent pass must not create conflict copies or re-send.
+  assert.equal(await f.pass(), true);
+  assert.equal(createCalls, 1);
+  assert.equal(replaceCalls, 0);
+  assert.deepEqual(f.native.view().conflicts, []);
+
+  // Editing the note locally triggers on_update in the collection; vault reflects the updated dateModified.
+  f.put("Guarded Party.md", editedLocal);
+  assert.equal(await f.pass(), true);
+  assert.equal(replaceCalls, 1);
+  assert.equal(f.read("Guarded Party.md"), afterOnUpdate, "vault file must match the collection after on_update");
+  assert.equal(f.native.data.paths["Guarded Party.md"].hash, digest(afterOnUpdate));
+});
+
+test("createRecord evaluates lifecycle.on_create once in the collection and writes the authoritative document to the vault (issue 166)", async t => {
+  const f = fixture(t);
+  const preLifecycle = "---\ntype: event\ntitle: Guarded Party\nstarts: 2026-11-24T10:00:00.000Z\n---\n";
+  const postLifecycle = "---\ntype: event\ntitle: Guarded Party\nstarts: 2026-11-24T10:00:00.000Z\nid: a4be0871-0000-4000-8000-000000000002\ndateCreated: 2026-11-23T13:00:55.000Z\ndateModified: 2026-11-23T13:00:55.000Z\nslug: guarded-party\nends: 2099-12-31T23:00:00Z\n---\n";
+  let createCalls = 0;
+  let getCalls = 0;
+  const submitted = [];
+  const baseCall = f.native.call.bind(f.native);
+  f.native.call = async (method, ...args) => {
+    if (method === "create") {
+      createCalls++;
+      submitted.push(args[1]);
+      f.putRemote(args[0], postLifecycle, digest(postLifecycle), "ev-2");
+      // Simulate a receipt-only reply with mismatched sha256 revision to test fallback get too.
+      return { id: "ev-2", path: args[0], revision: digest(postLifecycle), via: "receipt" };
+    }
+    if (method === "get") {
+      getCalls++;
+      return f.remote.get("Guarded Party.md");
+    }
+    return baseCall(method, ...args);
+  };
+
+  const created = await f.native.createRecord("Guarded Party.md", preLifecycle, async (p, content) => {
+    f.put(p, content);
+    return new TFile(p);
+  });
+  assert.ok(created);
+  assert.equal(created.path, "Guarded Party.md");
+  assert.equal(createCalls, 1);
+  assert.equal(getCalls, 1);
+  assert.equal(submitted[0], preLifecycle);
+  assert.equal(f.read("Guarded Party.md"), postLifecycle);
+  assert.equal(f.remote.get("Guarded Party.md").document, postLifecycle);
+  assert.equal(f.native.data.paths["Guarded Party.md"].hash, digest(postLifecycle));
+  assert.equal(f.native.data.paths["Guarded Party.md"].revision, digest(postLifecycle));
+
+  // Subsequent reconcile pass sees both sides identical and performs zero writes or conflicts.
+  assert.equal(await f.pass(), true);
+  assert.equal(createCalls, 1);
+  assert.deepEqual(f.native.view().conflicts, []);
+});

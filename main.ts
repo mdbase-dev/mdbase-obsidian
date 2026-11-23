@@ -180,9 +180,21 @@ export default class MdbasePlugin extends Plugin {
     };
   }
 
+  collectionOwnsCreateLifecycle(): boolean {
+    return this.syncController.native?.ownsCreateLifecycle() ?? false;
+  }
+
   async createTypedNote(path: string, frontmatter: Record<string, unknown>): Promise<TFile> {
-    const { createNoteFromType } = await import("./src/noteCreation");
-    return createNoteFromType(this.app.vault, path, frontmatter);
+    const { createNoteFromContent, createNoteFromType, normalizeSafeRelativePath } = await import("./src/noteCreation");
+    const normalized = normalizeSafeRelativePath(path);
+    const native = this.syncController.native;
+    if (native?.canCreateRecord(normalized)) {
+      const content = `${formatMarkdown(frontmatter, "")}\n`;
+      const created = await native.createRecord(normalized, content, (targetPath, doc) =>
+        createNoteFromContent(this.app.vault, targetPath, doc));
+      if (created) return created;
+    }
+    return createNoteFromType(this.app.vault, normalized, frontmatter);
   }
 
   /** The vault's folder on disk; null on mobile. */

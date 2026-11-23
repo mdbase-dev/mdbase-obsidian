@@ -117,8 +117,20 @@ export async function push(sync: NativeSync, p: string, l: LocalFile, r?: Remote
     try { next = await sync.finishUpload(p); }
     catch (e: unknown) { if (isRefusal(e)) await sync.clearUpload(p); throw e; }
   }
+  let remote = sync.remote(next, kind);
+  if (kind === "record" && typeof remote.document !== "string" && remote.revision.startsWith("sha256:") && remote.revision !== l.hash) {
+    remote = sync.remote(await sync.call("get", remote.id), kind);
+  }
+  if (kind === "record" && typeof remote.document === "string" && remote.hash !== l.hash && remote.path === p) {
+    // The collection rewrote the record during write (for example, lifecycle
+    // on_create or on_update). Reflect the authoritative document back into
+    // the vault before remembering the new revision so local and remote agree.
+    await sync.pull(p, remote, l.hash);
+    sync.log(`pushed ${kind} (${l.bytes.length} bytes); reflected collection update`);
+    return;
+  }
   // Only identity and revision are kept; a note's reply may omit its text.
-  sync.remember(p, sync.remote(next, kind), l.hash);
+  sync.remember(p, remote, l.hash);
   sync.log(`pushed ${kind} (${l.bytes.length} bytes)${"via" in next && next.via ? ` via ${next.via}` : ""}`);
 }
 export function uploadPath(sync: NativeSync, id: string) {
@@ -228,7 +240,15 @@ export async function moveLocal(sync: NativeSync, from: string, to: string, k: S
   delete sync.data.paths[from];
   delete sync.data.pendingPaths?.[from]; delete sync.data.pendingPaths?.[to];
   // Move first, then CAS any content edit in the ordinary path pass.
-  const moved = sync.remote(next, r.kind); sync.remember(to, moved, k.hash);
+  let moved = sync.remote(next, r.kind);
+  if (r.kind === "record" && typeof moved.document !== "string" && moved.revision.startsWith("sha256:") && moved.revision !== k.hash) {
+    moved = sync.remote(await sync.call("get", moved.id), r.kind);
+  }
+  if (r.kind === "record" && typeof moved.document === "string" && moved.hash !== k.hash && moved.path === to) {
+    await sync.pull(to, moved, k.hash);
+  } else {
+    sync.remember(to, moved, k.hash);
+  }
   sync.note("moved", from, { to, from: "here" });
   sync.log(`local ${r.kind} move: ${JSON.stringify(from)} -> ${JSON.stringify(to)} id=${r.id} (no upload/download)`);
   return moved;

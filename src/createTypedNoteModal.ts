@@ -1,7 +1,14 @@
 import { t } from "@lingui/core/macro";
 import { App, Modal, type TFile } from "obsidian";
 import type { MdbaseConfig, MdbaseFieldDef, MdbaseIssue, MdbaseTypeDef } from "./mdbaseCore";
-import { applyCreateLifecycle, buildInitialFrontmatter, buildUniqueNotePath, coerceFieldInput, getPromptFields } from "./noteCreation";
+import {
+  applyCreateLifecycle,
+  buildInitialFrontmatter,
+  buildUniqueNotePath,
+  coerceFieldInput,
+  getPromptFields,
+  unconditionalOnCreateTopLevelFields,
+} from "./noteCreation";
 import { validateRecordAgainstType } from "./validation";
 import { isExcluded } from "./collectionConfig";
 import { displayNameKey, linkField, type LinkTarget } from "./links";
@@ -16,10 +23,36 @@ export function safeNotePath(value: string): string {
   return path.endsWith(".md") ? path : `${path}.md`;
 }
 
+function pathSuggestionFrontmatter(
+  type: MdbaseTypeDef,
+  frontmatter: Record<string, unknown>,
+  deferCreateLifecycle?: boolean,
+): Record<string, unknown> {
+  if (!deferCreateLifecycle) return frontmatter;
+  const preview = structuredClone(frontmatter);
+  applyCreateLifecycle(type, preview, { derivedOnly: true });
+  return preview;
+}
+
 /** What a new note of a type breaks in that type's rules, and in the type it extends. */
-function newNoteIssues(path: string, frontmatter: Record<string, unknown>, type: MdbaseTypeDef, types: Map<string, MdbaseTypeDef>): MdbaseIssue[] {
-  return [...types.values()].flatMap(candidate => candidate.name === type.name || type.extends === candidate.name
-    ? validateRecordAgainstType(path, frontmatter, candidate) : []);
+function newNoteIssues(
+  path: string,
+  frontmatter: Record<string, unknown>,
+  type: MdbaseTypeDef,
+  types: Map<string, MdbaseTypeDef>,
+  deferCreateLifecycle = false,
+): MdbaseIssue[] {
+  return [...types.values()].flatMap(candidate => {
+    if (candidate.name !== type.name && type.extends !== candidate.name) return [];
+    const issues = validateRecordAgainstType(path, frontmatter, candidate);
+    if (!deferCreateLifecycle) return issues;
+    const autoFields = unconditionalOnCreateTopLevelFields(candidate);
+    return issues.filter(issue => !(
+      issue.field
+      && autoFields.has(issue.field)
+      && (issue.code === "schema_required" || issue.code === "missing_required")
+    ));
+  });
 }
 
 export interface CreateNoteOptions {
@@ -29,6 +62,8 @@ export interface CreateNoteOptions {
   path?: string;
   /** The notes link fields suggest. Without it, a link field is a plain text box. */
   links?: LinkSource;
+  /** Let the synced collection evaluate `lifecycle.on_create` once instead of applying it locally. */
+  deferCreateLifecycle?: boolean;
   /** Called once the form has closed, whether or not a note was created. */
   closed?: () => void;
 }
@@ -37,6 +72,7 @@ export interface CreateNoteOptions {
 export interface LinkedNoteHost {
   readonly app: App;
   createTypedNote(path: string, frontmatter: Record<string, unknown>): Promise<TFile>;
+  collectionOwnsCreateLifecycle?(): boolean;
 }
 
 /**
@@ -50,25 +86,30 @@ export async function createLinkedNote(
   name: string,
   config: MdbaseConfig,
   types: Map<string, MdbaseTypeDef>,
-  options: { path?: string; links?: LinkSource } = {},
+  options: { path?: string; links?: LinkSource; deferCreateLifecycle?: boolean } = {},
 ): Promise<LinkTarget | null> {
+  const deferCreateLifecycle = options.deferCreateLifecycle ?? host.collectionOwnsCreateLifecycle?.() ?? false;
   const key = displayNameKey(type);
-  const frontmatter = { ...buildInitialFrontmatter(type, config), [key]: name };
-  applyCreateLifecycle(type, frontmatter, { derivedOnly: true });
-  const path = options.path ?? await buildUniqueNotePath(host.app.vault, type, frontmatter);
+  const frontmatter = { ...buildInitialFrontmatter(type, config, { applyLifecycle: !deferCreateLifecycle }), [key]: name };
+  if (!deferCreateLifecycle) applyCreateLifecycle(type, frontmatter, { derivedOnly: true });
+  const path = options.path ?? await buildUniqueNotePath(
+    host.app.vault,
+    type,
+    pathSuggestionFrontmatter(type, frontmatter, deferCreateLifecycle),
+  );
   const made = (file: TFile, written: Record<string, unknown>): LinkTarget => {
     const title = written[key];
     return { path: file.path, name: typeof title === "string" && title.trim() ? title.trim() : file.basename, types: [type.name] };
   };
   if (!getPromptFields(type, frontmatter).length && !isExcluded(path, config) && !host.app.vault.getAbstractFileByPath(path)
-    && !newNoteIssues(path, frontmatter, type, types).some(issue => issue.severity === "error")) {
+    && !newNoteIssues(path, frontmatter, type, types, deferCreateLifecycle).some(issue => issue.severity === "error")) {
     return made(await host.createTypedNote(path, frontmatter), frontmatter);
   }
   return new Promise(resolve => {
     let created: LinkTarget | null = null;
     new CreateTypedNoteModal(host.app, type, config, types, async (target, written) => {
       created = made(await host.createTypedNote(target, written), written);
-    }, { values: { [key]: name }, path: options.path, links: options.links, closed: () => resolve(created) }).open();
+    }, { values: { [key]: name }, path: options.path, links: options.links, deferCreateLifecycle, closed: () => resolve(created) }).open();
   });
 }
 
@@ -90,7 +131,7 @@ export class CreateTypedNoteModal extends Modal {
     private readonly create: (path: string, frontmatter: Record<string, unknown>) => Promise<void>,
     private readonly options: CreateNoteOptions = {}) {
     super(app);
-    this.frontmatter = buildInitialFrontmatter(type, config);
+    this.frontmatter = buildInitialFrontmatter(type, config, { applyLifecycle: !options.deferCreateLifecycle });
   }
 
   onOpen(): void {
@@ -187,14 +228,20 @@ export class CreateTypedNoteModal extends Modal {
         error.textContent = problem instanceof Error ? problem.message : String(problem);
       }
     }
-    applyCreateLifecycle(this.type, this.frontmatter, { derivedOnly: true });
+    if (!this.options.deferCreateLifecycle) {
+      applyCreateLifecycle(this.type, this.frontmatter, { derivedOnly: true });
+    }
     return valid;
   }
 
   private async suggestPath(): Promise<void> {
     const version = ++this.suggestionVersion;
     try {
-      const path = await buildUniqueNotePath(this.app.vault, this.type, this.frontmatter);
+      const path = await buildUniqueNotePath(
+        this.app.vault,
+        this.type,
+        pathSuggestionFrontmatter(this.type, this.frontmatter, this.options.deferCreateLifecycle),
+      );
       if (this.dismissed || version !== this.suggestionVersion) return;
       this.suggestedPath = path;
       if (!this.customPath) this.pathInput.value = path;
@@ -214,7 +261,7 @@ export class CreateTypedNoteModal extends Modal {
       const path = safeNotePath(this.pathInput.value);
       if (isExcluded(path, this.config)) throw new Error(t`Choose a location included in this collection, not a definition or excluded folder.`);
       if (this.app.vault.getAbstractFileByPath(path)) throw new Error(t`A file already exists at this location. Choose another path.`);
-      const issues = newNoteIssues(path, this.frontmatter, this.type, this.types);
+      const issues = newNoteIssues(path, this.frontmatter, this.type, this.types, this.options.deferCreateLifecycle);
       if (issues.some(issue => issue.severity === "error")) {
         for (const issue of issues) {
           const target = issue.field ? this.inputs.get(issue.field) : undefined;

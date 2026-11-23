@@ -192,7 +192,7 @@ function unconditionalOnCreateActions(typeDef: MdbaseTypeDef): V03LifecycleActio
   );
 }
 
-function unconditionalOnCreateTopLevelFields(typeDef: MdbaseTypeDef): Set<string> {
+export function unconditionalOnCreateTopLevelFields(typeDef: MdbaseTypeDef): Set<string> {
   const assigned = new Set<string>();
   for (const action of unconditionalOnCreateActions(typeDef)) {
     for (const fieldRef of Object.keys(action.set)) {
@@ -276,7 +276,11 @@ function coerceDatetimeInput(trimmed: string): string {
   return date.toISOString();
 }
 
-export function buildInitialFrontmatter(typeDef: MdbaseTypeDef, config: MdbaseConfig): Record<string, unknown> {
+export function buildInitialFrontmatter(
+  typeDef: MdbaseTypeDef,
+  config: MdbaseConfig,
+  options: { applyLifecycle?: boolean } = {},
+): Record<string, unknown> {
   const frontmatter: Record<string, unknown> = {};
   const primaryTypeKey = config.settings.explicit_type_keys[0] ?? "type";
   frontmatter[primaryTypeKey] = primaryTypeKey === "types" ? [typeDef.name] : typeDef.name;
@@ -289,7 +293,9 @@ export function buildInitialFrontmatter(typeDef: MdbaseTypeDef, config: MdbaseCo
     }
   }
 
-  applyCreateLifecycle(typeDef, frontmatter);
+  if (options.applyLifecycle !== false) {
+    applyCreateLifecycle(typeDef, frontmatter);
+  }
   return frontmatter;
 }
 
@@ -447,11 +453,10 @@ export async function buildUniqueNotePath(
   return candidate;
 }
 
-export async function createNoteFromType(
+export async function createNoteFromContent(
   vault: Vault,
   path: string,
-  frontmatter: Record<string, unknown>,
-  body = "",
+  content: string,
 ): Promise<TFile> {
   const normalized = normalizeSafeRelativePath(path);
   const slashIndex = normalized.lastIndexOf("/");
@@ -463,6 +468,14 @@ export async function createNoteFromType(
     throw new Error(t`File already exists: ${normalized}`);
   }
 
-  const content = `${formatMarkdown(frontmatter, body)}\n`;
   return vault.create(normalized, content);
+}
+
+export async function createNoteFromType(
+  vault: Vault,
+  path: string,
+  frontmatter: Record<string, unknown>,
+  body = "",
+): Promise<TFile> {
+  return createNoteFromContent(vault, path, `${formatMarkdown(frontmatter, body)}\n`);
 }
