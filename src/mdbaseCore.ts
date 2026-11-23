@@ -80,7 +80,27 @@ export interface MdbaseTypeDef {
   version?: number;
   schema?: Record<string, unknown>;
   collection?: V03CollectionSemantics;
+  lifecycle?: V03Lifecycle;
   originalFrontmatter?: Record<string, unknown>;
+}
+
+export type V03LifecycleValue =
+  | { now: true }
+  | { today: true }
+  | { uuid: true }
+  | { ulid: true }
+  | { slugify: string }
+  | { copy: string }
+  | { literal: unknown };
+
+export interface V03LifecycleAction {
+  if?: string;
+  set: Record<string, V03LifecycleValue>;
+}
+
+export interface V03Lifecycle {
+  on_create?: V03LifecycleAction | V03LifecycleAction[];
+  on_update?: V03LifecycleAction | V03LifecycleAction[];
 }
 
 export interface V03LinkRule {

@@ -806,6 +806,141 @@ test("native-style creation modal retains inputs across errors and preserves boo
   f.dom.window.close();
 });
 
+test("creation modal applies v0.3 lifecycle.on_create and coerces datetime-local inputs to RFC 3339", async () => {
+  const f = fixture();
+  const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };
+  const schema = {
+    type: "object",
+    additionalProperties: true,
+    required: ["id", "state", "dateCreated", "dateModified", "scheduled"],
+    properties: {
+      id: { type: "string", minLength: 1 },
+      state: { enum: ["active", "converted"] },
+      title: { type: "string" },
+      dateCreated: { type: "string", format: "date-time" },
+      dateModified: { type: "string", format: "date-time" },
+      scheduled: { type: "string", format: "date-time" },
+    },
+  };
+  const scratch = {
+    name: "tasknotes-scratch",
+    filePath: "_types/tasknotes-scratch.md",
+    specProfile: "v0.3" as const,
+    display_name_key: "title",
+    schema,
+    fields: {
+      id: { type: "string", required: true },
+      state: { type: "enum", values: ["active", "converted"], required: true },
+      title: { type: "string", required: false },
+      dateCreated: { type: "datetime", required: true },
+      dateModified: { type: "datetime", required: true },
+      scheduled: { type: "datetime", required: true },
+    },
+    lifecycle: {
+      on_create: {
+        set: {
+          id: { uuid: true as const },
+          dateCreated: { now: true as const },
+          dateModified: { now: true as const },
+        },
+      },
+    },
+  };
+
+  let created: Record<string, unknown> | null = null;
+  const modal = new CreateTypedNoteModal(
+    { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } } as never,
+    scratch,
+    config,
+    new Map([["tasknotes-scratch", scratch]]),
+    async (_path, data) => { created = data; },
+  );
+  modal.open();
+  const root = modal.contentEl;
+  assert.equal(root.querySelector("#mdbase-note-id"), null, "lifecycle-generated id is not prompted");
+  assert.equal(root.querySelector("#mdbase-note-dateCreated"), null, "lifecycle-generated dateCreated is not prompted");
+  assert.equal(root.querySelector("#mdbase-note-dateModified"), null, "lifecycle-generated dateModified is not prompted");
+
+  const set = (id: string, value: string) => {
+    const el = root.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)!;
+    el.value = value;
+    el.dispatchEvent(new f.dom.window.Event("input"));
+  };
+  set("mdbase-note-title", "Outline");
+  set("mdbase-note-state", "0");
+  set("mdbase-note-scheduled", "2026-11-23T19:24");
+  await settle();
+  button(root, "Create note").click();
+  await settle();
+
+  assert.ok(created, `note passed v0.3 format validation and was created: ${root.querySelector("[role='alert']")?.textContent ?? ""}`);
+  const written = created as Record<string, unknown>;
+  assert.equal(written.type, "tasknotes-scratch");
+  assert.equal(written.title, "Outline");
+  assert.equal(written.state, "active");
+  assert.match(String(written.id), /^[0-9a-f-]{36}$/i);
+  assert.equal(written.dateCreated, written.dateModified);
+  assert.match(String(written.dateCreated), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  const expectedScheduled = new Date(0);
+  expectedScheduled.setFullYear(2026, 10, 23);
+  expectedScheduled.setHours(19, 24, 0, 0);
+  assert.equal(written.scheduled, expectedScheduled.toISOString());
+  assert.equal(modal.containerEl.parentNode, null);
+  f.dom.window.close();
+});
+
+test("createLinkedNote evaluates derived lifecycle.on_create fields without opening the form", async () => {
+  const f = fixture();
+  const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };
+  const schema = {
+    type: "object",
+    required: ["id", "title", "slug", "dateCreated"],
+    properties: {
+      id: { type: "string", minLength: 1 },
+      title: { type: "string", minLength: 1 },
+      slug: { type: "string", minLength: 1 },
+      dateCreated: { type: "string", format: "date-time" },
+    },
+  };
+  const noteType = {
+    name: "article",
+    filePath: "_types/article.md",
+    specProfile: "v0.3" as const,
+    display_name_key: "title",
+    schema,
+    fields: {
+      id: { type: "string", required: true },
+      title: { type: "string", required: true },
+      slug: { type: "string", required: true },
+      dateCreated: { type: "datetime", required: true },
+    },
+    lifecycle: {
+      on_create: {
+        set: {
+          id: { uuid: true as const },
+          slug: { slugify: "title" },
+          dateCreated: { now: true as const },
+        },
+      },
+    },
+  };
+  const written: Array<{ path: string; frontmatter: Record<string, unknown> }> = [];
+  const host = {
+    app: { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } } as never,
+    createTypedNote: async (path: string, frontmatter: Record<string, unknown>) => {
+      written.push({ path, frontmatter });
+      return { path, basename: path.replace(/\.md$/, "") } as never;
+    },
+  };
+  const target = await createLinkedNote(host, noteType, "Hello World!", config, new Map([["article", noteType]]));
+  assert.deepEqual(target, { path: "Hello World!.md", name: "Hello World!", types: ["article"] });
+  assert.equal(written.length, 1);
+  assert.equal(written[0].frontmatter.slug, "hello-world");
+  assert.match(String(written[0].frontmatter.id), /^[0-9a-f-]{36}$/i);
+  assert.match(String(written[0].frontmatter.dateCreated), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  f.dom.window.close();
+});
+
 test("a link asking for more than a name opens the form with the name filled in and the link field searching its type", async () => {
   const f = fixture();
   const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };
