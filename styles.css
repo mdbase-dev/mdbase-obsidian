@@ -2314,7 +2314,7 @@ button.mdbase-match-row:hover {
   display: none;
 }
 
-/* Touch-sized targets throughout Types (DESIGN.md: at least 44px). */
+/* Touch-sized targets throughout Types (at least 44px). */
 .is-mobile .mdbase-types-layout .mdbase-icon-button {
   min-width: var(--touch-size-m, 44px);
   min-height: var(--touch-size-m, 44px);
