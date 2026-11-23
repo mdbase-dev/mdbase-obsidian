@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { App, Modal, type TFile } from "obsidian";
 import type { MdbaseConfig, MdbaseFieldDef, MdbaseIssue, MdbaseTypeDef } from "./mdbaseCore";
-import { buildInitialFrontmatter, buildUniqueNotePath, coerceFieldInput, getPromptFields } from "./noteCreation";
+import { applyCreateLifecycle, buildInitialFrontmatter, buildUniqueNotePath, coerceFieldInput, getPromptFields } from "./noteCreation";
 import { validateRecordAgainstType } from "./validation";
 import { isExcluded } from "./collectionConfig";
 import { displayNameKey, linkField, type LinkTarget } from "./links";
@@ -54,6 +54,7 @@ export async function createLinkedNote(
 ): Promise<LinkTarget | null> {
   const key = displayNameKey(type);
   const frontmatter = { ...buildInitialFrontmatter(type, config), [key]: name };
+  applyCreateLifecycle(type, frontmatter, { derivedOnly: true });
   const path = options.path ?? await buildUniqueNotePath(host.app.vault, type, frontmatter);
   const made = (file: TFile, written: Record<string, unknown>): LinkTarget => {
     const title = written[key];
@@ -186,6 +187,7 @@ export class CreateTypedNoteModal extends Modal {
         error.textContent = problem instanceof Error ? problem.message : String(problem);
       }
     }
+    applyCreateLifecycle(this.type, this.frontmatter, { derivedOnly: true });
     return valid;
   }
 

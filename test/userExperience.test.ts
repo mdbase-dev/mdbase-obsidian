@@ -36,6 +36,23 @@ test("creation accepts structured lists without splitting commas inside values",
   assert.deepEqual(coerceFieldInput("2, 3", { type: "list", items: { type: "integer" } }), [2, 3]);
 });
 
+test("datetime creation inputs coerce datetime-local strings to RFC 3339 without altering valid offsets or invalid dates", () => {
+  const localMinute = new Date(0);
+  localMinute.setFullYear(2026, 10, 23);
+  localMinute.setHours(19, 24, 0, 0);
+  assert.equal(coerceFieldInput("2026-11-23T19:24", { type: "datetime" }), localMinute.toISOString());
+
+  const localFraction = new Date(0);
+  localFraction.setFullYear(2026, 10, 23);
+  localFraction.setHours(19, 24, 35, 500);
+  assert.equal(coerceFieldInput("2026-11-23T19:24:35.5", { type: "datetime" }), localFraction.toISOString());
+
+  assert.equal(coerceFieldInput("2026-11-23T19:24:00+11:00", { type: "datetime" }), "2026-11-23T19:24:00+11:00");
+  assert.equal(coerceFieldInput("2026-11-23T08:24:00Z", { type: "datetime" }), "2026-11-23T08:24:00Z");
+  assert.equal(coerceFieldInput("2026-02-31T19:24", { type: "datetime" }), "2026-02-31T19:24");
+  assert.equal(coerceFieldInput("not-a-date", { type: "datetime" }), "not-a-date");
+});
+
 test("creation and pack paths reject traversal, hidden paths, absolute paths and controls", () => {
   for (const value of ["/absolute", "../escape", "a/../escape", ".obsidian/settings", "a\\b", "a\0b", "a//b"]) {
     assert.throws(() => safeNotePath(value)); assert.throws(() => safePackPath(value));

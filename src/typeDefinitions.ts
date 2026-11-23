@@ -13,6 +13,7 @@ import {
   type MdbaseTypeDef,
   type StrictMode,
   type V03CollectionSemantics,
+  type V03Lifecycle,
 } from "./mdbaseCore";
 
 function parseStrictMode(value: unknown): StrictMode | undefined {
@@ -277,6 +278,9 @@ export function v03TypeDefFromFrontmatter(
   const collection = isRecord(fm.collection)
     ? (deepClone(fm.collection) as V03CollectionSemantics)
     : undefined;
+  const lifecycle = isRecord(fm.lifecycle)
+    ? (deepClone(fm.lifecycle) as V03Lifecycle)
+    : undefined;
   const fields = fieldsFromV03Schema(schema);
   for (const rule of collection?.unique ?? []) {
     if (typeof rule.field === "string" && fields[rule.field]) {
@@ -302,6 +306,7 @@ export function v03TypeDefFromFrontmatter(
     specProfile: "v0.3",
     schema: deepClone(schema),
     collection,
+    lifecycle,
     originalFrontmatter: deepClone(fm),
   };
 }

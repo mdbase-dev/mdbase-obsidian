@@ -22,8 +22,15 @@ import {
   schemaFromV03Fields,
 } from "../src/typeDefinitions";
 import { getTypesForFile } from "../src/typeMatching";
-import { validateCollection, validateFile } from "../src/validation";
-import { MdbasePathError, buildUniqueNotePath, normalizeSafeRelativePath } from "../src/noteCreation";
+import { validateCollection, validateFile, validateRecordAgainstType } from "../src/validation";
+import {
+  MdbasePathError,
+  applyCreateLifecycle,
+  buildInitialFrontmatter,
+  buildUniqueNotePath,
+  getPromptFields,
+  normalizeSafeRelativePath,
+} from "../src/noteCreation";
 
 test("legacy collection defaults remain format data, independent of the active vault config directory", () => {
   assert.deepEqual(legacyConfig.validationExcludes, ["_types", ".obsidian", ".git", "node_modules", ".trash", ".mdbase"]);
@@ -684,4 +691,94 @@ test("a note without frontmatter matching no type is a valid untyped record", as
   assert.deepEqual(strayIssues.map((issue) => issue.code), ["no_matching_type"]);
   const all = await validateCollection(vault as unknown as any, config, types);
   assert.ok(!all.some((issue) => issue.path === "_mdbase/README.md"), JSON.stringify(all));
+});
+
+test("v0.3 lifecycle.on_create populates generated fields and omits them from creation prompts", async () => {
+  const vault = new MockVault();
+  await vault.writeNote("_types/scratch.md", {
+    kind: "mdbase.type",
+    name: "scratch",
+    version: 2,
+    schema: {
+      dialect: "json-schema-2020-12",
+      value: {
+        type: "object",
+        required: ["id", "ulid", "state", "dateCreated", "dateModified", "day", "slug", "copied", "guarded"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          ulid: { type: "string", pattern: "^[0-9A-HJKMNP-TV-Z]{26}$" },
+          state: { enum: ["active", "converted"] },
+          title: { type: "string" },
+          dateCreated: { type: "string", format: "date-time" },
+          dateModified: { type: "string", format: "date-time" },
+          day: { type: "string", format: "date" },
+          slug: { type: "string", minLength: 1 },
+          copied: { type: "string" },
+          guarded: { type: "string" },
+          archived: { type: "boolean" },
+        },
+      },
+    },
+    collection: { display: { name_field: "title" } },
+    lifecycle: {
+      on_create: [
+        {
+          set: {
+            id: { uuid: true },
+            ulid: { ulid: true },
+            dateCreated: { now: true },
+            dateModified: { now: true },
+            day: { today: true },
+            archived: { literal: false },
+          },
+        },
+        {
+          set: {
+            slug: { slugify: "title" },
+            copied: { copy: "id" },
+          },
+        },
+        {
+          if: "state == 'converted'",
+          set: {
+            guarded: { literal: "converted-only" },
+          },
+        },
+      ],
+    },
+  });
+
+  const config = createV03Config();
+  const types = await loadTypeDefinitions(vault as unknown as any, config);
+  const scratch = types.get("scratch");
+  assert.ok(scratch);
+
+  const initial = buildInitialFrontmatter(scratch, config);
+  assert.match(String(initial.id), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.match(String(initial.ulid), /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.equal(initial.dateCreated, initial.dateModified);
+  assert.match(String(initial.dateCreated), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  assert.match(String(initial.day), /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(initial.archived, false);
+  assert.equal(initial.copied, initial.id);
+  assert.equal(initial.slug, undefined);
+  assert.equal(initial.guarded, undefined);
+
+  const promptNames = getPromptFields(scratch, initial).map(([name]) => name);
+  assert.deepEqual(promptNames, ["state", "guarded"]);
+
+  const originalId = initial.id;
+  const originalCreated = initial.dateCreated;
+  initial.title = "  Café — Crème Brûlée!! ";
+  initial.state = "active";
+  initial.guarded = "manual";
+  applyCreateLifecycle(scratch, initial, { derivedOnly: true });
+  assert.equal(initial.id, originalId);
+  assert.equal(initial.dateCreated, originalCreated);
+  assert.equal(initial.slug, "cafe-creme-brulee");
+  assert.deepEqual(validateRecordAgainstType("scratch.md", initial, scratch), []);
+
+  delete initial.title;
+  applyCreateLifecycle(scratch, initial, { derivedOnly: true });
+  assert.equal(initial.slug, undefined);
 });

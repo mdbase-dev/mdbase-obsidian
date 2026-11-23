@@ -9,6 +9,7 @@ import {
   type MdbaseConfig,
   type MdbaseFieldDef,
   type MdbaseTypeDef,
+  type V03LifecycleAction,
 } from "./mdbaseCore";
 
 export class MdbasePathError extends Error {
@@ -93,6 +94,188 @@ export function resolveFilenameForType(typeDef: MdbaseTypeDef, frontmatter: Reco
   return `${fileNameFrom(fallbackSource)}.md`;
 }
 
+const LOCAL_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
+const CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const UNSAFE_PATH_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
+
+function padDigits(value: number, width: number): string {
+  const text = String(value);
+  return text.length >= width ? text : `${"0".repeat(width - text.length)}${text}`;
+}
+
+function localDateString(date: Date): string {
+  return `${padDigits(date.getFullYear(), 4)}-${padDigits(date.getMonth() + 1, 2)}-${padDigits(date.getDate(), 2)}`;
+}
+
+function generateUlid(instantMs: number): string {
+  let time = Math.max(0, Math.floor(instantMs));
+  const timeChars = new Array<string>(10);
+  for (let index = 9; index >= 0; index -= 1) {
+    timeChars[index] = CROCKFORD_BASE32[time % 32];
+    time = Math.floor(time / 32);
+  }
+  const randomBytes = new Uint8Array(10);
+  crypto.getRandomValues(randomBytes);
+  let randomChars = "";
+  let bits = 0;
+  let bitCount = 0;
+  for (const byte of randomBytes) {
+    bits = (bits << 8) | byte;
+    bitCount += 8;
+    while (bitCount >= 5) {
+      bitCount -= 5;
+      randomChars += CROCKFORD_BASE32[(bits >>> bitCount) & 0x1f];
+    }
+  }
+  return `${timeChars.join("")}${randomChars}`;
+}
+
+function lifecycleSlugify(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function parseFieldPath(reference: string): string[] | null {
+  if (!reference || reference.includes("[") || reference.includes("]")) return null;
+  const segments = reference.split(".");
+  if (segments.some((segment) => !segment || UNSAFE_PATH_SEGMENTS.has(segment))) return null;
+  return segments;
+}
+
+function getFieldByPath(root: Record<string, unknown>, reference: string): { found: boolean; value: unknown } {
+  const segments = parseFieldPath(reference);
+  if (!segments) return { found: false, value: undefined };
+  let current: unknown = root;
+  for (const segment of segments) {
+    if (!isRecord(current) || !(segment in current)) {
+      return { found: false, value: undefined };
+    }
+    current = current[segment];
+  }
+  return { found: true, value: current };
+}
+
+function setFieldByPath(root: Record<string, unknown>, reference: string, hasValue: boolean, value: unknown): void {
+  const segments = parseFieldPath(reference);
+  if (!segments) return;
+  let current: Record<string, unknown> = root;
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index];
+    const next = current[segment];
+    if (next === undefined) {
+      if (!hasValue) return;
+      const created: Record<string, unknown> = {};
+      current[segment] = created;
+      current = created;
+    } else if (isRecord(next)) {
+      current = next;
+    } else {
+      return;
+    }
+  }
+  const leaf = segments[segments.length - 1];
+  if (hasValue) current[leaf] = value;
+  else delete current[leaf];
+}
+
+function unconditionalOnCreateActions(typeDef: MdbaseTypeDef): V03LifecycleAction[] {
+  const raw = typeDef.lifecycle?.on_create;
+  if (!raw) return [];
+  const actions = Array.isArray(raw) ? raw : [raw];
+  return actions.filter(
+    (entry): entry is V03LifecycleAction =>
+      isRecord(entry) && isRecord(entry.set) && (entry.if === undefined || entry.if === ""),
+  );
+}
+
+function unconditionalOnCreateTopLevelFields(typeDef: MdbaseTypeDef): Set<string> {
+  const assigned = new Set<string>();
+  for (const action of unconditionalOnCreateActions(typeDef)) {
+    for (const fieldRef of Object.keys(action.set)) {
+      const segments = parseFieldPath(fieldRef);
+      if (segments && segments.length === 1) assigned.add(segments[0]);
+    }
+  }
+  return assigned;
+}
+
+export function applyCreateLifecycle(
+  typeDef: MdbaseTypeDef,
+  frontmatter: Record<string, unknown>,
+  options: { derivedOnly?: boolean; now?: Date } = {},
+): void {
+  const actions = unconditionalOnCreateActions(typeDef);
+  if (actions.length === 0) return;
+
+  const now = options.now ?? new Date();
+  const isoNow = now.toISOString();
+  const today = localDateString(now);
+
+  for (const action of actions) {
+    const before = deepClone(frontmatter);
+    const updates: Array<{ fieldRef: string; hasValue: boolean; value: unknown }> = [];
+    for (const [fieldRef, provider] of Object.entries(action.set)) {
+      if (!isRecord(provider)) continue;
+      if ("now" in provider && provider.now === true) {
+        if (!options.derivedOnly) updates.push({ fieldRef, hasValue: true, value: isoNow });
+      } else if ("today" in provider && provider.today === true) {
+        if (!options.derivedOnly) updates.push({ fieldRef, hasValue: true, value: today });
+      } else if ("uuid" in provider && provider.uuid === true) {
+        if (!options.derivedOnly) updates.push({ fieldRef, hasValue: true, value: crypto.randomUUID() });
+      } else if ("ulid" in provider && provider.ulid === true) {
+        if (!options.derivedOnly) updates.push({ fieldRef, hasValue: true, value: generateUlid(now.getTime()) });
+      } else if ("literal" in provider) {
+        if (!options.derivedOnly) updates.push({ fieldRef, hasValue: true, value: deepClone(provider.literal) });
+      } else if ("copy" in provider && typeof provider.copy === "string") {
+        const source = getFieldByPath(before, provider.copy);
+        if (source.found) updates.push({ fieldRef, hasValue: true, value: deepClone(source.value) });
+        else updates.push({ fieldRef, hasValue: false, value: undefined });
+      } else if ("slugify" in provider && typeof provider.slugify === "string") {
+        const source = getFieldByPath(before, provider.slugify);
+        if (source.found && typeof source.value === "string") {
+          updates.push({ fieldRef, hasValue: true, value: lifecycleSlugify(source.value) });
+        } else {
+          updates.push({ fieldRef, hasValue: false, value: undefined });
+        }
+      }
+    }
+    for (const update of updates) {
+      setFieldByPath(frontmatter, update.fieldRef, update.hasValue, update.value);
+    }
+  }
+}
+
+function coerceDatetimeInput(trimmed: string): string {
+  const match = LOCAL_DATETIME_RE.exec(trimmed);
+  if (!match) return trimmed;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = match[6] ? Number(match[6]) : 0;
+  const ms = match[7] ? Number(`${match[7]}${"0".repeat(3 - match[7].length)}`) : 0;
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
+    return trimmed;
+  }
+  const date = new Date(0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(hour, minute, second, ms);
+  if (
+    Number.isNaN(date.getTime())
+    || date.getFullYear() !== year
+    || date.getMonth() !== month - 1
+    || date.getDate() !== day
+  ) {
+    return trimmed;
+  }
+  return date.toISOString();
+}
+
 export function buildInitialFrontmatter(typeDef: MdbaseTypeDef, config: MdbaseConfig): Record<string, unknown> {
   const frontmatter: Record<string, unknown> = {};
   const primaryTypeKey = config.settings.explicit_type_keys[0] ?? "type";
@@ -106,6 +289,7 @@ export function buildInitialFrontmatter(typeDef: MdbaseTypeDef, config: MdbaseCo
     }
   }
 
+  applyCreateLifecycle(typeDef, frontmatter);
   return frontmatter;
 }
 
@@ -114,6 +298,7 @@ export function getPromptFields(
   currentFrontmatter: Record<string, unknown>,
 ): Array<[string, MdbaseFieldDef]> {
   const fields: Array<[string, MdbaseFieldDef]> = [];
+  const autoFields = unconditionalOnCreateTopLevelFields(typeDef);
 
   for (const [fieldName, fieldDefRaw] of Object.entries(typeDef.fields)) {
     if (!isRecord(fieldDefRaw)) continue;
@@ -121,6 +306,7 @@ export function getPromptFields(
     if (fieldDef.computed) continue;
     if (!fieldDef.required) continue;
     if (currentFrontmatter[fieldName] !== undefined) continue;
+    if (autoFields.has(fieldName)) continue;
     fields.push([fieldName, fieldDef]);
   }
 
@@ -134,12 +320,13 @@ export function coerceFieldInput(rawInput: string, fieldDef: MdbaseFieldDef): un
   switch (typeName) {
     case "string":
     case "date":
-    case "datetime":
     case "time":
     case "link":
     case "enum":
     case "any":
       return trimmed;
+    case "datetime":
+      return coerceDatetimeInput(trimmed);
     case "integer": {
       const parsed = Number(trimmed);
       if (!/^[+-]?\d+$/.test(trimmed) || !Number.isSafeInteger(parsed)) throw new Error(t`Expected a whole integer`);
