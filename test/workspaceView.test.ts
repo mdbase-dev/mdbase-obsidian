@@ -941,6 +941,145 @@ test("createLinkedNote evaluates derived lifecycle.on_create fields without open
   f.dom.window.close();
 });
 
+test("creation modal and createLinkedNote defer lifecycle.on_create to the collection when synced (issue 166)", async () => {
+  const f = fixture();
+  const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };
+  const schema = {
+    type: "object",
+    additionalProperties: true,
+    required: ["id", "title", "starts", "dateCreated", "dateModified", "slug"],
+    properties: {
+      id: { type: "string", minLength: 1 },
+      title: { type: "string", minLength: 1 },
+      starts: { type: "string", format: "date-time" },
+      ends: { type: "string", format: "date-time" },
+      dateCreated: { type: "string", format: "date-time" },
+      dateModified: { type: "string", format: "date-time" },
+      slug: { type: "string", minLength: 1 },
+    },
+  };
+  const eventType: import("../src/mdbaseCore").MdbaseTypeDef = {
+    name: "event",
+    filePath: "_types/event.md",
+    specProfile: "v0.3",
+    display_name_key: "title",
+    schema,
+    fields: {
+      id: { type: "string", required: true },
+      title: { type: "string", required: true },
+      starts: { type: "datetime", required: true },
+      ends: { type: "datetime", required: false },
+      dateCreated: { type: "datetime", required: true },
+      dateModified: { type: "datetime", required: true },
+      slug: { type: "string", required: true },
+    },
+    lifecycle: {
+      on_create: [
+        {
+          set: {
+            id: { uuid: true },
+            dateCreated: { now: true },
+            dateModified: { now: true },
+            slug: { slugify: "title" },
+          },
+        },
+        {
+          if: "title == 'Guarded Party'",
+          set: {
+            ends: { literal: "2099-12-31T23:00:00Z" },
+          },
+        },
+      ],
+    },
+  };
+
+  let created: Record<string, unknown> | null = null;
+  const modal = new CreateTypedNoteModal(
+    { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } } as never,
+    eventType,
+    config,
+    new Map([["event", eventType]]),
+    async (_path, data) => { created = data; },
+    { deferCreateLifecycle: true },
+  );
+  modal.open();
+  const root = modal.contentEl;
+  assert.equal(root.querySelector("#mdbase-note-id"), null);
+  assert.equal(root.querySelector("#mdbase-note-dateCreated"), null);
+  assert.equal(root.querySelector("#mdbase-note-dateModified"), null);
+  assert.equal(root.querySelector("#mdbase-note-slug"), null);
+
+  const set = (id: string, value: string) => {
+    const el = root.querySelector<HTMLInputElement>(`#${id}`)!;
+    el.value = value;
+    el.dispatchEvent(new f.dom.window.Event("input"));
+  };
+  set("mdbase-note-title", "Guarded Party");
+  set("mdbase-note-starts", "2026-11-24T10:00");
+  await settle();
+  button(root, "Create note").click();
+  await settle();
+
+  assert.ok(created, `modal must pass pre-lifecycle validation: ${root.querySelector("[role='alert']")?.textContent ?? ""}`);
+  const written = created as Record<string, unknown>;
+  assert.equal(written.type, "event");
+  assert.equal(written.title, "Guarded Party");
+  assert.equal("id" in written, false, "plugin must not mint lifecycle id when collection owns on_create");
+  assert.equal("dateCreated" in written, false, "plugin must not mint dateCreated when collection owns on_create");
+  assert.equal("dateModified" in written, false, "plugin must not mint dateModified when collection owns on_create");
+  assert.equal("slug" in written, false, "plugin must not mint slug when collection owns on_create");
+
+  // Linked note creation without modal also defers lifecycle.on_create when collection owns it.
+  const simpleSchema = {
+    type: "object",
+    required: ["id", "title", "slug", "dateCreated"],
+    properties: {
+      id: { type: "string", minLength: 1 },
+      title: { type: "string", minLength: 1 },
+      slug: { type: "string", minLength: 1 },
+      dateCreated: { type: "string", format: "date-time" },
+    },
+  };
+  const articleType = {
+    name: "article",
+    filePath: "_types/article.md",
+    specProfile: "v0.3" as const,
+    display_name_key: "title",
+    schema: simpleSchema,
+    fields: {
+      id: { type: "string", required: true },
+      title: { type: "string", required: true },
+      slug: { type: "string", required: true },
+      dateCreated: { type: "datetime", required: true },
+    },
+    lifecycle: {
+      on_create: {
+        set: {
+          id: { uuid: true as const },
+          slug: { slugify: "title" },
+          dateCreated: { now: true as const },
+        },
+      },
+    },
+  };
+  const linkedWritten: Array<{ path: string; frontmatter: Record<string, unknown> }> = [];
+  const host = {
+    app: { vault: { getAbstractFileByPath: () => null, getMarkdownFiles: () => [] } } as never,
+    collectionOwnsCreateLifecycle: () => true,
+    createTypedNote: async (path: string, frontmatter: Record<string, unknown>) => {
+      linkedWritten.push({ path, frontmatter });
+      return { path, basename: path.replace(/\.md$/, "") } as never;
+    },
+  };
+  await createLinkedNote(host, articleType, "Linked Post", config, new Map([["article", articleType]]));
+  assert.equal(linkedWritten.length, 1);
+  assert.equal(linkedWritten[0].frontmatter.title, "Linked Post");
+  assert.equal("id" in linkedWritten[0].frontmatter, false);
+  assert.equal("slug" in linkedWritten[0].frontmatter, false);
+  assert.equal("dateCreated" in linkedWritten[0].frontmatter, false);
+  f.dom.window.close();
+});
+
 test("a link asking for more than a name opens the form with the name filled in and the link field searching its type", async () => {
   const f = fixture();
   const config = { spec_version: "0.3.0", settings: { types_folder: "_types", explicit_type_keys: ["type"], exclude: [] } };

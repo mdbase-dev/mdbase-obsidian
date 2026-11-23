@@ -567,6 +567,30 @@ test("the engine page uses the SDK Worker factory and explicit selection without
   assert.equal(watches[1].stopped, 1);
   const third = receive({ data: { type: "call", id: 5, method: "watch", args: ["retained-cursor"] } });
   watches[2].finish(); await third;
+  // page.ts written(): receipt shortcut when revision matches, read-back when lifecycle rewrote the document.
+  const plainDoc = "---\ntitle: Plain\n---\n";
+  const draftDoc = "---\ntype: event\ntitle: Guarded Party\n---\n";
+  const postLifecycleDoc = "---\ntype: event\ntitle: Guarded Party\nid: 13e1bbc6-0000-4000-8000-000000000001\nends: 2099-12-31T23:00:00Z\n---\n";
+  let getCalls = 0;
+  records.create = async ({ path: p, document: d }) => {
+    const rewritten = d === draftDoc ? postLifecycleDoc : d;
+    const rev = digest(rewritten);
+    return { recordId: p, confirmed: Promise.resolve({ state: "confirmed", status: "applied", records: [{ id: p, path: p, revision: rev }] }) };
+  };
+  records.get = async id => {
+    getCalls++;
+    return { id, path: id, revision: digest(postLifecycleDoc), document: postLifecycleDoc, state: { state: "confirmed" } };
+  };
+  await receive({ data: { type: "call", id: 7, method: "create", args: ["Plain.md", plainDoc] } });
+  const plainResult = messages.find(m => m.type === "result" && m.id === 7);
+  assert.equal(plainResult.ok, true);
+  assert.equal(plainResult.value.via, "receipt");
+  assert.equal(getCalls, 0);
+  await receive({ data: { type: "call", id: 8, method: "create", args: ["Guarded Party.md", draftDoc] } });
+  const rewrittenResult = messages.find(m => m.type === "result" && m.id === 8);
+  assert.equal(rewrittenResult.ok, true);
+  assert.equal(rewrittenResult.value.document, postLifecycleDoc, "page.ts must read back post-lifecycle document when revision differs");
+  assert.equal(getCalls, 1);
   await receive({ data: { type: "call", id: 6, method: "stop" } });
   assert.deepEqual(watches.map(watch => watch.stopped), [1, 1, 1]);
   assert.deepEqual(calls.at(-1), ["close"]);

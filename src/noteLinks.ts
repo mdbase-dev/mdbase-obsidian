@@ -21,6 +21,7 @@ export interface NoteLinksPlugin {
   loadWorkspaceSchema(): Promise<Schema | null>;
   loadCollectionRecords(): Promise<CollectionRecord[]>;
   createTypedNote(path: string, frontmatter: Record<string, unknown>): Promise<TFile>;
+  collectionOwnsCreateLifecycle?(): boolean;
 }
 
 export class NoteLinks implements LinkSuggestHost {

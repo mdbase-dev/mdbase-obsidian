@@ -486,6 +486,60 @@ export default class NativeSync extends Component {
   }
 
   // ---- durable three-way reconciliation ------------------------------------
+  /** True while this vault syncs to a collection whose create path runs lifecycle.on_create. */
+  ownsCreateLifecycle(): boolean {
+    return !this.unloaded && (this.mirroring || Boolean(this.data?.collectionId));
+  }
+  /** True when a new note at `vaultPath` can be created directly through the synced collection. */
+  canCreateRecord(vaultPath: string): boolean {
+    if (!this.mirroring || this.unloaded || !this.admitting || this.phase.sync?.connection === "offline") return false;
+    const p = this.collectionPath(vaultPath);
+    return p !== null && this.kindOf(p) === "record";
+  }
+  /**
+   * Create a record through the collection first so lifecycle.on_create runs
+   * once (including guarded actions), then write the authoritative document
+   * into the vault and remember it in the sync journal.
+   */
+  async createRecord(
+    vaultPath: string,
+    doc: string,
+    writeFile: (path: string, content: string) => Promise<TFile>,
+  ): Promise<TFile | null> {
+    if (!this.canCreateRecord(vaultPath)) return null;
+    const run = this.jobs.then(async (): Promise<TFile | null> => {
+      if (!this.canCreateRecord(vaultPath)) return null;
+      const p = this.collectionPath(vaultPath);
+      if (!p) return null;
+      await this.assertMirror();
+      if (this.app.vault.getAbstractFileByPath(vaultPath) || await this.host.exists(this.host.join(this.root, vaultPath))) {
+        return null;
+      }
+      const submittedHash = hash(encode(doc));
+      let next = await this.call("create", p, doc);
+      let remote = this.remote(next, "record");
+      if (typeof remote.document !== "string" && remote.revision.startsWith("sha256:") && remote.revision !== submittedHash) {
+        next = await this.call("get", remote.id);
+        remote = this.remote(next, "record");
+      }
+      const finalPath = remote.path && this.validPath(remote.path) ? this.vaultPath(remote.path) : vaultPath;
+      const finalCollectionPath = this.collectionPath(finalPath) ?? p;
+      const authoritative = typeof remote.document === "string" ? remote.document : doc;
+      this.writingPaths.add(finalCollectionPath);
+      try {
+        const file = await writeFile(finalPath, authoritative);
+        this.remember(finalCollectionPath, remote, hash(encode(authoritative)));
+        await this.flush();
+        this.note("uploaded", finalCollectionPath);
+        this.log(`created record (${encode(authoritative).length} bytes)${"via" in next && next.via ? ` via ${next.via}` : ""}`);
+        return file;
+      } finally {
+        this.writingPaths.delete(finalCollectionPath);
+      }
+    });
+    this.jobs = run.catch(() => {});
+    return run;
+  }
   collectionPath(vp: string) {
     const p = vp;
     return this.validPath(p) && this.kindOf(p) !== "excluded" ? p : null;

@@ -4,6 +4,7 @@
 import { createMdbase, type ChangesWatch, type MdbaseClient, type Write, type RecordView, type FileView } from "@mdbase-dev/sdk";
 import { engineManifest } from "./declaration";
 import { errorInfo, isObject, type CallMessage } from "./protocol";
+import { encode, hash } from "./encoding";
 import { DownloadPull } from "./downloadPull";
 import { RetryUploads } from "./upload";
 // Sync carries files, and spec 04 never rejects those for validity: an invalid
@@ -47,14 +48,17 @@ const confirmed = async <Written extends Pick<Write, "confirmed">>(w: Written) =
   return w;
 };
 
-// The record a confirmed write produced. An applied receipt carries it with the
-// revision a read-back returns (checked against production; the view's own
-// `state` is the stale optimistic one), which saves that read. The caller keeps
-// only identity and revision.
-const written = async (w: Pick<Write, "confirmed">, id: string) => {
+// The record a confirmed write produced. An applied receipt carries its
+// revision and path without the document text: skip the read-back only when
+// both match what was submitted. When lifecycle or path policy rewrote the
+// record, read the authoritative post-write document so the vault matches.
+const written = async (w: Pick<Write, "confirmed">, id: string, submitted?: { path: string; revision: string }) => {
   const receipt = await w.confirmed;
   const r = receipt?.state === "confirmed" && receipt.status === "applied" ? receipt.records?.find((x) => x.id === id) : undefined;
-  if (r && typeof r.revision === "string" && typeof r.path === "string") return { id: r.id, path: r.path, revision: r.revision, via: "receipt" };
+  if (r && typeof r.revision === "string" && typeof r.path === "string"
+    && (!submitted || (r.revision === submitted.revision && r.path === submitted.path))) {
+    return { id: r.id, path: r.path, revision: r.revision, via: "receipt" };
+  }
   return plain(await records().get(id, { include: { document: true } }));
 };
 
@@ -163,11 +167,11 @@ export const methods = {
   },
   create: async (path: string, document: string) => {
     const w = await confirmed(await records().create({ path, document }, SYNC_WRITE));
-    return written(w, w.recordId);
+    return written(w, w.recordId, { path, revision: hash(encode(document)) });
   },
   replace: async (id: string, base: { path: string; doc: string }, next: { path: string; doc: string }, revision: string) => {
     const w = await confirmed(await records().submit([{ kind: "document", id, base, new: next, ifRevision: revision }], SYNC_WRITE));
-    return written(w, id);
+    return written(w, id, { path: next.path, revision: hash(encode(next.doc)) });
   },
   // The collection's file policy (which attachments sync, for every device).
   inclusion: async () => {
