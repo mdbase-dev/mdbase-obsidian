@@ -4,6 +4,7 @@ import { build } from "esbuild";
 import { linguiMacros } from "../../scripts/lingui-macros.mjs";
 import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
+import { validateAppManifest } from "@mdbase-dev/sdk/manifest";
 
 const assets = Object.fromEntries(Object.entries({
   "/index.html": "unused",
@@ -35,7 +36,7 @@ const result = await build({
     ` : `export default ${JSON.stringify(assets)};`, loader: "js" }));
   } }],
 });
-const { MobileHost, NativeSync, SyncController, TFile, setApiSupport, mobileOrigin, vaultNamespace, decodeAsset, engineManifest } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
+const { MobileHost, NativeSync, SyncController, TFile, setApiSupport, mobileOrigin, resolveWindowOrigin, normalizeMobileResourcePath, vaultNamespace, decodeAsset, engineManifest } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString("base64")}`);
 const digest = bytes => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const encode = text => new TextEncoder().encode(text);
 const decode = bytes => new TextDecoder().decode(bytes);
@@ -106,19 +107,52 @@ test("mobile sign-in opens through Obsidian's browser without Electron", async t
 });
 test("mobile identity omits native platform and derives a stable isolated namespace", () => {
   assert.equal(mobileOrigin("http://localhost"), "http://localhost");
-  for (const origin of ["http://localhost:48300", "https://evil.example", "null", "capacitor://localhost", "http://localhost/"]) assert.throws(() => mobileOrigin(origin));
-  // iPhone and iPad say so in plain words, without a notice (see plugin startup).
-  assert.throws(() => mobileOrigin("capacitor://localhost"), { code: "platform_unsupported", message: /isn't available on iPhone and iPad yet/ });
+  assert.equal(mobileOrigin("capacitor://localhost"), "capacitor://localhost");
+  assert.equal(resolveWindowOrigin({ origin: "http://localhost", href: "http://localhost/index.html" }), "http://localhost");
+  assert.equal(resolveWindowOrigin({ origin: "null", href: "capacitor://localhost/index.html" }), "capacitor://localhost");
+  for (const origin of ["http://localhost:48300", "https://evil.example", "null", "capacitor://evil.example", "capacitor://localhost:8080", "capacitor://localhost/", "http://localhost/"]) assert.throws(() => mobileOrigin(origin));
   assert.equal(vaultNamespace("a-123"), vaultNamespace("a-123"));
   assert.notEqual(vaultNamespace("a-123"), vaultNamespace("b-456"));
   assert.throws(() => vaultNamespace("../other"));
-  const mobile = engineManifest("http://localhost", true);
-  assert.equal("platform" in mobile, false);
-  assert.equal(mobile.homepage, "http://localhost/");
-  assert.deepEqual(mobile.redirect_uris, ["http://localhost/auth/mdbase/callback"]);
+  const android = engineManifest("http://localhost", true, "production");
+  assert.equal("platform" in android, false);
+  assert.equal("installation_origins" in android, false);
+  assert.equal(android.homepage, "http://localhost/");
+  assert.deepEqual(android.redirect_uris, ["http://localhost/auth/mdbase/callback"]);
+  const ios = engineManifest("capacitor://localhost", true, "production");
+  assert.equal("platform" in ios, false);
+  assert.equal(ios.homepage, "http://localhost/");
+  assert.deepEqual(ios.redirect_uris, ["http://localhost/auth/mdbase/callback"]);
+  assert.deepEqual(ios.installation_origins, { production: { mobile: ["capacitor://localhost"] } });
+  for (const manifest of [android, ios, engineManifest("capacitor://localhost", true, "lab"), engineManifest("capacitor://localhost", true, "staging")]) {
+    assert.deepEqual(validateAppManifest(manifest, { allowLocal: true }), { valid: true, issues: [] });
+  }
   const desktop = engineManifest("http://127.0.0.1:48300", false);
   assert.equal(desktop.platform, "native");
   assert.equal(desktop.homepage, "http://127.0.0.1:48300/");
+  assert.deepEqual(validateAppManifest(desktop, { allowLocal: true }), { valid: true, issues: [] });
+});
+test("iOS vaultLocation normalizes volatile app container UUIDs across app updates but rejects copied vaults", async t => {
+  const before = "capacitor://localhost/_capacitor_file_/private/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Documents/VaultA/.plugin/sync-state.json?v=1";
+  const afterUpdate = "capacitor://localhost/_capacitor_file_/private/var/mobile/Containers/Data/Application/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE/Documents/VaultA/.plugin/sync-state.json?v=2";
+  const otherVault = "capacitor://localhost/_capacitor_file_/private/var/mobile/Containers/Data/Application/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE/Documents/VaultB/.plugin/sync-state.json?v=2";
+  assert.equal(normalizeMobileResourcePath(before), normalizeMobileResourcePath(afterUpdate));
+  assert.notEqual(normalizeMobileResourcePath(before), normalizeMobileResourcePath(otherVault));
+  const { app, adapter } = fixture(t);
+  adapter.getResourcePath = () => before;
+  const first = new NativeSync(app, { dir: ".plugin" }, () => {});
+  first.data = { version: 1, vaultId: "ios-vault", collectionId: "c1", paths: {} };
+  first.log = () => {};
+  first.bindVault(); await first.persist();
+  const updatedAdapter = new Adapter(); updatedAdapter.getResourcePath = () => afterUpdate;
+  const updated = new NativeSync({ ...app, vault: { ...app.vault, adapter: updatedAdapter } }, { dir: ".plugin" }, () => {});
+  updated.data = await first.readData(); updated.log = () => {};
+  updated.bindVault();
+  assert.equal(updated.data.vaultId, "ios-vault");
+  const copiedAdapter = new Adapter(); copiedAdapter.getResourcePath = () => otherVault;
+  const copied = new NativeSync({ ...app, vault: { ...app.vault, adapter: copiedAdapter } }, { dir: ".plugin" }, () => {});
+  copied.data = await first.readData(); copied.log = () => {};
+  assert.throws(() => copied.bindVault(), e => e.code === "folder_owned" && e.owner === "copied");
 });
 test("gzip assets decode exactly and corrupt input is refused", async () => {
   const bytes = Uint8Array.from({ length: 256 }, (_, index) => index);
@@ -676,17 +710,73 @@ test("a fresh mobile install over an earlier install's quiet marker raises no no
     assert.deepEqual(JSON.parse(await adapter.read(".mdbase/host.json")), marker);
   }
 });
-test("on iPhone and iPad, sync says it isn't available yet, without a notice or a marker", async t => {
-  const { native, adapter } = fixture(t);
+test("iOS capacitor://localhost boots with opaque location.origin and completes capability-checked hello handshake", async t => {
+  const { native, adapter, app } = fixture(t);
   delete native.checkOwnership; native.mirroring = false;
-  const failures = [], statuses = []; native.fail = (...args) => failures.push(args); native.changed = text => statuses.push(text);
-  const origin = window.location.origin; window.location.origin = "capacitor://localhost";
-  t.after(() => { window.location.origin = origin; });
+  const previousLocation = window.location;
+  window.location = { origin: "null", href: "capacitor://localhost/index.html" };
+  adapter.getResourcePath = file => `capacitor://localhost/_capacitor_file_/private/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Documents/Vault/${file}?v=1`;
+  t.after(() => { window.location = previousLocation; });
+  const posted = [];
+  const frameWindow = { postMessage(msg, targetOrigin, transfer) { posted.push({ msg, targetOrigin, transfer }); } };
+  let frameSrc = "";
+  app.workspace.containerEl = { createEl(_tag, opts) { frameSrc = opts.attr.src; return { style: {}, contentWindow: frameWindow, remove() {} }; } };
+  native.registerDomEvent = () => {}; native.registerEvent = () => {};
   await native.initialize();
-  assert.equal(native.phase.kind, "unsupported");
-  assert.equal(statuses.at(-1), "Sync isn't available on iPhone and iPad yet. Types and checking work as usual.");
-  assert.deepEqual(failures, []);
-  assert.equal(await adapter.exists(".mdbase/host.json"), false);
+  t.after(() => native.onunload());
+  assert.equal(native.origin, "capacitor://localhost");
+  assert.match(frameSrc, /^blob:/);
+  const html = await (await fetch(frameSrc)).text();
+  assert.match(html, /<base href="capacitor:\/\/localhost\/_capacitor_file_\/private\/var\/mobile\/Containers\/Data\/Application\/11111111-2222-3333-4444-555555555555\/Documents\/Vault\/\.plugin\/sync-engine\/">/);
+  const config = JSON.parse(html.match(/globalThis.mdbaseHost=(.*?); await import/)[1]);
+  assert.equal(config.origin, "capacitor://localhost");
+  assert.equal(typeof config.capability, "string");
+  assert.ok(config.capability.length > 0);
+  // Opaque hello without the matching capability is dropped.
+  await native.onMessage({ origin: "null", source: frameWindow, data: { type: "hello", origin: "capacitor://localhost", capability: "wrong", opfs: true, isSecureContext: true } });
+  assert.equal(native.bridge, null);
+  assert.equal(posted.length, 0);
+  // Opaque hello with the matching capability establishes the MessageChannel using "*" targetOrigin.
+  native.checkOwnership = () => {};
+  native.call = async () => ({ kind: "signed_out" });
+  await native.onMessage({ origin: "null", source: frameWindow, data: { type: "hello", origin: "capacitor://localhost", capability: config.capability, opfs: true, isSecureContext: true } });
+  assert.notEqual(native.bridge, null);
+  assert.equal(posted.length, 1);
+  assert.deepEqual(posted[0].msg, { type: "connect" });
+  assert.equal(posted[0].targetOrigin, "*");
+  assert.equal(posted[0].transfer.length, 1);
+});
+test("the engine page on capacitor://localhost uses embedded origin, mobile installation_origins, and echoes capability", async t => {
+  const workers = [], helloMessages = [];
+  const previous = { location: globalThis.location, parent: globalThis.parent, Worker: globalThis.Worker, secure: globalThis.isSecureContext };
+  window.mdbaseHost = { namespace: "obsidian-vault-ios", origin: "capacitor://localhost", capability: "cap-ios-1", workerUrl: "blob:capacitor://localhost/worker" };
+  window.document = { baseURI: "capacitor://localhost/_capacitor_file_/vault/.plugin/sync-engine/" };
+  window.addEventListener = () => {};
+  globalThis.location = { origin: "null", href: "blob:capacitor://localhost/engine" };
+  globalThis.parent = { postMessage(msg) { helloMessages.push(msg); } }; globalThis.isSecureContext = true;
+  globalThis.Worker = class { constructor(...args) { workers.push(args); } };
+  globalThis.iosSdk = { setForeground() {}, subscribe() {}, getSnapshot: () => ({ phase: { kind: "signed_out" } }) };
+  t.after(() => {
+    Object.assign(globalThis, { location: previous.location, parent: previous.parent, Worker: previous.Worker, isSecureContext: previous.secure });
+    for (const key of ["mdbaseHost", "document", "addEventListener"]) delete window[key];
+    delete globalThis.iosSdk; delete globalThis.iosDeclaration; delete globalThis.iosOptions;
+  });
+  const page = await build({ entryPoints: ["src/sync/native/page.ts"], bundle: true, format: "esm", platform: "browser", write: false,
+    define: { __MDBASE_ENVIRONMENT__: '"production"' },
+    plugins: [{ name: "sdk", setup(builder) {
+      builder.onResolve({ filter: /^@mdbase-dev\/sdk$/ }, () => ({ path: "sdk", namespace: "mock" }));
+      builder.onLoad({ filter: /.*/, namespace: "mock" }, () => ({ contents: "export function createMdbase(declaration, options) { globalThis.iosDeclaration=declaration; globalThis.iosOptions=options; return globalThis.iosSdk; }", loader: "js" }));
+    } }],
+  });
+  await import(`data:text/javascript;base64,${Buffer.from(page.outputFiles[0].contents).toString("base64")}`);
+  assert.equal(globalThis.iosDeclaration.origin, "capacitor://localhost");
+  assert.equal(globalThis.iosDeclaration.manifest.homepage, "http://localhost/");
+  assert.deepEqual(globalThis.iosDeclaration.manifest.installation_origins, { production: { mobile: ["capacitor://localhost"] } });
+  globalThis.iosOptions.worker("capacitor://localhost/_capacitor_file_/vault/.plugin/sync-engine/sdk/application/worker.js");
+  assert.deepEqual(workers, [["blob:capacitor://localhost/worker", { type: "module" }]]);
+  assert.equal(helloMessages.length, 1);
+  assert.equal(helloMessages[0].origin, "capacitor://localhost");
+  assert.equal(helloMessages[0].capability, "cap-ios-1");
 });
 test("on mobile, Set up sync here replaces an earlier install's quiet marker from the fresh host", async t => {
   const { native, adapter, app } = fixture(t);
