@@ -12,7 +12,7 @@ xcodebuild -version
 echo "=== Available iOS Simulator runtimes ==="
 xcrun simctl list runtimes iOS
 
-# Pick newest available iOS simulator device (prefer iPhone)
+# Pick iOS 18.5 (closest to iOS 18.4 floor) when available, else newest iOS simulator
 UDID="$(python3 - <<'PY'
 import json, subprocess, sys
 data = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "-j", "devices", "available"]))
@@ -25,13 +25,14 @@ for runtime, devices in data["devices"].items():
     for d in devices:
         if d.get("isAvailable"):
             is_iphone = 1 if "iPhone" in d["name"] else 0
-            candidates.append((ver, is_iphone, d["name"], d["udid"]))
+            prefer_18_5 = 1 if ver == (18, 5) else 0
+            candidates.append((prefer_18_5, ver, is_iphone, d["name"], d["udid"]))
 if not candidates:
     sys.exit("No available iOS Simulator device found")
 candidates.sort()
 best = candidates[-1]
-sys.stderr.write(f"Selected simulator: iOS {'.'.join(map(str, best[0]))} — {best[2]} ({best[3]})\n")
-print(best[3])
+sys.stderr.write(f"Selected simulator: iOS {'.'.join(map(str, best[1]))} — {best[3]} ({best[4]})\n")
+print(best[4])
 PY
 )"
 

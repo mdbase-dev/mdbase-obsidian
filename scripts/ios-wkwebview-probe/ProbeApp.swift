@@ -281,37 +281,62 @@ report.topDirectWorker = await runTopWorker(`${BASE}worker.js`, "top-direct-work
 report.blobIframe = await new Promise((resolve) => {
   const timer = setTimeout(() => resolve({ ok: false, error: "timeout" }), 20000);
   const frameHtml = `<!doctype html><html><head><meta charset="utf-8"><base href="${BASE}"></head><body><script type="module">
-    const info = { href: location.href, origin: location.origin, baseURI: document.baseURI, isSecureContext };
-    try { const m = await import("./helper.js"); info.baseImport = { ok: m.ok === 42 }; }
-    catch (e) { info.baseImport = { ok: false, error: String(e) }; }
-    try { await navigator.storage.getDirectory(); info.opfs = { ok: true }; }
-    catch (e) { info.opfs = { ok: false, error: String(e) }; }
-    try { await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); info.x25519 = { ok: true }; }
-    catch (e) { info.x25519 = { ok: false, error: String(e) }; }
+    const info = {
+      href: location.href,
+      origin: location.origin,
+      baseURI: document.baseURI,
+      isSecureContext,
+      selfBlobUrl: URL.createObjectURL(new Blob(["hi"], { type: "text/plain" })),
+    };
+    let sent = false;
+    const send = (payload) => { if (sent) return; sent = true; parent.postMessage({ type: "blob-result", info: payload }, "*"); };
+    window.addEventListener("error", (ev) => send({ ...info, fatal: "error: " + (ev.message || ev.error) }));
+    window.addEventListener("unhandledrejection", (ev) => send({ ...info, fatal: "rejection: " + String(ev.reason) }));
     try {
-      await new Promise((res, rej) => { const req = indexedDB.open("probe-blob-iframe", 1); req.onerror = () => rej(req.error); req.onsuccess = () => { req.result.close(); res(); }; });
-      info.idb = { ok: true };
-    } catch (e) { info.idb = { ok: false, error: String(e) }; }
-    try {
-      const got = await navigator.locks.request("probe-blob-iframe-lock", async () => "held");
-      info.locks = { ok: got === "held" };
-    } catch (e) { info.locks = { ok: false, error: String(e) }; }
-    info.blobWorker = await new Promise((res) => {
-      const t = setTimeout(() => res({ ok: false, error: "timeout" }), 15000);
+      try { const m = await import("./helper.js"); info.baseImport = { ok: m.ok === 42 }; }
+      catch (e) { info.baseImport = { ok: false, error: String(e) }; }
+      try { await navigator.storage.getDirectory(); info.opfs = { ok: true }; }
+      catch (e) { info.opfs = { ok: false, error: String(e) }; }
+      try { await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"]); info.x25519 = { ok: true }; }
+      catch (e) { info.x25519 = { ok: false, error: String(e) }; }
       try {
-        const w = new Worker(${JSON.stringify(workerBlobUrl)}, { type: "module" });
-        w.onmessage = (ev) => { clearTimeout(t); w.terminate(); res(ev.data); };
-        w.onerror = (ev) => { clearTimeout(t); w.terminate(); res({ ok: false, error: ev.message || "worker error" }); };
-        w.postMessage({ poolTag: "blob-iframe-blob-worker" });
-      } catch (e) { clearTimeout(t); res({ ok: false, error: String(e) }); }
-    });
-    window.addEventListener("message", (ev) => {
-      if (ev.data?.type === "connect" && ev.ports[0]) {
-        ev.ports[0].postMessage({ type: "pong", receivedOrigin: ev.origin });
-      }
-    });
-    parent.postMessage({ type: "blob-result", info }, "*");
-  <\\/script></body></html>`;
+        await new Promise((res, rej) => { const req = indexedDB.open("probe-blob-iframe", 1); req.onerror = () => rej(req.error); req.onsuccess = () => { req.result.close(); res(); }; });
+        info.idb = { ok: true };
+      } catch (e) { info.idb = { ok: false, error: String(e) }; }
+      try {
+        const got = await navigator.locks.request("probe-blob-iframe-lock", async () => "held");
+        info.locks = { ok: got === "held" };
+      } catch (e) { info.locks = { ok: false, error: String(e) }; }
+      info.blobWorkerFromParent = await new Promise((res) => {
+        const t = setTimeout(() => res({ ok: false, error: "timeout" }), 15000);
+        try {
+          const w = new Worker(${JSON.stringify(workerBlobUrl)}, { type: "module" });
+          w.onmessage = (ev) => { clearTimeout(t); w.terminate(); res(ev.data); };
+          w.onerror = (ev) => { clearTimeout(t); w.terminate(); res({ ok: false, error: ev.message || "worker error" }); };
+          w.postMessage({ poolTag: "blob-iframe-parent-worker" });
+        } catch (e) { clearTimeout(t); res({ ok: false, error: String(e) }); }
+      });
+      info.blobWorkerFromSelf = await new Promise(async (res) => {
+        const t = setTimeout(() => res({ ok: false, error: "timeout" }), 15000);
+        try {
+          const text = await (await fetch("./worker.js")).text();
+          const url = URL.createObjectURL(new Blob([text], { type: "text/javascript" }));
+          const w = new Worker(url, { type: "module" });
+          w.onmessage = (ev) => { clearTimeout(t); w.terminate(); res({ workerUrl: url, ...ev.data }); };
+          w.onerror = (ev) => { clearTimeout(t); w.terminate(); res({ ok: false, workerUrl: url, error: ev.message || "worker error" }); };
+          w.postMessage({ poolTag: "blob-iframe-self-worker" });
+        } catch (e) { clearTimeout(t); res({ ok: false, error: String(e) }); }
+      });
+      window.addEventListener("message", (ev) => {
+        if (ev.data?.type === "connect" && ev.ports[0]) {
+          ev.ports[0].postMessage({ type: "pong", receivedOrigin: ev.origin });
+        }
+      });
+      send(info);
+    } catch (e) {
+      send({ ...info, fatal: String(e) });
+    }
+  <\/script></body></html>`;
   const frame = document.createElement("iframe");
   const handler = (ev) => {
     if (ev.source !== frame.contentWindow || ev.data?.type !== "blob-result") return;
