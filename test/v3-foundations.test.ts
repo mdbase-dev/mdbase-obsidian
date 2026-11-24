@@ -16,7 +16,8 @@ import {
   type MdbaseTypeDef,
   parseFrontmatter,
 } from "../src/mdbaseCore";
-import { schemaFromV03Fields } from "../src/typeDefinitions";
+import { loadTypeDefinitions, schemaFromV03Fields } from "../src/typeDefinitions";
+import { loadMdbaseConfig } from "../src/collectionConfig";
 import { getTypesForFile } from "../src/typeMatching";
 import { validateFile } from "../src/validation";
 
@@ -241,6 +242,130 @@ test("migration preserves list bounds and unsupported generated strategies", asy
   assert.deepEqual(legacy.fields["token.generated"], generated);
   assert.ok(plan.diagnostics.some((entry) => entry.severity === "lossy" && entry.message.includes("token.generated")));
   assert.equal(plan.applicable, false);
+});
+
+function v03BookType(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    kind: "mdbase.type",
+    name: "book",
+    version: 1,
+    match: { where: { tags: { contains: "book" } } },
+    schema: {
+      dialect: "json-schema-2020-12",
+      value: {
+        type: "object",
+        additionalProperties: true,
+        properties: {
+          title: { type: "string" },
+          status: { type: "string", default: "unread" },
+        },
+        required: ["title"],
+      },
+    },
+    collection: {
+      read_defaults: {
+        status: "unread",
+      },
+    },
+    ...overrides,
+  };
+}
+
+test("migration keeps valid already-v0.3 type files untouched alongside v0.2 types", async () => {
+  const vault = await collectionVault();
+  const bookDoc = typeDocument(v03BookType(), "# Book");
+  await vault.create("_types/book.md", bookDoc);
+  await vault.create("records/dune.md", typeDocument({ tags: ["book"], title: "Dune" }, "Book body"));
+
+  const plan = await analyzeV02Migration(vault as never);
+  assert.equal(plan.applicable, true);
+  assert.deepEqual(plan.operations.map((entry) => entry.path), ["mdbase.yaml", "_types/task.md"]);
+  assert.deepEqual(plan.typeSummaries.map((entry) => entry.name), ["task"]);
+  assert.equal(plan.recordsVerified, 3);
+  assert.ok(plan.diagnostics.some((entry) =>
+    entry.path === "_types/book.md"
+    && entry.code === "already_v03_type"
+    && entry.severity === "warning"));
+  assert.equal(plan.diagnostics.some((entry) => entry.code === "effective_read_changed"), false);
+
+  const result = await applyV02Migration(vault as never, plan);
+  assert.equal(result.applied, true);
+  assert.equal(vault.read("_types/book.md"), bookDoc);
+  const config = await loadMdbaseConfig(vault as never);
+  assert.equal(config?.spec_version, "0.3.0");
+  const loaded = await loadTypeDefinitions(vault as never, config!);
+  assert.deepEqual([...loaded.keys()].sort(), ["book", "task"]);
+});
+
+test("migration upgrades mdbase.yaml when all type files are already v0.3 (inline and schema.ref)", async () => {
+  const vault = new MemoryVault();
+  await vault.create("mdbase.yaml", v02Config());
+  await vault.createFolder("_types");
+  await vault.createFolder("schemas");
+  const bookDoc = typeDocument(v03BookType(), "# Book");
+  const refDoc = typeDocument({
+    kind: "mdbase.type",
+    name: "note",
+    version: 1,
+    schema: {
+      dialect: "json-schema-2020-12",
+      ref: "../schemas/note.schema.json",
+    },
+  }, "# Note");
+  await vault.create("schemas/note.schema.json", JSON.stringify({
+    type: "object",
+    properties: { title: { type: "string" } },
+  }));
+  await vault.create("_types/book.md", bookDoc);
+  await vault.create("_types/note.md", refDoc);
+  await vault.create("records/dune.md", typeDocument({ tags: ["book"], title: "Dune" }, "Book body"));
+
+  const plan = await analyzeV02Migration(vault as never);
+  assert.equal(plan.applicable, true);
+  assert.deepEqual(plan.operations.map((entry) => entry.path), ["mdbase.yaml"]);
+  assert.deepEqual(plan.typeSummaries, []);
+  assert.equal(plan.recordsVerified, 1);
+  assert.deepEqual(
+    plan.diagnostics.filter((entry) => entry.code === "already_v03_type").map((entry) => entry.path),
+    ["_types/book.md", "_types/note.md"],
+  );
+
+  const result = await applyV02Migration(vault as never, plan);
+  assert.equal(result.applied, true);
+  assert.equal(vault.read("_types/book.md"), bookDoc);
+  assert.equal(vault.read("_types/note.md"), refDoc);
+  assert.match(vault.read("mdbase.yaml") ?? "", /"spec_version": "0.3.0"/);
+});
+
+test("migration still rejects corrupt v0.3 types, empty _types folders, and record-matching regressions", async () => {
+  const emptyVault = new MemoryVault();
+  await emptyVault.create("mdbase.yaml", v02Config());
+  await emptyVault.createFolder("_types");
+  await assert.rejects(analyzeV02Migration(emptyVault as never), /No v0\.2 type files were found/);
+
+  for (const broken of [
+    { name: "broken", schema: { value: { type: "object" } } },
+    { kind: "mdbase.type", schema: { value: { type: "object" } } },
+    { kind: "mdbase.type", name: "broken" },
+    { kind: "mdbase.type", name: "broken", schema: { ref: "../schemas/missing.json" } },
+  ]) {
+    const brokenVault = new MemoryVault();
+    await brokenVault.create("mdbase.yaml", v02Config());
+    await brokenVault.createFolder("_types");
+    await brokenVault.create("_types/broken.md", typeDocument(broken, "# Broken"));
+    await assert.rejects(analyzeV02Migration(brokenVault as never), /not a valid v0\.3 type definition/);
+  }
+
+  const mismatchVault = new MemoryVault();
+  await mismatchVault.create("mdbase.yaml", v02Config());
+  await mismatchVault.createFolder("_types");
+  await mismatchVault.create("_types/book.md", typeDocument(v03BookType({
+    match: { path_glob: "{a,b}/*.md" },
+  }), "# Book"));
+  await mismatchVault.create("a/entry.md", typeDocument({ title: "Entry" }, "Body"));
+  const plan = await analyzeV02Migration(mismatchVault as never);
+  assert.equal(plan.applicable, false);
+  assert.ok(plan.diagnostics.some((entry) => entry.path === "a/entry.md" && entry.code === "effective_read_changed" && entry.severity === "lossy"));
 });
 
 test("type model preserves unknown v0.3 extensions and blocks v0.2 writes", () => {

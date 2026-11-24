@@ -885,11 +885,17 @@ export default class NativeSync extends Component {
     // Calls cut off by our own unload are not failures; the next start resumes.
     if (this.unloaded) { this.log(`stopped during ${what} (plugin unloading)`); return; }
     // Do not log arbitrary mutation error bodies: they can contain documents.
-    const detail = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ") || (what === "startup" || what === "ownership" || what === "start" ? this.safeText(errorInfo(e).message ?? "error") : "operation failed; local state retained");
-    if (errorInfo(e).code === "collection_bound") userMessage = t`This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing.`;
+    const info = errorInfo(e);
+    const code = [info.code, info.reason].filter(Boolean).join(" ");
+    const detail = code || (what === "startup" || what === "ownership" || what === "start" ? this.safeText(info.message ?? "error") : "operation failed; local state retained");
+    if (info.code === "collection_bound") userMessage = t`This folder is already bound to a collection. Use a separate vault for another collection; this vault cannot be rebound while syncing.`;
     if (what === "ownership" && !userMessage) userMessage = t`Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.`;
+    if (!userMessage && what !== "startup" && what !== "start") {
+      if (info.code === "unavailable") userMessage = t`Couldn't reach mdbase right now. Your files here are untouched. Check your connection and try again.`;
+      else if (info.code === "rate_limited") userMessage = t`mdbase is busy right now. Your files here are untouched. Wait a moment and try again.`;
+      else if (info.code === "timeout") userMessage = t`mdbase took too long to answer. Your files here are untouched. Try again in a moment.`;
+    }
     // Plain words for the status; the code stays for support, and the log keeps the detail.
-    const code = [errorInfo(e).code, errorInfo(e).reason].filter(Boolean).join(" ");
     const reason = userMessage ?? (what === "startup" || what === "start" ? detail : (code ? t`Something went wrong (${code}). Your files here are untouched.` : t`Something went wrong. Your files here are untouched.`));
     this.setStatus(whole && userMessage ? userMessage : failedText(reason, !!userMessage || !(what === "startup" || what === "start")), "problem");
     this.log(`FAILED ${what}: ${detail}`);

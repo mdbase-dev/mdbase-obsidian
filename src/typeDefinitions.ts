@@ -239,7 +239,7 @@ export function schemaFromV03Fields(
   return schema;
 }
 
-async function resolveV03SchemaRef(
+export async function resolveV03SchemaRef(
   vault: Vault,
   typeFilePath: string,
   reference: string,

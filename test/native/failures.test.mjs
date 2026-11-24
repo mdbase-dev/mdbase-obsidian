@@ -34,3 +34,17 @@ test("remote rename failures explain the occupied destination, identity mismatch
   assert.match(describeFailure({ code: "remote_move_blocked", reason: "identity_mismatch" }).detail, /identity or kind doesn't match/);
   assert.match(describeFailure({ code: "vault_index_pending" }).detail, /hasn't indexed the file/);
 });
+test("transient sync failures explain that the file is unchanged and sync will retry", () => {
+  assert.deepEqual(describeFailure({ code: "unavailable" }), {
+    title: "Temporarily unavailable",
+    detail: "Couldn't reach mdbase to sync this file. Your file is unchanged; sync will try again.",
+  });
+  assert.deepEqual(describeFailure({ code: "rate_limited" }), {
+    title: "mdbase is busy",
+    detail: "Too many requests right now. Your file is unchanged; sync will try again shortly.",
+  });
+  assert.deepEqual(describeFailure({ code: "timeout" }), {
+    title: "Timed out",
+    detail: "mdbase took too long to answer. Your file is unchanged; sync will try again.",
+  });
+});

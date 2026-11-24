@@ -14,6 +14,11 @@ import type { SyncState } from "./journal";
 const REFUSED = new Set(["invalid_request", "invalid_record", "too_large", "quota_exceeded", "forbidden"]);
 export const isRefusal = (e: unknown) => REFUSED.has(errorInfo(e).code ?? "") && !["cursor_stale", "cursor_expired"].includes(errorInfo(e).reason ?? "");
 export const isConflict = (e: unknown) => /conflict|revision/.test(`${errorInfo(e).code} ${errorInfo(e).reason}`);
+// Transient transport/service failures while resuming an attachment upload:
+// keep the durable upload identity and saved bytes for a later retry without
+// halting unrelated paths in this pass.
+const TRANSIENT_UPLOAD = new Set(["unavailable", "rate_limited", "timeout", "outcome_unknown"]);
+export const isTransientUpload = (e: unknown) => TRANSIENT_UPLOAD.has(errorInfo(e).code ?? "");
 
 export async function ensureFolder(sync: NativeSync, vp: string) {
   const dir = vp.split("/").slice(0, -1).join("/");
@@ -160,17 +165,43 @@ export async function resumeUploads(sync: NativeSync) {
     // or excluded was never accepted. Drop the saved copy; the vault file is
     // untouched and the path pass sends it the right way (or not at all).
     if (sync.kindOf(p) !== "file") { sync.log(`dropped upload for non-file path ${JSON.stringify(p)}`); await sync.clearUpload(p); continue; }
-    try { await sync.finishUpload(p); }
+    try {
+      await sync.finishUpload(p);
+      if (sync.data.pathFailures?.[p]) { delete sync.data.pathFailures[p]; await sync.persist(); }
+      sync.note("uploaded", p);
+    }
     catch (e: unknown) { const failure = errorInfo(e);
       // Refused outright: resending the same bytes can't succeed. The path
       // pass resends only if they change, and records why in the Sync tab.
       if (isRefusal(e)) { sync.log(`upload refused for ${JSON.stringify(p)}: ${failure.code}`); await sync.clearUpload(p); continue; }
+      if (isTransientUpload(e)) {
+        if (!sync.mirroring || sync.unloaded) throw e;
+        await sync.checkOwnership();
+        const intent = sync.data.uploads![p];
+        const next = {
+          signature: `upload:${intent.transferId}`,
+          code: failure.code,
+          reason: failure.reason,
+          unknown: /unknown/.test(`${failure.code} ${failure.reason}`),
+          ...(Array.isArray(failure.issues) ? { issues: failure.issues } : {}),
+        };
+        const prev = sync.data.pathFailures?.[p];
+        if (JSON.stringify(prev) !== JSON.stringify(next)) {
+          (sync.data.pathFailures ??= Object.create(null) as NonNullable<SyncState["pathFailures"]>)[p] = next;
+          await sync.persist();
+        }
+        if (prev?.code !== next.code || prev?.reason !== next.reason) sync.note("not_synced", p);
+        sync.log(`upload resume deferred for ${JSON.stringify(p)}: ${[failure.code, failure.reason].filter(Boolean).join(" ")}`);
+        continue;
+      }
       if (!isConflict(e) || !failure.mutationId) throw e;
       const intent = sync.data.uploads![p];
       const bytes = await sync.host.readBytes(sync.uploadPath(intent.transferId));
       const submitted = { bytes, hash: intent.hash, f: undefined, unsupportedEncoding: false };
       await sync.conflict(p, await sync.local(p), (await sync.remoteAll()).get(p), { mutationId: failure.mutationId, local: submitted });
       await sync.clearUpload(p);
+      if (sync.data.pathFailures?.[p]) { delete sync.data.pathFailures[p]; await sync.persist(); }
+      sync.note("conflict", p);
     }
   }
 }

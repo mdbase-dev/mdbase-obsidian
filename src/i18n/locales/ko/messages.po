@@ -381,6 +381,10 @@ msgstr "{path}이(가) 변경되었습니다. 다시 검토하세요."
 msgid "{path} is not a v0.2 type with a name and fields."
 msgstr "{path}은(는) 이름과 필드가 있는 v0.2 타입이 아닙니다."
 
+#: src/migration.ts
+msgid "{path} is not a valid v0.3 type definition."
+msgstr "{path}은(는) 유효한 v0.3 타입 정의가 아닙니다."
+
 #: src/workspace/syncPane.ts
 msgid "{pending, plural, one {# change} other {# changes}}"
 msgstr "{pending, plural, other {변경 사항 #개}}"
@@ -733,6 +737,10 @@ msgstr "허용 값"
 #: src/typeDraft.ts
 msgid "Allowed values must be unique."
 msgstr "허용 값은 중복될 수 없습니다."
+
+#: src/migration.ts
+msgid "Already in v0.3 format; this file will be left unchanged."
+msgstr "이미 v0.3 형식입니다. 이 파일은 변경되지 않습니다."
 
 #: src/workspace/syncPane.ts
 msgid "Already up to date"
@@ -1250,6 +1258,14 @@ msgstr "로그인 링크 복사"
 #: src/workspace/types/drafts.ts
 msgid "Copy the parts you want into the current definition, then review before saving."
 msgstr "원하는 부분을 현재 정의에 복사한 후 저장하기 전에 검토하세요."
+
+#: src/sync/native/plugin.ts
+msgid "Couldn't reach mdbase right now. Your files here are untouched. Check your connection and try again."
+msgstr "지금은 mdbase에 연결할 수 없습니다. 여기에 있는 파일은 변경되지 않았습니다. 연결을 확인하고 다시 시도하세요."
+
+#: src/sync/native/failures.ts
+msgid "Couldn't reach mdbase to sync this file. Your file is unchanged; sync will try again."
+msgstr "이 파일을 동기화하기 위해 mdbase에 연결할 수 없었습니다. 파일은 변경되지 않았으며 동기화가 다시 시도됩니다."
 
 #: src/sync/words.ts
 msgid "Couldn't reach mdbase. Check your connection and try again."
@@ -2132,6 +2148,14 @@ msgstr "mdbase에서 동기화된 데이터의 문제를 발견하여 노트를 
 msgid "mdbase found a problem with this collection's keys and stopped to keep your notes safe."
 msgstr "mdbase에서 이 컬렉션의 키에 문제가 있음을 발견하여 노트를 안전하게 보호하기 위해 중지했습니다."
 
+#: src/sync/native/failures.ts
+msgid "mdbase is busy"
+msgstr "mdbase가 사용 중입니다"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase is busy right now. Your files here are untouched. Wait a moment and try again."
+msgstr "지금은 mdbase가 사용 중입니다. 여기에 있는 파일은 변경되지 않았습니다. 잠시 후 다시 시도하세요."
+
 #: src/sync/words.ts
 msgid "mdbase is busy. Sync carries on shortly."
 msgstr "mdbase가 사용 중입니다. 곧 동기화가 계속됩니다."
@@ -2187,6 +2211,14 @@ msgstr "mdbase 응답 시간이 초과되었습니다."
 #: src/sync/words.ts
 msgid "mdbase took too long to answer. Try again."
 msgstr "mdbase 응답 시간이 초과되었습니다. 다시 시도하세요."
+
+#: src/sync/native/failures.ts
+msgid "mdbase took too long to answer. Your file is unchanged; sync will try again."
+msgstr "mdbase 응답 시간이 초과되었습니다. 파일은 변경되지 않았으며 동기화가 다시 시도됩니다."
+
+#: src/sync/native/plugin.ts
+msgid "mdbase took too long to answer. Your files here are untouched. Try again in a moment."
+msgstr "mdbase 응답 시간이 초과되었습니다. 여기에 있는 파일은 변경되지 않았습니다. 잠시 후 다시 시도하세요."
 
 #: src/typeModel.ts
 msgid "mdbase v0.2 type definitions are read-only. Migrate the collection before editing."
@@ -3533,6 +3565,10 @@ msgstr "대상 타입"
 msgid "TaskNotes filename behavior is recorded as TaskNotes runtime metadata."
 msgstr "TaskNotes 파일 이름 동작은 TaskNotes 런타임 메타데이터로 기록됩니다."
 
+#: src/sync/native/failures.ts
+msgid "Temporarily unavailable"
+msgstr "일시적으로 사용할 수 없음"
+
 #: src/validation.ts
 msgid "text"
 msgstr "텍스트"
@@ -3836,6 +3872,10 @@ msgstr "이 버전의 플러그인은 비공개 컬렉션의 잠금을 해제할
 msgid "Time"
 msgstr "시간"
 
+#: src/sync/native/failures.ts
+msgid "Timed out"
+msgstr "시간 초과"
+
 #: src/workspace/syncPane.ts
 msgid "To keep working on \"{name}\", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it."
 msgstr "\"{name}\" 작업을 계속하려면 아래에 추가하세요. 최신 버전이 새 폴더에 도착하며 확인한 후 이전 사본을 삭제할 수 있습니다."
@@ -3867,6 +3907,10 @@ msgstr "시도 횟수가 너무 많습니다. 몇 분 후 다시 시도하세요
 #: src/issuePresentation.ts
 msgid "too many items"
 msgstr "항목이 너무 많음"
+
+#: src/sync/native/failures.ts
+msgid "Too many requests right now. Your file is unchanged; sync will try again shortly."
+msgstr "지금 요청이 너무 많습니다. 파일은 변경되지 않았으며 동기화가 곧 다시 시도됩니다."
 
 #: src/sync/words.ts
 msgid "Too many tries. Wait a few minutes, then try again."
