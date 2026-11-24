@@ -404,6 +404,8 @@ test("mobile boot serves a blob iframe with a resource base and exact blob Worke
   assert.equal(page.origin, "http://localhost"); assert.match(page.url, /^blob:/);
   const html = await (await fetch(page.url)).text();
   assert.match(html, /<base href="http:\/\/localhost\/_capacitor_file_\/vault\/\.plugin\/sync-engine\/">/);
+  assert.match(html, /await import\(new URL\("\.\/app\.js", document\.baseURI\)\.href\)/);
+  assert.doesNotMatch(html, /await import\("\.\/app\.js"\)/);
   const config = JSON.parse(html.match(/globalThis.mdbaseHost=(.*?); await import/)[1]);
   assert.equal(config.namespace, "obsidian-vault-first-vault");
   assert.equal(config.collection, "collection");
@@ -728,6 +730,8 @@ test("iOS capacitor://localhost boots with opaque location.origin and completes 
   assert.match(frameSrc, /^blob:/);
   const html = await (await fetch(frameSrc)).text();
   assert.match(html, /<base href="capacitor:\/\/localhost\/_capacitor_file_\/private\/var\/mobile\/Containers\/Data\/Application\/11111111-2222-3333-4444-555555555555\/Documents\/Vault\/\.plugin\/sync-engine\/">/);
+  assert.match(html, /await import\(new URL\("\.\/app\.js", document\.baseURI\)\.href\)/);
+  assert.doesNotMatch(html, /await import\("\.\/app\.js"\)/);
   const config = JSON.parse(html.match(/globalThis.mdbaseHost=(.*?); await import/)[1]);
   assert.equal(config.origin, "capacitor://localhost");
   assert.equal(typeof config.capability, "string");
