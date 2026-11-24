@@ -1,0 +1,27 @@
+name: iOS WKWebView Simulator Probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/ios-wkwebview-probe/**"
+      - ".github/workflows/ios-wkwebview-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wkwebview-probe:
+    name: iOS WKWebView capacitor://localhost probe
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run WKWebView capacitor://localhost probe in iOS Simulator
+        run: bash scripts/ios-wkwebview-probe/run-simulator.sh
