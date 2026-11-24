@@ -5,14 +5,27 @@ import type { DownloadOptions, EngineHost, EngineOptions, HostResult } from "./h
 import { vaultNamespace } from "./host";
 import { BRIDGE_CHUNK_BYTES } from "./downloadPull";
 
-/** iPhone and iPad: Obsidian's page runs at capacitor://localhost, which sync hasn't been qualified for (docs/sdk-sync.md). */
-export const IOS_NOT_YET = "Sync isn't available on iPhone and iPad yet. Types and checking work as usual.";
+/** Canonical origin from a Window/Location object, recovering custom schemes whose WHATWG origin is opaque ("null"). */
+export function resolveWindowOrigin(loc: { origin?: string; href?: string }): string {
+  if (typeof loc.origin === "string" && loc.origin && loc.origin !== "null") return loc.origin;
+  if (typeof loc.href === "string" && loc.href) {
+    const url = new URL(loc.href);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : `${url.protocol}//${url.host}`;
+  }
+  return "";
+}
+/** Accepted mobile WebView origins: Android (http://localhost) and iOS (capacitor://localhost). */
 export function mobileOrigin(origin: string): string {
   const url = new URL(origin);
-  if (url.protocol === "capacitor:") throw Object.assign(new Error(IOS_NOT_YET), { code: "platform_unsupported" });
-  if (url.origin !== origin || url.protocol !== "http:" || url.hostname !== "localhost" || url.port)
+  const android = url.protocol === "http:" && url.origin === origin && url.hostname === "localhost" && !url.port;
+  const ios = url.protocol === "capacitor:" && `${url.protocol}//${url.host}` === origin && url.hostname === "localhost" && !url.port && !url.username && !url.password && !url.search && !url.hash && (url.pathname === "" || url.pathname === "/");
+  if (!android && !ios)
     throw new Error("Mobile sync needs a supported secure WebView origin. This origin has not been qualified.");
   return origin;
+}
+/** Normalize volatile iOS app container UUIDs so App Store updates keep the same vaultLocation binding. */
+export function normalizeMobileResourcePath(resource: string): string {
+  return resource.split(/[?#]/)[0].replace(/(\/Containers\/Data\/Application\/)[0-9a-fA-F-]+(\/)/, "$1<container>$2");
 }
 export async function decodeAsset(packed: string): Promise<Uint8Array> {
   const compressed = Uint8Array.from(atob(packed), character => character.charCodeAt(0));
@@ -38,7 +51,7 @@ export class MobileHost implements EngineHost {
     if (!manifest.dir) throw new Error("Missing plugin directory");
     this.pluginDir = manifest.dir;
     const resource = this.adapter.getResourcePath(this.join(manifest.dir, "sync-state.json"));
-    this.vaultLocation = `mobile:${resource.split(/[?#]/)[0]}`;
+    this.vaultLocation = `mobile:${normalizeMobileResourcePath(resource)}`;
   }
   location() { return this.vaultLocation; }
   join(...parts: string[]) { return parts.filter(Boolean).join("/"); }
@@ -173,7 +186,7 @@ export class MobileHost implements EngineHost {
     // the plugin's minAppVersion is lower because desktop doesn't need it.
     if (!requireApiVersion("1.12.3") || typeof this.adapter.appendBinary !== "function")
       throw new Error("Sync on this device needs Obsidian 1.12.3 or later. Update Obsidian, then restart sync.");
-    const origin = mobileOrigin(window.location.origin);
+    const origin = mobileOrigin(resolveWindowOrigin(window.location));
     const directory = this.join(this.pluginDir, "sync-engine");
     for (const [asset, packed] of Object.entries(packedAssets)) {
       if (asset === "/index.html") continue;
@@ -188,7 +201,7 @@ export class MobileHost implements EngineHost {
     const resource = this.adapter.getResourcePath(this.join(directory, "app.js"));
     const base = resource.split(/[?#]/)[0].replace(/app\.js$/, "");
     if (!this.workerPage) throw new Error("Missing sync Worker asset");
-    const config = { namespace: vaultNamespace(options.data.vaultId), collection: options.data.collectionId, workerUrl: this.workerPage };
+    const config = { namespace: vaultNamespace(options.data.vaultId), collection: options.data.collectionId, origin, capability: options.capability, workerUrl: this.workerPage };
     const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
     const html = `<!doctype html><html><head><meta charset="utf-8"><base href="${escape(base)}"></head><body><script type="module">globalThis.mdbaseHost=${JSON.stringify(config).replace(/</g, "\\u003c")}; await import("./app.js");</script></body></html>`;
     if (stopped()) throw new Error("Sync host stopped");

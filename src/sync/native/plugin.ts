@@ -358,14 +358,17 @@ export default class NativeSync extends Component {
   }
   async onMessage(e: Pick<MessageEvent<PageMessage>, "origin" | "source" | "data">) {
     if (this.unloaded) return;
-    if (e.origin !== this.origin || e.source !== this.frame?.contentWindow || !e.data) return;
+    if (e.source !== this.frame?.contentWindow || !e.data) return;
+    const opaqueCapacitorHello = this.origin.startsWith("capacitor:") && e.origin === "null"
+      && e.data.type === "hello" && e.data.capability === this.frameCapability;
+    if (e.origin !== this.origin && !opaqueCapacitorHello) return;
     const m = e.data;
     switch (m.type) {
       case "hello": {
         if (this.bridge) return;
         const channel = new MessageChannel(); this.bridge = channel.port1;
         channel.port1.onmessage = (event: MessageEvent<PageMessage>) => this.onMessage({ origin: this.origin, source: this.frame!.contentWindow, data: event.data });
-        this.frame.contentWindow!.postMessage({ type: "connect" }, this.origin, [channel.port2]);
+        this.frame.contentWindow!.postMessage({ type: "connect" }, opaqueCapacitorHello ? "*" : this.origin, [channel.port2]);
         this.log(`page up: origin=${m.origin} opfs=${m.opfs} secure=${m.isSecureContext}`);
         try { await this.checkOwnership(); } catch (e) { this.pauseForOwnership(e); return; }
         void this.call("start").catch(e => this.fail("start", e)); break;

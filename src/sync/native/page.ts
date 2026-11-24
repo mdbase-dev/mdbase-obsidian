@@ -12,8 +12,10 @@ import { RetryUploads } from "./upload";
 // replica with the submit validation param; older ones ignore it and refuse
 // invalid notes as invalid_record.
 const SYNC_WRITE: { validation?: "off" | "warn" | "error" } = { validation: "warn" };
-const embedded = (window as typeof window & { mdbaseHost?: { namespace: string; collection?: string; workerUrl: string } }).mdbaseHost;
-const manifest = engineManifest(location.origin, !!embedded);
+const embedded = (window as typeof window & { mdbaseHost?: { namespace: string; collection?: string; origin?: string; capability?: string; workerUrl: string } }).mdbaseHost;
+declare const __MDBASE_ENVIRONMENT__: "lab" | "staging" | "production";
+const origin = embedded?.origin ?? location.origin;
+const manifest = engineManifest(origin, !!embedded, __MDBASE_ENVIRONMENT__);
 const namespace = embedded?.namespace ?? new URL(location.href).searchParams.get("vault");
 if (!namespace) throw new Error("Missing stable vault storage namespace");
 const worker = embedded ? (url: string) => {
@@ -21,7 +23,6 @@ const worker = embedded ? (url: string) => {
   return new Worker(embedded.workerUrl, { type: "module" });
 } : undefined;
 
-declare const __MDBASE_ENVIRONMENT__: "lab" | "staging" | "production";
 let bridge: MessagePort | null = null;
 const queued: unknown[] = [];
 if (parent === window) throw new Error("Native SDK must run inside its owning vault");
@@ -31,7 +32,7 @@ const post = (msg: unknown, transfer: Transferable[] = []) => {
 const log = (...parts: unknown[]) => post({ type: "log", text: parts.map(String).join(" ") });
 
 const mdbase = createMdbase(
-  { id: manifest.id, name: manifest.name, environment: __MDBASE_ENVIRONMENT__, origin: location.origin, manifest, storage: { applicationNamespace: namespace } },
+  { id: manifest.id, name: manifest.name, environment: __MDBASE_ENVIRONMENT__, origin, manifest, storage: { applicationNamespace: namespace } },
   { followVisibility: false, ...(embedded ? { worker, urlSelection: false } : {}), signIn: { open: (url: string) => post({ type: "open-url", url }) } },
 );
 // The iframe is deliberately hidden; Obsidian, not iframe visibility, owns IO.
@@ -309,4 +310,4 @@ window.addEventListener("message", (e: MessageEvent<{ type?: string }>) => {
 // Error messages can include submitted documents or URLs; log only identifiers.
 window.addEventListener("error", () => log("page error (details intentionally omitted)"));
 window.addEventListener("unhandledrejection", (e) => log("page rejection:", errorInfo(e.reason).code ?? "unknown", errorInfo(e.reason).reason ?? ""));
-parent.postMessage({ type: "hello", origin: location.origin, opfs: !!navigator.storage?.getDirectory, isSecureContext }, "*");
+parent.postMessage({ type: "hello", origin, ...(embedded?.capability ? { capability: embedded.capability } : {}), opfs: !!navigator.storage?.getDirectory, isSecureContext }, "*");

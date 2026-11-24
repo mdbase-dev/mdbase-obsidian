@@ -10,7 +10,7 @@ export type NativePhase = Partial<Omit<ReturnType<typeof phaseSummary>, "kind">>
   owner?: "desktop" | "obsidian" | "unknown" | "unreadable" | "copied"; takeover?: boolean;
 };
 export type PageMessage =
-  | { type: "hello"; origin: string; opfs: boolean; isSecureContext: boolean }
+  | { type: "hello"; origin: string; capability?: string; opfs: boolean; isSecureContext: boolean }
   | { type: "phase"; phase: NativePhase }
   | { type: "open-url"; url: string }
   | { type: "changes"; batch: { cursor: string; reset?: boolean; changes: { id: string; path?: string; kind: string; entity: string | null }[] } }
