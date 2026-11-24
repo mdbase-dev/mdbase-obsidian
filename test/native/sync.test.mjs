@@ -421,6 +421,12 @@ test("a stop the plugin noticed reads plainly, without the old 'Check Sync' tail
   f.native.changed = text => seen.push(text);
   f.native.fail("ownership", new Error("Folder owned elsewhere (or ownership marker missing); waiting. Never remove another host's marker."));
   assert.equal(seen.at(-1), "Sync stopped. Another app may be syncing this folder, so Obsidian is waiting. Your files here are untouched.");
+  f.native.fail("sync", { code: "unavailable" });
+  assert.equal(seen.at(-1), "Sync stopped. Couldn't reach mdbase right now. Your files here are untouched. Check your connection and try again.");
+  f.native.fail("sync", { code: "rate_limited" });
+  assert.equal(seen.at(-1), "Sync stopped. mdbase is busy right now. Your files here are untouched. Wait a moment and try again.");
+  f.native.fail("sync", { code: "timeout" });
+  assert.equal(seen.at(-1), "Sync stopped. mdbase took too long to answer. Your files here are untouched. Try again in a moment.");
   f.native.fail("sync", { code: "conflict", reason: "revision" });
   assert.equal(seen.at(-1), "Sync stopped. Something went wrong (conflict revision). Your files here are untouched.");
   f.native.fail("sync", new Error("boom"));
@@ -1358,4 +1364,90 @@ test("createRecord evaluates lifecycle.on_create once in the collection and writ
   assert.equal(await f.pass(), true);
   assert.equal(createCalls, 1);
   assert.deepEqual(f.native.view().conflicts, []);
+});
+
+test("transient unavailable in resumeUploads preserves durable identity, lets unrelated paths sync, and recovers", async t => {
+  const f = fixture(t);
+  const uploadsDir = path.join(f.root, ".mdbase/uploads");
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  const transferId = "11111111-1111-1111-1111-111111111111";
+  const mutationId = "22222222-2222-2222-2222-222222222222";
+  const savedBytes = "original attachment bytes";
+  fs.writeFileSync(path.join(uploadsDir, transferId), savedBytes);
+  f.put("photo.png", "newer local attachment bytes");
+  f.native.data.uploads = { "photo.png": { transferId, mutationId, hash: digest(savedBytes) } };
+  await f.native.persist();
+  f.put("outgoing.md", "local note");
+  f.putRemote("incoming.md", "remote note", "r1", "inc-1");
+
+  const failCalls = [];
+  f.native.fail = (...args) => failCalls.push(args);
+
+  const remoteFiles = new Map();
+  let uploadAvailable = false;
+  const uploadCalls = [];
+  const baseCall = f.native.call.bind(f.native);
+  f.native.call = async (method, ...args) => {
+    if (method === "filesAll") return [...remoteFiles.values()];
+    if (method === "uploadForget") return true;
+    if (method === "upload") {
+      const [p, bytes, , , identity] = args;
+      uploadCalls.push({ p, body: Buffer.from(bytes).toString(), identity: { ...identity } });
+      if (!uploadAvailable) throw Object.assign(new Error("service unavailable"), { code: "unavailable" });
+      const row = { id: "att-1", path: p, digest: digest(bytes), size: bytes.length, confirmed: true };
+      remoteFiles.set(p, row);
+      return row;
+    }
+    return baseCall(method, ...args);
+  };
+
+  // Pass 1: resumeUploads hits transient unavailable, does NOT call fail(), and lets unrelated notes sync.
+  assert.equal(await f.pass(), false);
+  assert.deepEqual(failCalls, []);
+  assert.equal(f.remote.get("outgoing.md")?.document, "local note");
+  assert.equal(f.read("incoming.md"), "remote note");
+  assert.equal(uploadCalls.length, 1, "pending upload is not double-attempted in the same pass");
+  assert.deepEqual(uploadCalls[0].identity, { transferId, mutationId, hash: digest(savedBytes) });
+  assert.equal(f.native.data.uploads["photo.png"]?.transferId, transferId);
+  assert.equal(f.native.data.uploads["photo.png"]?.mutationId, mutationId);
+  assert.equal(fs.readFileSync(path.join(uploadsDir, transferId), "utf8"), savedBytes);
+  assert.equal(f.read("photo.png"), "newer local attachment bytes");
+  assert.equal(f.native.data.pathFailures["photo.png"]?.code, "unavailable");
+  assert.deepEqual(f.native.view().failures.map(x => [x.path, x.title]), [["photo.png", "Temporarily unavailable"]]);
+  const notSyncedCount = f.native.activity.filter(a => a.kind === "not_synced" && a.path === "photo.png").length;
+  assert.equal(notSyncedCount, 1);
+
+  // Pass 2: still unavailable; no duplicate activity spam, unrelated notes still sync.
+  f.put("outgoing-2.md", "second local note");
+  assert.equal(await f.pass(), false);
+  assert.deepEqual(failCalls, []);
+  assert.equal(f.remote.get("outgoing-2.md")?.document, "second local note");
+  assert.equal(f.native.activity.filter(a => a.kind === "not_synced" && a.path === "photo.png").length, 1);
+
+  // Pass 3: service recovers; resumes saved bytes with the exact same identity, then pushes newer local edit.
+  uploadAvailable = true;
+  assert.equal(await f.pass(), true);
+  assert.deepEqual(failCalls, []);
+  assert.equal(uploadCalls.length, 4);
+  assert.equal(uploadCalls[2].body, savedBytes);
+  assert.equal(uploadCalls[2].identity.transferId, transferId);
+  assert.equal(uploadCalls[2].identity.mutationId, mutationId);
+  assert.equal(uploadCalls[3].body, "newer local attachment bytes");
+  assert.deepEqual(f.native.data.uploads, {});
+  assert.deepEqual(f.native.view().failures, []);
+  assert.equal(f.native.data.paths["photo.png"]?.hash, digest("newer local attachment bytes"));
+});
+
+test("resumeUploads still fails closed on corrupt recovery bytes or conflict without mutationId", async t => {
+  const f = fixture(t);
+  const uploadsDir = path.join(f.root, ".mdbase/uploads");
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  const id = "33333333-3333-3333-3333-333333333333";
+  fs.writeFileSync(path.join(uploadsDir, id), "tampered bytes");
+  f.native.data.uploads = { "photo.png": { transferId: id, mutationId: id, hash: digest("expected bytes") } };
+  await assert.rejects(f.native.resumeUploads(), /Upload recovery bytes differ/);
+
+  fs.writeFileSync(path.join(uploadsDir, id), "expected bytes");
+  f.native.call = async () => { throw Object.assign(new Error("conflict"), { code: "conflict", reason: "revision" }); };
+  await assert.rejects(f.native.resumeUploads(), /conflict/);
 });

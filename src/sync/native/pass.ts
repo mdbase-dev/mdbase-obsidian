@@ -22,13 +22,16 @@ export async function reconcilePass(sync: NativeSync, defer: boolean, affected: 
   if (!sync.mirroring) return;
   await sync.checkOwnership();
   // Recovery journals require the original and preservation copy together.
-  if (sync.deferredRemoteMoves.size || Object.keys(sync.data.handledRejections ?? {}).length || Object.keys(sync.data.conflictCopies ?? {}).length || Object.keys(sync.data.pathFailures ?? {}).length) affected = undefined;
+  if (sync.deferredRemoteMoves.size || Object.keys(sync.data.handledRejections ?? {}).length || Object.keys(sync.data.conflictCopies ?? {}).length || Object.keys(sync.data.pathFailures ?? {}).length || Object.keys(sync.data.uploads ?? {}).length) affected = undefined;
   if (!affected || sync.inclusion === undefined) await sync.readInclusion();
   await sync.forgetSkipped();
+  const failedBefore = new Set(Object.keys(sync.data.pathFailures ?? {}));
   await sync.resumeUploads();
+  // Paths whose resumed upload is still pending stay out of this pass's
+  // renames, deletes, and duplicate pushes until the saved transfer finishes.
+  const pendingUploads = new Set(Object.keys(sync.data.uploads ?? {}));
   let remotes = await sync.remoteAll(affected);
   await sync.acknowledgeHandled(false, remotes);
-  const failedBefore = new Set(Object.keys(sync.data.pathFailures ?? {}));
   // One path's failure is recorded for the Sync tab; the pass carries on.
   const notSynced = async (p: string, signature: string, e: unknown): Promise<ActivityKind> => {
     if (!sync.mirroring || sync.unloaded) throw e;
@@ -51,13 +54,13 @@ export async function reconcilePass(sync: NativeSync, defer: boolean, affected: 
   const byId = new Map([...remotes.values()].map(r => [`${r.kind}:${r.id}`, r]));
   const previousMoves = sync.deferredRemoteMoves;
   sync.deferredRemoteMoves = new Map();
-  const blockedSources = new Set<string>(), blockedTargets = new Set<string>();
+  const blockedSources = new Set<string>(pendingUploads), blockedTargets = new Set<string>(pendingUploads);
   let retryMoves = false, refreshRemotes = false;
   // Join by stable identity BEFORE treating a new path as a new remote item.
   for (const [from, k] of Object.entries(sync.data.paths)) {
     const r = byId.get(`${k.kind}:${k.id}`);
     // A move into a folder this device skips reads as a removal at `from`.
-    if (!r || r.path === from || !sync.accessiblePath(from) || !sync.accessiblePath(r.path) || sync.skipped(r.path) || (affected && !affected.has(from) && !affected.has(r.path))) continue;
+    if (!r || r.path === from || pendingUploads.has(from) || pendingUploads.has(r.path) || !sync.accessiblePath(from) || !sync.accessiblePath(r.path) || sync.skipped(r.path) || (affected && !affected.has(from) && !affected.has(r.path))) continue;
     affected?.add(from); affected?.add(r.path);
     const signature = `remote-move:${JSON.stringify([k.id, k.kind, r.path, r.revision])}`;
     try {
@@ -118,7 +121,7 @@ export async function reconcilePass(sync: NativeSync, defer: boolean, affected: 
       await sync.persist(); sync.log(`read failed: ${JSON.stringify(p)} ${errorInfo(e).code ?? ""}`);
     }
   }
-  if (!affected) for (const p of Object.keys(sync.data.pathFailures ?? {})) if (!paths.has(p)) { delete sync.data.pathFailures![p]; await sync.persist(); }
+  if (!affected) for (const p of Object.keys(sync.data.pathFailures ?? {})) if (!paths.has(p) && !pendingUploads.has(p)) { delete sync.data.pathFailures![p]; await sync.persist(); }
   const missing = Object.entries(sync.data.paths).filter(([p]) => paths.has(p) && !blockedSources.has(p) && !blockedTargets.has(p) && !unreadable.has(p) && !locals.has(p)).map(([p, known]) => ({ path: p, known, remote: remotes.get(p) }));
   const added = [...locals].filter(([p, l]) => !blockedSources.has(p) && !blockedTargets.has(p) && !l.unsupportedEncoding && !sync.data.paths[p] && !remotes.has(p)).map(([p, l]) => ({ path: p, kind: sync.kindOf(p) as ItemKind, hash: l.hash, disk: sync.diskIdentity(p) }));
   // A content event can race disk moves whose create/delete watcher has not

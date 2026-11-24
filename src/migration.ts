@@ -17,7 +17,7 @@ import {
   type MdbaseFieldDef,
   type MdbaseTypeDef,
 } from "./mdbaseCore";
-import { fieldsFromV03Schema } from "./typeDefinitions";
+import { fieldsFromV03Schema, resolveV03SchemaRef } from "./typeDefinitions";
 import { getTypesForFile } from "./typeMatching";
 
 type Dict = Record<string, unknown>;
@@ -618,9 +618,9 @@ function sourceTypeDefinition(path: string, frontmatter: Dict): MdbaseTypeDef {
   };
 }
 
-function targetTypeDefinition(path: string, frontmatter: Dict): MdbaseTypeDef {
+function targetTypeDefinition(path: string, frontmatter: Dict, resolvedSchema?: Dict): MdbaseTypeDef {
   const wrapper = isRecord(frontmatter.schema) ? frontmatter.schema : {};
-  const schema = isRecord(wrapper.value) ? wrapper.value : {};
+  const schema = resolvedSchema ?? (isRecord(wrapper.value) ? wrapper.value : {});
   return {
     name: typeof frontmatter.name === "string" ? frontmatter.name : path.split("/").pop()?.replace(/\.md$/, "") ?? "type",
     fields: fieldsFromV03Schema(schema),
@@ -634,11 +634,38 @@ function targetTypeDefinition(path: string, frontmatter: Dict): MdbaseTypeDef {
   };
 }
 
+function looksLikeV03Type(frontmatter: Dict): boolean {
+  return frontmatter.kind === "mdbase.type" || frontmatter.schema !== undefined;
+}
+
+async function resolveExistingV03Type(
+  vault: Vault,
+  path: string,
+  frontmatter: Dict,
+): Promise<MdbaseTypeDef> {
+  const name = typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
+  const schemaWrapper = isRecord(frontmatter.schema) ? frontmatter.schema : null;
+  let schema = schemaWrapper && isRecord(schemaWrapper.value) ? schemaWrapper.value : null;
+  if (!schema && schemaWrapper && typeof schemaWrapper.ref === "string") {
+    schema = await resolveV03SchemaRef(vault, path, schemaWrapper.ref);
+  }
+  if (frontmatter.kind !== "mdbase.type" || !name || !schema) {
+    throw new Error(t`${path} is not a valid v0.3 type definition.`);
+  }
+  return targetTypeDefinition(path, frontmatter, schema);
+}
+
 function effectiveV02(frontmatter: Dict, names: string[], types: Map<string, MdbaseTypeDef>): Dict {
   const result = clone(frontmatter);
   for (const name of names) {
     const type = types.get(name);
     if (!type) continue;
+    if (type.specProfile === "v0.3") {
+      for (const [field, value] of Object.entries(type.collection?.read_defaults ?? {})) {
+        if (!(field in result)) result[field] = clone(value);
+      }
+      continue;
+    }
     for (const [field, definition] of Object.entries(type.fields)) {
       if (!(field in result) && definition.default !== undefined) result[field] = clone(definition.default);
     }
@@ -724,6 +751,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
   });
   const sourceTypes = new Map<string, MdbaseTypeDef>();
   const targetTypes = new Map<string, MdbaseTypeDef>();
+  let existingV03Count = 0;
   for (const file of vault.getMarkdownFiles().filter((entry) => entry.path.startsWith(prefix)).sort((a, b) => a.path.localeCompare(b.path))) {
     const source = await vault.cachedRead(file);
     const parsed = parseFrontmatter(source);
@@ -731,6 +759,20 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
       const path = file.path;
       const reason = parsed.error ?? t`frontmatter is missing`;
       throw new Error(t`Cannot migrate ${path}: ${reason}.`);
+    }
+    if (looksLikeV03Type(parsed.frontmatter)) {
+      const existingType = await resolveExistingV03Type(vault, file.path, parsed.frontmatter);
+      sourceTypes.set(existingType.name, existingType);
+      targetTypes.set(existingType.name, existingType);
+      existingV03Count += 1;
+      diagnostics.push({
+        path: file.path,
+        code: "already_v03_type",
+        message: "Already in v0.3 format; this file will be left unchanged.",
+        displayMessage: t`Already in v0.3 format; this file will be left unchanged.`,
+        severity: "warning",
+      });
+      continue;
     }
     const migrated = migrateType(file.path, sourceVersion, parsed.frontmatter);
     const sourceType = sourceTypeDefinition(file.path, parsed.frontmatter);
@@ -748,7 +790,7 @@ export async function analyzeV02Migration(vault: Vault): Promise<V02MigrationPla
     summaries.push(migrated.summary);
     diagnostics.push(...migrated.diagnostics);
   }
-  if (!summaries.length) throw new Error(t`No v0.2 type files were found in ${typesFolder}.`);
+  if (!summaries.length && !existingV03Count) throw new Error(t`No v0.2 type files were found in ${typesFolder}.`);
 
   let recordsVerified = 0;
   let recordsSkipped = 0;

@@ -381,6 +381,10 @@ msgstr "{path} 已更改。请重新检查。"
 msgid "{path} is not a v0.2 type with a name and fields."
 msgstr "{path} 不是包含名称和字段的 v0.2 类型。"
 
+#: src/migration.ts
+msgid "{path} is not a valid v0.3 type definition."
+msgstr "{path} 不是有效的 v0.3 类型定义。"
+
 #: src/workspace/syncPane.ts
 msgid "{pending, plural, one {# change} other {# changes}}"
 msgstr "{pending, plural, other {# 项更改}}"
@@ -733,6 +737,10 @@ msgstr "允许值"
 #: src/typeDraft.ts
 msgid "Allowed values must be unique."
 msgstr "允许值必须唯一。"
+
+#: src/migration.ts
+msgid "Already in v0.3 format; this file will be left unchanged."
+msgstr "已是 v0.3 格式；此文件将保持不变。"
 
 #: src/workspace/syncPane.ts
 msgid "Already up to date"
@@ -1250,6 +1258,14 @@ msgstr "复制登录链接"
 #: src/workspace/types/drafts.ts
 msgid "Copy the parts you want into the current definition, then review before saving."
 msgstr "将所需部分复制到当前定义中，保存前进行检查。"
+
+#: src/sync/native/plugin.ts
+msgid "Couldn't reach mdbase right now. Your files here are untouched. Check your connection and try again."
+msgstr "目前无法连接 mdbase。此处的文件不受影响。请检查网络连接后重试。"
+
+#: src/sync/native/failures.ts
+msgid "Couldn't reach mdbase to sync this file. Your file is unchanged; sync will try again."
+msgstr "无法连接 mdbase 以同步此文件。你的文件未受影响；同步将重试。"
 
 #: src/sync/words.ts
 msgid "Couldn't reach mdbase. Check your connection and try again."
@@ -2132,6 +2148,14 @@ msgstr "mdbase 发现同步数据存在问题，已停止同步以保护笔记�
 msgid "mdbase found a problem with this collection's keys and stopped to keep your notes safe."
 msgstr "mdbase 发现此集合的密钥存在问题，已停止同步以保护笔记。"
 
+#: src/sync/native/failures.ts
+msgid "mdbase is busy"
+msgstr "mdbase 正忙"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase is busy right now. Your files here are untouched. Wait a moment and try again."
+msgstr "mdbase 目前正忙。此处的文件不受影响。请稍等片刻后重试。"
+
 #: src/sync/words.ts
 msgid "mdbase is busy. Sync carries on shortly."
 msgstr "mdbase 正忙。同步稍后继续。"
@@ -2187,6 +2211,14 @@ msgstr "mdbase 响应超时。"
 #: src/sync/words.ts
 msgid "mdbase took too long to answer. Try again."
 msgstr "mdbase 响应超时。请重试。"
+
+#: src/sync/native/failures.ts
+msgid "mdbase took too long to answer. Your file is unchanged; sync will try again."
+msgstr "mdbase 响应超时。你的文件未受影响；同步将重试。"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase took too long to answer. Your files here are untouched. Try again in a moment."
+msgstr "mdbase 响应超时。此处的文件不受影响。请稍后重试。"
 
 #: src/typeModel.ts
 msgid "mdbase v0.2 type definitions are read-only. Migrate the collection before editing."
@@ -3533,6 +3565,10 @@ msgstr "目标类型"
 msgid "TaskNotes filename behavior is recorded as TaskNotes runtime metadata."
 msgstr "TaskNotes 文件名行为已记录为 TaskNotes 运行时元数据。"
 
+#: src/sync/native/failures.ts
+msgid "Temporarily unavailable"
+msgstr "暂时不可用"
+
 #: src/validation.ts
 msgid "text"
 msgstr "文本"
@@ -3836,6 +3872,10 @@ msgstr "此版本的插件无法解锁私有集合。请更新后重试。"
 msgid "Time"
 msgstr "时间"
 
+#: src/sync/native/failures.ts
+msgid "Timed out"
+msgstr "请求超时"
+
 #: src/workspace/syncPane.ts
 msgid "To keep working on \"{name}\", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it."
 msgstr "要继续使用“{name}”，请在下方添加：其最新版本将出现在新文件夹中，检查后可删除旧副本。"
@@ -3867,6 +3907,10 @@ msgstr "尝试次数过多。请等待几分钟后重试。"
 #: src/issuePresentation.ts
 msgid "too many items"
 msgstr "项目过多"
+
+#: src/sync/native/failures.ts
+msgid "Too many requests right now. Your file is unchanged; sync will try again shortly."
+msgstr "当前请求过多。你的文件未受影响；同步将很快重试。"
 
 #: src/sync/words.ts
 msgid "Too many tries. Wait a few minutes, then try again."

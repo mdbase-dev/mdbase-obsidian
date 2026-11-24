@@ -381,6 +381,10 @@ msgstr "{path}が変更されました。もう一度確認してください。
 msgid "{path} is not a v0.2 type with a name and fields."
 msgstr "{path}は名前とフィールドを持つv0.2タイプではありません。"
 
+#: src/migration.ts
+msgid "{path} is not a valid v0.3 type definition."
+msgstr "{path}は有効なv0.3タイプ定義ではありません。"
+
 #: src/workspace/syncPane.ts
 msgid "{pending, plural, one {# change} other {# changes}}"
 msgstr "{pending, plural, other {#件の変更}}"
@@ -733,6 +737,10 @@ msgstr "許可された値"
 #: src/typeDraft.ts
 msgid "Allowed values must be unique."
 msgstr "許可された値は一意にしてください。"
+
+#: src/migration.ts
+msgid "Already in v0.3 format; this file will be left unchanged."
+msgstr "すでにv0.3形式のため、このファイルは変更されません。"
 
 #: src/workspace/syncPane.ts
 msgid "Already up to date"
@@ -1250,6 +1258,14 @@ msgstr "ログインリンクをコピー"
 #: src/workspace/types/drafts.ts
 msgid "Copy the parts you want into the current definition, then review before saving."
 msgstr "必要な部分を現在の定義にコピーし、保存前に確認してください。"
+
+#: src/sync/native/plugin.ts
+msgid "Couldn't reach mdbase right now. Your files here are untouched. Check your connection and try again."
+msgstr "現在mdbaseに接続できません。ここにあるファイルは変更されていません。接続を確認してもう一度お試しください。"
+
+#: src/sync/native/failures.ts
+msgid "Couldn't reach mdbase to sync this file. Your file is unchanged; sync will try again."
+msgstr "このファイルを同期するためにmdbaseへ接続できませんでした。ファイルは変更されていません。同期は再試行されます。"
 
 #: src/sync/words.ts
 msgid "Couldn't reach mdbase. Check your connection and try again."
@@ -2132,6 +2148,14 @@ msgstr "mdbaseは同期データに問題を検出し、ノートを保護する
 msgid "mdbase found a problem with this collection's keys and stopped to keep your notes safe."
 msgstr "mdbaseはこのコレクションのキーに問題を検出し、ノートを保護するために停止しました。"
 
+#: src/sync/native/failures.ts
+msgid "mdbase is busy"
+msgstr "mdbaseは処理中です"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase is busy right now. Your files here are untouched. Wait a moment and try again."
+msgstr "現在mdbaseは処理中です。ここにあるファイルは変更されていません。しばらく待ってからもう一度お試しください。"
+
 #: src/sync/words.ts
 msgid "mdbase is busy. Sync carries on shortly."
 msgstr "mdbaseは処理中です。まもなく同期が再開されます。"
@@ -2187,6 +2211,14 @@ msgstr "mdbaseの応答がタイムアウトしました。"
 #: src/sync/words.ts
 msgid "mdbase took too long to answer. Try again."
 msgstr "mdbaseの応答がタイムアウトしました。もう一度お試しください。"
+
+#: src/sync/native/failures.ts
+msgid "mdbase took too long to answer. Your file is unchanged; sync will try again."
+msgstr "mdbaseの応答がタイムアウトしました。ファイルは変更されていません。同期は再試行されます。"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase took too long to answer. Your files here are untouched. Try again in a moment."
+msgstr "mdbaseの応答がタイムアウトしました。ここにあるファイルは変更されていません。しばらくしてからもう一度お試しください。"
 
 #: src/typeModel.ts
 msgid "mdbase v0.2 type definitions are read-only. Migrate the collection before editing."
@@ -3533,6 +3565,10 @@ msgstr "参照先タイプ"
 msgid "TaskNotes filename behavior is recorded as TaskNotes runtime metadata."
 msgstr "TaskNotesのファイル名の動作はTaskNotesのランタイムメタデータとして記録されます。"
 
+#: src/sync/native/failures.ts
+msgid "Temporarily unavailable"
+msgstr "一時的に利用できません"
+
 #: src/validation.ts
 msgid "text"
 msgstr "テキスト"
@@ -3836,6 +3872,10 @@ msgstr "このバージョンのプラグインではプライベートコレク
 msgid "Time"
 msgstr "時刻"
 
+#: src/sync/native/failures.ts
+msgid "Timed out"
+msgstr "タイムアウトしました"
+
 #: src/workspace/syncPane.ts
 msgid "To keep working on \"{name}\", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it."
 msgstr "「{name}」で作業を続けるには、以下に追加してください。最新バージョンが新しいフォルダーに届き、確認後に古いコピーを削除できます。"
@@ -3867,6 +3907,10 @@ msgstr "試行回数が多すぎます。数分待ってから、もう一度お
 #: src/issuePresentation.ts
 msgid "too many items"
 msgstr "項目が多すぎます"
+
+#: src/sync/native/failures.ts
+msgid "Too many requests right now. Your file is unchanged; sync will try again shortly."
+msgstr "現在リクエストが多すぎます。ファイルは変更されていません。同期はまもなく再試行されます。"
 
 #: src/sync/words.ts
 msgid "Too many tries. Wait a few minutes, then try again."

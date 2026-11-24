@@ -381,6 +381,10 @@ msgstr "{path} wurde geändert. Prüfen Sie erneut."
 msgid "{path} is not a v0.2 type with a name and fields."
 msgstr "{path} ist kein v0.2-Typ mit einem Namen und Feldern."
 
+#: src/migration.ts
+msgid "{path} is not a valid v0.3 type definition."
+msgstr "{path} ist keine gültige v0.3-Typdefinition."
+
 #: src/workspace/syncPane.ts
 msgid "{pending, plural, one {# change} other {# changes}}"
 msgstr "{pending, plural, one {# Änderung} other {# Änderungen}}"
@@ -733,6 +737,10 @@ msgstr "Zulässige Werte"
 #: src/typeDraft.ts
 msgid "Allowed values must be unique."
 msgstr "Zulässige Werte müssen eindeutig sein."
+
+#: src/migration.ts
+msgid "Already in v0.3 format; this file will be left unchanged."
+msgstr "Bereits im v0.3-Format; diese Datei bleibt unverändert."
 
 #: src/workspace/syncPane.ts
 msgid "Already up to date"
@@ -1250,6 +1258,14 @@ msgstr "Anmeldelink kopieren"
 #: src/workspace/types/drafts.ts
 msgid "Copy the parts you want into the current definition, then review before saving."
 msgstr "Kopieren Sie die gewünschten Teile in die aktuelle Definition und prüfen Sie sie vor dem Speichern."
+
+#: src/sync/native/plugin.ts
+msgid "Couldn't reach mdbase right now. Your files here are untouched. Check your connection and try again."
+msgstr "mdbase konnte gerade nicht erreicht werden. Ihre Dateien hier bleiben unverändert. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
+
+#: src/sync/native/failures.ts
+msgid "Couldn't reach mdbase to sync this file. Your file is unchanged; sync will try again."
+msgstr "mdbase konnte zum Synchronisieren dieser Datei nicht erreicht werden. Ihre Datei bleibt unverändert; die Synchronisierung versucht es erneut."
 
 #: src/sync/words.ts
 msgid "Couldn't reach mdbase. Check your connection and try again."
@@ -2132,6 +2148,14 @@ msgstr "mdbase hat ein Problem mit den synchronisierten Daten gefunden und zum S
 msgid "mdbase found a problem with this collection's keys and stopped to keep your notes safe."
 msgstr "mdbase hat ein Problem mit den Schlüsseln dieser Sammlung gefunden und zum Schutz Ihrer Notizen angehalten."
 
+#: src/sync/native/failures.ts
+msgid "mdbase is busy"
+msgstr "mdbase ist beschäftigt"
+
+#: src/sync/native/plugin.ts
+msgid "mdbase is busy right now. Your files here are untouched. Wait a moment and try again."
+msgstr "mdbase ist gerade beschäftigt. Ihre Dateien hier bleiben unverändert. Warten Sie einen Moment und versuchen Sie es erneut."
+
 #: src/sync/words.ts
 msgid "mdbase is busy. Sync carries on shortly."
 msgstr "mdbase ist beschäftigt. Die Synchronisierung wird in Kürze fortgesetzt."
@@ -2187,6 +2211,14 @@ msgstr "mdbase hat zu lange für eine Antwort benötigt."
 #: src/sync/words.ts
 msgid "mdbase took too long to answer. Try again."
 msgstr "mdbase hat zu lange für eine Antwort benötigt. Versuchen Sie es erneut."
+
+#: src/sync/native/failures.ts
+msgid "mdbase took too long to answer. Your file is unchanged; sync will try again."
+msgstr "mdbase hat zu lange für eine Antwort benötigt. Ihre Datei bleibt unverändert; die Synchronisierung versucht es erneut."
+
+#: src/sync/native/plugin.ts
+msgid "mdbase took too long to answer. Your files here are untouched. Try again in a moment."
+msgstr "mdbase hat zu lange für eine Antwort benötigt. Ihre Dateien hier bleiben unverändert. Versuchen Sie es in einem Moment erneut."
 
 #: src/typeModel.ts
 msgid "mdbase v0.2 type definitions are read-only. Migrate the collection before editing."
@@ -3533,6 +3565,10 @@ msgstr "Zieltyp"
 msgid "TaskNotes filename behavior is recorded as TaskNotes runtime metadata."
 msgstr "Das TaskNotes-Dateinamenverhalten wird als TaskNotes-Laufzeitmetadaten erfasst."
 
+#: src/sync/native/failures.ts
+msgid "Temporarily unavailable"
+msgstr "Vorübergehend nicht verfügbar"
+
 #: src/validation.ts
 msgid "text"
 msgstr "Text"
@@ -3836,6 +3872,10 @@ msgstr "Diese Plugin-Version kann private Sammlungen nicht entsperren. Aktualisi
 msgid "Time"
 msgstr "Uhrzeit"
 
+#: src/sync/native/failures.ts
+msgid "Timed out"
+msgstr "Zeitüberschreitung"
+
 #: src/workspace/syncPane.ts
 msgid "To keep working on \"{name}\", add it below: its latest version arrives in a new folder, and you can delete the old copy once you've checked it."
 msgstr "Um weiter an „{name}“ zu arbeiten, fügen Sie es unten hinzu: Die neueste Version wird in einem neuen Ordner abgelegt und Sie können die alte Kopie nach der Prüfung löschen."
@@ -3867,6 +3907,10 @@ msgstr "Zu viele Versuche. Warten Sie einige Minuten und versuchen Sie es erneut
 #: src/issuePresentation.ts
 msgid "too many items"
 msgstr "zu viele Elemente"
+
+#: src/sync/native/failures.ts
+msgid "Too many requests right now. Your file is unchanged; sync will try again shortly."
+msgstr "Gerade zu viele Anfragen. Ihre Datei bleibt unverändert; die Synchronisierung versucht es in Kürze erneut."
 
 #: src/sync/words.ts
 msgid "Too many tries. Wait a few minutes, then try again."

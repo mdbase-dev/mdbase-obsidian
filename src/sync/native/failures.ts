@@ -71,6 +71,9 @@ export function describeFailure(f: PathFailureInfo): FailureText {
       return { title: t`Couldn't read this file`, detail: t`Check that the file isn't locked or restricted, then try again.` };
     case "forbidden": return { title: t`Not allowed`, detail: t`Your access to this collection doesn't allow this change.` };
     case "outcome_unknown": return { title: t`Waiting to confirm`, detail: t`mdbase didn't confirm whether this change arrived. It will check again before resending.` };
+    case "unavailable": return { title: t`Temporarily unavailable`, detail: t`Couldn't reach mdbase to sync this file. Your file is unchanged; sync will try again.` };
+    case "rate_limited": return { title: t`mdbase is busy`, detail: t`Too many requests right now. Your file is unchanged; sync will try again shortly.` };
+    case "timeout": return { title: t`Timed out`, detail: t`mdbase took too long to answer. Your file is unchanged; sync will try again.` };
     case "invalid_request":
       if (f.reason === "not_a_record_path" || f.reason === "not_a_file_path")
         return { title: t`Path not allowed`, detail: t`The collection's settings don't allow a note or file at this path.` };
