@@ -1,6 +1,6 @@
 {
   "name": "mdbase-obsidian",
-  "version": "0.5.9",
+  "version": "0.5.10",
   "description": "mdbase types and sync for Obsidian",
   "main": "main.js",
   "type": "module",
