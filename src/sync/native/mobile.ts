@@ -203,7 +203,8 @@ export class MobileHost implements EngineHost {
     if (!this.workerPage) throw new Error("Missing sync Worker asset");
     const config = { namespace: vaultNamespace(options.data.vaultId), collection: options.data.collectionId, origin, capability: options.capability, workerUrl: this.workerPage };
     const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><base href="${escape(base)}"></head><body><script type="module">globalThis.mdbaseHost=${JSON.stringify(config).replace(/</g, "\\u003c")}; await import("./app.js");</script></body></html>`;
+    // iOS WKWebView resolves relative dynamic import("./...") in an inline module script inside a blob: iframe against the blob: URL instead of <base href>.
+    const html = `<!doctype html><html><head><meta charset="utf-8"><base href="${escape(base)}"></head><body><script type="module">globalThis.mdbaseHost=${JSON.stringify(config).replace(/</g, "\\u003c")}; await import(new URL("./app.js", document.baseURI).href);</script></body></html>`;
     if (stopped()) throw new Error("Sync host stopped");
     this.page = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     return { origin, url: this.page };
