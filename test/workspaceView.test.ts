@@ -1456,6 +1456,46 @@ test("native conflict copies are listed with non-destructive review and keep-bot
   f.dom.window.close();
 });
 
+test("definition conflict buttons disable while resolving and surface errors if resolution fails", async () => {
+  const f = directFixture({ kind: "ready" }, "Synced");
+  let resolveCall!: () => void;
+  const calls: [string, string][] = [];
+  Object.assign((f.sync.controller as unknown as { native: object }).native, {
+    resolveDefinition: (p: string, keep: "local" | "remote") => {
+      calls.push([p, keep]);
+      return new Promise<void>((resolve) => { resolveCall = resolve; });
+    },
+  });
+  f.sync.set({
+    direct: {
+      text: "Synced",
+      phase: { kind: "ready" },
+      failures: [{ path: "_types/book.md", title: "Changed here and in the collection", detail: "Choose which version to keep.", choose: true }],
+    },
+  });
+  f.state.render();
+  const keepLocal = button(f.root, "Keep this vault's");
+  keepLocal.click();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], ["_types/book.md", "local"]);
+  assert.equal(button(f.root, "Keep this vault's").disabled, true, "disables immediately on tap");
+  assert.equal(button(f.root, "Keep the collection's").disabled, true);
+  // A second tap while in flight is ignored.
+  button(f.root, "Keep this vault's").click();
+  assert.equal(calls.length, 1);
+  resolveCall();
+  await tick();
+  assert.equal(button(f.root, "Keep this vault's").disabled, false);
+
+  Object.assign((f.sync.controller as unknown as { native: object }).native, {
+    resolveDefinition: async () => { throw new Error("Mirror stopped"); },
+  });
+  button(f.root, "Keep this vault's").click();
+  await tick();
+  assert.match(f.text(), /Mirror stopped/);
+  f.dom.window.close();
+});
+
 test("in-plugin sync offers Manage apps with the SDK's access page, and only a safe one", () => {
   const f = directFixture({ kind: "ready", manageAccess: "https://connect.mdbase.dev/access?collection=c1" }, "Synced");
   const opened = captureOpen(f);

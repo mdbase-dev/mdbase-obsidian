@@ -1076,6 +1076,7 @@ msgstr "Notizen werden geprüft…"
 msgid "Checking sync"
 msgstr "Synchronisierung wird geprüft"
 
+#: src/sync/native/pass.ts
 #: src/sync/native/plugin.ts
 #: src/sync/native/session.ts
 msgid "Checking your files"

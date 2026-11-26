@@ -1076,6 +1076,7 @@ msgstr "노트 검사 중…"
 msgid "Checking sync"
 msgstr "동기화 확인 중"
 
+#: src/sync/native/pass.ts
 #: src/sync/native/plugin.ts
 #: src/sync/native/session.ts
 msgid "Checking your files"

@@ -6,7 +6,7 @@ import { encode, decode, hash, validUtf8 } from "./encoding";
 import { retryUpload } from "./upload";
 import type { Synced } from "./reconcile";
 import type NativeSync from "./plugin";
-import type { LocalFile, Remote, WireItem } from "./plugin";
+import type { LocalFile, Remote, WireItem, ItemKind } from "./plugin";
 import type { SyncState } from "./journal";
 
 // Refusals of this exact input. Retrying unchanged bytes gets the same answer,
@@ -88,9 +88,9 @@ export async function pull(sync: NativeSync, p: string, r: Remote, expectedHash 
   catch (e: unknown) { if (errorInfo(e).code === "local_changed") return sync.pull(p, r, latest?.hash); throw e; }
   sync.remember(p, r, hash(bytes));
 }
-export async function push(sync: NativeSync, p: string, l: LocalFile, r?: Remote) {
+export async function push(sync: NativeSync, p: string, l: LocalFile, r?: Remote, forcedKind?: ItemKind) {
   await sync.assertMirror();
-  const kind = sync.kindOf(p);
+  const kind = forcedKind ?? sync.kindOf(p);
   if (kind === "excluded") throw new Error("Excluded path is never sent");
   if (r && r.kind !== kind) throw new Error("Remote item kind differs from extension; manual resolution required");
   let next: WireItem;

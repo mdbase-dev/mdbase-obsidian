@@ -83,6 +83,7 @@ export class SyncPane {
   private unlockWith: "password" | "recovery" = "password";
   private syncingNow = false;
   private syncNowResult: { at: number; text: string; tone: "ok" | "attention" } | null = null;
+  private readonly resolving = new Set<string>();
 
   constructor(private readonly ctx: WorkspaceContext) {}
 
@@ -246,12 +247,22 @@ export class SyncPane {
     this.ctx.render();
   }
 
-  private actions(container: HTMLElement, buttons: [string, string, boolean, () => void][]): void {
+  private resolveAction(key: string, action: () => Promise<unknown>): void {
+    if (this.resolving.has(key)) return;
+    this.resolving.add(key);
+    this.ctx.render();
+    this.run(() => action().finally(() => {
+      this.resolving.delete(key);
+      this.ctx.render();
+    }));
+  }
+
+  private actions(container: HTMLElement, buttons: [string, string, boolean, () => void][], disabled = false): void {
     const row = container.createDiv({ cls: "mdbase-actions" });
     for (const [key, label, primary, onClick] of buttons) {
       const button = row.createEl("button", { text: label, cls: primary ? "mod-cta" : "" });
       button.setAttr("data-focus-key", `sync-${key}`);
-      button.disabled = this.s.busy !== null;
+      button.disabled = disabled || this.s.busy !== null;
       button.onclick = onClick;
     }
   }
@@ -529,9 +540,9 @@ export class SyncPane {
       row.createDiv({ text: failure.title });
       row.createDiv({ cls: "mdbase-muted", text: failure.detail });
       if (failure.choose && native) this.actions(row, [
-        ["keep-this-vault-s", t`Keep this vault's`, false, () => this.run(() => native.resolveDefinition(failure.path, "local"))],
-        ["keep-the-collection-s", t`Keep the collection's`, false, () => this.run(() => native.resolveDefinition(failure.path, "remote"))],
-      ]);
+        ["keep-this-vault-s", t`Keep this vault's`, false, () => this.resolveAction(`def:${failure.path}`, () => native.resolveDefinition(failure.path, "local"))],
+        ["keep-the-collection-s", t`Keep the collection's`, false, () => this.resolveAction(`def:${failure.path}`, () => native.resolveDefinition(failure.path, "remote"))],
+      ], this.resolving.has(`def:${failure.path}`));
     }
     const remaining = failures.length - MAX_FAILURES_SHOWN;
     if (remaining > 0) section.createEl("p", { cls: "mdbase-muted", text: t`And ${remaining} more.` });
@@ -551,8 +562,8 @@ export class SyncPane {
       this.actions(row, [
         ["open-current-file", t`Open current file`, false, () => this.ctx.host.openFileByPath(conflict.path)],
         ["open-conflict-copy", t`Open conflict copy`, false, () => this.ctx.host.openFileByPath(conflict.copy)],
-        ["keep-both", t`Keep both`, false, () => this.run(() => native.keepConflictCopies(conflict.copy))],
-      ]);
+        ["keep-both", t`Keep both`, false, () => this.resolveAction(`copy:${conflict.copy}`, () => native.keepConflictCopies(conflict.copy))],
+      ], this.resolving.has(`copy:${conflict.copy}`));
     }
   }
 

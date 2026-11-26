@@ -388,14 +388,25 @@ export async function reconcileDefinition(sync: NativeSync, p: string, decision:
 }
 /** The user's choice for a definition that changed on both sides. */
 export async function resolveDefinition(sync: NativeSync, p: string, keep: "local" | "remote") {
+  let ran = false;
   await sync.enqueue(async () => {
+    ran = true;
+    sync.passStatus(t`Checking your files`, "busy");
     const resources = await sync.call("resourcesAll");
     await sync.readLayout(resources.find(item => item.path === CONFIG_PATH)?.document);
-    if (sync.kindOf(p) !== "resource") return;
     const row = resources.find(item => item.path === p);
+    const isResource = !!row || sync.data.paths[p]?.kind === "resource" || sync.kindOf(p) === "resource";
+    if (!isResource) {
+      if (sync.data.pathFailures?.[p]) {
+        delete sync.data.pathFailures[p];
+        await sync.persist();
+      }
+      sync.passStatus(sync.phase.sync ? readyText(sync.phase.sync) : t`Synced`);
+      return;
+    }
     const r = row ? sync.remote(row, "resource") : undefined, l = await sync.local(p);
     if (keep === "local") {
-      if (l) await sync.push(p, l, r);
+      if (l) await sync.push(p, l, r, "resource");
       else if (r) { await sync.call("resourceDelete", p, r.revision); delete sync.data.paths[p]; await sync.persist(); }
     } else {
       // Keep the replaced text where sync never looks, in case it's wanted.
@@ -410,6 +421,8 @@ export async function resolveDefinition(sync: NativeSync, p: string, keep: "loca
       else if (l) await sync.removeLocal(p, l.hash);
     }
     delete sync.data.pathFailures?.[p]; await sync.persist();
+    sync.passStatus(sync.phase.sync ? readyText(sync.phase.sync) : t`Synced`);
     await sync.reconcileAll(false, undefined, true);
   });
+  if (!ran) throw new Error("Mirror stopped");
 }
