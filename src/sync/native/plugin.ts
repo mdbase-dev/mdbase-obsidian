@@ -105,6 +105,8 @@ export default class NativeSync extends Component {
   commitWaiters: { resolve: () => void; reject: (e: unknown) => void }[] = [];
   /** The collection's file policy; undefined until read, null when it has none. */
   inclusion: CollectionInclusion | null | undefined = undefined;
+  /** Latest device filter requested while waiting for a running pass to finish. */
+  pendingDevice?: DeviceFilter;
   /** Starting has taken longer than START_STALL_MS. */
   stalled = false;
   stallTimer: number | null = null;
@@ -190,7 +192,14 @@ export default class NativeSync extends Component {
       () => { for (const t of [this.settleTimer, this.reconcileRetryTimer, this.stallTimer]) if (t !== null) window.clearTimeout(t); },
       () => { for (const t of [this.markerTimer, this.blockTimer]) if (t !== null) window.clearInterval(t); },
       // Memory is the truth; anything persistSoon() or durable() deferred goes to disk now.
-      () => { if (this.data && (this.dirty || this.commitTimer !== null)) void this.persist().catch(error => this.fail("saving state", error)); },
+      () => {
+        if (this.data && this.pendingDevice !== undefined) {
+          this.data.device = this.pendingDevice.skip.length || this.pendingDevice.folders.length ? this.pendingDevice : undefined;
+          this.pendingDevice = undefined;
+          this.dirty = true;
+        }
+        if (this.data && (this.dirty || this.commitTimer !== null)) void this.persist().catch(error => this.fail("saving state", error));
+      },
       () => { if (this.activityTimer !== null) { window.clearTimeout(this.activityTimer); void this.writeActivity(); } },
       () => { this.bridge?.close(); },
       () => { this.frame?.remove(); },
@@ -574,17 +583,42 @@ export default class NativeSync extends Component {
   }
 
   // ---- this device's choices and activity ----------------------------------
-  get device(): DeviceFilter { return this.data?.device ?? NO_FILTER; }
+  get device(): DeviceFilter { return this.pendingDevice ?? this.data?.device ?? NO_FILTER; }
   /** Change what this device syncs. Newly skipped paths are forgotten, never deleted. */
   async setDevice(next: DeviceFilter) {
     const filter: DeviceFilter = { skip: [...new Set(next.skip)], folders: [...new Set(next.folders.map(normalizeFolder).filter(Boolean))] };
     if (!validFilter(filter)) throw new Error("Invalid device sync choices");
+    // Expose the requested choice right away so rapid edits and mid-pass status
+    // updates never revert the Settings UI to the previous filter.
+    this.pendingDevice = filter;
+    this.setStatus(this.statusText, this.statusKind);
     // Saved before anything else: a choice must survive a reload even when it
     // matches no file yet (QA-1).
-    const apply = async () => { this.data.device = filter.skip.length || filter.folders.length ? filter : undefined; await this.persist(); await this.forgetSkipped(); };
+    const apply = async () => {
+      const previous = this.data.device;
+      this.data.device = filter.skip.length || filter.folders.length ? filter : undefined;
+      try {
+        await this.persist();
+      } catch (error) {
+        this.data.device = previous;
+        if (this.pendingDevice === filter) this.pendingDevice = undefined;
+        this.setStatus(this.statusText, this.statusKind);
+        throw error;
+      }
+      if (this.pendingDevice === filter) this.pendingDevice = undefined;
+      await this.forgetSkipped();
+      this.setStatus(this.statusText, this.statusKind);
+    };
     // Between passes only: a pass in flight still holds the old choices.
-    if (this.mirroring) await this.enqueue(async () => { await apply(); await this.reconcileAll(false, undefined, true); });
+    // If another setDevice call arrived while waiting, let it run the full pass.
+    if (this.mirroring) await this.enqueue(async () => {
+      if (this.pendingDevice !== undefined && this.pendingDevice !== filter) return;
+      await apply();
+      if (this.pendingDevice !== undefined) return;
+      await this.reconcileAll(false, undefined, true);
+    });
     else await apply();
+    if (this.pendingDevice === filter) this.pendingDevice = undefined;
     this.setStatus(this.statusText, this.statusKind);
   }
   /** Skipped paths keep no synced state, so turning one back on compares both sides afresh. */

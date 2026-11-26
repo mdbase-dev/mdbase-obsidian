@@ -54,6 +54,7 @@ class TFolder {
     const segments = this.path.split("/");
     this.name = segments[segments.length - 1] || "";
   }
+  isRoot() { return !this.path; }
 }
 
 class Vault {}
@@ -87,7 +88,11 @@ class Modal {
   close() { this.onClose?.(); this.containerEl.remove(); }
 }
 
-class SuggestModal extends Modal {}
+class SuggestModal extends Modal {
+  static last = null;
+  setPlaceholder() { return this; }
+  open() { SuggestModal.last = this; super.open(); }
+}
 class PopoverSuggest {
   constructor(app) { this.app = app; this.closes = 0; }
   open() {}

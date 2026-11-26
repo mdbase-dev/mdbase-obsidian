@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
-import { Notice, PluginSettingTab } from "obsidian";
+import { Notice, PluginSettingTab, SuggestModal, TFolder } from "obsidian";
 import { MdbaseSettingTab } from "../src/settingsTab";
 import type { SyncSnapshot } from "../src/sync/controller";
 
@@ -62,8 +62,12 @@ function createFixture(version: string, initial: SyncSnapshot = snapshot()) {
     syncController: controller,
     openWorkspace: async (destination: string) => { navigation.push("workspace"); opened.push(destination); },
   };
+  const folder = (path: string) => Object.assign(new TFolder(), { path, name: path });
   let settingsClosed = 0;
-  const app = { setting: { close: () => { navigation.push("close"); settingsClosed++; } } };
+  const app = {
+    setting: { close: () => { navigation.push("close"); settingsClosed++; } },
+    vault: { getAllLoadedFiles: () => [folder("Archive"), folder("Drafts"), folder("Media")] },
+  };
   const tab = new MdbaseSettingTab(app as never, plugin as never);
   const lifecycle = tab as MdbaseSettingTab & { show(): void; updateCalls: number; refreshDomStateCalls: number };
   if (modern) {
@@ -261,6 +265,75 @@ for (const version of ["1.14.4", "1.11.4"]) {
     assert.equal(f.listeners(), 1);
     f.unload();
     assert.equal(f.listeners(), 0);
+    f.dom.window.close();
+  });
+
+  test(`${version}: rapid media toggles and multiple excluded folders accumulate even while controls hold focus`, async () => {
+    const f = fixture();
+    let device = { skip: [] as string[], folders: [] as string[] };
+    const gates: (() => void)[] = [];
+    const seen: { skip: string[]; folders: string[] }[] = [];
+    const native = {
+      get device() { return device; },
+      setDevice: (next: { skip: string[]; folders: string[] }) => {
+        device = { skip: [...next.skip], folders: [...next.folders] };
+        seen.push(device);
+        // NativeSync publishes the requested device filter immediately, before the full pass resolves.
+        f.set({ direct: { text: "Syncing", statusKind: "busy", phase: { kind: "ready" }, device, inclusion: null } as SyncSnapshot["direct"] });
+        return new Promise<void>((resolve) => { gates.push(resolve); });
+      },
+    };
+    (f.plugin.syncController as unknown as { native: unknown }).native = native;
+    f.set({ direct: { text: "Synced", phase: { kind: "ready" }, device, inclusion: null } as SyncSnapshot["direct"] });
+
+    const toggleFor = (name: string) => {
+      const row = Array.from(f.root.querySelectorAll(".setting-item")).find((el) => el.firstElementChild?.textContent === name);
+      assert.ok(row, `Missing setting row: ${name}`);
+      return row.querySelector<HTMLInputElement>("input[type='checkbox']")!;
+    };
+
+    // Disable Images, then Audio while the checkbox holds focus and setDevice is still in flight.
+    const images = toggleFor("Images");
+    images.focus();
+    images.checked = false;
+    images.dispatchEvent(new f.dom.window.Event("change"));
+    const audio = toggleFor("Audio");
+    audio.focus();
+    audio.checked = false;
+    audio.dispatchEvent(new f.dom.window.Event("change"));
+    assert.deepEqual(device.skip, ["image", "audio"]);
+    assert.equal(toggleFor("Images").checked, false);
+    assert.equal(toggleFor("Audio").checked, false);
+
+    // Add two excluded folders in a row while the Add folder button holds focus.
+    const addFirst = button(f.root, "Add folder");
+    addFirst.focus();
+    addFirst.click();
+    const picker1 = (SuggestModal as unknown as { last: { getSuggestions(q: string): string[]; onChooseSuggestion(folder: string): void } }).last;
+    assert.deepEqual(picker1.getSuggestions(""), ["Archive", "Drafts", "Media"]);
+    picker1.onChooseSuggestion("Archive");
+
+    const addSecond = button(f.root, "Add folder");
+    addSecond.focus();
+    addSecond.click();
+    const picker2 = (SuggestModal as unknown as { last: { getSuggestions(q: string): string[]; onChooseSuggestion(folder: string): void } }).last;
+    assert.deepEqual(picker2.getSuggestions(""), ["Drafts", "Media"]);
+    picker2.onChooseSuggestion("Drafts");
+
+    assert.deepEqual(device.folders, ["Archive", "Drafts"]);
+    assert.match(f.root.textContent!, /Archive/);
+    assert.match(f.root.textContent!, /Drafts/);
+
+    // Remove the first folder; the second stays.
+    button(f.root, "Sync Archive again").click();
+    assert.deepEqual(device.folders, ["Drafts"]);
+    assert.doesNotMatch(f.root.textContent!, /Archive/);
+    assert.match(f.root.textContent!, /Drafts/);
+
+    for (const release of gates) release();
+    await settle();
+    assert.deepEqual(seen.at(-1), { skip: ["image", "audio"], folders: ["Drafts"] });
+    f.unload();
     f.dom.window.close();
   });
 }

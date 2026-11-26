@@ -1451,3 +1451,41 @@ test("resumeUploads still fails closed on corrupt recovery bytes or conflict wit
   f.native.call = async () => { throw Object.assign(new Error("conflict"), { code: "conflict", reason: "revision" }); };
   await assert.rejects(f.native.resumeUploads(), /conflict/);
 });
+
+test("rapid setDevice updates expose the new filter immediately during a running pass and coalesce reconciliation", async t => {
+  const f = fixture(t);
+  f.put("note.md", "base");
+  const views = [];
+  f.native.changed = (_text, _phase, view) => { if (view) views.push(view.device); };
+  let passStarted, finishPass;
+  const inPass = new Promise(resolve => { passStarted = resolve; });
+  const unblock = new Promise(resolve => { finishPass = resolve; });
+  const origCall = f.native.call;
+  let allCalls = 0;
+  f.native.call = async (method, ...args) => {
+    if (method === "all") {
+      allCalls++;
+      if (allCalls === 1) { passStarted(); await unblock; }
+    }
+    return origCall(method, ...args);
+  };
+  const firstPass = f.pass();
+  await inPass;
+
+  // Two rapid changes while the pass is in flight: both immediately show in device/view,
+  // and a mid-pass status update never reverts them.
+  const firstSet = f.native.setDevice({ skip: ["image"], folders: ["Archive"] });
+  assert.deepEqual(f.native.device, { skip: ["image"], folders: ["Archive"] });
+  assert.deepEqual(views.at(-1), { skip: ["image"], folders: ["Archive"] });
+  f.native.setStatus("Uploading 1 of 10", "busy");
+  assert.deepEqual(views.at(-1), { skip: ["image"], folders: ["Archive"] });
+
+  const secondSet = f.native.setDevice({ skip: ["image", "audio"], folders: ["Archive", "Drafts"] });
+  assert.deepEqual(f.native.device, { skip: ["image", "audio"], folders: ["Archive", "Drafts"] });
+  assert.deepEqual(views.at(-1), { skip: ["image", "audio"], folders: ["Archive", "Drafts"] });
+
+  finishPass();
+  await Promise.all([firstPass, firstSet, secondSet]);
+  assert.equal(allCalls, 2, "superseded setDevice skips redundant full reconciliation");
+  assert.deepEqual((await f.native.readData()).device, { skip: ["image", "audio"], folders: ["Archive", "Drafts"] });
+});
