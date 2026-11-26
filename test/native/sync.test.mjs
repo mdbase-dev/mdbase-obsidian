@@ -1489,3 +1489,49 @@ test("rapid setDevice updates expose the new filter immediately during a running
   assert.equal(allCalls, 2, "superseded setDevice skips redundant full reconciliation");
   assert.deepEqual((await f.native.readData()).device, { skip: ["image", "audio"], folders: ["Archive", "Drafts"] });
 });
+
+test("long read RPCs stay alive on per-page progress and stalled reads time out as timeout instead of outcome_unknown", async t => {
+  const f = fixture(t);
+  const posted = [];
+  const frameWindow = {};
+  f.native.frame = { contentWindow: frameWindow };
+  f.native.origin = "http://127.0.0.1:48300";
+  f.native.bridge = { postMessage(msg) { posted.push(msg); } };
+  f.native.call = NativeSync.prototype.call.bind(f.native);
+  f.native.callTimeoutMs = 40;
+
+  // Progress heartbeats keep a slow multi-page read alive past callTimeoutMs.
+  const slowRead = f.native.call("all");
+  const readId = posted.at(-1).id;
+  for (let i = 0; i < 4; i++) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await f.native.onMessage({ origin: f.native.origin, source: frameWindow, data: { type: "progress", id: readId } });
+  }
+  await f.native.onMessage({ origin: f.native.origin, source: frameWindow, data: { type: "result", id: readId, ok: true, value: [{ id: "1", path: "a.md", revision: "r1", document: "a" }] } });
+  assert.equal((await slowRead).length, 1);
+
+  // A silent stalled read times out with code "timeout"; a silent write still reports "outcome_unknown".
+  await assert.rejects(f.native.call("all"), e => e.code === "timeout");
+  await assert.rejects(f.native.call("create", "a.md", "body"), e => e.code === "outcome_unknown");
+});
+
+test("resolveDefinition reads resources directly before updating, without scanning all records first", async t => {
+  const f = fixture(t); const p = "_types/book.md";
+  f.putResource(p, "remote"); f.put(p, "local");
+  f.native.data.pathFailures = { [p]: { signature: "x", code: "conflict", reason: "definition_conflict" } };
+  const order = [];
+  const origCall = f.native.call;
+  f.native.call = async (method, ...args) => {
+    order.push(method);
+    return origCall(method, ...args);
+  };
+  f.native.admitting = true;
+  await f.native.resolveDefinition(p, "local");
+  await f.native.jobs;
+  assert.equal(f.resources.get(p)?.document, "local");
+  assert.deepEqual(f.native.view().failures, []);
+  const putIdx = order.indexOf("resourcePut");
+  assert.ok(putIdx > 0, "resourcePut ran");
+  assert.equal(order.slice(0, putIdx).includes("all"), false, "did not scan all records before resolving definition");
+  assert.equal(order.slice(0, putIdx).includes("filesAll"), false, "did not scan all files before resolving definition");
+});

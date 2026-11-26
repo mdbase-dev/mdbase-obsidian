@@ -48,6 +48,8 @@ export type LocalFile = NonNullable<Awaited<ReturnType<NativeSync["local"]>>>;
 
 /** How long starting may take before Sync offers Restart sync. */
 export const START_STALL_MS = 30_000;
+/** Read-only RPCs whose timeout cannot leave an unknown write outcome behind. */
+const READ_ONLY_METHODS = new Set<NativeMethod>(["all", "get", "at", "inclusion", "resourcesAll", "filesAll", "fileGet", "downloadOpen", "downloadNext", "downloadClose", "rejectedWrites", "debug", "status"]);
 
 export default class NativeSync extends Component {
   constructor(readonly app: App, readonly manifest: PluginManifest, readonly changed: (text: string, phase: NativePhase, view?: NativeView) => void, readonly previousCollection?: string) {
@@ -59,7 +61,8 @@ export default class NativeSync extends Component {
   private frameUrl = "";
   private persistence: Promise<void> = Promise.resolve();
   frame: HTMLIFrameElement | null = null;
-  calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void; timer: number }>();
+  calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void; timer: number; reset: () => void }>();
+  callTimeoutMs = 180_000;
   nextCall = 1;
   phase: NativePhase = { kind: "starting" };
   bridge: MessagePort | null = null;
@@ -359,9 +362,24 @@ export default class NativeSync extends Component {
   call<Method extends NativeMethod>(method: Method, ...args: Parameters<NativeMethods[Method]>): Promise<NativeResult<Method>> {
     if (!this.bridge) return Promise.reject(new Error("SDK host is not running"));
     const id = this.nextCall++;
+    const readOnly = READ_ONLY_METHODS.has(method);
     return new Promise((resolve, reject) => {
-      const timer = window.setTimeout(() => { this.calls.delete(id); reject(Object.assign(new Error(`SDK ${method} timed out; outcome may be unknown`), { code: "outcome_unknown" })); }, 180_000);
-      this.calls.set(id, { resolve: value => resolve(value as NativeResult<Method>), reject, timer });
+      const onTimeout = () => {
+        this.calls.delete(id);
+        reject(readOnly
+          ? Object.assign(new Error(`SDK ${method} timed out`), { code: "timeout" })
+          : Object.assign(new Error(`SDK ${method} timed out; outcome may be unknown`), { code: "outcome_unknown" }));
+      };
+      const entry = {
+        resolve: (value: unknown) => resolve(value as NativeResult<Method>),
+        reject,
+        timer: window.setTimeout(onTimeout, this.callTimeoutMs),
+        reset: () => {
+          window.clearTimeout(entry.timer);
+          entry.timer = window.setTimeout(onTimeout, this.callTimeoutMs);
+        },
+      };
+      this.calls.set(id, entry);
       this.bridge!.postMessage({ type: "call", id, method, args });
     });
   }
@@ -399,6 +417,7 @@ export default class NativeSync extends Component {
           this.setStatus(m.direction === "upload" ? t`uploading ${percent}% (${size} MiB)` : t`downloading ${percent}% (${size} MiB)`, "busy");
         }
         break;
+      case "progress": this.calls.get(m.id)?.reset(); break;
       case "log": this.log(this.safeText(m.text)); break;
       case "result": {
         const c = this.calls.get(m.id); if (!c) return;

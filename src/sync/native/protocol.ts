@@ -15,6 +15,7 @@ export type PageMessage =
   | { type: "open-url"; url: string }
   | { type: "changes"; batch: { cursor: string; reset?: boolean; changes: { id: string; path?: string; kind: string; entity: string | null }[] } }
   | { type: "transfer"; direction: string; done: number; total: number }
+  | { type: "progress"; id: number }
   | { type: "log"; text: string }
   | { type: "result"; id: number; ok: true; value: unknown }
   | { type: "result"; id: number; ok: false; error: { message: string; code?: string; reason?: string } };

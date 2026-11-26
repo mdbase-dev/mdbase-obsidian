@@ -627,6 +627,33 @@ test("the engine page uses the SDK Worker factory and explicit selection without
   assert.equal(rewrittenResult.ok, true);
   assert.equal(rewrittenResult.value.document, postLifecycleDoc, "page.ts must read back post-lifecycle document when revision differs");
   assert.equal(getCalls, 1);
+  // page.ts all(): emits per-page progress and shrinks only an oversized page on query_budget_exceeded.
+  const queryCalls = [];
+  records.query = async query => {
+    queryCalls.push(query);
+    if (!query.cursor) return { records: [{ id: "1", path: "a.md", revision: "r1", document: "a", state: { state: "confirmed" } }], cursor: "c1", hasMore: true };
+    if (query.cursor === "c1" && query.limit > 32) throw Object.assign(new Error("budget"), { code: "too_large", reason: "query_budget_exceeded" });
+    if (query.cursor === "c1") return { records: [{ id: "2", path: "big.md", revision: "r2", document: "big", state: { state: "confirmed" } }], cursor: "c2", hasMore: true };
+    return { records: [{ id: "3", path: "c.md", revision: "r3", document: "c", state: { state: "confirmed" } }], cursor: undefined, hasMore: false };
+  };
+  await receive({ data: { type: "call", id: 9, method: "all", args: [] } });
+  const allResult = messages.find(m => m.type === "result" && m.id === 9);
+  assert.equal(allResult.ok, true);
+  assert.deepEqual(allResult.value.map(r => r.path), ["a.md", "big.md", "c.md"]);
+  assert.deepEqual(queryCalls, [{ limit: 64 }, { limit: 64, cursor: "c1" }, { limit: 32, cursor: "c1" }, { limit: 64, cursor: "c2" }]);
+  assert.ok(messages.filter(m => m.type === "progress" && m.id === 9).length >= 3);
+  // If even a single-record page exceeds the query budget, fail once instead of restarting the full scan.
+  const oversizeCalls = [];
+  records.query = async query => {
+    oversizeCalls.push(query);
+    if (!query.cursor) return { records: [{ id: "1", path: "a.md", revision: "r1", document: "a", state: { state: "confirmed" } }], cursor: "c1", hasMore: true };
+    throw Object.assign(new Error("budget"), { code: "too_large", reason: "query_budget_exceeded" });
+  };
+  await receive({ data: { type: "call", id: 10, method: "all", args: [] } });
+  const oversizeResult = messages.find(m => m.type === "result" && m.id === 10);
+  assert.equal(oversizeResult.ok, false);
+  assert.equal(oversizeResult.error.code, "too_large");
+  assert.deepEqual(oversizeCalls, [{ limit: 64 }, { limit: 64, cursor: "c1" }, { limit: 32, cursor: "c1" }, { limit: 16, cursor: "c1" }, { limit: 8, cursor: "c1" }, { limit: 4, cursor: "c1" }, { limit: 2, cursor: "c1" }, { limit: 1, cursor: "c1" }]);
   await receive({ data: { type: "call", id: 6, method: "stop" } });
   assert.deepEqual(watches.map(watch => watch.stopped), [1, 1, 1]);
   assert.deepEqual(calls.at(-1), ["close"]);
