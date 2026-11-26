@@ -60,10 +60,12 @@ export async function onPhase(sync: NativeSync, phase: NativePhase) {
   }
   // select() can publish opening/ready before its promise settles. The older
   // choosing handler must not subsequently turn off the now-ready mirror.
-  if (sync.unloaded || sync.phase !== phase) return;
+  if (sync.unloaded || sync.phase.kind !== phase.kind || sync.phase.collectionId !== phase.collectionId) return;
   if (sync.admitting && phase.kind === "ready" && (was.kind !== "ready" || was.collectionId !== phase.collectionId)) {
     try { await sync.claim(phase.collectionId ?? undefined); } catch (e) { sync.pauseForOwnership(e); return; }
+    if (sync.unloaded || sync.phase.kind !== "ready" || sync.phase.collectionId !== phase.collectionId) return;
     if (await sync.needsMergeConfirmation(phase)) return;
+    if (sync.unloaded || sync.phase.kind !== "ready" || sync.phase.collectionId !== phase.collectionId) return;
     await sync.startMirror();
   }
 }
@@ -84,7 +86,7 @@ export async function addCollection(sync: NativeSync) {
 export async function needsMergeConfirmation(sync: NativeSync, phase: NativePhase): Promise<boolean> {
   if (sync.data.cursor !== undefined || Object.keys(sync.data.paths).length || sync.data.mergeConfirmed === phase.collectionId) return false;
   const remotes = await sync.remoteAll(); // also reads the layout
-  if (sync.unloaded || sync.phase !== phase) return true;
+  if (sync.unloaded || sync.phase.kind !== "ready" || sync.phase.collectionId !== phase.collectionId) return true;
   const remote = [...remotes.values()].filter(r => r.kind !== "resource").length;
   const local = (await sync.localPaths()).filter(p => sync.kindOf(p) !== "resource").length;
   if (!remote || !local) return false;
@@ -253,6 +255,7 @@ export async function releaseCollection(sync: NativeSync) {
   sync.merge = null; sync.totals = null; sync.lastSynced = null; sync.pickManually = true;
   await sync.persist();
   await sync.writeMarker();
+  sync.setStatus(sync.statusText, sync.statusKind);
 }
 export async function handover(sync: NativeSync) {
   if (!sync.admitting) return;

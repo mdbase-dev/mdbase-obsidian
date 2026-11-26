@@ -1535,3 +1535,87 @@ test("resolveDefinition reads resources directly before updating, without scanni
   assert.equal(order.slice(0, putIdx).includes("all"), false, "did not scan all records before resolving definition");
   assert.equal(order.slice(0, putIdx).includes("filesAll"), false, "did not scan all files before resolving definition");
 });
+
+test("resolveDefinition refreshes status before follow-up reconcile, resolves remote resources across layout mismatches, and refuses silent no-ops", async t => {
+  const f = fixture(t);
+  const p = "custom-types/book.md";
+  f.put("mdbase.yaml", "settings:\n  types_folder: _types\n");
+  f.putResource("mdbase.yaml", "settings:\n  types_folder: custom-types\n");
+  f.putResource(p, "remote");
+  f.put(p, "local");
+  f.native.phase = { kind: "ready", collectionId: "c1" };
+  f.native.data.pathFailures = { [p]: { signature: "x", code: "conflict", reason: "definition_conflict" } };
+  const views = [];
+  const origChanged = f.native.changed;
+  f.native.changed = (text, phase, view) => {
+    views.push({ text, failures: view?.failures?.map(item => item.path) ?? [] });
+    origChanged(text, phase, view);
+  };
+  let releaseReconcile;
+  const reconcileStarted = new Promise(resolve => {
+    const origReconcile = f.native.reconcileAll.bind(f.native);
+    f.native.reconcileAll = async (...args) => {
+      resolve();
+      await new Promise(done => { releaseReconcile = done; });
+      return origReconcile(...args);
+    };
+  });
+  f.native.admitting = true;
+  const resolving = f.native.resolveDefinition(p, "local");
+  await reconcileStarted;
+  // Status cleared the definition failure immediately, before follow-up reconcile finishes.
+  assert.equal(f.resources.get(p)?.document, "local");
+  assert.deepEqual(views.at(-1)?.failures, []);
+  releaseReconcile();
+  await resolving;
+  await f.native.jobs;
+
+  // When mirroring is off, resolveDefinition and keepConflictCopies reject instead of silently doing nothing.
+  f.native.mirroring = false;
+  await assert.rejects(f.native.resolveDefinition(p, "local"), /Mirror stopped/);
+  await assert.rejects(f.native.keepConflictCopies("copy.md"), /Mirror stopped/);
+});
+
+test("concurrent ready phase updates during needsMergeConfirmation still start mirroring and signOut publishes cleared failures", async t => {
+  const f = fixture(t);
+  f.native.mirroring = false;
+  f.native.phase = { kind: "opening", collectionId: "c1" };
+  f.native.claim = async () => {};
+  let releaseRemote;
+  const remoteWaiting = new Promise(resolve => {
+    const origRemoteAll = f.native.remoteAll.bind(f.native);
+    f.native.remoteAll = async (...args) => {
+      resolve();
+      await new Promise(done => { releaseRemote = done; });
+      return origRemoteAll(...args);
+    };
+  });
+  let started = 0;
+  f.native.startMirror = async () => { started++; f.native.mirroring = true; };
+
+  const first = f.native.onPhase({ kind: "ready", collectionId: "c1", sync: { state: "catching_up", connection: "online", pending: 0 } });
+  await remoteWaiting;
+  // A second ready snapshot arrives while needsMergeConfirmation is still awaiting remoteAll.
+  await f.native.onPhase({ kind: "ready", collectionId: "c1", sync: { state: "up_to_date", connection: "online", pending: 0 } });
+  releaseRemote();
+  await first;
+  assert.equal(started, 1, "startMirror must still run after a same-collection ready update");
+  assert.equal(f.native.mirroring, true);
+
+  // releaseCollection during signOut publishes cleared failures/conflicts to observers.
+  f.native.data.collectionId = "c1";
+  f.native.data.pathFailures = { "_types/book.md": { signature: "x", code: "conflict", reason: "definition_conflict" } };
+  f.native.data.conflictCopies = { k: { path: "note.md", hash: "h", copy: "note (conflict).md", kind: "record" } };
+  let lastView;
+  f.native.changed = (_text, _phase, view) => { lastView = view; };
+  f.native.writeMarker = async () => {};
+  f.native.call = async method => {
+    assert.equal(method, "signOut");
+    await f.native.onPhase({ kind: "signed_out" });
+    return { kind: "signed_out", signOutResult: { server: "revoked", local: "erased" } };
+  };
+  await f.native.signOut();
+  assert.deepEqual(lastView.failures, []);
+  assert.deepEqual(lastView.conflicts, []);
+  assert.equal(lastView.bound, false);
+});

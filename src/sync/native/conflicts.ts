@@ -44,7 +44,9 @@ export async function preserveConflict(sync: NativeSync, p: string, l: LocalFile
   return copy;
 }
 export async function keepConflictCopies(sync: NativeSync, copyPath: string) {
+  let ran = false;
   await sync.enqueue(async () => {
+    ran = true;
     await sync.assertMirror();
     const remotes = await sync.remoteAll();
     for (const [key, copy] of Object.entries(sync.data.conflictCopies ?? {})) if (copy.copy === copyPath) {
@@ -57,6 +59,7 @@ export async function keepConflictCopies(sync: NativeSync, copyPath: string) {
     }
     await sync.persist(); sync.setStatus(sync.statusText, sync.statusKind);
   });
+  if (!ran) throw new Error("Mirror stopped");
 }
 // User-reviewed escape hatch for rejections the plugin cannot prove it preserved.
 // The user picks one entry; nothing is discarded automatically.

@@ -871,7 +871,7 @@ export default class NativeSync extends Component {
   }
   put(p: string, bytes: Uint8Array, ...expected: [expectedHash?: string]) { return transfers.put(this, p, bytes, ...expected); }
   pull(p: string, r: Remote, expectedHash?: string): Promise<void> { return transfers.pull(this, p, r, expectedHash); }
-  push(p: string, l: LocalFile, r?: Remote) { return transfers.push(this, p, l, r); }
+  push(p: string, l: LocalFile, r?: Remote, forcedKind?: ItemKind) { return transfers.push(this, p, l, r, forcedKind); }
   uploadPath(id: string) { return transfers.uploadPath(this, id); }
   finishUpload(p: string) { return transfers.finishUpload(this, p); }
   clearUpload(p: string) { return transfers.clearUpload(this, p); }
