@@ -30,7 +30,8 @@ export class MdbaseSettingTab extends PluginSettingTab {
 
   private refresh(): void {
     const { containerEl } = this;
-    if (containerEl.contains(containerEl.ownerDocument.activeElement)) return;
+    const active = containerEl.ownerDocument.activeElement;
+    if (active && containerEl.contains(active) && active.matches("input:not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit']), textarea")) return;
     if (requireApiVersion("1.13.0")) this.update();
     else if (containerEl.isShown()) this.renderLegacy();
   }
@@ -237,9 +238,10 @@ export class MdbaseSettingTab extends PluginSettingTab {
     const s = controller.snapshot;
     const native = controller.native;
     if (!native || s.direct?.phase.kind !== "ready") return [];
-    const device: DeviceFilter = s.direct.device ?? { skip: [], folders: [] };
+    const currentDevice = (): DeviceFilter => controller.snapshot.direct?.device ?? native.device ?? { skip: [], folders: [] };
+    const device = currentDevice();
     const inclusion = s.direct.inclusion ?? null;
-    const save = (next: DeviceFilter) => this.attempt(() => native.setDevice(next));
+    const save = (mutate: (current: DeviceFilter) => DeviceFilter) => this.attempt(() => native.setDevice(mutate(currentDevice())));
     const definitions: SearchableSetting[] = [{
       name: t`Notes and types`,
       desc: t`Always synced, apart from folders you leave out. These choices apply to this device only, and turning something off never deletes it.`,
@@ -255,7 +257,7 @@ export class MdbaseSettingTab extends PluginSettingTab {
         render: setting => { setting.addToggle((toggle) => toggle
           .setValue(!collectionOff && !device.skip.includes(media))
           .setDisabled(collectionOff)
-          .onChange((on) => save({ ...device, skip: on ? device.skip.filter((m) => m !== media) : [...device.skip, media] }))); },
+          .onChange((on) => save((current) => ({ ...current, skip: on ? current.skip.filter((m) => m !== media) : [...current.skip, media] })))); },
       });
     }
     const limits = collectionLimits(inclusion);
@@ -264,7 +266,7 @@ export class MdbaseSettingTab extends PluginSettingTab {
       name: t`Folders left out`,
       desc: device.folders.length ? t`Nothing in these folders syncs to or from this device.` : t`Choose folders whose notes and files stay off this device.`,
       render: setting => { setting.addButton((button) => button.setButtonText(t`Add folder`).onClick(() => {
-        new FolderPicker(this.app, device.folders, (folder) => void save({ ...device, folders: [...device.folders, folder] })).open();
+        new FolderPicker(this.app, currentDevice().folders, (folder) => void save((current) => ({ ...current, folders: [...current.folders, folder] }))).open();
       })); },
     });
     for (const folder of device.folders) definitions.push({
@@ -272,7 +274,7 @@ export class MdbaseSettingTab extends PluginSettingTab {
       render: setting => {
         setting.settingEl.addClass("mdbase-sync-folder");
         setting.addExtraButton((button) => button.setIcon("x").setTooltip(t`Sync ${folder} again`)
-          .onClick(() => save({ ...device, folders: device.folders.filter((f) => f !== folder) })));
+          .onClick(() => save((current) => ({ ...current, folders: current.folders.filter((f) => f !== folder) }))));
       },
     });
     return definitions;
