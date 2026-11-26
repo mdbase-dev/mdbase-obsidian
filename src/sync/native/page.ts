@@ -109,6 +109,99 @@ const rplain = (r: Awaited<ReturnType<MdbaseClient["resources"]["get"]>>) => ({ 
 const downloads = new Map<string, DownloadPull>();
 const uploads = new RetryUploads<ReturnType<typeof fplain>>();
 let watch: ChangesWatch | null = null;
+
+// Every record with its exact source. Emits progress per page so large vaults
+// do not trip the parent's RPC inactivity timeout while pages are streaming.
+async function readAllRecords(onProgress?: () => void) {
+  // Native QUERY budgets hydrated source bytes as well as row count. Even a
+  // bounded page of 64 mixed-size notes can exceed 1 MiB. First shrink only the
+  // oversized page from the same cursor; if the runtime refuses a smaller limit
+  // on an existing cursor, fall back to restarting with the smaller limit.
+  for (let limit = 64; ; limit = Math.max(1, Math.floor(limit / 2))) {
+    const out: ReturnType<typeof plain>[] = [];
+    let cursor: string | undefined, restarted = false, pageLimit = limit;
+    try {
+      for (;;) {
+        let page;
+        try {
+          page = await records().query(cursor !== undefined ? { limit: pageLimit, cursor } : { limit: pageLimit }, { include: { document: true } });
+        } catch (e) {
+          const info = errorInfo(e);
+          if (info.code === "too_large" && info.reason === "query_budget_exceeded" && pageLimit > 1) {
+            pageLimit = Math.max(1, Math.floor(pageLimit / 2));
+            onProgress?.();
+            continue;
+          }
+          if (!restarted && info.code === "invalid_request" && ["cursor_stale", "cursor_expired"].includes(info.reason ?? "")) {
+            restarted = true;
+            out.length = 0;
+            cursor = undefined;
+            pageLimit = limit;
+            onProgress?.();
+            continue;
+          }
+          throw e;
+        }
+        if (page.hasMore && !page.cursor) throw Object.assign(new Error("Incomplete record listing"), { code: "unavailable" });
+        for (const r of page.records) out.push(plain(r));
+        onProgress?.();
+        if (!page.cursor) return out;
+        cursor = page.cursor;
+        pageLimit = limit;
+      }
+    } catch (e) {
+      const info = errorInfo(e);
+      const retrySmaller = cursor !== undefined && pageLimit < limit && info.code === "invalid_request";
+      if (limit === 1 || !retrySmaller) throw e;
+    }
+  }
+}
+
+async function readAllResources(onProgress?: () => void) {
+  const out: ReturnType<typeof rplain>[] = []; let cursor: string | undefined;
+  do {
+    const page = await records().resources.list({ text: true, limit: 128, ...(cursor ? { cursor } : {}) });
+    for (const r of page.resources) {
+      // A listing may omit a large text; read that one resource on its own.
+      const full = typeof r.text === "string" ? r : await records().resources.get(r.path);
+      if (typeof full.text !== "string") throw Object.assign(new Error("Resource text unavailable"), { code: "unavailable" });
+      out.push(rplain(full));
+    }
+    onProgress?.();
+    cursor = page.complete ? undefined : page.cursor;
+    if (!page.complete && !cursor) throw Object.assign(new Error("Incomplete resource listing"), { code: "unavailable" });
+  } while (cursor);
+  return out;
+}
+
+async function readAllFiles(onProgress?: () => void) {
+  const out: ReturnType<typeof fplain>[] = [];
+  for await (const f of files().list({})) {
+    out.push(fplain(f));
+    if (out.length % 64 === 0) onProgress?.();
+  }
+  return out;
+}
+
+async function readAt(paths: string[], onProgress?: () => void) {
+  const out: (Awaited<ReturnType<typeof read>> & {})[] = []; let next = 0, done = 0;
+  const read = async (path: string) => {
+    try { return { ...plain(await records().get({ path }, { include: { document: true } })), kind: "record" as const }; }
+    catch (e) { if (errorInfo(e).code !== "not_found") throw e; }
+    try { return { ...fplain(await files().get({ path })), kind: "file" as const }; }
+    catch (e) { if (errorInfo(e).code !== "not_found") throw e; }
+    return null;
+  };
+  await Promise.all(Array.from({ length: Math.min(8, paths.length) }, async () => {
+    while (next < paths.length) {
+      const row = await read(paths[next++]);
+      if (row) out.push(row);
+      if (++done % 16 === 0) onProgress?.();
+    }
+  }));
+  return out;
+}
+
 export const methods = {
   start: async () => { if (embedded?.collection) await mdbase.select(embedded.collection); await mdbase.start(); return phaseSummary(); },
   signIn: async () => { await mdbase.signIn(); return phaseSummary(); },
@@ -125,38 +218,11 @@ export const methods = {
   // with the problem on the phase; nothing here keeps or logs it.
   unlock: async (id: string, secret: { password: string } | { recoveryKey: string }) => { await mdbase.unlock(id, secret); return phaseSummary(); },
   // Every record with its exact source.
-  all: async () => {
-    // Native QUERY budgets hydrated source bytes as well as row count. Even a
-    // bounded page of 64 mixed-size notes can exceed 1 MiB. Restart with smaller
-    // pages on that precise refusal; never return a truncated/duplicate snapshot.
-    for (let limit = 64; ; limit = Math.max(1, Math.floor(limit / 2))) {
-      const out: ReturnType<typeof plain>[] = [];
-      try {
-        for await (const page of records().queryPages({ limit }, { include: { document: true }, onReset: () => { out.length = 0; } }))
-          for (const r of page.records) out.push(plain(r));
-        return out;
-      } catch (e) {
-        if (limit === 1 || errorInfo(e).code !== "too_large" || errorInfo(e).reason !== "query_budget_exceeded") throw e;
-      }
-    }
-  },
+  all: () => readAllRecords(),
   get: async (id: string) => plain(await records().get(id, { include: { document: true } })),
   // Bounded ordinary reads for an event's affected paths. Only not_found means
   // absent: permission, budget and transient errors must never look like deletes.
-  at: async (paths: string[]) => {
-    const out: (Awaited<ReturnType<typeof read>> & {})[] = []; let next = 0;
-    const read = async (path: string) => {
-      try { return { ...plain(await records().get({ path }, { include: { document: true } })), kind: "record" as const }; }
-      catch (e) { if (errorInfo(e).code !== "not_found") throw e; }
-      try { return { ...fplain(await files().get({ path })), kind: "file" as const }; }
-      catch (e) { if (errorInfo(e).code !== "not_found") throw e; }
-      return null;
-    };
-    await Promise.all(Array.from({ length: Math.min(8, paths.length) }, async () => {
-      while (next < paths.length) { const row = await read(paths[next++]); if (row) out.push(row); }
-    }));
-    return out;
-  },
+  at: (paths: string[]) => readAt(paths),
   watch: async (cursor?: string) => {
     watch?.();
     watch = records().watchChanges((batch) =>
@@ -182,21 +248,7 @@ export const methods = {
   // ---- definitions: mdbase.yaml, type and contract files (resources, §4.1) ----
   // They are not records, so the record change stream never reports them; the
   // plugin lists them on every pass. Revision is the CAS token for put/delete.
-  resourcesAll: async () => {
-    const out: ReturnType<typeof rplain>[] = []; let cursor: string | undefined;
-    do {
-      const page = await records().resources.list({ text: true, limit: 128, ...(cursor ? { cursor } : {}) });
-      for (const r of page.resources) {
-        // A listing may omit a large text; read that one resource on its own.
-        const full = typeof r.text === "string" ? r : await records().resources.get(r.path);
-        if (typeof full.text !== "string") throw Object.assign(new Error("Resource text unavailable"), { code: "unavailable" });
-        out.push(rplain(full));
-      }
-      cursor = page.complete ? undefined : page.cursor;
-      if (!page.complete && !cursor) throw Object.assign(new Error("Incomplete resource listing"), { code: "unavailable" });
-    } while (cursor);
-    return out;
-  },
+  resourcesAll: () => readAllResources(),
   resourcePut: async (path: string, doc: string, baseRevision?: string) => {
     await confirmed(await records().resources.put(path, doc, baseRevision ? { baseRevision } : { mustNotExist: true }));
     const got = await records().resources.get(path);
@@ -208,7 +260,7 @@ export const methods = {
     await confirmed(await records().resources.delete(path, { baseRevision })); return true;
   },
   // ---- files (attachments and anything not a record) ----
-  filesAll: async () => { const out: ReturnType<typeof fplain>[] = []; for await (const f of files().list({})) out.push(fplain(f)); return out; },
+  filesAll: () => readAllFiles(),
   fileGet: async (id: string) => fplain(await files().get(id)),
   downloadOpen: async (id: string) => {
     const token = crypto.randomUUID();
@@ -293,7 +345,12 @@ async function receive(e: MessageEvent<CallMessage>) {
   try {
     const fn = methods[method];
     if (!fn) throw new Error(`unknown method ${method}`);
-    const value: unknown = await Reflect.apply(fn, undefined, args ?? []);
+    const progress = () => post({ type: "progress", id });
+    const value: unknown = method === "all" ? await readAllRecords(progress)
+      : method === "filesAll" ? await readAllFiles(progress)
+      : method === "resourcesAll" ? await readAllResources(progress)
+      : method === "at" ? await readAt((args?.[0] as string[]) ?? [], progress)
+      : await Reflect.apply(fn, undefined, args ?? []);
     post({ type: "result", id, ok: true, value }, method === "downloadNext" && isObject(value) && value.bytes instanceof Uint8Array ? [value.bytes.buffer] : []);
   } catch (err: unknown) {
     // Validation issues say why a write was refused ("missing required field

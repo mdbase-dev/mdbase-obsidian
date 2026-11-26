@@ -389,8 +389,11 @@ export async function reconcileDefinition(sync: NativeSync, p: string, decision:
 /** The user's choice for a definition that changed on both sides. */
 export async function resolveDefinition(sync: NativeSync, p: string, keep: "local" | "remote") {
   await sync.enqueue(async () => {
+    const resources = await sync.call("resourcesAll");
+    await sync.readLayout(resources.find(item => item.path === CONFIG_PATH)?.document);
     if (sync.kindOf(p) !== "resource") return;
-    const r = (await sync.remoteAll()).get(p), l = await sync.local(p);
+    const row = resources.find(item => item.path === p);
+    const r = row ? sync.remote(row, "resource") : undefined, l = await sync.local(p);
     if (keep === "local") {
       if (l) await sync.push(p, l, r);
       else if (r) { await sync.call("resourceDelete", p, r.revision); delete sync.data.paths[p]; await sync.persist(); }
