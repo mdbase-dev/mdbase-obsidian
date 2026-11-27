@@ -66,7 +66,7 @@
   "dependencies": {
     "@callumalpass/mdbase-interop": "0.1.0-rc.2",
     "@lingui/core": "6.9.0",
-    "@mdbase-dev/sdk": "file:vendor/sdk-24aa6a5c-production-0.2.49.tgz",
+    "@mdbase-dev/sdk": "file:vendor/sdk-f605373f-production-0.2.51.tgz",
     "@noble/hashes": "2.4.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
